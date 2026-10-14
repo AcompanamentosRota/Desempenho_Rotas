@@ -230,7 +230,9 @@ function render(){
 
   $('puxa').innerHTML = piorSv();
 
-  $('lista').innerHTML = GROUPS[aba].map(k=>linha(k, ind[k], rotas)).join('');
+  // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir
+  const oculta = k => k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable);
+  $('lista').innerHTML = GROUPS[aba].filter(k=>!oculta(k)).map(k=>linha(k, ind[k], rotas)).join('');
   document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k, rotas)));
   encaixa($('lista'));
   const upd = (ONLINE && ONLINE.updatedAt) ? ONLINE.updatedAt.replace('T',' ').slice(0,16).split(' ') : null;
