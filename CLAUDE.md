@@ -46,5 +46,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `GH_TOKEN=$(gh auth token --user LuanAlves2) gh ...`. Secrets, Variables e a fonte do Pages só a dona do repo altera.
 - Commits feitos com `GITHUB_TOKEN` não disparam workflows: `atualizar-dados.yml` chama `deploy-pages.yml` via `workflow_call`.
 - Nunca versionar `backend/.env`. Antes de commitar, verificar que nenhum arquivo contém o client ID/secret.
-- Pendências em 13/10/2026: publicar a branch `reestrutura-front-back`; dona do repo cadastrar Secrets/Variables e
-  trocar Pages para "GitHub Actions"; parar uploads manuais na raiz; rotacionar o secret do OAuth Client.
+- Push que mexe em `.github/workflows/` exige o escopo `workflow` no token do `gh` (LuanAlves2 já tem).
+- Pendências em 14/10/2026: PR #1 (`reestrutura-front-back` → `main`) aberto, aguardando a dona do repo rotacionar
+  o secret do OAuth Client, cadastrar Secrets/Variables, trocar Pages para "GitHub Actions" e parar uploads manuais
+  na raiz. Depois do merge: rodar "Atualizar dados" manualmente uma vez e conferir o site.
