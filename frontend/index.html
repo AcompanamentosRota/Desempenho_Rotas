@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Desempenho de Rotas · BAND</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="assets/icon-512.png">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="D. Rota">
+<meta name="theme-color" content="#000000">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topo">
+  <div class="hd">
+    <div class="marca"><img class="helm" src="assets/helm.png" alt="" width="11" height="19">Comercial Bandeirantes</div>
+    <h1>Desempenho de Rotas</h1>
+    <div class="sub" id="sub"></div>
+    <div class="ritmo" id="ritmo"></div>
+  </div>
+</header>
+<nav class="barra" aria-label="Filtros">
+  <div class="hd">
+    <div class="filtros">
+      <label class="sr-only" for="fgc">Gerência</label><select id="fgc"></select>
+      <label class="sr-only" for="fsv">Supervisor</label><select id="fsv"></select>
+      <label class="sr-only" for="frota">Rota</label><select id="frota"></select>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Grupo de indicadores">
+      <button class="tab" role="tab" aria-selected="false" data-g="VOLUME">Volume</button>
+      <button class="tab on" role="tab" aria-selected="true" data-g="ICS_GC">ICS GC</button>
+      <button class="tab" role="tab" aria-selected="false" data-g="NOVOS_NEG">Novos Negócios</button>
+    </div>
+  </div>
+</nav>
+
+<main class="wrap">
+  <div class="topoGrid">
+    <div class="cards">
+      <div class="card" id="cBase" role="button" tabindex="0"><div><div class="n" id="nBase">—</div>
+        <div class="l">Base total de clientes</div></div>
+        <div><div class="div"></div><div class="x" id="xBase"></div></div></div>
+      <div class="card" id="cSem" role="button" tabindex="0"><div><div class="n no" id="nSem">—</div>
+        <div class="l" id="lSem">Sem compra</div></div>
+        <div><div class="div"></div><div class="x" id="xSem"></div></div></div>
+      <div class="card mudo" id="cRitmo"><div><div class="n" id="nRitmo">—</div>
+        <div class="l">Ritmo de coberturas</div></div>
+        <div><div class="div"></div><div class="x" id="xRitmo"></div></div></div>
+    </div>
+    <div class="ladoDir">
+      <div id="puxa"></div>
+      <div class="busca">
+        <div class="buscaWrap">
+          <label class="sr-only" for="q">Buscar cliente ou rede</label>
+          <input id="q" type="search" placeholder="Buscar cliente por nome, código ou rede" autocomplete="off" enterkeyhint="search">
+          <div id="qSugestoes" class="sugestoes" role="listbox"></div>
+        </div>
+        <div id="cli"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="lista" class="lista"></div>
+
+  <div class="rsBox">
+    <div class="rsLbl">Resumo de vendas · incluir</div>
+    <div class="rsChips" role="group" aria-label="Blocos do resumo">
+      <button data-rsb="vol" aria-pressed="true">Volume</button>
+      <button data-rsb="ics" aria-pressed="true">ICS GC</button>
+      <button data-rsb="nov" aria-pressed="false">Novos Neg.</button>
+    </div>
+    <button id="btnResumo">Gerar resumo de vendas</button>
+  </div>
+
+  <footer class="rodape" id="rodape"></footer>
+</main>
+
+<div id="rsOverlay" hidden>
+  <div class="rs-barra">
+    <button class="rs-btn" id="rsVoltar">← Voltar</button>
+    <div class="rsChips" role="group" aria-label="Blocos do resumo">
+      <button data-rsb="vol" aria-pressed="true">Volume</button>
+      <button data-rsb="ics" aria-pressed="true">ICS GC</button>
+      <button data-rsb="nov" aria-pressed="false">Novos Neg.</button>
+    </div>
+    <div class="rs-acoes">
+      <button class="rs-btn rs-pri" id="rsLink">Compartilhar link</button>
+      <button class="rs-btn" id="rsImg">Baixar PDF</button>
+    </div>
+    <div id="rsToast" role="status"></div>
+  </div>
+  <div class="rs-corpo"><div class="rs-box"><div id="rsFolha"></div></div></div>
+</div>
+
+<div class="back" id="back"></div>
+<div class="drw" id="drw" role="dialog" aria-modal="true" aria-labelledby="dTit">
+  <div class="drwCab"><div><h2 id="dTit"></h2><div class="s" id="dSub"></div></div>
+    <button class="fechar" id="dX" aria-label="Fechar">×</button></div>
+  <div class="corpo" id="dCorpo"></div>
+</div>
+
+<script src="js/config.js" defer></script>
+<script src="js/app.js" defer></script>
+<script src="js/resumo.js" defer></script>
+<script src="js/main.js" defer></script>
+</body>
+</html>
