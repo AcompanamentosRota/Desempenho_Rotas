@@ -1,0 +1,36 @@
+# Publica a pasta frontend/ no GitHub Pages.
+# Requer: Settings > Pages > Build and deployment > Source = "GitHub Actions".
+name: Publicar site
+
+on:
+  push:
+    branches: [main]
+    paths: ["frontend/**", ".github/workflows/deploy-pages.yml"]
+  workflow_dispatch:
+  workflow_call:   # chamado pelo atualizar-dados.yml quando os JSONs mudam
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main   # quando chamado logo após o commit de dados, pega a versão nova
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend
+      - id: deployment
+        uses: actions/deploy-pages@v4
