@@ -29,6 +29,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   - Agrupadores têm grafia própria (`Cctm 2l Pet`, `Ks Tt`...). `Cervejas` é cobertura E volume.
     `Destilados` é outro agrupador já contido em `Dest+Art+Cnd`: nunca somar.
   - A consulta de vendas SEMPRE filtra os 17 agrupadores (sem filtro vira cliente × 748 agrupadores).
+  - Pedidos de hoje (`FONTE = 'WF Online'`) só contam com `SITUACAO_Pedido = 'Inc. e Exp.'` (fora Cancelado/Reprovado).
+    Basis e Meta NEG vêm na mesma consulta: o filtro é `(FONTE ne 'WF Online' or SITUACAO_Pedido eq 'Inc. e Exp.')`,
+    nunca `SITUACAO_Pedido eq 'Inc. e Exp.'` puro (sumiria a meta por cliente, que tem situação 'Meta NEG').
   - `META_DIA` junto com outras colunas leva ~130 s; sozinha (só agrupadores de volume) ~2 s. Por isso são duas consultas.
   - `META_DIA` sem `CALENDARIO` = meta do dia publicada; por `CALENDARIO` não é curva de meta (não usar para tendência).
   - Meta de volume por cliente = `META_NEG` por `CD_CLIENTE` × `DS_AGRUPADOR_Agrupador_Prod`.
