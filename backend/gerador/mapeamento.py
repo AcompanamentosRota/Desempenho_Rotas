@@ -35,6 +35,8 @@ class ColMeta:
     AGRUPADOR = "DS_AGRUPADOR_Agrupador_Prod"        # 'Cctm 2l Pet', 'Ks Tt', 'Refrigerantes'... (748 valores)
     AGRUPADOR_VOLUME = "DS_AGRUPADOR_Agrupador_Prod"  # os 5 grupos de volume estão na mesma coluna
     DATA = "DATA_MOVIMENTO"
+    FONTE = "FONTE"                                  # 'Basis', 'WF Online', 'Meta NEG'
+    SITUACAO_PEDIDO = "SITUACAO_Pedido"              # 'Inc. e Exp.', 'Cancelado', 'Reprovado', 'Meta NEG'
     # medidas (FONTE 'Basis' = faturado no mês; FONTE 'WF Online' = pedidos de hoje)
     COB_MES = "FX_COBERTURA_REALIZADO"               # cliente comprou o agrupador no mês (>0)
     COB_ONLINE = "FX_COBERTURA_WF_ONLINE"            # cliente comprou o agrupador hoje
@@ -112,6 +114,9 @@ FILTRO_BASE_CLIENTE = "FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'"
 # Supervisões que não entram no painel (balcão) e rotas eventuais
 SV_IGNORAR_PREFIXOS = ("SV.BL.",)
 ROTAS_IGNORAR_PREFIXOS = ("EV",)
+# Pedidos de hoje (WF Online): só a situação 'Inc. e Exp.' conta (fora 'Cancelado' e 'Reprovado').
+# As linhas Basis (faturado) e Meta NEG (meta por cliente) vêm da mesma consulta e não são filtradas.
+FILTRO_PEDIDOS_ONLINE = f"({ColMeta.FONTE} ne 'WF Online' or {ColMeta.SITUACAO_PEDIDO} eq 'Inc. e Exp.')"
 # Venda Zero = geladeiras Coca-Cola (Total Ko) em contrato vigente com giro zero no mês
 FILTRO_COMODATO = ("STATUS_COMODATO eq 'Concluído(Contrato)' and AGRUPADOR_EQPTO eq 'Total Ko' "
                    "and TIPO_QUIPAMENTO_Equipame eq 'Foutain - Equip. de Mercado'")

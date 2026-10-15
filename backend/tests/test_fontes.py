@@ -167,6 +167,8 @@ class TestFontes(unittest.TestCase):
         self.assertTrue(all("ANOMES_REF eq '202610'" in c[2] for c in vendas))
         self.assertTrue(any(f"{CM.GC} eq 'Gc. G1'" in c[2] for c in vendas))
         self.assertIn("DS_AGRUPADOR_Agrupador_Prod eq 'Cctm 2l Pet'", vendas[0][2])
+        # pedidos de hoje: só 'Inc. e Exp.'; Basis e Meta NEG passam sem filtro
+        self.assertTrue(all("(FONTE ne 'WF Online' or SITUACAO_Pedido eq 'Inc. e Exp.')" in c[2] for c in vendas))
         self.assertNotIn("Destilados", vendas[0][2])
         comodato = [c for c in self.cons.chamadas if c[0] == M.OBJ_COMODATO][0][2]
         self.assertIn("Concluído(Contrato)", comodato)

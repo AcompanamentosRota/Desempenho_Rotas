@@ -8,7 +8,8 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
                                                 painel: rota, visita de hoje, supervisor, vendedor, rede
   vendas      AM_FAT_BND_ANALISE_META           rota x cliente x agrupador (só os 17 agrupadores do painel;
                                                 uma consulta por gerência, em paralelo): cobertura do mês,
-                                                compras e volume de hoje (online), volume e meta por cliente
+                                                compras e volume de hoje (online, só pedidos 'Inc. e Exp.'),
+                                                volume e meta por cliente
   metas       AM_FAT_BND_ANALISE_META           rota x agrupador da meta: meta de cobertura, de volume
                                                 e meta do dia
   comodato    AM_FAT_BND_COMODATO               geladeiras Total Ko em contrato: giro zero (Venda Zero)
@@ -111,7 +112,9 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_MES, CM.VOL_MES],
                    [CM.COB_ONLINE, CM.COB_ONLINE_GERAL, CM.VOL_ONLINE, CM.META_VOLUME_CLIENTE])
-    base = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_ORIGEM), eq(CM.ROTA, rota) if rota else None)
+    _colunas(cons, obj, [CM.FONTE, CM.SITUACAO_PEDIDO])   # só confere: entram no $filter, não no $select
+    base = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_ORIGEM), M.FILTRO_PEDIDOS_ONLINE,
+             eq(CM.ROTA, rota) if rota else None)
     if rota or not gcs_originais:
         partes = {"todas": (obj, sel, base)}
     else:   # uma consulta por gerência, em paralelo (cada uma bem menor que a consulta inteira)
