@@ -32,6 +32,7 @@ class ColMeta:
     ROTA = "CD_ROTA_Clien"
     GC = "DS_GC_AGRUPADA_ATUAL_Clien"
     CLIENTE = "CD_CLIENTE"
+    SEGMENTO = "DS_SEGMENTO_Clien"                   # segmento na venda: vale também para quem saiu da base
     AGRUPADOR = "DS_AGRUPADOR_Agrupador_Prod"        # 'Cctm 2l Pet', 'Ks Tt', 'Refrigerantes'... (748 valores)
     AGRUPADOR_VOLUME = "DS_AGRUPADOR_Agrupador_Prod"  # os 5 grupos de volume estão na mesma coluna
     DATA = "DATA_MOVIMENTO"

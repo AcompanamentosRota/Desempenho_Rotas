@@ -4,15 +4,20 @@ payload.py — Monta o payload.json (base do mês) a partir das Fontes normaliza
 O formato é exatamente o que o front lê (frontend/js/main.js -> aplicaPayload):
 mesmas chaves, mesma ordem, mesmos índices de SEGS/DIAS e mesmas fórmulas
 (modelo.py). Não grava nada: devolve um dict pronto para saida.gravar().
+
+Cobertura (COBERTOS e o real de cada indicador) conta para a rota da venda, mesmo de cliente
+transferido ou desativado; no KS TT, só PVs dos segmentos elegíveis (M.SEGMENTOS_KS_TT).
+O online.json segue a mesma regra (online_ks_tt).
 """
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from dataclasses import replace
 
 from . import mapeamento as M
 from . import modelo
 from .texto import limpar, normalizar
-from .tipos import Cliente, Fontes
+from .tipos import Cliente, Fontes, Online
 
 
 class TabelaIndice:
@@ -38,6 +43,39 @@ def _mais_comum(valores: list[str]) -> str:
 def _ordem_gc(gcs: set[str]) -> list[str]:
     fixas = [g for g in M.GC_ATIVAS if g in gcs]
     return fixas + sorted(gcs - set(fixas))
+
+
+def _indices_ks_tt(segs: list[str]) -> set[int]:
+    return {i for i, s in enumerate(segs) if normalizar(s) in M.SEGMENTOS_KS_TT}
+
+
+def _filtra_ks_tt(por_ind: dict[str, set[int]], seg_roster: dict[int, int], ks_tt: set[int],
+                  segmento_venda: dict[int, str]) -> dict[str, set[int]]:
+    """KS TT só com PVs dos segmentos elegíveis; os demais indicadores passam inteiros. A meta não passa por aqui.
+
+    O segmento é o da base (roster da rota: índice de SEGS); para quem saiu dela, o da venda.
+    """
+    def elegivel(pv: int) -> bool:
+        if pv in seg_roster:
+            return seg_roster[pv] in ks_tt
+        return normalizar(segmento_venda.get(pv)) in M.SEGMENTOS_KS_TT
+
+    return {k: {pv for pv in pvs if elegivel(pv)} if k == "KS TT" else set(pvs) for k, pvs in por_ind.items()}
+
+
+def online_ks_tt(o: Online, p: dict | None, segmento_venda: dict[int, str]) -> Online:
+    """Online por indicador com a mesma regra do COBERTOS, pelo roster do payload `p`
+    (sem payload, vale só o segmento da venda).
+
+    QUALQUER (revertido do Venda Zero, sem compra hoje) continua com todo PV que comprou hoje.
+    """
+    ks_tt = _indices_ks_tt(p["SEGS"]) if p else set()
+    clientes, qualquer = {}, dict(o.qualquer)
+    for r, por_ind in o.clientes.items():
+        seg_roster = {c[0]: c[2] for c in p["CLIENT_ROSTER"].get(r, [])} if p else {}
+        clientes[r] = _filtra_ks_tt(por_ind, seg_roster, ks_tt, segmento_venda)
+        qualquer[r] = set(o.qualquer.get(r, set())).union(*por_ind.values())
+    return replace(o, clientes=clientes, qualquer=qualquer)
 
 
 def montar_payload(f: Fontes) -> dict:
@@ -73,7 +111,7 @@ def montar_payload(f: Fontes) -> dict:
         clientes_hoje[r] = [linha for linha in roster[r] if linha[4] == 1]
         visitas_geral[r] = len(clientes_hoje[r])
 
-    ks_tt = {i for i, s in enumerate(segs.valores) if normalizar(s) in M.SEGMENTOS_KS_TT}
+    ks_tt = _indices_ks_tt(segs.valores)
 
     # ---- Venda Zero (revertido = cliente com venda online hoje)
     vz_ativo = f.vendazero is not None
@@ -103,7 +141,8 @@ def montar_payload(f: Fontes) -> dict:
             for r in sorted(arvore[gc][sv]):
                 lista_roster = roster[r]
                 pvs_roster = {c[0] for c in lista_roster}
-                cob = f.cobertos.get(r, {})
+                cob = _filtra_ks_tt(f.cobertos.get(r, {}), {c[0]: c[2] for c in lista_roster}, ks_tt,
+                                    f.segmento_venda)
 
                 # compras do mês (rota sem nenhuma venda no mês = sem dado)
                 if r in f.compraram:
