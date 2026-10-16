@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from gerador import calendario, fontes, saida, validacao  # noqa: E402
 from gerador.consulta import Consulta  # noqa: E402
 from gerador.online import montar_online  # noqa: E402
-from gerador.payload import montar_payload  # noqa: E402
+from gerador.payload import montar_payload, online_no_roster  # noqa: E402
 from odata.config import PASTA_SAIDA, carregar_config  # noqa: E402
 from odata.log import configurar_log  # noqa: E402
 
@@ -81,10 +81,15 @@ def main() -> int:
         log.error("Falha ao consultar o Datasphere: %s", erro)
         return 1
 
-    arquivos: dict[str, dict] = {"online.json": montar_online(f.online)}
+    payload = None if args.so_online else montar_payload(f)
+    # online por indicador segue o roster da rota (com --so-online, o do payload já publicado)
+    base = payload or saida.ler(destino / "payload.json")
+    if base is None:
+        log.warning("Sem payload publicado: online por indicador sai sem o filtro de roster/segmento.")
+    arquivos: dict[str, dict] = {"online.json": montar_online(online_no_roster(f.online, base) if base else f.online)}
     erros, avisos = validacao.validar_online(arquivos["online.json"])
-    if not args.so_online:
-        arquivos["payload.json"] = montar_payload(f)
+    if payload is not None:
+        arquivos["payload.json"] = payload
         anterior = None if args.rota else saida.ler(destino / "payload.json")
         e2, a2 = validacao.validar_payload(arquivos["payload.json"], anterior)
         erros, avisos = erros + e2, avisos + a2

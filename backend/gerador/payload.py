@@ -4,15 +4,19 @@ payload.py — Monta o payload.json (base do mês) a partir das Fontes normaliza
 O formato é exatamente o que o front lê (frontend/js/main.js -> aplicaPayload):
 mesmas chaves, mesma ordem, mesmos índices de SEGS/DIAS e mesmas fórmulas
 (modelo.py). Não grava nada: devolve um dict pronto para saida.gravar().
+
+Cobertura (COBERTOS e o real de cada indicador) só conta PVs do roster da rota; no KS TT, só os
+dos segmentos elegíveis (M.SEGMENTOS_KS_TT). O online.json segue a mesma regra (online_no_roster).
 """
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from dataclasses import replace
 
 from . import mapeamento as M
 from . import modelo
 from .texto import limpar, normalizar
-from .tipos import Cliente, Fontes
+from .tipos import Cliente, Fontes, Online
 
 
 class TabelaIndice:
@@ -38,6 +42,29 @@ def _mais_comum(valores: list[str]) -> str:
 def _ordem_gc(gcs: set[str]) -> list[str]:
     fixas = [g for g in M.GC_ATIVAS if g in gcs]
     return fixas + sorted(gcs - set(fixas))
+
+
+def _indices_ks_tt(segs: list[str]) -> set[int]:
+    return {i for i, s in enumerate(segs) if normalizar(s) in M.SEGMENTOS_KS_TT}
+
+
+def _no_roster(por_ind: dict[str, set[int]], roster: set[int], roster_ks_tt: set[int]) -> dict[str, set[int]]:
+    """Só PVs do roster da rota; no KS TT, só os dos segmentos elegíveis. A meta não passa por aqui."""
+    return {k: set(pvs) & (roster_ks_tt if k == "KS TT" else roster) for k, pvs in por_ind.items()}
+
+
+def online_no_roster(o: Online, p: dict) -> Online:
+    """Online por indicador com a mesma regra do COBERTOS, pelo roster do payload `p`.
+
+    QUALQUER (revertido do Venda Zero, sem compra hoje) continua com todo PV que comprou hoje.
+    """
+    ks_tt = _indices_ks_tt(p["SEGS"])
+    clientes, qualquer = {}, dict(o.qualquer)
+    for r, por_ind in o.clientes.items():
+        lista = p["CLIENT_ROSTER"].get(r, [])
+        clientes[r] = _no_roster(por_ind, {c[0] for c in lista}, {c[0] for c in lista if c[2] in ks_tt})
+        qualquer[r] = set(o.qualquer.get(r, set())).union(*por_ind.values())
+    return replace(o, clientes=clientes, qualquer=qualquer)
 
 
 def montar_payload(f: Fontes) -> dict:
@@ -73,7 +100,7 @@ def montar_payload(f: Fontes) -> dict:
         clientes_hoje[r] = [linha for linha in roster[r] if linha[4] == 1]
         visitas_geral[r] = len(clientes_hoje[r])
 
-    ks_tt = {i for i, s in enumerate(segs.valores) if normalizar(s) in M.SEGMENTOS_KS_TT}
+    ks_tt = _indices_ks_tt(segs.valores)
 
     # ---- Venda Zero (revertido = cliente com venda online hoje)
     vz_ativo = f.vendazero is not None
@@ -103,7 +130,8 @@ def montar_payload(f: Fontes) -> dict:
             for r in sorted(arvore[gc][sv]):
                 lista_roster = roster[r]
                 pvs_roster = {c[0] for c in lista_roster}
-                cob = f.cobertos.get(r, {})
+                pvs_ks_tt = {c[0] for c in lista_roster if c[2] in ks_tt}
+                cob = _no_roster(f.cobertos.get(r, {}), pvs_roster, pvs_ks_tt)
 
                 # compras do mês (rota sem nenhuma venda no mês = sem dado)
                 if r in f.compraram:
@@ -135,7 +163,7 @@ def montar_payload(f: Fontes) -> dict:
                 data[gc][sv][r] = {
                     "consultor": info_rota[r][2],
                     "baseTotal": len(lista_roster),
-                    "baseKsTt": sum(1 for c in lista_roster if c[2] in ks_tt),
+                    "baseKsTt": len(pvs_ks_tt),
                     "compraram": n_comp,
                     "semCompra": None if n_comp is None else len(lista_roster) - n_comp,
                     "indicators": ind,

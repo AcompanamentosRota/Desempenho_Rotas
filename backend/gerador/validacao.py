@@ -47,6 +47,12 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
         if list(d["indicators"]) != M.ORDEM_INDICADORES:
             erros.append(f"rota {r}: indicadores fora do padrão")
             break
+    ks_acima = [r for r, d in rotas.items()
+                if (d["indicators"].get("KS TT") or {}).get("real") is not None
+                and d["indicators"]["KS TT"]["real"] > d["baseKsTt"]]
+    if ks_acima:
+        erros.append(f"KS TT com real acima da base elegível (baseKsTt) em {len(ks_acima)} rota(s): "
+                     f"{', '.join(ks_acima[:20])} (filtro de segmento/roster?)")
 
     cob = [d["indicators"][k] for d in rotas.values() for k in M.INDICADORES_COBERTURA]
     disp = sum(1 for b in cob if not b["unavailable"]) / max(1, len(cob))
