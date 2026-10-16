@@ -18,7 +18,7 @@ from pathlib import Path
 
 from gerador import mapeamento as M
 from gerador.online import montar_online
-from gerador.payload import montar_payload, online_no_roster
+from gerador.payload import montar_payload, online_ks_tt
 from gerador.saida import serializar
 from gerador.tipos import Calendario, Cliente, Equipamento, Fontes, Online
 from gerador.validacao import validar_payload
@@ -141,11 +141,12 @@ class TestOnline(unittest.TestCase):
                 self.assertAlmostEqual(g["volume"][r][k], x, places=3)
 
 
-class TestRosterESegmentoKsTt(unittest.TestCase):
-    """Cobertura e online por indicador só com PVs do roster; KS TT só nos 4 segmentos; meta sem filtro.
+class TestSegmentoKsTt(unittest.TestCase):
+    """KS TT só nos 4 segmentos; cobertura conta para a rota da venda mesmo fora do roster; meta sem filtro.
 
-    Rota 111: PV 1 Boteco e PV 3 Lanchonete (elegíveis ao KS TT), PV 2 Mercearia (não elegível);
-    PV 999 comprou mas não está na base da rota.
+    Rota 111 (base): PV 1 Boteco e PV 3 Lanchonete (elegíveis), PV 2 Mercearia (não elegível; na venda
+    aparece como Boteco, mas vale a base). Saíram da base da rota (transferidos/desativados):
+    PV 999 Padarias, PV 998 Super e PV 997 sem segmento conhecido.
     """
 
     @classmethod
@@ -157,58 +158,69 @@ class TestRosterESegmentoKsTt(unittest.TestCase):
             return Cliente(pv=pv, nome=f"CLIENTE {pv}", rota="111", gc="G1", sv="SV.G1.1", nome_sv="SUP",
                            consultor="VEND", segmento=seg, dia_visita="Sex", visita_hoje=hoje)
 
+        cls.seg_venda = {1: "Boteco", 2: "Boteco", 3: "Lanchonete", 998: "Super", 999: "Padarias"}
         cls.online = Online(atualizado_em=datetime(2026, 10, 16, 10, 0),
-                            clientes={"111": {"KS TT": {2, 3, 999}, "CCTM 2L PET": {2, 999}}},
-                            qualquer={"111": {2, 3, 999}})
+                            clientes={"111": {"KS TT": {2, 3, 997, 998, 999}, "CCTM 2L PET": {2, 999}}},
+                            qualquer={"111": {2, 3, 997, 998, 999}})
         cls.f = Fontes(
             cal=cal, clientes=[cli(1, "Boteco", True), cli(2, "Mercearia", True), cli(3, "Lanchonete", False)],
-            cobertos={"111": {"KS TT": {1, 2, 999}, "CCTM 2L PET": {1, 2, 999}}},
-            compraram={"111": {1, 2, 999}},
+            cobertos={"111": {"KS TT": {1, 2, 997, 998, 999}, "CCTM 2L PET": {1, 2, 997, 998, 999}}},
+            compraram={"111": {1, 2, 997, 998, 999}},
             metas={"111": {"KS TT": 10.0, "CCTM 2L PET": 5.0}},
             volume={}, volume_cliente={}, online=cls.online,
             vendazero={"111": [Equipamento(pv=2, nome="Cliente 2", dia="Sex", hoje=True, tipo="Geladeira", vdz=1,
                                            meta_comodato=10.0, volume=0.0)]},
-            vz_meta={"111": 1.0})
+            vz_meta={"111": 1.0}, segmento_venda=cls.seg_venda)
         cls.p = montar_payload(cls.f)
         cls.d = cls.p["DATA"]["G1"]["SV.G1.1"]["111"]
-        cls.o = montar_online(online_no_roster(cls.online, cls.p))
+        cls.o = montar_online(online_ks_tt(cls.online, cls.p, cls.seg_venda))
 
     def test_ks_tt_real_so_segmentos_elegiveis(self):
         self.assertEqual(self.d["baseKsTt"], 2)
-        self.assertEqual(self.d["indicators"]["KS TT"]["real"], 1)
-        self.assertEqual(self.p["COBERTOS"]["111"]["KS TT"], [1])
+        self.assertEqual(self.p["COBERTOS"]["111"]["KS TT"], [1, 999])
+        self.assertEqual(self.d["indicators"]["KS TT"]["real"], 2)
 
     def test_ks_tt_online_so_segmentos_elegiveis(self):
-        self.assertEqual(self.o["clientes"]["111"]["KS TT"], [3])
-        self.assertEqual(self.o["rotas"]["111"]["KS TT"], 1)
+        self.assertEqual(self.o["clientes"]["111"]["KS TT"], [3, 999])
+        self.assertEqual(self.o["rotas"]["111"]["KS TT"], 2)
 
-    def test_fora_do_roster_em_nenhum_indicador(self):
-        self.assertEqual(self.p["COBERTOS"]["111"]["CCTM 2L PET"], [1, 2])
-        self.assertEqual(self.d["indicators"]["CCTM 2L PET"]["real"], 2)
-        self.assertEqual(self.o["clientes"]["111"]["CCTM 2L PET"], [2])
-        self.assertEqual(self.o["rotas"]["111"]["CCTM 2L PET"], 1)
-        for k, pvs in self.p["COBERTOS"]["111"].items():
-            self.assertNotIn(999, pvs, k)
+    def test_fora_do_roster_conta_na_rota_da_venda(self):
+        self.assertEqual(self.p["COBERTOS"]["111"]["CCTM 2L PET"], [1, 2, 997, 998, 999])
+        self.assertEqual(self.d["indicators"]["CCTM 2L PET"]["real"], 5)
+        self.assertEqual(self.o["clientes"]["111"]["CCTM 2L PET"], [2, 999])
+        self.assertEqual(self.o["rotas"]["111"]["CCTM 2L PET"], 2)
 
     def test_meta_ks_tt_inalterada(self):
         self.assertEqual(self.d["indicators"]["KS TT"]["meta"], 10)
         self.assertEqual(self.d["indicators"]["CCTM 2L PET"]["meta"], 5)
 
     def test_qualquer_e_venda_zero_inalterados(self):
-        self.assertEqual(self.o["clientes"]["111"]["QUALQUER"], [2, 3, 999])
+        self.assertEqual(self.o["clientes"]["111"]["QUALQUER"], [2, 3, 997, 998, 999])
         self.assertEqual(self.o["clientes"]["111"]["QUALQUER"], montar_online(self.online)["clientes"]["111"]["QUALQUER"])
         self.assertTrue(self.p["VENDAZERO_CLIENTES"]["111"][0]["revertido"])
 
     def test_filtro_idempotente(self):
-        self.assertEqual(montar_online(online_no_roster(online_no_roster(self.online, self.p), self.p)), self.o)
+        duas = online_ks_tt(online_ks_tt(self.online, self.p, self.seg_venda), self.p, self.seg_venda)
+        self.assertEqual(montar_online(duas), self.o)
 
-    def test_validacao_barra_ks_tt_acima_da_base(self):
-        erros, _ = validar_payload(self.p)
-        self.assertFalse([e for e in erros if "KS TT" in e], erros)
+    def test_online_sem_payload_usa_segmento_da_venda(self):
+        o = montar_online(online_ks_tt(self.online, None, self.seg_venda))
+        self.assertEqual(o["clientes"]["111"]["KS TT"], [2, 3, 999])
+
+    def test_validacao_ks_tt(self):
+        erros, avisos = validar_payload(self.p)
+        self.assertFalse([e for e in erros + avisos if "KS TT" in e], erros + avisos)
+        # cliente da base com segmento não elegível no KS TT: reprova
         ruim = copy.deepcopy(self.p)
-        ruim["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]["KS TT"]["real"] = 3
+        ruim["COBERTOS"]["111"]["KS TT"] = [1, 2]
         erros, _ = validar_payload(ruim)
         self.assertTrue(any("KS TT" in e and "111" in e for e in erros), erros)
+        # real acima da base elegível (clientes que saíram da rota): só avisa
+        acima = copy.deepcopy(self.p)
+        acima["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]["KS TT"]["real"] = 3
+        erros, avisos = validar_payload(acima)
+        self.assertFalse([e for e in erros if "KS TT" in e], erros)
+        self.assertTrue(any("KS TT" in a and "111" in a for a in avisos), avisos)
 
 
 if __name__ == "__main__":

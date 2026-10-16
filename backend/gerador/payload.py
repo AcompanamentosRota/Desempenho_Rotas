@@ -5,8 +5,9 @@ O formato é exatamente o que o front lê (frontend/js/main.js -> aplicaPayload)
 mesmas chaves, mesma ordem, mesmos índices de SEGS/DIAS e mesmas fórmulas
 (modelo.py). Não grava nada: devolve um dict pronto para saida.gravar().
 
-Cobertura (COBERTOS e o real de cada indicador) só conta PVs do roster da rota; no KS TT, só os
-dos segmentos elegíveis (M.SEGMENTOS_KS_TT). O online.json segue a mesma regra (online_no_roster).
+Cobertura (COBERTOS e o real de cada indicador) conta para a rota da venda, mesmo de cliente
+transferido ou desativado; no KS TT, só PVs dos segmentos elegíveis (M.SEGMENTOS_KS_TT).
+O online.json segue a mesma regra (online_ks_tt).
 """
 from __future__ import annotations
 
@@ -48,21 +49,31 @@ def _indices_ks_tt(segs: list[str]) -> set[int]:
     return {i for i, s in enumerate(segs) if normalizar(s) in M.SEGMENTOS_KS_TT}
 
 
-def _no_roster(por_ind: dict[str, set[int]], roster: set[int], roster_ks_tt: set[int]) -> dict[str, set[int]]:
-    """Só PVs do roster da rota; no KS TT, só os dos segmentos elegíveis. A meta não passa por aqui."""
-    return {k: set(pvs) & (roster_ks_tt if k == "KS TT" else roster) for k, pvs in por_ind.items()}
+def _filtra_ks_tt(por_ind: dict[str, set[int]], seg_roster: dict[int, int], ks_tt: set[int],
+                  segmento_venda: dict[int, str]) -> dict[str, set[int]]:
+    """KS TT só com PVs dos segmentos elegíveis; os demais indicadores passam inteiros. A meta não passa por aqui.
+
+    O segmento é o da base (roster da rota: índice de SEGS); para quem saiu dela, o da venda.
+    """
+    def elegivel(pv: int) -> bool:
+        if pv in seg_roster:
+            return seg_roster[pv] in ks_tt
+        return normalizar(segmento_venda.get(pv)) in M.SEGMENTOS_KS_TT
+
+    return {k: {pv for pv in pvs if elegivel(pv)} if k == "KS TT" else set(pvs) for k, pvs in por_ind.items()}
 
 
-def online_no_roster(o: Online, p: dict) -> Online:
-    """Online por indicador com a mesma regra do COBERTOS, pelo roster do payload `p`.
+def online_ks_tt(o: Online, p: dict | None, segmento_venda: dict[int, str]) -> Online:
+    """Online por indicador com a mesma regra do COBERTOS, pelo roster do payload `p`
+    (sem payload, vale só o segmento da venda).
 
     QUALQUER (revertido do Venda Zero, sem compra hoje) continua com todo PV que comprou hoje.
     """
-    ks_tt = _indices_ks_tt(p["SEGS"])
+    ks_tt = _indices_ks_tt(p["SEGS"]) if p else set()
     clientes, qualquer = {}, dict(o.qualquer)
     for r, por_ind in o.clientes.items():
-        lista = p["CLIENT_ROSTER"].get(r, [])
-        clientes[r] = _no_roster(por_ind, {c[0] for c in lista}, {c[0] for c in lista if c[2] in ks_tt})
+        seg_roster = {c[0]: c[2] for c in p["CLIENT_ROSTER"].get(r, [])} if p else {}
+        clientes[r] = _filtra_ks_tt(por_ind, seg_roster, ks_tt, segmento_venda)
         qualquer[r] = set(o.qualquer.get(r, set())).union(*por_ind.values())
     return replace(o, clientes=clientes, qualquer=qualquer)
 
@@ -130,8 +141,8 @@ def montar_payload(f: Fontes) -> dict:
             for r in sorted(arvore[gc][sv]):
                 lista_roster = roster[r]
                 pvs_roster = {c[0] for c in lista_roster}
-                pvs_ks_tt = {c[0] for c in lista_roster if c[2] in ks_tt}
-                cob = _no_roster(f.cobertos.get(r, {}), pvs_roster, pvs_ks_tt)
+                cob = _filtra_ks_tt(f.cobertos.get(r, {}), {c[0]: c[2] for c in lista_roster}, ks_tt,
+                                    f.segmento_venda)
 
                 # compras do mês (rota sem nenhuma venda no mês = sem dado)
                 if r in f.compraram:
@@ -163,7 +174,7 @@ def montar_payload(f: Fontes) -> dict:
                 data[gc][sv][r] = {
                     "consultor": info_rota[r][2],
                     "baseTotal": len(lista_roster),
-                    "baseKsTt": len(pvs_ks_tt),
+                    "baseKsTt": sum(1 for c in lista_roster if c[2] in ks_tt),
                     "compraram": n_comp,
                     "semCompra": None if n_comp is None else len(lista_roster) - n_comp,
                     "indicators": ind,

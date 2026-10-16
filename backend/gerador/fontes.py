@@ -9,7 +9,7 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
   vendas      AM_FAT_BND_ANALISE_META           rota x cliente x agrupador (só os 17 agrupadores do painel;
                                                 uma consulta por gerência, em paralelo): cobertura do mês,
                                                 compras e volume de hoje (online, só pedidos 'Inc. e Exp.'),
-                                                volume e meta por cliente
+                                                volume e meta por cliente, segmento do cliente
   metas       AM_FAT_BND_ANALISE_META           rota x agrupador da meta: meta de cobertura, de volume
                                                 e meta do dia
   comodato    AM_FAT_BND_COMODATO               geladeiras Total Ko em contrato: giro zero (Venda Zero)
@@ -111,7 +111,7 @@ def carregar_clientes(cons: Consulta, rota: str | None = None) -> tuple[list[Cli
 def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None, online: Online):
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_MES, CM.VOL_MES],
-                   [CM.COB_ONLINE, CM.COB_ONLINE_GERAL, CM.VOL_ONLINE, CM.META_VOLUME_CLIENTE])
+                   [CM.COB_ONLINE, CM.COB_ONLINE_GERAL, CM.VOL_ONLINE, CM.META_VOLUME_CLIENTE, CM.SEGMENTO])
     _colunas(cons, obj, [CM.FONTE, CM.SITUACAO_PEDIDO])   # só confere: entram no $filter, não no $select
     base = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_ORIGEM), M.FILTRO_PEDIDOS_ONLINE,
              eq(CM.ROTA, rota) if rota else None)
@@ -125,11 +125,14 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
     compraram: dict = defaultdict(set)
     vol_real: dict = defaultdict(lambda: defaultdict(float))
     vol_cli: dict = defaultdict(lambda: defaultdict(dict))
+    segmento: dict[int, str] = {}
     for l in linhas:
         r, pv = _rota(l.get(CM.ROTA)), inteiro(l.get(CM.CLIENTE))
         if not r or pv is None:
             continue
         compraram[r]   # rota presente na fonte de vendas (mesmo sem compra)
+        if not _vazio(l.get(CM.SEGMENTO)):
+            segmento[pv] = limpar(l.get(CM.SEGMENTO))
         ag = l.get(CM.AGRUPADOR)
         k_cob, k_vol = M.indicador_cobertura(ag), M.indicador_volume(ag)
         cob_mes, vol_mes = numero(l.get(CM.COB_MES)), numero(l.get(CM.VOL_MES))
@@ -154,7 +157,7 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
                 m0, r0 = atual or (0.0, 0.0)
                 vol_cli[r][pv][k_vol] = (m0 + numero(meta_c), r0 + vol_mes)
     log.info("Vendas: %d linhas, %d rotas, %d com venda online hoje", len(linhas), len(compraram), len(online.qualquer))
-    return cobertos, compraram, vol_real, vol_cli
+    return cobertos, compraram, vol_real, vol_cli, segmento
 
 
 # ------------------------------------------------------------------ metas
@@ -275,17 +278,17 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     online = Online(atualizado_em=agora, fechamento_mes=fechamento)
 
     if so_online:
-        carregar_vendas(cons, anomes, list(M.GC_ORIGEM), rota, online)
+        segmento = carregar_vendas(cons, anomes, list(M.GC_ORIGEM), rota, online)[-1]
         for d in (online.clientes, online.qualquer, online.volume):
             for r in [r for r in d if not M.rota_do_painel(r)]:
                 del d[r]
         return Fontes(cal=calmod.calcular_local(hoje), clientes=[], cobertos={}, compraram={}, metas={},
-                      volume={}, volume_cliente={}, online=online)
+                      volume={}, volume_cliente={}, online=online, segmento_venda=segmento)
 
     cal = carregar_calendario(cons, hoje)
     clientes, gcs = carregar_clientes(cons, rota)
     rotas_painel = {c.rota for c in clientes}
-    cobertos, compraram, vol_real, vol_cli = carregar_vendas(cons, anomes, gcs, rota, online)
+    cobertos, compraram, vol_real, vol_cli, segmento = carregar_vendas(cons, anomes, gcs, rota, online)
     metas, metas_vol = carregar_metas(cons, anomes, rota)
 
     volume: dict = defaultdict(dict)
@@ -314,4 +317,4 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                   compraram=so_painel(compraram), metas=so_painel(dict(metas)), volume=dict(volume),
                   volume_cliente={r: dict(v) for r, v in so_painel(vol_cli).items()}, online=online,
                   vendazero=so_painel(vendazero) if vendazero is not None else None,
-                  vz_meta=vz_meta, comodato_ativos=so_painel(ativos))
+                  vz_meta=vz_meta, comodato_ativos=so_painel(ativos), segmento_venda=segmento)

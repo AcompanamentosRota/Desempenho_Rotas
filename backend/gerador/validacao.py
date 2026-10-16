@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 from . import mapeamento as M
+from .texto import normalizar
 
 CHAVES_PAYLOAD = ["MES_LABEL", "TOTAL_DIAS_UTEIS", "DIA_ONTEM", "DIA_HOJE", "PACE_ONTEM_PCT", "SEMANA_NUM",
                   "SEMANA_TIPO", "DIA_SEMANA", "GC_ATIVAS", "NOME_SUPERVISOR", "DATA", "LABELS", "GROUPS",
@@ -47,12 +48,20 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
         if list(d["indicators"]) != M.ORDEM_INDICADORES:
             erros.append(f"rota {r}: indicadores fora do padrão")
             break
-    ks_acima = [r for r, d in rotas.items()
-                if (d["indicators"].get("KS TT") or {}).get("real") is not None
-                and d["indicators"]["KS TT"]["real"] > d["baseKsTt"]]
+    ks_tt = {i for i, s in enumerate(novo["SEGS"]) if normalizar(s) in M.SEGMENTOS_KS_TT}
+    ks_fora_seg, ks_acima = [], []
+    for r, d in rotas.items():
+        seg = {c[0]: c[2] for c in novo["CLIENT_ROSTER"].get(r, [])}
+        if any(pv in seg and seg[pv] not in ks_tt for pv in (novo["COBERTOS"].get(r) or {}).get("KS TT", [])):
+            ks_fora_seg.append(r)
+        real = (d["indicators"].get("KS TT") or {}).get("real")
+        if real is not None and real > d["baseKsTt"]:
+            ks_acima.append(r)
+    if ks_fora_seg:
+        erros.append(f"KS TT contando cliente de segmento não elegível em {len(ks_fora_seg)} rota(s): "
+                     f"{', '.join(ks_fora_seg[:20])}")
     if ks_acima:
-        erros.append(f"KS TT com real acima da base elegível (baseKsTt) em {len(ks_acima)} rota(s): "
-                     f"{', '.join(ks_acima[:20])} (filtro de segmento/roster?)")
+        avisos.append(f"KS TT com real acima da base elegível (clientes que saíram da rota) em: {', '.join(ks_acima[:20])}")
 
     cob = [d["indicators"][k] for d in rotas.values() for k in M.INDICADORES_COBERTURA]
     disp = sum(1 for b in cob if not b["unavailable"]) / max(1, len(cob))

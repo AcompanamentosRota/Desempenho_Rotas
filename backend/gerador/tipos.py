@@ -95,3 +95,5 @@ class Fontes:
     vendazero: dict[str, list[Equipamento]] | None = None
     vz_meta: dict[str, float] = field(default_factory=dict)
     comodato_ativos: dict[str, dict[int, int]] = field(default_factory=dict)
+    # pv -> segmento na fonte de vendas (KS TT de cliente transferido ou desativado, fora do roster da rota)
+    segmento_venda: dict[int, str] = field(default_factory=dict)

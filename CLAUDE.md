@@ -37,10 +37,12 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   - Meta de volume por cliente = `META_NEG` por `CD_CLIENTE` × `DS_AGRUPADOR_Agrupador_Prod`.
   - Venda Zero: `Concluído(Contrato)` + `AGRUPADOR_EQPTO = 'Total Ko'` + Fountain + `Giro Zero`, deduplicando por
     `CD_EQUIPAMENTO_Equipame`. A meta só existe por gerência; o gerador rateia pelas rotas pela quantidade de geladeiras.
-- **KS TT: Real e Online filtrados pelos 4 segmentos e pelo roster; meta sem filtro** (`M.SEGMENTOS_KS_TT`).
-  Todos os indicadores de cobertura (Real, `COBERTOS` e online por indicador) só contam PVs do roster da rota;
-  o filtro fica em `payload.py` (`_no_roster`, `online_no_roster`), então o front recebe tudo pronto.
-  O `QUALQUER` do online (revertido do Venda Zero, sem compra) não é filtrado. `validacao.py` reprova real > `baseKsTt`.
+- **KS TT: Real e Online filtrados pelos 4 segmentos; meta sem filtro** (`M.SEGMENTOS_KS_TT`).
+  A cobertura de todos os indicadores conta para a rota da venda, mesmo de cliente transferido ou desativado
+  (sem filtro de roster). Segmento: o da base (roster da rota); para quem saiu dela, `DS_SEGMENTO_Clien` da venda.
+  O filtro fica em `payload.py` (`_filtra_ks_tt`, `online_ks_tt`), então o front recebe tudo pronto. O `QUALQUER`
+  do online não é filtrado. `validacao.py` reprova KS TT com cliente da base de segmento não elegível; real > `baseKsTt`
+  só gera aviso (clientes que saíram da rota).
 - **Decisões aceitas** (diferem do arquivo antigo, montado à mão): tendência de volume linear por dias úteis
   (a fórmula antiga não está no modelo); visitas de hoje pelo campo `VISITA_HOJE` do SAP.
 - **Semana**: `SEMANA_NUM` conta a partir da 1ª segunda-feira do mês; dias antes dela são da última semana do mês anterior.

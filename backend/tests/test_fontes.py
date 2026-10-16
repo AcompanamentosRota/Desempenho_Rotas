@@ -53,11 +53,13 @@ def _cliente(pv, rota, nome, seg, dia, hoje, rede="", sv="Sv. G1.1"):
             CB.REDE_NOME: rede}
 
 
-def _venda(pv, ag, cob=0, on=0, vol=0.0, vol_on=0.0, meta_cli=None):
+def _venda(pv, ag, cob=0, on=0, vol=0.0, vol_on=0.0, meta_cli=None, seg=None):
     l = {CM.ROTA: "111", CM.CLIENTE: str(pv), CM.AGRUPADOR: ag, CM.COB_MES: cob, CM.COB_ONLINE: on,
          CM.COB_ONLINE_GERAL: 1 if (on or vol_on) else 0, CM.VOL_MES: vol, CM.VOL_ONLINE: vol_on, "_gc": "Gc. G1"}
     if meta_cli is not None:
         l[CM.META_VOLUME_CLIENTE] = meta_cli
+    if seg is not None:
+        l[CM.SEGMENTO] = seg
     return l
 
 
@@ -86,6 +88,8 @@ DADOS = {
         _venda(1015300, "Refrigerantes", vol=10.0, vol_on=2.5, meta_cli=20.0),
         _venda(1015300, "Cervejas 600ml Retornavel", cob=1),
         _venda(1015300, "Cervejas", cob=1, vol=4.0),
+        _venda(1200000, "Ks Tt", cob=1, seg=" Padarias "),     # saiu da base da rota (transferido/desativado)
+        _venda(1200001, "Ks Tt", cob=1, seg="Super"),
     ],
     "metas": [
         _meta("Cctm 2l Pet", cob="3", dia=0.4),
@@ -143,6 +147,12 @@ class TestFontes(unittest.TestCase):
         self.assertTrue(d["indicators"]["VOL CERVEJAS"]["unavailable"])     # venda sem meta
         vz = d["indicators"]["VENDAZERO"]
         self.assertEqual((vz["meta"], vz["real"], vz["revertidoHoje"], vz["oportunidadeHoje"]), (1, 2, 1, 0))
+
+    def test_ks_tt_pelo_segmento(self):
+        # Mercearia da base fica fora; quem saiu da base conta na rota da venda pelo segmento da venda
+        self.assertEqual(self.f.segmento_venda, {1200000: "Padarias", 1200001: "Super"})
+        self.assertEqual(self.p["COBERTOS"]["111"]["KS TT"], [1200000])
+        self.assertEqual(self.p["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]["KS TT"]["real"], 1)
 
     def test_online(self):
         self.assertEqual(self.o["updatedAt"], "2026-10-13T14:04:07")
