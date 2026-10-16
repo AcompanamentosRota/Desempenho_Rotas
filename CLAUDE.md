@@ -45,11 +45,16 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 
 ## GitHub e segurança
 
-- Repo `karenoliveiragyn2-stack/desempenho` (conta pessoal, público). Operar com a conta **LuanAlves2** (tem push, não admin);
-  `GH_TOKEN=$(gh auth token --user LuanAlves2) gh ...`. Secrets, Variables e a fonte do Pages só a dona do repo altera.
+- Repo `AcompanamentosRota/Desempenho_Rotas` (conta pessoal, público; remote `rotas`). Operar com a conta **LuanAlves2**
+  (tem push, não admin); `GH_TOKEN=$(gh auth token --user LuanAlves2) gh ...`, também para `git push`.
+  Secrets, Variables e a fonte do Pages só o dono do repo altera.
+- Repo anterior: `karenoliveiragyn2-stack/desempenho` (remote `upstream`; `origin` é o fork LuanAlves2/desempenho).
+  Lá o Pages já está em "GitHub Actions" e os dados se atualizam sozinhos (PRs #1-#3 aceitos até 15/10/2026).
 - Commits feitos com `GITHUB_TOKEN` não disparam workflows: `atualizar-dados.yml` chama `deploy-pages.yml` via `workflow_call`.
 - Nunca versionar `backend/.env`. Antes de commitar, verificar que nenhum arquivo contém o client ID/secret.
 - Push que mexe em `.github/workflows/` exige o escopo `workflow` no token do `gh` (LuanAlves2 já tem).
-- Pendências em 14/10/2026: PR #1 (`reestrutura-front-back` → `main`) aberto, aguardando a dona do repo rotacionar
-  o secret do OAuth Client, cadastrar Secrets/Variables, trocar Pages para "GitHub Actions" e parar uploads manuais
-  na raiz. Depois do merge: rodar "Atualizar dados" manualmente uma vez e conferir o site.
+- Pendências em 16/10/2026: PR `importa-desempenho` → `main` em `AcompanamentosRota/Desempenho_Rotas` aberto
+  (o `main` de lá só tinha o envio manual de 09/10, sem histórico em comum; o branch une os dois com `merge -s ours`).
+  Antes do merge o dono precisa cadastrar Secrets/Variables e trocar Pages para "GitHub Actions". Depois do merge:
+  rodar "Atualizar dados" manualmente uma vez, conferir o site e parar uploads manuais na raiz. Com o novo no ar,
+  desligar o "Atualizar dados" do repo anterior para não consultar o Datasphere em dobro.
