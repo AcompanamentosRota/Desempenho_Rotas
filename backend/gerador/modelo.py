@@ -70,11 +70,33 @@ def indicador_vendazero(meta: float | None, real: int, revertido_hoje: int, opor
 
 # ------------------------------------------------------------------ volume
 # Critério do SAC (por rota x macro de volume):
-#   Tendência   = Vol Real + Neg Restante (META_NEG de hoje até o fim do mês)
-#   % Tendência = Tendência / Meta NEG do mês; no ritmo (verde) com % >= 100
-#   Dif         = Vol Real - Meta NEG; Meta do dia = META_RECUPERAVEL_ROTA de hoje
+#   Meta        = META_VOLUME da rota (o SAC mostra a meta da rota no campo "Meta NEG")
+#   Neg Restante= Meta x (META_NEG de hoje ao fim do mês / META_NEG do mês): curva dos clientes na meta da rota
+#   Tendência   = Vol Real + Neg Restante; % Tendência = Tendência / Meta; no ritmo (verde) com % >= 100
+#   Dif         = Vol Real - Meta; Meta do dia = META_RECUPERAVEL_ROTA de hoje
 # Supervisão e gerência somam as rotas e recalculam o % (agrega_volume = agrega() do app.js).
-# No fechamento do mês: sem tendência e sem meta do dia; no ritmo com % realizado (Real / Meta NEG) >= 100.
+# No fechamento do mês: sem tendência e sem meta do dia; no ritmo com % realizado (Real / Meta) >= 100.
+CURVA, SEM_CURVA, SEM_META_ROTA = "curva", "sem_curva", "sem_meta_rota"
+
+
+def meta_e_restante(meta_rota: float | None, neg_mes: float | None, neg_restante: float | None,
+                    dias_restantes: int, dias_mes: int) -> tuple[float | None, float | None, str | None]:
+    """(meta, Neg Restante, caso) de uma rota x macro.
+
+    curva         META_VOLUME > 0 e META_NEG do mês > 0: Meta x restante / mês da META_NEG
+    sem_curva     META_VOLUME > 0 e META_NEG do mês = 0: Meta x dias úteis restantes (com hoje) / dias úteis
+    sem_meta_rota META_VOLUME ausente ou 0 e META_NEG > 0: meta e restante = somas de META_NEG
+    None          as duas zeradas: indicador indisponível
+    """
+    if meta_rota and meta_rota > 0:
+        if neg_mes and neg_mes > 0:
+            return meta_rota, meta_rota * (neg_restante or 0.0) / neg_mes, CURVA
+        return meta_rota, (meta_rota * dias_restantes / dias_mes if dias_mes else 0.0), SEM_CURVA
+    if neg_mes and neg_mes > 0:
+        return neg_mes, neg_restante or 0.0, SEM_META_ROTA
+    return None, None, None
+
+
 def volume_indisponivel() -> dict:
     return {"meta": None, "real": None, "dif": None, "metaDia": None, "pctTendencia": None,
             "onPace": None, "unavailable": True}
@@ -100,12 +122,12 @@ def indicador_volume(v: VolumeRota | None, cal: Calendario, sem_dado_hoje: bool 
         pct_real = _pct(v.real, v.meta)
         return {**base, "metaDia": None, "tendencia": None, "pctTendencia": None,
                 "onPace": pct_real is not None and pct_real >= 100, "unavailable": False,
-                "semDadoHoje": False, "negRestante": None, "metaRota": _r1_ou_none(v.meta_rota)}
+                "semDadoHoje": False, "negRestante": None, "metaNegClientes": _r1_ou_none(v.meta_neg_clientes)}
     tend = tendencia(v)
     pct_t = _pct(tend, v.meta)
     return {**base, "metaDia": _r1_ou_none(v.meta_dia_hoje), "tendencia": _r1(tend), "pctTendencia": pct_t,
             "onPace": pct_t is not None and pct_t >= 100, "unavailable": False, "semDadoHoje": sem_dado_hoje,
-            "negRestante": _r1(v.neg_restante or 0.0), "metaRota": _r1_ou_none(v.meta_rota)}
+            "negRestante": _r1(v.neg_restante or 0.0), "metaNegClientes": _r1_ou_none(v.meta_neg_clientes)}
 
 
 def agrega_volume(blocos: list[dict | None], fechamento: bool = False) -> dict:

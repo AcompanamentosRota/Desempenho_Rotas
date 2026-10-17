@@ -100,7 +100,7 @@ def main() -> int:
         arquivos["payload.json"] = payload
         anterior = None if args.rota else saida.ler(destino / "payload.json")
         e2, a2 = validacao.validar_payload(arquivos["payload.json"], anterior)
-        erros, avisos = erros + e2, avisos + a2
+        erros, avisos = erros + e2, avisos + a2 + f.avisos
     for a in avisos:
         log.warning("Aviso: %s", a)
     if erros:

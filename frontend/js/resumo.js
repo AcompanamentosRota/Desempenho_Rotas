@@ -5,7 +5,7 @@
    Novos Negócios. Colunas seguem o filtro (GC -> SVs, SV -> rotas, rota).
    Mesmas regras da Parcial: % = (Real ∪ Online)/Meta; ritmo = PACE_ONTEM;
    faltam = ceil(Meta*DIA_HOJE/TOTAL) - Real (sem descontar Online);
-   Volume verde por % Tendência >= 100 (tendência do SAC: só o faturado + Neg Restante; o online de hoje
+   Volume verde por % Tendência >= 100 sobre a meta da rota (tendência do SAC: só o faturado + Neg Restante; o online de hoje
    fica na coluna própria e não entra); no fechamento do mês, verde por % realizado >= 100, sem meta do dia.
    Online verde ao bater o número ao lado.
    SV.G2.5/SV.IT.3/SV.MO.3 (Neutraliza -- 251/I31/M31) entram no Volume;

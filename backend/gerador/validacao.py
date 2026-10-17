@@ -35,6 +35,22 @@ def _volume_real(rotas: dict) -> float:
     return sum((d.get("indicators", {}).get(k) or {}).get("real") or 0 for d in rotas.values() for k in M.INDICADORES_VOLUME)
 
 
+def _meta_nao_distribuida(p: dict) -> dict[str, dict[str, float]]:
+    """Por gerência e macro: meta da rota - soma de META_NEG dos clientes (só informativo)."""
+    out: dict[str, dict[str, float]] = {}
+    for gc, svs in p.get("DATA", {}).items():
+        difs = {}
+        for k in M.INDICADORES_VOLUME:
+            blocos = [d["indicators"].get(k) or {} for rotas in svs.values() for d in rotas.values()]
+            blocos = [b for b in blocos if not b.get("unavailable") and b.get("meta") is not None]
+            dif = sum(b["meta"] - (b.get("metaNegClientes") or 0) for b in blocos)
+            if abs(dif) >= 0.5:
+                difs[k] = dif
+        if difs:
+            out[gc] = difs
+    return out
+
+
 def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str], list[str]]:
     erros, avisos = [], []
     faltando = [k for k in CHAVES_PAYLOAD if k not in novo]
@@ -82,6 +98,10 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
         avisos.append(f"fechamento do mês: painel em {novo['MES_LABEL']}, sem tendência, meta do dia e Venda Zero")
     elif not novo["FONTES"].get("vendazero"):
         avisos.append("Venda Zero indisponível nesta execução (fonte de comodato falhou)")
+    nao_distribuida = _meta_nao_distribuida(novo)
+    for gc, difs in nao_distribuida.items():
+        avisos.append(f"{gc}: meta da rota não distribuída nos clientes (META_VOLUME - soma META_NEG): "
+                      + "; ".join(f"{M.LABELS[k]} {v:,.1f}" for k, v in difs.items()))
     if not novo["FECHAMENTO"] and vol and all(b.get("metaDia") is None for b in vol if not b["unavailable"]):
         avisos.append("meta do dia do volume indisponível (META_RECUPERAVEL_ROTA não veio): metaDia = null")
     if sum(novo["VISITAS_DIA"]["geral"].values()) == 0:

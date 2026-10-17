@@ -1,8 +1,9 @@
 """
 Tendência de volume pelo critério do SAC e modo fechamento do mês (sem rede).
 
-Tendência = Vol Real (NF Acertado / Meta Neg / Em Aberto) + Neg Restante (META_NEG de hoje ao fim do mês);
-% = Tendência / Meta NEG em todos os níveis; meta do dia = META_RECUPERAVEL_ROTA de hoje.
+Meta = META_VOLUME da rota; Neg Restante = Meta x (META_NEG de hoje ao fim do mês / META_NEG do mês);
+Tendência = Vol Real (NF Acertado / Meta Neg / Em Aberto) + Neg Restante; % = Tendência / Meta em todos os
+níveis; meta do dia = META_RECUPERAVEL_ROTA de hoje (DATA_MOVIMENTO só no $filter).
 Fechamento: do dia 1 até o fim do 1º dia útil e, depois, enquanto alguma gerência não tiver as metas
 do mês, o payload mostra o mês anterior fechado (sem tendência, sem meta do dia, sem Venda Zero).
 """
@@ -17,7 +18,7 @@ from gerador.online import montar_online
 from gerador.payload import montar_payload
 from gerador.tipos import Calendario, Cliente, Fontes, Online, VolumeRota
 from gerador.validacao import validar_payload
-from tests.test_fontes import CM, DADOS, ConsultaFalsa, _meta, _venda, _vr
+from tests.test_fontes import CM, DADOS, ConsultaFalsa, _dia, _meta, _venda, _vr
 
 CAL = Calendario(hoje=date(2026, 10, 13), total_dias_uteis=21, dia_hoje=8, dia_ontem=7, semana_num=2,
                  semana_tipo="par", dia_semana="Terça-feira", mes_label="Outubro/26")
@@ -26,17 +27,18 @@ CAL_FECHADO = calmod.fechado(date(2026, 11, 3), date(2026, 10, 1), 21)
 
 class TestTendenciaSac(unittest.TestCase):
     def test_rota(self):
-        b = modelo.indicador_volume(VolumeRota(meta=100.0, real=13.0, neg_restante=30.0, meta_dia_hoje=5.0,
-                                               meta_rota=120.0), CAL)
+        b = modelo.indicador_volume(VolumeRota(meta=120.0, real=13.0, neg_restante=36.0, meta_dia_hoje=5.0,
+                                               meta_neg_clientes=100.0), CAL)
         self.assertEqual((b["meta"], b["real"], b["dif"], b["negRestante"], b["tendencia"], b["pctTendencia"],
-                          b["onPace"], b["metaDia"], b["metaRota"]),
-                         (100.0, 13.0, -87.0, 30.0, 43.0, 43, False, 5.0, 120.0))
+                          b["onPace"], b["metaDia"], b["metaNegClientes"]),
+                         (120.0, 13.0, -107.0, 36.0, 49.0, 41, False, 5.0, 100.0))
+        self.assertNotIn("metaRota", b)
         b = modelo.indicador_volume(VolumeRota(meta=100.0, real=60.0, neg_restante=40.0, meta_dia_hoje=0.0), CAL)
         self.assertEqual((b["tendencia"], b["pctTendencia"], b["onPace"]), (100.0, 100, True))
-        self.assertIsNone(b["metaRota"])
+        self.assertIsNone(b["metaNegClientes"])
 
-    def test_sem_meta_neg_fica_indisponivel(self):
-        self.assertTrue(modelo.indicador_volume(VolumeRota(meta=None, real=5.0, meta_rota=10.0), CAL)["unavailable"])
+    def test_sem_meta_fica_indisponivel(self):
+        self.assertTrue(modelo.indicador_volume(VolumeRota(meta=None, real=5.0, meta_neg_clientes=0.0), CAL)["unavailable"])
 
     def test_meta_do_dia_ausente_fica_null(self):
         b = modelo.indicador_volume(VolumeRota(meta=100.0, real=10.0, neg_restante=5.0, meta_dia_hoje=None), CAL)
@@ -48,25 +50,123 @@ class TestTendenciaSac(unittest.TestCase):
         for s in ["Cancelada", "Devolvida", "", None, "Acertada"]:
             self.assertFalse(M.status_nf_real(s), s)
 
-    def test_neg_restante_e_meta_do_dia(self):
+    def test_neg_restante_por_dia_plano_b(self):
         hoje = date(2026, 10, 13)
         linhas = [("111", "VOL STILL", date(2026, 10, 12), 30.0), ("111", "VOL STILL", hoje, 20.0),
                   ("111", "VOL STILL", date(2026, 10, 31), 10.0), ("112", "VOL STILL", None, 7.0)]
         meta, restante = fontes.meta_neg_e_restante(linhas, hoje)
         self.assertEqual(meta, {"111": {"VOL STILL": 60.0}, "112": {"VOL STILL": 7.0}})
         self.assertEqual(restante, {"111": {"VOL STILL": 30.0}, "112": {"VOL STILL": 0.0}})
-        self.assertEqual(fontes.meta_do_dia(linhas, hoje), {"111": {"VOL STILL": 20.0}, "112": {"VOL STILL": 0.0}})
+
+
+class TestMetaDaRota(unittest.TestCase):
+    """Meta = META_VOLUME; Neg Restante = curva da META_NEG dos clientes aplicada à meta da rota."""
+
+    def test_curva_dos_clientes_na_meta_da_rota(self):
+        # AP / Refrigerantes em 17/10: meta da rota 398.000, META_NEG dos clientes 391.716,5
+        meta, rest, caso = modelo.meta_e_restante(398000.0, 391716.5, 0.5 * 391716.5, 9, 22)
+        self.assertEqual((meta, rest, caso), (398000.0, 199000.0, modelo.CURVA))
+
+    def test_sem_curva_usa_dias_uteis_com_hoje(self):
+        # 22 dias úteis, 13 já fechados: restam 9 contando hoje
+        meta, rest, caso = modelo.meta_e_restante(220.0, 0.0, 0.0, 9, 22)
+        self.assertEqual((meta, rest, caso), (220.0, 90.0, modelo.SEM_CURVA))
+        self.assertEqual(modelo.meta_e_restante(220.0, None, None, 9, 22)[2], modelo.SEM_CURVA)
+
+    def test_sem_meta_da_rota_usa_meta_neg(self):
+        self.assertEqual(modelo.meta_e_restante(None, 80.0, 20.0, 9, 22), (80.0, 20.0, modelo.SEM_META_ROTA))
+        self.assertEqual(modelo.meta_e_restante(0.0, 80.0, 20.0, 9, 22), (80.0, 20.0, modelo.SEM_META_ROTA))
+
+    def test_as_duas_zeradas_indisponivel(self):
+        self.assertEqual(modelo.meta_e_restante(0.0, 0.0, 0.0, 9, 22), (None, None, None))
+        self.assertEqual(modelo.meta_e_restante(None, None, None, 9, 22), (None, None, None))
+
+    def test_dif_e_percentual_sobre_a_meta_da_rota(self):
+        meta, rest, _ = modelo.meta_e_restante(490003.0, 480000.0, 480000.0 * 281273 / 490003, 9, 22)
+        b = modelo.indicador_volume(VolumeRota(meta=meta, real=125590.0, neg_restante=rest,
+                                               meta_neg_clientes=480000.0), CAL)
+        self.assertEqual((b["meta"], b["dif"], b["tendencia"], b["pctTendencia"], b["metaNegClientes"]),
+                         (490003.0, -364413.0, 406863.0, 83, 480000.0))
+
+    def test_casos_limite_na_montagem_e_no_aviso(self):
+        d = copy.deepcopy(DADOS)
+        d["metas"] = DADOS["metas"] + [_meta("Still", vol="44")]                 # sem curva
+        d["meta_neg"] = DADOS["meta_neg"] + [_dia("Agua Mineral", "2026-10-01", CM.META_NEG, 8.0),
+                                             _dia("Agua Mineral", "2026-10-20", CM.META_NEG, 2.0)]   # sem meta da rota
+        f = fontes.carregar(ConsultaFalsa(d), datetime(2026, 10, 13, 9, 0))
+        ind = montar_payload(f)["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]
+        # 21 dias úteis, 7 fechados: restam 14 contando hoje -> 44 x 14/21
+        self.assertEqual((ind["VOL STILL"]["meta"], ind["VOL STILL"]["negRestante"]), (44.0, 29.3))
+        self.assertIsNone(ind["VOL STILL"]["metaNegClientes"])
+        self.assertEqual((ind["VOL AGUA MINERAL"]["meta"], ind["VOL AGUA MINERAL"]["negRestante"]), (10.0, 2.0))
+        self.assertTrue(ind["VOL CERVEJAS"]["unavailable"])                     # sem nenhuma das metas
+        self.assertTrue(any("dias úteis" in a and "111/Still" in a for a in f.avisos), f.avisos)
+        self.assertTrue(any("sem META_VOLUME" in a and "111/Água Mineral" in a for a in f.avisos), f.avisos)
+
+    def test_aviso_de_meta_nao_distribuida_por_gerencia(self):
+        p = montar_payload(fontes.carregar(ConsultaFalsa(DADOS), datetime(2026, 10, 13, 9, 0)))
+        erros, avisos = validar_payload(p)
+        self.assertEqual(erros, [])
+        self.assertTrue(any(a.startswith("G1: meta da rota não distribuída") and "Refrigerantes 20.0" in a
+                            for a in avisos), avisos)
+
+
+class TestFiltrosDeData(unittest.TestCase):
+    def _cons(self, tipo="Edm.Date", amostra="2026-10-01"):
+        return ConsultaFalsa({"vendas": [dict(_venda(1, "Refrigerantes"), **{CM.DATA: amostra})]}, tipo_data=tipo)
+
+    def test_hoje_ate_o_ultimo_dia(self):
+        c = self._cons()
+        self.assertEqual(fontes.filtro_restante(c, date(2026, 10, 13)),
+                         "DATA_MOVIMENTO ge 2026-10-13 and DATA_MOVIMENTO le 2026-10-31")
+        self.assertEqual(fontes.filtro_hoje(c, date(2026, 10, 13)), "DATA_MOVIMENTO eq 2026-10-13")
+
+    def test_ultimo_dia_do_mes(self):
+        self.assertEqual(fontes.filtro_restante(self._cons(), date(2026, 10, 31)),
+                         "DATA_MOVIMENTO ge 2026-10-31 and DATA_MOVIMENTO le 2026-10-31")
+        self.assertEqual(fontes.ultimo_dia(date(2026, 2, 3)), date(2026, 2, 28))
 
     def test_dia_nao_util(self):
-        sabado = date(2026, 10, 17)
-        linhas = [("111", "VOL STILL", date(2026, 10, 16), 30.0), ("111", "VOL STILL", date(2026, 10, 19), 20.0),
-                  ("111", "VOL STILL", date(2026, 10, 30), 10.0)]
-        meta, restante = fontes.meta_neg_e_restante(linhas, sabado)
-        self.assertEqual((meta["111"]["VOL STILL"], restante["111"]["VOL STILL"]), (60.0, 30.0))
-        dia = fontes.meta_do_dia(linhas, sabado)    # sábado: a medida não traz linha hoje -> 0, não é erro
-        self.assertEqual(dia, {"111": {"VOL STILL": 0.0}})
-        b = modelo.indicador_volume(VolumeRota(meta=60.0, real=12.0, neg_restante=30.0, meta_dia_hoje=0.0), CAL)
-        self.assertEqual((b["metaDia"], b["tendencia"], b["pctTendencia"]), (0.0, 42.0, 70))
+        # sábado: o restante começa no próprio sábado (sem META_NEG nele, não muda a soma)
+        self.assertEqual(fontes.filtro_restante(self._cons(), date(2026, 10, 17)),
+                         "DATA_MOVIMENTO ge 2026-10-17 and DATA_MOVIMENTO le 2026-10-31")
+        d = copy.deepcopy(DADOS)
+        f = fontes.carregar(ConsultaFalsa(d), datetime(2026, 10, 17, 9, 0))
+        v = montar_payload(f)["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]["VOL REFRIGERANTES"]
+        self.assertEqual((v["negRestante"], v["metaDia"]), (12.0, 0.0))      # 120 x 10/100; sábado sem meta do dia
+
+    def test_virada_de_ano(self):
+        self.assertEqual(fontes.filtro_restante(self._cons(), date(2026, 12, 15)),
+                         "DATA_MOVIMENTO ge 2026-12-15 and DATA_MOVIMENTO le 2026-12-31")
+
+    def test_tipos_de_coluna(self):
+        self.assertEqual(fontes.filtro_hoje(self._cons("Edm.DateTimeOffset"), date(2026, 10, 13)),
+                         "DATA_MOVIMENTO eq 2026-10-13T00:00:00Z")
+        self.assertEqual(fontes.filtro_hoje(self._cons("Edm.String", "20261001"), date(2026, 10, 13)),
+                         "DATA_MOVIMENTO eq '20261013'")
+        self.assertEqual(fontes.filtro_hoje(self._cons(None, "2026-10-01"), date(2026, 10, 13)),
+                         "DATA_MOVIMENTO eq '2026-10-13'")
+
+    def test_restante_cai_na_consulta_por_dia_se_o_filtro_falhar(self):
+        cons = ConsultaFalsa(DADOS, falha=lambda sel, f: CM.META_NEG in sel and " ge " in (f or ""))
+        v = montar_payload(fontes.carregar(cons, datetime(2026, 10, 13, 9, 0)))["DATA"]["G1"]["SV.G1.1"]["111"]
+        self.assertEqual(v["indicators"]["VOL REFRIGERANTES"]["negRestante"], 36.0)
+        self.assertTrue(any(CM.DATA in c[1] for c in cons.chamadas))
+
+
+class TestMetaDoDiaPorGerencia(unittest.TestCase):
+    def test_repete_por_gerencia_quando_a_consulta_inteira_falha(self):
+        cons = ConsultaFalsa(DADOS, falha=lambda sel, f: CM.META_RECUPERAVEL in sel and CM.GC not in (f or ""))
+        v = montar_payload(fontes.carregar(cons, datetime(2026, 10, 13, 9, 0)))["DATA"]["G1"]["SV.G1.1"]["111"]
+        self.assertEqual(v["indicators"]["VOL REFRIGERANTES"]["metaDia"], 5.0)
+        dia = [c for c in cons.chamadas if CM.META_RECUPERAVEL in c[1]]
+        self.assertTrue(any(f"{CM.GC} eq 'Gc. G1'" in c[2] for c in dia))
+
+    def test_se_tudo_falha_fica_null_com_aviso(self):
+        cons = ConsultaFalsa(DADOS, falha=lambda sel, f: CM.META_RECUPERAVEL in sel)
+        p = montar_payload(fontes.carregar(cons, datetime(2026, 10, 13, 9, 0)))
+        self.assertIsNone(p["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]["VOL REFRIGERANTES"]["metaDia"])
+        self.assertTrue(any("meta do dia" in a for a in validar_payload(p)[1]))
 
 
 class TestAgregacao(unittest.TestCase):
@@ -235,9 +335,11 @@ class TestPayloadFechamento(unittest.TestCase):
 
     def test_volume_sem_tendencia_nem_meta_do_dia(self):
         v = self.d["indicators"]["VOL REFRIGERANTES"]
+        # % realizado sobre a meta da rota (META_VOLUME de outubro): 13 / 120
         self.assertEqual((v["meta"], v["real"], v["dif"], v["tendencia"], v["pctTendencia"], v["metaDia"],
-                          v["negRestante"], v["onPace"], v["unavailable"]),
-                         (100.0, 13.0, -87.0, None, None, None, None, False, False))
+                          v["negRestante"], v["onPace"], v["unavailable"], v["metaNegClientes"]),
+                         (120.0, 13.0, -107.0, None, None, None, None, False, False, 100.0))
+        self.assertFalse([c for c in self.cons.chamadas if CM.META_NEG in c[1] and CM.DATA in (c[2] or "")])
 
     def test_cobertura_do_mes_anterior(self):
         cctm = self.d["indicators"]["CCTM 2L PET"]
@@ -287,7 +389,7 @@ class TestMetaDoDiaAusente(unittest.TestCase):
         p = montar_payload(fontes.carregar(SemRecuperavel(DADOS), datetime(2026, 10, 13, 9, 0)))
         v = p["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]["VOL REFRIGERANTES"]
         self.assertIsNone(v["metaDia"])
-        self.assertEqual(v["tendencia"], 43.0)
+        self.assertEqual(v["tendencia"], 49.0)
         _, avisos = validar_payload(p)
         self.assertTrue(any("meta do dia" in a for a in avisos), avisos)
 

@@ -53,13 +53,13 @@ class Cliente:
 class VolumeRota:
     """Volume de um grupo (VOL ...) em uma rota (critério do SAC).
 
-    Tendência = real + neg_restante; % tendência = tendência / meta (Meta NEG).
+    Tendência = real + neg_restante; % tendência = tendência / meta (meta da rota).
     """
-    meta: float | None             # Meta NEG do mês (soma de META_NEG); None = indicador indisponível
+    meta: float | None             # META_VOLUME da rota (modelo.meta_e_restante); None = indicador indisponível
     real: float = 0.0              # Vol Real: faturado no mês com NF_STATUS em M.STATUS_NF_REAL
-    neg_restante: float | None = None      # META_NEG de hoje (inclusive) ao fim do mês; None no fechamento
+    neg_restante: float | None = None      # meta x fração restante da curva META_NEG; None no fechamento
     meta_dia_hoje: float | None = None     # META_RECUPERAVEL_ROTA de hoje; None = medida não veio
-    meta_rota: float | None = None         # META_VOLUME da rota: só conferência (não entra em conta)
+    meta_neg_clientes: float | None = None  # soma de META_NEG do mês: só conferência (não entra em conta)
 
 
 @dataclass
@@ -107,3 +107,5 @@ class Fontes:
     comodato_ativos: dict[str, dict[int, int]] = field(default_factory=dict)
     # pv -> segmento na fonte de vendas (KS TT de cliente transferido ou desativado, fora do roster da rota)
     segmento_venda: dict[int, str] = field(default_factory=dict)
+    # avisos da montagem (ex.: rota x macro sem curva de META_NEG), somados aos da validação no gerar.py
+    avisos: list[str] = field(default_factory=list)
