@@ -19,7 +19,10 @@ class Calendario:
     semana_num: int
     semana_tipo: str       # "par" | "ímpar"
     dia_semana: str        # "Terça-feira"
-    mes_label: str         # "Outubro/26"
+    mes_label: str         # "Outubro/26" (mês de referência do payload)
+    # Fechamento do mês: o payload mostra o mês anterior (ref) já fechado, sem tendência nem meta do dia
+    fechamento: bool = False
+    ref: date | None = None    # 1º dia do mês de referência; None = mês de hoje
 
     @property
     def pace_ontem_pct(self) -> int:
@@ -27,7 +30,8 @@ class Calendario:
 
     @property
     def anomes(self) -> str:
-        return self.hoje.strftime("%Y%m")
+        """ANOMES_REF do mês de referência (o anterior durante o fechamento)."""
+        return (self.ref or self.hoje).strftime("%Y%m")
 
 
 @dataclass(frozen=True)
@@ -47,11 +51,15 @@ class Cliente:
 
 @dataclass
 class VolumeRota:
-    """Volume de um grupo (VOL ...) em uma rota."""
-    meta: float | None             # meta do mês (None = sem meta -> indicador indisponível)
-    real: float = 0.0              # faturado no mês até ontem
-    meta_acum_ontem: float | None = None   # meta acumulada até ontem; None = projeção linear por dias úteis
-    meta_dia_hoje: float | None = None     # meta de hoje (META_DIA); None = (meta - real) / dias restantes
+    """Volume de um grupo (VOL ...) em uma rota (critério do SAC).
+
+    Tendência = real + neg_restante; % tendência = tendência / meta (Meta NEG).
+    """
+    meta: float | None             # Meta NEG do mês (soma de META_NEG); None = indicador indisponível
+    real: float = 0.0              # Vol Real: faturado no mês com NF_STATUS em M.STATUS_NF_REAL
+    neg_restante: float | None = None      # META_NEG de hoje (inclusive) ao fim do mês; None no fechamento
+    meta_dia_hoje: float | None = None     # META_RECUPERAVEL_ROTA de hoje; None = medida não veio
+    meta_rota: float | None = None         # META_VOLUME da rota: só conferência (não entra em conta)
 
 
 @dataclass
@@ -73,6 +81,8 @@ class Online:
     clientes: dict[str, dict[str, set[int]]] = field(default_factory=dict)   # rota -> indicador -> pv
     qualquer: dict[str, set[int]] = field(default_factory=dict)              # rota -> pv com qualquer compra hoje
     volume: dict[str, dict[str, float]] = field(default_factory=dict)        # rota -> VOL -> volume hoje
+    # rota -> pv -> VOL -> volume hoje (somado ao Real da barra por cliente no front, fora do fechamento)
+    volume_cliente: dict[str, dict[int, dict[str, float]]] = field(default_factory=dict)
     fechamento_mes: str | None = None
 
 
@@ -88,7 +98,7 @@ class Fontes:
     metas: dict[str, dict[str, float]]
     # rota -> VOL -> VolumeRota
     volume: dict[str, dict[str, VolumeRota]]
-    # rota -> pv -> VOL -> (meta, real) do mês
+    # rota -> pv -> VOL -> (Meta NEG, Vol Real) do mês
     volume_cliente: dict[str, dict[int, dict[str, tuple[float, float]]]]
     online: Online
     # Venda Zero (None = fonte indisponível nesta execução)

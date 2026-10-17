@@ -50,8 +50,11 @@ class ColMeta:
     META_AGRUPADOR = "AGRUPADOR_PRODU_Chave_Meta_SAP"
     META_COBERTURA = "META_COBERTURA_Chave_Meta_SAP"   # meta de cobertura (nº de clientes), ICS e Novos Negócios
     META_VOLUME = "META_VOLUME_Chave_Meta_SAP"         # meta de volume do mês
-    META_NEG = "META_NEG"                              # meta de volume distribuída (por cliente)
-    META_DIA = "META_DIA"                              # meta de volume de hoje (somada por rota x agrupador)
+    META_NEG = "META_NEG"                              # meta de volume distribuída (por cliente e por dia):
+    #                                                    denominador do volume em todos os níveis (critério do SAC)
+    META_DIA = "META_DIA"                              # meta do dia ANTIGA: o gerador não usa (só a conferência)
+    META_RECUPERAVEL = "META_RECUPERAVEL_ROTA"         # meta do dia do volume (DATA_MOVIMENTO = hoje)
+    NF_STATUS = "NF_STATUS_Nota_Fiscal"                # Vol Real só com os status de M.STATUS_NF_REAL
     CALENDARIO = "CALENDARIO"
     # meta de volume por cliente (barra de status por cliente na aba Volume): META_NEG por cliente x agrupador
     META_VOLUME_CLIENTE = "META_NEG"
@@ -122,6 +125,9 @@ FILTRO_PEDIDOS_ONLINE = f"({ColMeta.FONTE} ne 'WF Online' or {ColMeta.SITUACAO_P
 FILTRO_COMODATO = ("STATUS_COMODATO eq 'Concluído(Contrato)' and AGRUPADOR_EQPTO eq 'Total Ko' "
                    "and TIPO_QUIPAMENTO_Equipame eq 'Foutain - Equip. de Mercado'")
 TIPO_EQUIPAMENTO_EXIBICAO = "Geladeira"
+# Vol Real do volume (critério do SAC): FX_VOL_PADRAO_FAT do mês só com estes NF_STATUS_Nota_Fiscal.
+# Comparação por normalizar() (sem acento e caixa); grafia exata: relatório do conferir_tendencia.py.
+STATUS_NF_REAL = ["Acertado", "Meta Neg", "Em Aberto"]
 GIRO_ZERO = {"GIRO ZERO"}   # valores de GIRO_STATUS_MES_ATUAL que contam como Venda Zero
 VALORES_SIM = {"S", "SIM", "1", "X", "TRUE", "Y", "YES"}
 # Meta de Novos Negócios (Campari, Dreher, Perfetti, Aperol) vem de META_COBERTURA, como o ICS
@@ -265,6 +271,15 @@ def codigo_gc(valor: object) -> str:
 
 def rota_do_painel(rota: str) -> bool:
     return bool(rota) and not rota.upper().startswith(ROTAS_IGNORAR_PREFIXOS)
+
+
+def status_nf_real(valor: object) -> bool:
+    return normalizar(valor) in {normalizar(s) for s in STATUS_NF_REAL}
+
+
+def gc_origem(gc: str) -> str:
+    """Código do painel -> gerência de origem: 'IT'/'MO' -> 'IT_MO' (vêm juntas na fonte), 'G1' -> 'G1'."""
+    return "IT_MO" if gc in ("IT", "MO") else gc
 
 
 def eh_sim(valor: object) -> bool:

@@ -3,6 +3,7 @@ fontes.carregar() com um Datasphere simulado: confere a normalização das linha
 (códigos, agrupadores, filtros, online, comodato) e a montagem final, sem rede.
 Os valores de texto imitam o que a fonte devolve de verdade ('Gc. G1', 'Sv. G1.1', 'Cctm 2l Pet').
 """
+import re
 import unittest
 from datetime import datetime
 
@@ -28,15 +29,27 @@ class ConsultaFalsa:
         return {M.OBJ_META: _todas(CM), M.OBJ_BASE_CLIENTE: _todas(CB),
                 M.OBJ_COMODATO: _todas(CO), M.OBJ_CALENDARIO: _todas(CC)}[objeto]
 
+    def _do_mes(self, chave, filtro):
+        """dados[chave] pode ser {anomes: linhas} (fechamento) ou só as linhas (mês de hoje)."""
+        linhas = self.dados.get(chave, [])
+        if isinstance(linhas, dict):
+            anomes = re.search(r"ANOMES_REF(?:_Chave_Meta_SAP)? eq '(\d{6})'", filtro or "").group(1)
+            linhas = linhas.get(anomes, [])
+        return linhas
+
     def linhas(self, objeto, select, filtro=None, top=None, orderby=None):
         self.chamadas.append((objeto, tuple(select), filtro))
         if objeto == M.OBJ_META:
-            if CM.META_COBERTURA in select or CM.META_DIA in select:
-                return self.dados["metas"]
-            linhas = self.dados["vendas"]
+            if CM.DATA in select and CM.META_NEG in select:
+                return self._do_mes("meta_neg", filtro)
+            if CM.META_RECUPERAVEL in select:
+                return self._do_mes("meta_dia", filtro)
+            if CM.META_COBERTURA in select:
+                return self._do_mes("metas", filtro)
+            linhas = self._do_mes("vol_real" if CM.NF_STATUS in select else "vendas", filtro)
             if filtro and f"{CM.GC} eq " in filtro:
                 gc = filtro.split(f"{CM.GC} eq '")[1].split("'")[0]
-                linhas = [l for l in linhas if l["_gc"] == gc]
+                linhas = [l for l in linhas if l.get("_gc", "Gc. G1") == gc]
             return [{k: v for k, v in l.items() if k in select} for l in linhas]
         if objeto == M.OBJ_COMODATO:
             return self.dados["meta_vz"] if CO.META_VZ_GC in select else self.dados["comodato"]
@@ -63,8 +76,18 @@ def _venda(pv, ag, cob=0, on=0, vol=0.0, vol_on=0.0, meta_cli=None, seg=None):
     return l
 
 
-def _meta(ag, cob=None, vol=None, dia=0.0, rota="111"):
-    return {CM.META_ROTA: rota, CM.META_AGRUPADOR: ag, CM.META_COBERTURA: cob, CM.META_VOLUME: vol, CM.META_DIA: dia}
+def _meta(ag, cob=None, vol=None, rota="111"):
+    return {CM.META_ROTA: rota, CM.META_AGRUPADOR: ag, CM.META_COBERTURA: cob, CM.META_VOLUME: vol}
+
+
+def _vr(pv, ag, status, vol, rota="111", gc="Gc. G1"):
+    """Linha do Vol Real: rota x cliente x agrupador x NF_STATUS."""
+    return {CM.ROTA: rota, CM.CLIENTE: str(pv), CM.AGRUPADOR: ag, CM.NF_STATUS: status, CM.VOL_MES: vol, "_gc": gc}
+
+
+def _dia(ag, data, medida, valor, rota="111"):
+    """Linha rota x agrupador x DATA_MOVIMENTO (META_NEG ou META_RECUPERAVEL_ROTA)."""
+    return {CM.ROTA: rota, CM.AGRUPADOR: ag, CM.DATA: data, medida: valor}
 
 
 def _equip(pv, nome, dia, hoje, equip, giro, meta, vol):
@@ -86,15 +109,36 @@ DADOS = {
         _venda(1007382, "Cctm 2l Pet", cob=1),
         _venda(1011537, "Ks Tt", cob=1, on=1),
         _venda(1015300, "Refrigerantes", vol=10.0, vol_on=2.5, meta_cli=20.0),
+        _venda(1011537, "Refrigerantes", vol_on=1.25),                     # online sem meta do cliente
         _venda(1015300, "Cervejas 600ml Retornavel", cob=1),
         _venda(1015300, "Cervejas", cob=1, vol=4.0),
         _venda(1200000, "Ks Tt", cob=1, seg=" Padarias "),     # saiu da base da rota (transferido/desativado)
         _venda(1200001, "Ks Tt", cob=1, seg="Super"),
     ],
+    # Vol Real: só Acertado / Meta Neg / Em Aberto, com qualquer grafia; Cancelada fica fora
+    "vol_real": [
+        _vr(1015300, "Refrigerantes", "Acertado", 6.0),
+        _vr(1015300, "Refrigerantes", " EM  ABERTO ", 4.0),
+        _vr(1015300, "Refrigerantes", "Cancelada", 50.0),
+        _vr(1015300, "Cervejas", "Meta NEG", 4.0),
+        _vr(1200000, "Refrigerantes", "acertado", 3.0),                 # saiu da base: conta na rota
+    ],
+    # Meta NEG por dia (hoje = 13/10): mês = 100, restante (13/10 em diante) = 30
+    "meta_neg": [
+        _dia("Refrigerantes", "2026-10-01", CM.META_NEG, 40.0),
+        _dia("Refrigerantes", "2026-10-12", CM.META_NEG, 30.0),
+        _dia("Refrigerantes", "2026-10-13", CM.META_NEG, 20.0),
+        _dia("Refrigerantes", "20261020", CM.META_NEG, 10.0),
+        _dia("Refrigerantes", "2026-10-13", CM.META_NEG, 1.0, rota="999"),   # rota fora do painel
+    ],
+    "meta_dia": [
+        _dia("Refrigerantes", "2026-10-13", CM.META_RECUPERAVEL, 5.0),
+        _dia("Refrigerantes", "2026-10-14", CM.META_RECUPERAVEL, 7.0),
+    ],
     "metas": [
-        _meta("Cctm 2l Pet", cob="3", dia=0.4),
+        _meta("Cctm 2l Pet", cob="3"),
         _meta("Ks Tt", cob="2"),
-        _meta("Refrigerantes", vol="100.0", dia=5.0),
+        _meta("Refrigerantes", vol="120.0"),
         _meta("Refrigerantes", vol="1", rota="999"),     # rota fora do painel
     ] + [_meta(v, cob="4") for k, v in M.AGRUPADORES_COBERTURA.items()
          if k not in ("CCTM 2L PET", "KS TT", "CERVEJAS 600ML RETORNAVEL")],
@@ -142,9 +186,12 @@ class TestFontes(unittest.TestCase):
         self.assertTrue(d["indicators"]["CERVEJAS 600ML RETORNAVEL"]["unavailable"])  # sem meta
         self.assertEqual(d["indicators"]["CERVEJAS"]["real"], 1)           # 'Cervejas' também é cobertura
         vol = d["indicators"]["VOL REFRIGERANTES"]
-        # projeção linear: 10 / 7 dias úteis fechados x 21; meta do dia = META_DIA
-        self.assertEqual((vol["meta"], vol["real"], vol["metaDia"], vol["tendencia"]), (100.0, 10.0, 5.0, 30.0))
-        self.assertTrue(d["indicators"]["VOL CERVEJAS"]["unavailable"])     # venda sem meta
+        # critério do SAC: Vol Real 13 (6 + 4 + 3, sem a Cancelada), Neg Restante 30, Meta NEG 100
+        self.assertEqual((vol["meta"], vol["real"], vol["dif"], vol["negRestante"], vol["tendencia"],
+                          vol["pctTendencia"], vol["onPace"], vol["metaDia"], vol["metaRota"]),
+                         (100.0, 13.0, -87.0, 30.0, 43.0, 43, False, 5.0, 120.0))
+        self.assertTrue(d["indicators"]["VOL CERVEJAS"]["unavailable"])     # venda sem Meta NEG
+        self.assertFalse(self.p["FECHAMENTO"])
         vz = d["indicators"]["VENDAZERO"]
         self.assertEqual((vz["meta"], vz["real"], vz["revertidoHoje"], vz["oportunidadeHoje"]), (1, 2, 1, 0))
 
@@ -158,11 +205,16 @@ class TestFontes(unittest.TestCase):
         self.assertEqual(self.o["updatedAt"], "2026-10-13T14:04:07")
         self.assertEqual(self.o["rotas"], {"111": {"KS TT": 1}})
         self.assertEqual(self.o["clientes"]["111"]["QUALQUER"], [1011537, 1015300])
-        self.assertEqual(self.o["volume"], {"111": {"VOL REFRIGERANTES": 2.5}})
+        self.assertEqual(self.o["volume"], {"111": {"VOL REFRIGERANTES": 3.75}})
+        self.assertEqual(self.o["volumeCliente"], {"111": {"1011537": {"VOL REFRIGERANTES": 1.25},
+                                                           "1015300": {"VOL REFRIGERANTES": 2.5}}})
+        self.assertNotIn("fechamentoMes", self.o)
 
     def test_volume_cliente_e_comodato(self):
         vc = self.p["VOLUME_CLIENTE"]["111"]
+        # Meta NEG do cliente 20, Vol Real do cliente 10 (o online de hoje é somado no front)
         self.assertEqual(vc["1015300"][0], [20.0, 10.0, 50, 1])
+        self.assertIsNone(vc["1015300"][1])                                # Cervejas: real sem meta
         self.assertIsNone(vc["1007382"][0])
         self.assertEqual(self.p["COMODATO_ATIVOS"]["111"], {"1015300": 1})
         vz = self.p["VENDAZERO_CLIENTES"]["111"]
@@ -182,6 +234,14 @@ class TestFontes(unittest.TestCase):
         self.assertNotIn("Destilados", vendas[0][2])
         comodato = [c for c in self.cons.chamadas if c[0] == M.OBJ_COMODATO][0][2]
         self.assertIn("Concluído(Contrato)", comodato)
+        # volume agregado no servidor: Vol Real sem DATA_MOVIMENTO; dia só por rota (sem cliente); sem META_DIA
+        meta = [c for c in self.cons.chamadas if c[0] == M.OBJ_META]
+        vr = [c for c in meta if CM.NF_STATUS in c[1]]
+        self.assertTrue(vr and all(CM.DATA not in c[1] and "Cctm" not in c[2] for c in vr))
+        por_dia = [c for c in meta if CM.DATA in c[1]]
+        self.assertEqual(len(por_dia), 2)
+        self.assertTrue(all(CM.CLIENTE not in c[1] for c in por_dia))
+        self.assertFalse([c for c in meta if CM.META_DIA in c[1]])
 
     def test_valida(self):
         self.assertEqual(validar_online(self.o)[0], [])

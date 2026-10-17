@@ -5,7 +5,9 @@
    Novos Negócios. Colunas seguem o filtro (GC -> SVs, SV -> rotas, rota).
    Mesmas regras da Parcial: % = (Real ∪ Online)/Meta; ritmo = PACE_ONTEM;
    faltam = ceil(Meta*DIA_HOJE/TOTAL) - Real (sem descontar Online);
-   Volume verde por % Tendência >= 100; Online verde ao bater o número ao lado.
+   Volume verde por % Tendência >= 100 (tendência do SAC: só o faturado + Neg Restante; o online de hoje
+   fica na coluna própria e não entra); no fechamento do mês, verde por % realizado >= 100, sem meta do dia.
+   Online verde ao bater o número ao lado.
    SV.G2.5/SV.IT.3/SV.MO.3 (Neutraliza -- 251/I31/M31) entram no Volume;
    em ICS/NN a coluna some (sem meta). SV.IT.3/SV.MO.3 adicionadas 05/10/26,
    mesmo tratamento da SV.G2.5 original.
@@ -35,8 +37,9 @@ const RS = (()=>{
       });
       VOL_ORD.forEach(k=>{
         const b = d.indicators[k]; if(!b || b.unavailable) return;
-        const t = s.v[k] || (s.v[k] = {meta:0, tend:0, mdia:0, onl:0, sem:false});
-        t.meta += b.meta||0; t.tend += b.tendencia||0; t.mdia += b.metaDia||0;
+        const t = s.v[k] || (s.v[k] = {meta:0, real:0, tend:0, mdia:null, onl:0, sem:false});
+        t.meta += b.meta||0; t.real += b.real||0; t.tend += b.tendencia||0;
+        if(b.metaDia!=null) t.mdia = (t.mdia||0) + b.metaDia;
         t.onl += ((OV[r]||{})[k])||0; if(b.semDadoHoje) t.sem = true;
       });
       const z = d.indicators.VENDAZERO || {};
@@ -53,8 +56,9 @@ const RS = (()=>{
   const seta = ok => `<span class="${ok?'rs-ok':'rs-bad'}">${ok?'▲':'▼'}</span>`;
   function celVol(x){
     if(!x || x.indisp || !x.meta) return VAZIO;
-    const p = x.tend/x.meta*100, ok = p>=100, onOk = x.onl >= x.mdia;
-    return `<div class="rs-cel"><div class="rs-par">${kpi('M.dia', n(x.mdia), x.mdia<=0?'rs-meta0':'')}${kpi('Online', n(x.onl), 'rs-on '+(onOk?'rs-ok':'rs-bad'))}</div><span class="rs-sec">${seta(ok)} ${Math.round(p)}% tend.</span></div>`;
+    const fech = !!P.FECHAMENTO, semMd = x.mdia==null;
+    const p = (fech ? x.real : x.tend)/x.meta*100, ok = p>=100, onOk = !semMd && x.onl >= x.mdia;
+    return `<div class="rs-cel"><div class="rs-par">${kpi('M.dia', semMd?'—':n(x.mdia), !semMd && x.mdia<=0?'rs-meta0':'')}${kpi('Online', n(x.onl), semMd ? '' : 'rs-on '+(onOk?'rs-ok':'rs-bad'))}</div><span class="rs-sec">${seta(ok)} ${Math.round(p)}% ${fech?'real':'tend.'}</span></div>`;
   }
   function celInd(x){
     if(!x || !x.meta) return {ok:null, h:VAZIO};
@@ -137,7 +141,7 @@ const RS = (()=>{
           <div class="rs-sub">${esc(sub)} · ${esc(P.DIA_SEMANA)} ${hoje} · dia útil ${P.DIA_HOJE}/${P.TOTAL_DIAS_UTEIS}</div></div>
         <div class="rs-tags">${tag}<span class="rs-tag rs-tag-rit">Objetivo do ritmo hoje: ${Math.round(P.DIA_HOJE/P.TOTAL_DIAS_UTEIS*100)}%</span></div></div>
       ${pior}
-      ${blocos.vol?`<div class="rs-bloco"><h3>Volume — tendência do mês <small>Online verde ao bater a Meta dia</small></h3>${volT}</div>`:''}
+      ${blocos.vol?`<div class="rs-bloco"><h3>Volume — ${P.FECHAMENTO?'realizado do mês (fechamento)':'tendência do mês'} <small>${P.FECHAMENTO?'Online de hoje, sem meta do dia':'Online verde ao bater a Meta dia'}</small></h3>${volT}</div>`:''}
       ${blocos.ics?`<div class="rs-bloco"><h3>Coberturas — ICS GC <small>Online verde ao bater o faltam</small></h3>${ics.html}</div>`:''}
       ${blocos.nov?`<div class="rs-bloco"><h3>Novos Negócios <small>Online verde ao bater o faltam</small></h3>${nov.html}</div>`:''}
       <div class="rs-rod">${esc(CONFIG.CREDITOS)}</div>`;

@@ -1,9 +1,10 @@
 """
 modelo.py — Contas de cada indicador (funções puras, sem rede).
 
-As fórmulas reproduzem exatamente o payload.json que era publicado à mão
-(conferido em todas as 98 rotas de out/26). O front refaz as mesmas contas ao
-somar rotas, então qualquer mudança aqui precisa ser espelhada em frontend/js/app.js.
+As fórmulas de cobertura reproduzem o payload.json que era publicado à mão (conferido em
+todas as 98 rotas de out/26); as de volume seguem o critério do SAC. O front refaz as mesmas
+contas ao somar rotas, então qualquer mudança aqui precisa ser espelhada em frontend/js/app.js
+(agrega) e frontend/js/resumo.js (soma).
 
 Arredondamento: Python round() (meio para o par), igual ao gerador antigo.
 Percentuais usam os valores brutos; meta/real de volume saem com 1 casa.
@@ -68,44 +69,65 @@ def indicador_vendazero(meta: float | None, real: int, revertido_hoje: int, opor
 
 
 # ------------------------------------------------------------------ volume
+# Critério do SAC (por rota x macro de volume):
+#   Tendência   = Vol Real + Neg Restante (META_NEG de hoje até o fim do mês)
+#   % Tendência = Tendência / Meta NEG do mês; no ritmo (verde) com % >= 100
+#   Dif         = Vol Real - Meta NEG; Meta do dia = META_RECUPERAVEL_ROTA de hoje
+# Supervisão e gerência somam as rotas e recalculam o % (agrega_volume = agrega() do app.js).
+# No fechamento do mês: sem tendência e sem meta do dia; no ritmo com % realizado (Real / Meta NEG) >= 100.
 def volume_indisponivel() -> dict:
     return {"meta": None, "real": None, "dif": None, "metaDia": None, "pctTendencia": None,
             "onPace": None, "unavailable": True}
 
 
-def tendencia(v: VolumeRota, cal: Calendario) -> float:
-    """Projeção do mês.
-
-    Com meta acumulada até ontem: real / meta acumulada x meta do mês.
-    Sem ela (padrão do gerador, o modelo não traz a curva diária por rota):
-    projeção linear pelos dias úteis fechados, real / DIA_ONTEM x TOTAL_DIAS_UTEIS.
-    """
-    if v.meta_acum_ontem is not None:
-        # sem meta acumulada (meta zero até ontem) a projeção é o próprio realizado
-        return v.real / v.meta_acum_ontem * (v.meta or 0) if v.meta_acum_ontem else v.real
-    if cal.dia_ontem:
-        return v.real / cal.dia_ontem * cal.total_dias_uteis
-    return v.real
+def _pct(valor: float, meta: float | None) -> int | None:
+    return round(valor / meta * 100) if meta else None
 
 
-def meta_dia(v: VolumeRota, cal: Calendario) -> float:
-    if v.meta_dia_hoje is not None:
-        return v.meta_dia_hoje
-    restantes = cal.total_dias_uteis - cal.dia_ontem
-    return ((v.meta or 0) - v.real) / restantes if restantes > 0 else 0.0
+def _r1_ou_none(v: float | None) -> float | None:
+    return None if v is None else _r1(v)
+
+
+def tendencia(v: VolumeRota) -> float:
+    return v.real + (v.neg_restante or 0.0)
 
 
 def indicador_volume(v: VolumeRota | None, cal: Calendario, sem_dado_hoje: bool = False) -> dict:
     if v is None or v.meta is None:
         return volume_indisponivel()
-    tend = tendencia(v, cal)
-    pct_t = round(tend / v.meta * 100) if v.meta else None
-    return {
-        "meta": _r1(v.meta), "real": _r1(v.real), "dif": _r1(v.real - v.meta),
-        "metaDia": _r1(meta_dia(v, cal)), "tendencia": _r1(tend), "pctTendencia": pct_t,
-        "onPace": pct_t is not None and pct_t >= 100, "unavailable": False,
-        "semDadoHoje": sem_dado_hoje,
-    }
+    base = {"meta": _r1(v.meta), "real": _r1(v.real), "dif": _r1(v.real - v.meta)}
+    if cal.fechamento:
+        pct_real = _pct(v.real, v.meta)
+        return {**base, "metaDia": None, "tendencia": None, "pctTendencia": None,
+                "onPace": pct_real is not None and pct_real >= 100, "unavailable": False,
+                "semDadoHoje": False, "negRestante": None, "metaRota": _r1_ou_none(v.meta_rota)}
+    tend = tendencia(v)
+    pct_t = _pct(tend, v.meta)
+    return {**base, "metaDia": _r1_ou_none(v.meta_dia_hoje), "tendencia": _r1(tend), "pctTendencia": pct_t,
+            "onPace": pct_t is not None and pct_t >= 100, "unavailable": False, "semDadoHoje": sem_dado_hoje,
+            "negRestante": _r1(v.neg_restante or 0.0), "metaRota": _r1_ou_none(v.meta_rota)}
+
+
+def agrega_volume(blocos: list[dict | None], fechamento: bool = False) -> dict:
+    """Soma os blocos de volume de várias rotas (supervisão, gerência) e recalcula o %, como agrega() no app.js."""
+    disp = [b for b in blocos if b and not b.get("unavailable")]
+    if not disp:
+        return {"unavailable": True}
+
+    def soma(campo: str) -> float:
+        return sum(b.get(campo) or 0 for b in disp)
+
+    meta, real = soma("meta"), soma("real")
+    dias = [b["metaDia"] for b in disp if b.get("metaDia") is not None]
+    out = {"meta": meta, "real": real, "dif": real - meta, "metaDia": sum(dias) if dias else None}
+    if fechamento:
+        pct = _pct(real, meta)
+        return {**out, "tendencia": None, "negRestante": None, "pctTendencia": None,
+                "onPace": pct is not None and pct >= 100, "unavailable": False}
+    tend = soma("tendencia")
+    pct_t = _pct(tend, meta)
+    return {**out, "tendencia": tend, "negRestante": soma("negRestante"), "pctTendencia": pct_t,
+            "onPace": pct_t is not None and pct_t >= 100, "unavailable": False}
 
 
 def bloco_volume_cliente(meta: float | None, real: float, pace_pct: int) -> list | None:
@@ -118,3 +140,11 @@ def bloco_volume_cliente(meta: float | None, real: float, pace_pct: int) -> list
     pct = round(real / meta * 100) if meta else 0
     status = 2 if pct >= 100 else (1 if pct >= pace_pct else 0)
     return [_r1(meta), _r1(real), pct, status]
+
+
+def bloco_cliente_com_online(bloco: list | None, vol_online: float, pace_pct: int, fechamento: bool) -> list | None:
+    """Barra por cliente como o front mostra (blocoVolCliente no app.js): Real = Vol Real + volume online
+    de hoje do cliente, fora do fechamento do mês; % e status recalculados pela regra de bloco_volume_cliente."""
+    if bloco is None or fechamento or not vol_online:
+        return bloco
+    return bloco_volume_cliente(bloco[0], bloco[1] + vol_online, pace_pct)

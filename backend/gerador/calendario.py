@@ -10,6 +10,10 @@ Regras (conferidas com o histórico do payload.json):
     semana do mês anterior.
   - SEMANA_TIPO = "par" quando SEMANA_NUM é par, senão "ímpar".
   - DIA_ONTEM = dias úteis já fechados; PACE_ONTEM_PCT = round(DIA_ONTEM / TOTAL * 100).
+
+Fechamento do mês (em_fechamento / fechado): do dia 1 do mês M até o fim do 1º dia útil de M, e
+depois disso enquanto alguma gerência ainda não tiver as metas de M, o payload mostra o mês M-1
+fechado (DIA_ONTEM = DIA_HOJE = TOTAL de M-1, PACE_ONTEM_PCT = 100, MES_LABEL de M-1).
 """
 from __future__ import annotations
 
@@ -93,7 +97,34 @@ def montar(hoje: date, total_dias_uteis: int, dia_util_hoje: int, eh_dia_util: b
         semana_num=semana,
         semana_tipo="par" if semana % 2 == 0 else "ímpar",
         dia_semana=DIAS_SEMANA[hoje.weekday()],
-        mes_label=f"{MESES[hoje.month]}/{hoje:%y}",
+        mes_label=rotulo_mes(hoje),
+    )
+
+
+def rotulo_mes(d: date) -> str:
+    """date(2026, 10, 5) -> 'Outubro/26' (MES_LABEL e fechamentoMes)."""
+    return f"{MESES[d.month]}/{d:%y}"
+
+
+def mes_anterior(d: date) -> date:
+    """1º dia do mês anterior ao de `d`."""
+    return (date(d.year, d.month, 1) - timedelta(days=1)).replace(day=1)
+
+
+def em_fechamento(dia_util_hoje: int, metas_ok: bool | None) -> bool:
+    """Período de fechamento: até o fim do 1º dia útil do mês (dia_util_hoje <= 1, inclusive os dias
+    corridos antes dele) e, a partir daí, enquanto alguma gerência não tiver as metas do mês."""
+    return dia_util_hoje <= 1 or not metas_ok
+
+
+def fechado(hoje: date, ref: date, total_dias_uteis: int) -> Calendario:
+    """Calendário do mês `ref` já encerrado, visto em `hoje` (semana e dia da semana são os de hoje)."""
+    semana = semana_do_mes(hoje)
+    return Calendario(
+        hoje=hoje, total_dias_uteis=total_dias_uteis, dia_hoje=total_dias_uteis, dia_ontem=total_dias_uteis,
+        semana_num=semana, semana_tipo="par" if semana % 2 == 0 else "ímpar",
+        dia_semana=DIAS_SEMANA[hoje.weekday()], mes_label=rotulo_mes(ref),
+        fechamento=True, ref=date(ref.year, ref.month, 1),
     )
 
 
@@ -106,27 +137,50 @@ def calcular_local(hoje: date) -> Calendario:
     return montar(hoje, len(uteis), len(feitos), eh_dia_util=hoje in uteis)
 
 
+def _ultima_linha(linhas: list[dict], ano: int, mes: int, ate: date | None = None) -> tuple[date, int, int] | None:
+    """(data, NO_DIAS_UTEIS_MES, NO_DIA_UTIL) da última linha do mês (até `ate`) no calendário do Datasphere."""
+    from .mapeamento import ColCalendario as C
+
+    melhor = None
+    for l in linhas:
+        try:
+            d = date.fromisoformat(str(l.get(C.DATA) or "")[:10])
+            total, dia = int(float(l.get(C.DIAS_UTEIS_MES) or 0)), int(float(l.get(C.DIA_UTIL) or 0))
+        except ValueError:
+            continue
+        if d.year == ano and d.month == mes and (ate is None or d <= ate) and (melhor is None or d > melhor[0]):
+            melhor = (d, total, dia)
+    return melhor
+
+
 def do_datasphere(linhas: list[dict], hoje: date) -> Calendario | None:
     """Usa as linhas de AM_BND_MTR_CALENDARIO_DATA_ATUAL (DATA, NO_DIAS_UTEIS_MES, NO_DIA_UTIL).
 
     Devolve None se não houver linha do mês de hoje (o chamador cai no cálculo local).
     """
-    from .mapeamento import ColCalendario as C
-
-    def data_de(linha: dict) -> date | None:
-        valor = str(linha.get(C.DATA) or "")[:10]
-        try:
-            return date.fromisoformat(valor)
-        except ValueError:
-            return None
-
-    do_mes = [(data_de(l), l) for l in linhas]
-    do_mes = [(d, l) for d, l in do_mes if d and d.year == hoje.year and d.month == hoje.month and d <= hoje]
-    if not do_mes:
+    ult = _ultima_linha(linhas, hoje.year, hoje.month, hoje)
+    if not ult:
         return None
-    d, linha = max(do_mes, key=lambda x: x[0])
-    total = int(float(linha.get(C.DIAS_UTEIS_MES) or 0))
-    dia = int(float(linha.get(C.DIA_UTIL) or 0))
+    d, total, dia = ult
     if total <= 0 or dia <= 0:
         return None
     return montar(hoje, total, dia, eh_dia_util=(d == hoje and hoje.weekday() < 5))
+
+
+def dia_util_hoje(linhas: list[dict], hoje: date) -> int:
+    """Nº do dia útil de hoje (0 antes do 1º dia útil; em fim de semana/feriado, o último dia útil).
+
+    Fonte: NO_DIA_UTIL do calendário do Datasphere; sem linha do mês, o cálculo local (seg-sex - feriados).
+    """
+    ult = _ultima_linha(linhas, hoje.year, hoje.month, hoje)
+    if ult and ult[1] > 0:
+        return max(0, ult[2])
+    return sum(1 for d in dias_uteis_do_mes(hoje.year, hoje.month) if d <= hoje)
+
+
+def total_dias_uteis(linhas: list[dict], ref: date) -> int:
+    """Dias úteis do mês de `ref` (calendário do Datasphere ou, sem ele, cálculo local)."""
+    ult = _ultima_linha(linhas, ref.year, ref.month)
+    if ult and ult[1] > 0:
+        return ult[1]
+    return len(dias_uteis_do_mes(ref.year, ref.month))

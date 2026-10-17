@@ -9,27 +9,41 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
   vendas      AM_FAT_BND_ANALISE_META           rota x cliente x agrupador (só os 17 agrupadores do painel;
                                                 uma consulta por gerência, em paralelo): cobertura do mês,
                                                 compras e volume de hoje (online, só pedidos 'Inc. e Exp.'),
-                                                volume e meta por cliente, segmento do cliente
-  metas       AM_FAT_BND_ANALISE_META           rota x agrupador da meta: meta de cobertura, de volume
-                                                e meta do dia
+                                                meta (META_NEG) por cliente, segmento do cliente
+  vol_real    AM_FAT_BND_ANALISE_META           rota x cliente x macro de volume x NF_STATUS (por gerência):
+                                                Vol Real = FX_VOL_PADRAO_FAT com status em M.STATUS_NF_REAL
+  meta_neg    AM_FAT_BND_ANALISE_META           rota x macro x DATA_MOVIMENTO: Meta NEG do mês e Neg Restante
+  meta_dia    AM_FAT_BND_ANALISE_META           rota x macro x DATA_MOVIMENTO: META_RECUPERAVEL_ROTA de hoje
+  metas       AM_FAT_BND_ANALISE_META           rota x agrupador da meta: meta de cobertura e META_VOLUME
+                                                (esta só para conferência: o denominador é a Meta NEG)
+  metas_gc    AM_FAT_BND_ANALISE_META           META_VOLUME e META_COBERTURA do mês por rota -> gerência
+                                                (decide o fim do fechamento do mês)
   comodato    AM_FAT_BND_COMODATO               geladeiras Total Ko em contrato: giro zero (Venda Zero)
                                                 e ativas; meta de Venda Zero por gerência
 
-Falha no comodato não derruba a execução (Venda Zero fica indisponível).
-Falha nas demais interrompe sem gravar nada.
+Todas agregam no servidor (modo analítico: o $select de dimensões é o groupby); DATA_MOVIMENTO só
+entra onde é preciso (meta_neg e meta_dia, por rota, nunca por cliente).
+
+Fechamento do mês (calendario.em_fechamento): o payload inteiro passa a ser do mês anterior (cal.anomes),
+Venda Zero fica indisponível e o online continua sendo o de hoje (pedidos do mês atual).
+
+Falha no comodato não derruba a execução (Venda Zero fica indisponível); falha na meta do dia
+deixa metaDia = null (registrado no log). Falha nas demais interrompe sem gravar nada.
 """
 from __future__ import annotations
 
 import logging
 import re
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from . import calendario as calmod
 from . import mapeamento as M
 from .consulta import Consulta, e, eq, ou
 from .mapeamento import ColBase as B, ColCalendario as CC, ColComodato as CO, ColMeta as CM
-from .texto import inteiro, limpar, normalizar, numero, titulo
+from .texto import data, inteiro, limpar, normalizar, numero, titulo
 from .tipos import Calendario, Cliente, Equipamento, Fontes, Online, VolumeRota
 
 log = logging.getLogger(__name__)
@@ -67,16 +81,18 @@ def _rota(valor: object) -> str:
 
 
 # ------------------------------------------------------------------ calendário
-def carregar_calendario(cons: Consulta, hoje: date) -> Calendario:
+def carregar_calendario(cons: Consulta, hoje: date) -> tuple[Calendario, list[dict]]:
+    """Calendário do mês de hoje + as linhas do Datasphere (usadas também no fechamento; [] se falhou)."""
+    linhas: list[dict] = []
     try:
         linhas = cons.linhas(M.OBJ_CALENDARIO, [CC.DATA, CC.DIAS_UTEIS_MES, CC.DIA_UTIL, CC.DIAS_RESTANTES])
         cal = calmod.do_datasphere(linhas, hoje)
         if cal:
-            return cal
+            return cal, linhas
         log.warning("Calendário do Datasphere sem linha para %s; usando cálculo local.", hoje)
     except Exception as erro:   # noqa: BLE001 - qualquer falha cai no plano B
         log.warning("Calendário do Datasphere indisponível (%s); usando cálculo local.", erro)
-    return calmod.calcular_local(hoje)
+    return calmod.calcular_local(hoje), linhas
 
 
 # ------------------------------------------------------------------ base de clientes
@@ -108,23 +124,32 @@ def carregar_clientes(cons: Consulta, rota: str | None = None) -> tuple[list[Cli
 
 
 # ------------------------------------------------------------------ vendas do mês + online
-def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None, online: Online):
+def _por_gerencia(obj: str, sel: list[str], filtro: str | None, gcs_originais: list[str], rota: str | None) -> dict:
+    """Uma consulta por gerência (rodam em paralelo; cada uma bem menor que a consulta inteira)."""
+    if rota or not gcs_originais:
+        return {"todas": (obj, sel, filtro)}
+    return {g: (obj, sel, e(filtro, eq(CM.GC, g))) for g in gcs_originais}
+
+
+def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None, online: Online,
+                    so_pedidos_hoje: bool = False):
+    """Cobertura do mês, compras, meta por cliente e online de hoje.
+
+    so_pedidos_hoje: só as linhas WF Online (fechamento do mês: o online de hoje é do mês atual,
+    enquanto o resto do payload é do mês anterior).
+    """
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_MES, CM.VOL_MES],
                    [CM.COB_ONLINE, CM.COB_ONLINE_GERAL, CM.VOL_ONLINE, CM.META_VOLUME_CLIENTE, CM.SEGMENTO])
     _colunas(cons, obj, [CM.FONTE, CM.SITUACAO_PEDIDO])   # só confere: entram no $filter, não no $select
     base = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_ORIGEM), M.FILTRO_PEDIDOS_ONLINE,
-             eq(CM.ROTA, rota) if rota else None)
-    if rota or not gcs_originais:
-        partes = {"todas": (obj, sel, base)}
-    else:   # uma consulta por gerência, em paralelo (cada uma bem menor que a consulta inteira)
-        partes = {g: (obj, sel, e(base, eq(CM.GC, g))) for g in gcs_originais}
+             eq(CM.FONTE, "WF Online") if so_pedidos_hoje else None, eq(CM.ROTA, rota) if rota else None)
+    partes = _por_gerencia(obj, sel, base, gcs_originais, rota)
     linhas = [l for ls in cons.em_paralelo(partes).values() for l in ls]
 
     cobertos: dict = defaultdict(lambda: defaultdict(set))
     compraram: dict = defaultdict(set)
-    vol_real: dict = defaultdict(lambda: defaultdict(float))
-    vol_cli: dict = defaultdict(lambda: defaultdict(dict))
+    meta_cli: dict = defaultdict(lambda: defaultdict(dict))
     segmento: dict[int, str] = {}
     for l in linhas:
         r, pv = _rota(l.get(CM.ROTA)), inteiro(l.get(CM.CLIENTE))
@@ -147,38 +172,136 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
         if cob_on > 0 or cob_on_g > 0 or vol_on > 0:
             online.qualquer.setdefault(r, set()).add(pv)
         if k_vol:
-            vol_real[r][k_vol] += vol_mes
             if vol_on:
                 online.volume.setdefault(r, {}).setdefault(k_vol, 0.0)
                 online.volume[r][k_vol] += vol_on
+                por_cli = online.volume_cliente.setdefault(r, {}).setdefault(pv, {})
+                por_cli[k_vol] = por_cli.get(k_vol, 0.0) + vol_on
             meta_c = l.get(CM.META_VOLUME_CLIENTE)
-            atual = vol_cli[r][pv].get(k_vol)
-            if meta_c not in (None, "") or atual:
-                m0, r0 = atual or (0.0, 0.0)
-                vol_cli[r][pv][k_vol] = (m0 + numero(meta_c), r0 + vol_mes)
+            if meta_c not in (None, ""):
+                meta_cli[r][pv][k_vol] = meta_cli[r][pv].get(k_vol, 0.0) + numero(meta_c)
     log.info("Vendas: %d linhas, %d rotas, %d com venda online hoje", len(linhas), len(compraram), len(online.qualquer))
-    return cobertos, compraram, vol_real, vol_cli, segmento
+    return cobertos, compraram, meta_cli, segmento
+
+
+# ------------------------------------------------------------------ volume (critério do SAC)
+@dataclass
+class VolumeMes:
+    """Vol Real do mês (FX_VOL_PADRAO_FAT) separado por NF_STATUS."""
+    real: dict = field(default_factory=dict)            # rota -> VOL -> Vol Real (status do SAC)
+    real_cliente: dict = field(default_factory=dict)    # rota -> pv -> VOL -> Vol Real
+    todos_status: dict = field(default_factory=dict)    # rota -> VOL -> soma sem filtro de status (Real antigo)
+    por_status: dict = field(default_factory=dict)      # status como veio -> [linhas, volume, conta no Vol Real]
+
+
+def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None) -> VolumeMes:
+    """Vol Real por rota x cliente x macro: só NF com status em M.STATUS_NF_REAL (comparado por normalizar).
+
+    Agregado no servidor por rota x cliente x agrupador x status (sem dia), uma consulta por gerência.
+    O status entra no $select (e não no $filter) para a comparação não depender da grafia exata.
+    """
+    obj = M.OBJ_META
+    sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES])
+    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())),
+               M.FILTRO_PEDIDOS_ONLINE, eq(CM.ROTA, rota) if rota else None)
+    linhas = [l for ls in cons.em_paralelo(_por_gerencia(obj, sel, filtro, gcs_originais, rota)).values() for l in ls]
+    vm = VolumeMes()
+    for l in linhas:
+        r, pv, k = _rota(l.get(CM.ROTA)), inteiro(l.get(CM.CLIENTE)), M.indicador_volume(l.get(CM.AGRUPADOR))
+        if not r or not k:
+            continue
+        vol, status = numero(l.get(CM.VOL_MES)), l.get(CM.NF_STATUS)
+        conta = M.status_nf_real(status)
+        st = vm.por_status.setdefault(limpar(status), [0, 0.0, conta])
+        st[0] += 1
+        st[1] += vol
+        tot = vm.todos_status.setdefault(r, {})
+        tot[k] = tot.get(k, 0.0) + vol
+        if not conta:
+            continue
+        rr = vm.real.setdefault(r, {})
+        rr[k] = rr.get(k, 0.0) + vol
+        if pv is not None:
+            rc = vm.real_cliente.setdefault(r, {}).setdefault(pv, {})
+            rc[k] = rc.get(k, 0.0) + vol
+    fora = {s: round(v[1], 1) for s, v in vm.por_status.items() if not v[2]}
+    log.info("Vol Real: %d linhas, %d rotas; status fora do Vol Real: %s", len(linhas), len(vm.real), fora or "nenhum")
+    if linhas and not vm.real:
+        log.error("Nenhum NF_STATUS bateu com %s (vieram: %s). Ajuste M.STATUS_NF_REAL.",
+                  M.STATUS_NF_REAL, sorted(vm.por_status))
+    return vm
+
+
+def _por_rota_dia(cons: Consulta, medida: str, anomes: str, rota: str | None) -> list[tuple[str, str, date | None, float]]:
+    """(rota, VOL, DATA_MOVIMENTO, medida) agregado no servidor por rota x macro x dia."""
+    obj = M.OBJ_META
+    sel = _colunas(cons, obj, [CM.ROTA, CM.AGRUPADOR, CM.DATA, medida])
+    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())),
+               eq(CM.ROTA, rota) if rota else None)
+    out = []
+    for l in cons.linhas(obj, sel, filtro):
+        r, k = _rota(l.get(CM.ROTA)), M.indicador_volume(l.get(CM.AGRUPADOR))
+        if r and k and l.get(medida) not in (None, ""):
+            out.append((r, k, data(l.get(CM.DATA)), numero(l.get(medida))))
+    return out
+
+
+def meta_neg_e_restante(linhas: list[tuple[str, str, date | None, float]], hoje: date) -> tuple[dict, dict]:
+    """Meta NEG do mês e Neg Restante (META_NEG de hoje, inclusive, até o fim do mês) por rota x macro."""
+    meta: dict = defaultdict(dict)
+    restante: dict = defaultdict(dict)
+    sem_data = 0
+    for r, k, d, v in linhas:
+        meta[r][k] = meta[r].get(k, 0.0) + v
+        restante[r].setdefault(k, 0.0)
+        if d is None:
+            sem_data += 1
+        elif d >= hoje:
+            restante[r][k] += v
+    if sem_data:
+        log.warning("META_NEG: %d linhas sem DATA_MOVIMENTO legível ficaram fora do Neg Restante.", sem_data)
+    return dict(meta), dict(restante)
+
+
+def meta_do_dia(linhas: list[tuple[str, str, date | None, float]], hoje: date) -> dict:
+    """META_RECUPERAVEL_ROTA com DATA_MOVIMENTO = hoje por rota x macro (sem linha hoje = 0)."""
+    out: dict = defaultdict(dict)
+    for r, k, d, v in linhas:
+        out[r][k] = out[r].get(k, 0.0) + (v if d == hoje else 0.0)
+    return dict(out)
+
+
+def carregar_meta_neg(cons: Consulta, anomes: str, rota: str | None, hoje: date) -> tuple[dict, dict]:
+    meta, restante = meta_neg_e_restante(_por_rota_dia(cons, CM.META_NEG, anomes, rota), hoje)
+    log.info("Meta NEG: %d rotas", len(meta))
+    return meta, restante
+
+
+def carregar_meta_dia(cons: Consulta, anomes: str, rota: str | None, hoje: date) -> dict | None:
+    """Meta do dia por rota x macro; None (metaDia = null no payload) se a medida não existir ou a consulta falhar."""
+    if CM.META_RECUPERAVEL not in set(cons.colunas(M.OBJ_META)):
+        log.error("%s não existe no $metadata de %s: meta do dia fica null.", CM.META_RECUPERAVEL, M.OBJ_META)
+        return None
+    try:
+        return meta_do_dia(_por_rota_dia(cons, CM.META_RECUPERAVEL, anomes, rota), hoje)
+    except Exception as erro:   # noqa: BLE001
+        log.error("Consulta de %s falhou (%s): meta do dia fica null.", CM.META_RECUPERAVEL, erro)
+        return None
 
 
 # ------------------------------------------------------------------ metas
 def carregar_metas(cons: Consulta, anomes: str, rota: str | None):
-    """Metas por rota x agrupador: cobertura {rota: {ind: meta}} e volume {rota: {VOL: (meta, meta_dia)}}.
+    """Metas por rota x agrupador: cobertura {rota: {ind: meta}} e META_VOLUME {rota: {VOL: meta}}.
 
-    META_DIA é uma medida calculada cara: junto com as outras colunas a consulta leva ~130 s,
-    sozinha e só com os 5 agrupadores de volume leva ~2 s. Por isso são duas consultas em paralelo.
+    META_VOLUME só vai para o payload como "metaRota" (conferência); o volume usa a Meta NEG.
     """
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.META_ROTA, CM.META_AGRUPADOR, CM.META_COBERTURA, CM.META_VOLUME], [CM.META_NEG])
-    sel_dia = _colunas(cons, obj, [CM.META_ROTA, CM.META_AGRUPADOR, CM.META_DIA])
     f_rota = eq(CM.META_ROTA, rota) if rota else None
-    res = cons.em_paralelo({
-        "metas": (obj, sel, e(eq(CM.META_ANOMES, anomes), ou(CM.META_AGRUPADOR, M.AGRUPADORES_ORIGEM), f_rota)),
-        "meta_dia": (obj, sel_dia, e(eq(CM.META_ANOMES, anomes),
-                                     ou(CM.META_AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())), f_rota)),
-    })
+    linhas = cons.linhas(obj, sel, e(eq(CM.META_ANOMES, anomes), ou(CM.META_AGRUPADOR, M.AGRUPADORES_ORIGEM), f_rota))
     metas: dict = defaultdict(dict)
     metas_vol: dict = defaultdict(dict)
-    for l in res["metas"]:
+    for l in linhas:
         r = _rota(l.get(CM.META_ROTA))
         if not r:
             continue
@@ -191,14 +314,46 @@ def carregar_metas(cons: Consulta, anomes: str, rota: str | None):
                 metas[r][k_cob] = max(metas[r].get(k_cob, 0.0), numero(fonte))
         if k_vol and l.get(CM.META_VOLUME) not in (None, ""):
             metas_vol[r][k_vol] = max(metas_vol[r].get(k_vol, 0.0), numero(l.get(CM.META_VOLUME)))
-    meta_dia: dict = defaultdict(lambda: defaultdict(float))
-    for l in res["meta_dia"]:
-        r, k_vol = _rota(l.get(CM.META_ROTA)), M.indicador_volume(l.get(CM.META_AGRUPADOR))
-        if r and k_vol:
-            meta_dia[r][k_vol] += numero(l.get(CM.META_DIA))
-    volume = {r: {k: (m, meta_dia.get(r, {}).get(k, 0.0)) for k, m in ks.items()} for r, ks in metas_vol.items()}
-    log.info("Metas: cobertura em %d rotas, volume em %d rotas", len(metas), len(volume))
-    return metas, volume
+    log.info("Metas: cobertura em %d rotas, META_VOLUME em %d rotas", len(metas), len(metas_vol))
+    return metas, dict(metas_vol)
+
+
+# ------------------------------------------------------------------ fechamento do mês
+def metas_por_gerencia(cons: Consulta, anomes: str, gc_da_rota: dict[str, str]) -> dict[str, tuple[float, float]]:
+    """(META_VOLUME, META_COBERTURA) do mês por gerência de origem ('G1', ..., 'IT_MO').
+
+    A meta vem por rota (lado Chave_Meta_SAP) e a gerência sai da base de clientes (gc_da_rota).
+    """
+    obj = M.OBJ_META
+    sel = _colunas(cons, obj, [CM.META_ROTA, CM.META_VOLUME, CM.META_COBERTURA])
+    linhas = cons.linhas(obj, sel, e(eq(CM.META_ANOMES, anomes), ou(CM.META_AGRUPADOR, M.AGRUPADORES_ORIGEM)))
+    por_gc: dict[str, list[float]] = {}
+    for l in linhas:
+        gc = gc_da_rota.get(_rota(l.get(CM.META_ROTA)))
+        if gc:
+            t = por_gc.setdefault(M.gc_origem(gc), [0.0, 0.0])
+            t[0] += numero(l.get(CM.META_VOLUME))
+            t[1] += numero(l.get(CM.META_COBERTURA))
+    return {g: (v, c) for g, (v, c) in por_gc.items()}
+
+
+def todas_com_meta(por_gc: dict[str, tuple[float, float]], gerencias: list[str]) -> bool:
+    """Critério de virada: toda gerência com META_VOLUME > 0 e META_COBERTURA > 0."""
+    return all(por_gc.get(g, (0.0, 0.0))[0] > 0 and por_gc.get(g, (0.0, 0.0))[1] > 0 for g in gerencias)
+
+
+def gerencias_origem(gc_da_rota: dict[str, str]) -> list[str]:
+    """Gerências exigidas na virada: as de M.GC_ORIGEM presentes na base de clientes
+    (todas no dia a dia; com --rota, só a da rota consultada)."""
+    presentes = {M.gc_origem(g) for g in gc_da_rota.values()}
+    return [g for g in (M.codigo_gc(x) for x in M.GC_ORIGEM) if g in presentes]
+
+
+def fechamento_pelo_payload(p: dict | None, hoje: date) -> str | None:
+    """Rodada só-online: o payload publicado decide; se ele é de outro mês, é o rótulo do fechamento."""
+    if p and p.get("MES_LABEL") and p["MES_LABEL"] != calmod.rotulo_mes(hoje):
+        return p["MES_LABEL"]
+    return None
 
 
 # ------------------------------------------------------------------ comodato / Venda Zero
@@ -271,40 +426,88 @@ def carregar_comodato(cons: Consulta, anomes: str, rota: str | None, gc_da_rota:
 
 
 # ------------------------------------------------------------------ tudo junto
+def decidir_fechamento(cons: Consulta, hoje: date, linhas_cal: list[dict], gc_da_rota: dict[str, str]) -> Calendario | None:
+    """Calendário fechado do mês anterior se hoje está no período de fechamento; None se não está."""
+    dia_util = calmod.dia_util_hoje(linhas_cal, hoje)
+    if dia_util <= 1:
+        motivo, metas_ok = f"dia útil {dia_util} (até o fim do 1º dia útil)", False
+    else:
+        por_gc = metas_por_gerencia(cons, hoje.strftime("%Y%m"), gc_da_rota)
+        gerencias = gerencias_origem(gc_da_rota)
+        metas_ok = todas_com_meta(por_gc, gerencias)
+        faltam = [g for g in gerencias if not todas_com_meta(por_gc, [g])]
+        motivo = f"gerências sem META_VOLUME/META_COBERTURA de {hoje:%m/%Y}: {', '.join(faltam)}"
+    if not calmod.em_fechamento(dia_util, metas_ok):
+        return None
+    ref = calmod.mes_anterior(hoje)
+    cal = calmod.fechado(hoje, ref, calmod.total_dias_uteis(linhas_cal, ref))
+    log.warning("Fechamento do mês: painel em %s (%s).", cal.mes_label, motivo)
+    return cal
+
+
 def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online: bool = False,
              fechamento: str | None = None) -> Fontes:
+    """`fechamento` (manual) só sobrepõe o rótulo da tag do online; o período é detectado sozinho."""
     hoje = agora.date()
-    anomes = hoje.strftime("%Y%m")
+    anomes_hoje = hoje.strftime("%Y%m")
     online = Online(atualizado_em=agora, fechamento_mes=fechamento)
 
     if so_online:
-        segmento = carregar_vendas(cons, anomes, list(M.GC_ORIGEM), rota, online)[-1]
-        for d in (online.clientes, online.qualquer, online.volume):
+        segmento = carregar_vendas(cons, anomes_hoje, list(M.GC_ORIGEM), rota, online)[-1]
+        for d in (online.clientes, online.qualquer, online.volume, online.volume_cliente):
             for r in [r for r in d if not M.rota_do_painel(r)]:
                 del d[r]
         return Fontes(cal=calmod.calcular_local(hoje), clientes=[], cobertos={}, compraram={}, metas={},
                       volume={}, volume_cliente={}, online=online, segmento_venda=segmento)
 
-    cal = carregar_calendario(cons, hoje)
+    cal, linhas_cal = carregar_calendario(cons, hoje)
     clientes, gcs = carregar_clientes(cons, rota)
     rotas_painel = {c.rota for c in clientes}
-    cobertos, compraram, vol_real, vol_cli, segmento = carregar_vendas(cons, anomes, gcs, rota, online)
-    metas, metas_vol = carregar_metas(cons, anomes, rota)
+    gc_da_rota = {c.rota: c.gc for c in clientes}
+    cal = decidir_fechamento(cons, hoje, linhas_cal, gc_da_rota) or cal
+    anomes = cal.anomes
+    if cal.fechamento:
+        online.fechamento_mes = fechamento or cal.mes_label
+        # payload do mês anterior; o online (pedidos de hoje) vem do mês atual
+        cobertos, compraram, meta_cli, segmento = carregar_vendas(cons, anomes, gcs, rota, Online(atualizado_em=agora))
+        seg_hoje = carregar_vendas(cons, anomes_hoje, gcs, rota, online, so_pedidos_hoje=True)[-1]
+        segmento = {**seg_hoje, **segmento}
+    else:
+        cobertos, compraram, meta_cli, segmento = carregar_vendas(cons, anomes, gcs, rota, online)
+    # consultas por rota (pequenas) em paralelo; o Vol Real já se divide por gerência
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_metas = ex.submit(carregar_metas, cons, anomes, rota)
+        f_neg = ex.submit(carregar_meta_neg, cons, anomes, rota, hoje)
+        f_dia = None if cal.fechamento else ex.submit(carregar_meta_dia, cons, anomes, rota, hoje)
+        vm = carregar_volume_real(cons, anomes, gcs, rota)
+        metas, metas_vol = f_metas.result()
+        meta_neg, restante = f_neg.result()
+        meta_dia = f_dia.result() if f_dia else None
 
     volume: dict = defaultdict(dict)
     for r in rotas_painel:
         for k in M.INDICADORES_VOLUME:
-            meta, meta_dia = metas_vol.get(r, {}).get(k, (None, None))
-            if meta is None and k not in vol_real.get(r, {}):
+            meta, meta_rota = meta_neg.get(r, {}).get(k), metas_vol.get(r, {}).get(k)
+            real = vm.real.get(r, {}).get(k)
+            if meta is None and meta_rota is None and real is None:
                 continue
-            volume[r][k] = VolumeRota(meta=meta, real=vol_real.get(r, {}).get(k, 0.0), meta_dia_hoje=meta_dia)
+            volume[r][k] = VolumeRota(
+                meta=meta, real=real or 0.0, meta_rota=meta_rota,
+                neg_restante=None if cal.fechamento else restante.get(r, {}).get(k, 0.0),
+                meta_dia_hoje=None if meta_dia is None else meta_dia.get(r, {}).get(k, 0.0))
+    # barra por cliente: (Meta NEG do cliente, Vol Real do cliente) onde o cliente tem meta
+    vol_cli = {r: {pv: {k: (m, vm.real_cliente.get(r, {}).get(pv, {}).get(k, 0.0)) for k, m in ks.items()}
+                   for pv, ks in por_pv.items()}
+               for r, por_pv in meta_cli.items()}
 
-    gc_da_rota = {c.rota: c.gc for c in clientes}
     vendazero, ativos, vz_meta = None, {}, {}
-    try:
-        vendazero, ativos, vz_meta = carregar_comodato(cons, anomes, rota, gc_da_rota)
-    except Exception as erro:   # noqa: BLE001
-        log.warning("Comodato indisponível (%s); Venda Zero ficará indisponível nesta execução.", erro)
+    if cal.fechamento:
+        log.warning("Fechamento do mês: Venda Zero indisponível (o giro do comodato já é do mês novo).")
+    else:
+        try:
+            vendazero, ativos, vz_meta = carregar_comodato(cons, anomes, rota, gc_da_rota)
+        except Exception as erro:   # noqa: BLE001
+            log.warning("Comodato indisponível (%s); Venda Zero ficará indisponível nesta execução.", erro)
 
     def so_painel(d: dict) -> dict:
         return {r: v for r, v in d.items() if r in rotas_painel}
@@ -313,8 +516,9 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     online.clientes = so_painel(online.clientes)
     online.qualquer = so_painel(online.qualquer)
     online.volume = so_painel(online.volume)
+    online.volume_cliente = so_painel(online.volume_cliente)
     return Fontes(cal=cal, clientes=clientes, cobertos={r: dict(v) for r, v in so_painel(cobertos).items()},
                   compraram=so_painel(compraram), metas=so_painel(dict(metas)), volume=dict(volume),
-                  volume_cliente={r: dict(v) for r, v in so_painel(vol_cli).items()}, online=online,
+                  volume_cliente=so_painel(vol_cli), online=online,
                   vendazero=so_painel(vendazero) if vendazero is not None else None,
                   vz_meta=vz_meta, comodato_ativos=so_painel(ativos), segmento_venda=segmento)

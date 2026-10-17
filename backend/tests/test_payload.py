@@ -4,7 +4,7 @@ reconstrói as fontes a partir do payload/online e confere se a montagem gera o 
 
 Diferenças toleradas (são do arquivo antigo, não da montagem):
   - percentuais recalculados a partir de valores já arredondados (pctTendencia e pct por cliente ±1);
-  - I31/M31 (sem vendedor): tendência de volume com realizado zero, que não tem como ser reproduzida;
+  - chaves novas: FECHAMENTO no payload; negRestante e metaRota no volume (tendência do SAC);
   - 19 equipamentos de Venda Zero cujo "revertido" foi calculado com um online.json mais antigo que o
     publicado, e rotas de IT/MO cuja oportunidade incluía os já revertidos.
 """
@@ -43,7 +43,8 @@ class TestIdaEVolta(unittest.TestCase):
         cls.g = montar_payload(fontes_de(cls.p, cls.o, HOJE))
 
     def test_chaves_e_constantes(self):
-        self.assertEqual(list(self.g), list(self.p))
+        self.assertEqual([k for k in self.g if k != "FECHAMENTO"], list(self.p))
+        self.assertFalse(self.g["FECHAMENTO"])
         for k in ["MES_LABEL", "TOTAL_DIAS_UTEIS", "DIA_ONTEM", "DIA_HOJE", "PACE_ONTEM_PCT", "SEMANA_NUM",
                   "SEMANA_TIPO", "DIA_SEMANA", "GC_ATIVAS", "NOME_SUPERVISOR", "LABELS", "GROUPS", "COV_GRUPO",
                   "LABELS_CURTO", "SEGS", "DIAS", "FONTES"]:
@@ -72,17 +73,14 @@ class TestIdaEVolta(unittest.TestCase):
                     self.assertEqual(list(gd["indicators"]), M.ORDEM_INDICADORES)
                     for k, b in d["indicators"].items():
                         gb = gd["indicators"][k]
-                        if k in M.INDICADORES_VOLUME and not b["unavailable"] and b["real"] == 0 and b["tendencia"]:
-                            # I31/M31 (rotas "Neutraliza", sem vendedor): o arquivo antigo trazia tendência
-                            # sem nenhum realizado; o gerador novo projeta a partir do realizado (= 0).
-                            self.assertEqual(gb["tendencia"], 0.0, (r, k))
-                        elif k in M.INDICADORES_VOLUME and not b["unavailable"]:
+                        if k in M.INDICADORES_VOLUME and not b["unavailable"]:
+                            # tendência = real + Neg Restante (o reverso tira o restante da tendência publicada)
                             for campo in ["meta", "real", "metaDia", "tendencia", "unavailable", "semDadoHoje"]:
                                 self.assertAlmostEqual(gb[campo], b[campo], places=6, msg=(r, k, campo))
                             self.assertLessEqual(abs(gb["dif"] - b["dif"]), 0.1001, (r, k))
                             if b["pctTendencia"] is None:
                                 self.assertIsNone(gb["pctTendencia"], (r, k))
-                            else:
+                            elif b["meta"] >= 1:   # meta de 0,1 (T40): % de valores já arredondados não se reproduz
                                 self.assertLessEqual(abs(gb["pctTendencia"] - b["pctTendencia"]), 1, (r, k))
                         elif k == "VENDAZERO":
                             iguais = {c: gb[c] == b[c] for c in b}

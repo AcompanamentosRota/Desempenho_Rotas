@@ -12,6 +12,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - Gerar dados: `cd backend && python scripts/gerar.py --forcar` (fora de 07:00-18:59 BRT só roda com `--forcar`).
   `--rota 111` grava em `backend/saida/rota_111/`; `--saida DIR` muda o destino.
 - Conferir mapeamento contra a fonte: `python scripts/descobrir.py` → `backend/saida/descoberta/relatorio.md`.
+- Conferir tendência/fechamento com dados reais: workflow manual "Conferir tendência" (`conferir-tendencia.yml`,
+  input `hoje` opcional) → artifact com `relatorio_tendencia.md` + `payload.json`/`online.json` (sem commit).
+  `gerar.py --hoje AAAA-MM-DD --saida DIR` simula a data (o cron não usa).
 - Front local: `cd frontend && python -m http.server 8765`.
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
@@ -32,8 +35,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   - Pedidos de hoje (`FONTE = 'WF Online'`) só contam com `SITUACAO_Pedido = 'Inc. e Exp.'` (fora Cancelado/Reprovado).
     Basis e Meta NEG vêm na mesma consulta: o filtro é `(FONTE ne 'WF Online' or SITUACAO_Pedido eq 'Inc. e Exp.')`,
     nunca `SITUACAO_Pedido eq 'Inc. e Exp.'` puro (sumiria a meta por cliente, que tem situação 'Meta NEG').
-  - `META_DIA` junto com outras colunas leva ~130 s; sozinha (só agrupadores de volume) ~2 s. Por isso são duas consultas.
-  - `META_DIA` sem `CALENDARIO` = meta do dia publicada; por `CALENDARIO` não é curva de meta (não usar para tendência).
+  - `META_DIA` (meta do dia antiga) não é mais usada pelo gerador; só o `conferir_tendencia.py` a lê para comparar.
   - Meta de volume por cliente = `META_NEG` por `CD_CLIENTE` × `DS_AGRUPADOR_Agrupador_Prod`.
   - Venda Zero: `Concluído(Contrato)` + `AGRUPADOR_EQPTO = 'Total Ko'` + Fountain + `Giro Zero`, deduplicando por
     `CD_EQUIPAMENTO_Equipame`. A meta só existe por gerência; o gerador rateia pelas rotas pela quantidade de geladeiras.
@@ -43,8 +45,30 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   O filtro fica em `payload.py` (`_filtra_ks_tt`, `online_ks_tt`), então o front recebe tudo pronto. O `QUALQUER`
   do online não é filtrado. `validacao.py` reprova KS TT com cliente da base de segmento não elegível; real > `baseKsTt`
   só gera aviso (clientes que saíram da rota).
-- **Decisões aceitas** (diferem do arquivo antigo, montado à mão): tendência de volume linear por dias úteis
-  (a fórmula antiga não está no modelo); visitas de hoje pelo campo `VISITA_HOJE` do SAP.
+- **Tendência de volume = critério do SAC** (`modelo.indicador_volume`, espelhada em `agrega()` do app.js e
+  `soma()` do resumo.js), por rota × macro de volume:
+  Vol Real = `FX_VOL_PADRAO_FAT` do mês com `NF_STATUS_Nota_Fiscal` em `M.STATUS_NF_REAL` (comparado com
+  `normalizar`, a grafia exata vem do relatório da conferência); Neg Restante = `META_NEG` com `DATA_MOVIMENTO`
+  de hoje (inclusive) ao fim do mês; Tendência = Vol Real + Neg Restante; % = Tendência / Meta NEG (soma de
+  `META_NEG` do mês), verde com % >= 100; Dif = Vol Real − Meta NEG; meta do dia = `META_RECUPERAVEL_ROTA` de hoje
+  (sem a medida: `metaDia = null`, nunca outra conta). Meta NEG é o denominador em todos os níveis; supervisão e
+  gerência somam as rotas e recalculam o %. `META_VOLUME` vai só como `metaRota` (conferência). Sem Meta NEG na
+  rota × macro, o indicador fica indisponível. Consultas agregadas no servidor: Vol Real por rota × cliente ×
+  agrupador × status (sem dia); `META_NEG`/`META_RECUPERAVEL_ROTA` por rota × agrupador × `DATA_MOVIMENTO`.
+- **Barra por cliente (aba Volume)**: payload traz [Meta NEG, Vol Real] do cliente; o front soma o volume online de
+  hoje do cliente (`online.json` → `volumeCliente`, também na rodada só-online) e recalcula % e status (mesma regra
+  de cor; `modelo.bloco_cliente_com_online`). Só na barra: Real de rota/SV/GC e tendência ficam só com o faturado;
+  no Resumo de Vendas o online fica na coluna própria. No fechamento o online não é somado.
+- **Fechamento do mês (automático)**: do dia 1 até o fim do 1º dia útil de M e, depois, enquanto alguma gerência
+  (de `M.GC_ORIGEM`, presentes na base) não tiver `META_VOLUME` > 0 e `META_COBERTURA` > 0 para M (meta por rota →
+  gerência pela base de clientes). Dia útil pelo calendário do Datasphere (`NO_DIA_UTIL`), senão cálculo local.
+  Nesse período TODO o payload é de M−1 (`cal.anomes`), com `FECHAMENTO: true`, calendário fechado
+  (DIA_ONTEM = DIA_HOJE = TOTAL, PACE 100), volume sem tendência/meta do dia (% realizado), Venda Zero indisponível
+  (comodato nem é consultado). O online continua sendo o de hoje (consulta extra só `FONTE = 'WF Online'` em M) e
+  ganha `fechamentoMes` = rótulo de M−1; na rodada só-online o rótulo sai do payload publicado. O input manual
+  `fechamento` do workflow só sobrepõe o rótulo da tag. `validacao.py` compara quedas (rotas, clientes, volume real)
+  só com o payload publicado do mesmo `MES_LABEL`; na virada, só avisa.
+- **Decisões aceitas** (diferem do arquivo antigo, montado à mão): visitas de hoje pelo campo `VISITA_HOJE` do SAP.
 - **Semana**: `SEMANA_NUM` conta a partir da 1ª segunda-feira do mês; dias antes dela são da última semana do mês anterior.
 - O gerador só grava quando o conteúdo muda (JSON compacto e determinístico) e não grava nada se `validacao.py` reprovar.
 - `backend/tests/dados/*_ref.json` é uma amostra congelada do payload manual (16 rotas): não regenerar a partir de `frontend/data`.

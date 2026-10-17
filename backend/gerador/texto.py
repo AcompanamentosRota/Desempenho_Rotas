@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import date, datetime, timezone
 
 _ESPACOS = re.compile(r"\s+")
+_DATA_MS = re.compile(r"/Date\((-?\d+)")
 
 
 def normalizar(valor: object) -> str:
@@ -52,3 +54,21 @@ def numero(valor: object) -> float:
         return float(valor)
     except (TypeError, ValueError):
         return 0.0
+
+
+def data(valor: object) -> date | None:
+    """DATA_MOVIMENTO do OData -> date: '2026-10-17', '2026-10-17T00:00:00', '20261017' ou '/Date(ms)/'."""
+    if isinstance(valor, datetime):
+        return valor.date()
+    if isinstance(valor, date):
+        return valor
+    texto = limpar(valor)
+    m = _DATA_MS.match(texto)
+    if m:
+        return datetime.fromtimestamp(int(m.group(1)) / 1000, tz=timezone.utc).date()
+    try:
+        if len(texto) == 8 and texto.isdigit():
+            return date(int(texto[:4]), int(texto[4:6]), int(texto[6:]))
+        return date.fromisoformat(texto[:10])
+    except ValueError:
+        return None

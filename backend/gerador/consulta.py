@@ -38,6 +38,7 @@ class Consulta:
         self.replay = replay and pasta_cache is not None
         self._urls: dict[str, str] = {}
         self._colunas: dict[str, list[str]] = {}
+        self._tipos: dict[str, dict[str, str]] = {}
 
     # ------------------------------------------------------------ metadados
     def _resolver(self, objeto: str) -> None:
@@ -47,19 +48,27 @@ class Consulta:
         if self.replay and chave and chave.exists():
             salvo = json.loads(chave.read_text(encoding="utf-8"))
             self._urls[objeto], self._colunas[objeto] = salvo["url"], salvo["colunas"]
+            self._tipos[objeto] = salvo.get("tipos", {})
             return
         obj = buscar_objeto(self.cfg.space, objeto)
         meta = ler_metadados(obj, ANALITICO)
         base = obj.url_dados(ANALITICO).rstrip("/")
         self._urls[objeto] = f"{base}/{quote(meta.entity_set, safe='')}"
         self._colunas[objeto] = meta.nomes_colunas
+        self._tipos[objeto] = meta.tipos_colunas
         if self.gravar and chave:
             chave.parent.mkdir(parents=True, exist_ok=True)
-            chave.write_text(json.dumps({"url": self._urls[objeto], "colunas": self._colunas[objeto]}), encoding="utf-8")
+            chave.write_text(json.dumps({"url": self._urls[objeto], "colunas": self._colunas[objeto],
+                                         "tipos": self._tipos[objeto]}), encoding="utf-8")
 
     def colunas(self, objeto: str) -> list[str]:
         self._resolver(objeto)
         return self._colunas[objeto]
+
+    def tipo(self, objeto: str, coluna: str) -> str | None:
+        """Tipo OData da coluna (ex.: 'Edm.Date', 'Edm.String'); None se desconhecido."""
+        self._resolver(objeto)
+        return self._tipos.get(objeto, {}).get(coluna)
 
     def url(self, objeto: str) -> str:
         self._resolver(objeto)
