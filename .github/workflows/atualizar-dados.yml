@@ -20,7 +20,7 @@ on:
         options: [tudo, so-online]
         default: tudo
       fechamento:
-        description: 'Fechamento do mês (ex.: "Setembro/26"); deixe vazio no dia a dia'
+        description: 'Só sobrepõe o rótulo da tag de fechamento (ex.: "Setembro/26"); o fechamento é automático, deixe vazio'
         required: false
 
 permissions:

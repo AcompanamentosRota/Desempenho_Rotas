@@ -8,6 +8,10 @@ mesmas chaves, mesma ordem, mesmos índices de SEGS/DIAS e mesmas fórmulas
 Cobertura (COBERTOS e o real de cada indicador) conta para a rota da venda, mesmo de cliente
 transferido ou desativado; no KS TT, só PVs dos segmentos elegíveis (M.SEGMENTOS_KS_TT).
 O online.json segue a mesma regra (online_ks_tt).
+
+Volume (critério do SAC, modelo.indicador_volume): meta = Meta NEG, real = Vol Real, tendência =
+Vol Real + Neg Restante. No fechamento do mês (FECHAMENTO = true) todo o payload é do mês anterior:
+sem tendência e sem meta do dia, Venda Zero indisponível.
 """
 from __future__ import annotations
 
@@ -244,4 +248,5 @@ def montar_payload(f: Fontes) -> dict:
         "VOLUME_CLIENTE": por_ordem(volume_cliente),
         "REDES_CLIENTE": por_ordem(redes_out),
         "FONTES": fontes,
+        "FECHAMENTO": cal.fechamento,
     }

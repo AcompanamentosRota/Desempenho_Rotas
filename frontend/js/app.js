@@ -117,7 +117,7 @@ const rotasAtuais = () => sel.rota ? [sel.rota] : rotasDe(sel.gc, sel.sv);
 function agrega(rotas){
   const ind={}, tot={baseTotal:0,compraram:null,semCompra:null};
   [...GROUPS.ICS_GC,...GROUPS.NOVOS_NEG].forEach(k=>ind[k]={meta:0,real:0,n:0});
-  const volAgg={}; GROUPS.VOLUME.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,n:0});
+  const volAgg={}; GROUPS.VOLUME.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,neg:0,mdia:null,n:0});
   rotas.forEach(r=>{
     const d=nodo(sel.gc,r); tot.baseTotal+=d.baseTotal||0;
     if(d.compraram!=null){tot.compraram=(tot.compraram||0)+d.compraram;
@@ -127,9 +127,10 @@ function agrega(rotas){
       ind[k].meta+=b.meta||0; ind[k].real+=b.real||0; ind[k].n++;
     });
     GROUPS.VOLUME.forEach(k=>{
-      const b=d.indicators[k]; if(!b||b.unavailable) return;
-      volAgg[k].meta+=b.meta||0; volAgg[k].real+=b.real||0;
-      volAgg[k].tend+=b.tendencia||0; volAgg[k].n++;
+      const b=d.indicators[k], a=volAgg[k]; if(!b||b.unavailable) return;
+      a.meta+=b.meta||0; a.real+=b.real||0; a.tend+=b.tendencia||0; a.neg+=b.negRestante||0;
+      if(b.metaDia!=null) a.mdia=(a.mdia||0)+b.metaDia;
+      a.n++;
     });
   });
   const out={};
@@ -146,14 +147,19 @@ function agrega(rotas){
       oportunidadeHoje: rotas.reduce((s,r)=>s+((OPORTUNIDADE_HOJE||{})[r]||0),0),
       unavailable:false};
   });
+  /* Volume (critério do SAC, igual a modelo.agrega_volume): soma as rotas (Vol Real, Neg Restante, Tendência,
+     Meta NEG, Meta do dia) e recalcula o % sobre as somas. Fechamento do mês: sem tendência nem meta do dia,
+     no ritmo pelo % realizado (Real / Meta NEG). */
+  const fech = !!P.FECHAMENTO;
   GROUPS.VOLUME.forEach(k=>{
     const a=volAgg[k];
     if(!a.n){out[k]={unavailable:true};return;}
-    const pctT = a.meta ? Math.round(a.tend/a.meta*100) : null;
+    const pctT = (!fech && a.meta) ? Math.round(a.tend/a.meta*100) : null;
+    const pctR = a.meta ? Math.round(a.real/a.meta*100) : null;
     const semDadoHoje = rotas.length===1 && !!(nodo(sel.gc,rotas[0]).indicators[k]||{}).semDadoHoje;
-    out[k]={meta:a.meta,real:a.real,dif:a.real-a.meta,
-      metaDia: rotas.reduce((s,r)=>{const b=nodo(sel.gc,r).indicators[k];return s+(b&&!b.unavailable?(b.metaDia||0):0);},0),
-      pctTendencia:pctT, onPace: pctT!=null && pctT>=100, unavailable:false, semDadoHoje};
+    out[k]={meta:a.meta,real:a.real,dif:a.real-a.meta, metaDia: fech?null:a.mdia,
+      tendencia: fech?null:a.tend, negRestante: fech?null:a.neg, pctTendencia:pctT, pctReal:pctR,
+      onPace: fech ? (pctR!=null && pctR>=100) : (pctT!=null && pctT>=100), unavailable:false, semDadoHoje};
   });
   return {ind:out, tot};
 }
@@ -313,6 +319,8 @@ function linha(k, b, rotas){
         <div class="semdado">indisponível — sem venda hoje pra essa rota</div></div>`;
     }
     const dif = b.real - b.meta;
+    // fechamento do mês: % realizado no lugar da tendência (que não existe com o mês fechado)
+    const fech = !!P.FECHAMENTO, big = fech ? b.pctReal : b.pctTendencia;
     return `${ini}
       <div class="tit">${nome}</div>
       <div class="row">
@@ -322,9 +330,9 @@ function linha(k, b, rotas){
           <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${Math.round(dif).toLocaleString('pt-BR')}</div>
         </div>
         <div class="cm">
-          <div class="big"><span class="seta">${bom?'▲':'▼'}</span>${b.pctTendencia==null?'—':b.pctTendencia+'%'}</div>
-          <div class="acao">${bom? 'no ritmo' : 'abaixo da tendência'}</div>
-          <div class="opo">${b.meta? Math.round(b.real/b.meta*100) : 0}% real</div>
+          <div class="big"><span class="seta">${bom?'▲':'▼'}</span>${big==null?'—':big+'%'}</div>
+          <div class="acao">${fech ? (bom?'meta batida':'abaixo da meta') : (bom? 'no ritmo' : 'abaixo da tendência')}</div>
+          <div class="opo">${fech ? 'realizado no mês' : `${b.pctReal==null?0:b.pctReal}% real`}</div>
         </div>
         <div class="cr"><div class="olab">Online</div>${caixaOnline(k, rotas, b)}</div>
       </div></div>`;
@@ -359,7 +367,10 @@ function caixaOnline(k, rotas, b){
   }
   if(GROUPS.VOLUME.includes(k)){
     const volHoje = rotas.reduce((a,r)=>a+(((ONLINE&&ONLINE.volume||{})[r]||{})[k]||0),0);
-    const metaDia = b.metaDia||0;
+    if(b.metaDia==null)   // fechamento do mês (online de hoje, sem meta do dia) ou META_RECUPERAVEL_ROTA ausente
+      return `<div class="obox nd">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
+        <span>${P.FECHAMENTO?'online hoje':'meta do dia —'}</span></div>`;
+    const metaDia = b.metaDia;
     const ok = volHoje >= metaDia;
     return `<div class="obox ${ok?'ok':'no'}">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
       <span>meta do dia ${Math.round(metaDia).toLocaleString('pt-BR')}</span></div>`;
@@ -599,6 +610,17 @@ function tileVolume(k, bloco){
     <div class="e" data-fit="10.5" data-fit-min="8.5" data-fit-quebra>${pct}% · ${rotulo}</div>
     <div class="nums" data-fit="12" data-fit-min="8">${fmtNum(real)} / ${fmtNum(meta)}</div></div>`;
 }
+/* Real da barra por cliente = Vol Real do payload + volume online de hoje do cliente (online.json volumeCliente),
+   fora do fechamento do mês. % e status recalculados com a mesma regra (modelo.bloco_cliente_com_online). */
+function blocoVolCliente(r, pv, i, k){
+  const porCliente = ((P.VOLUME_CLIENTE||{})[r]||{})[pv];
+  const bloco = porCliente ? porCliente[i] : null;
+  const onl = (((((ONLINE && ONLINE.volumeCliente)||{})[r]||{})[pv])||{})[k]||0;
+  if(!bloco || P.FECHAMENTO || !onl) return bloco;
+  const meta = bloco[0], real = bloco[1] + onl;
+  const pct = meta ? Math.round(real/meta*100) : 0;
+  return [meta, Math.round(real*10)/10, pct, pct>=100?2:(pct>=P.PACE_ONTEM_PCT?1:0)];
+}
 const tileCob = (k, cls, txt) =>
   `<div class="tile ${cls}"><div class="t" data-fit="13" data-fit-min="9.5">${esc(P.LABELS_CURTO[k]||LABELS[k])}</div><div class="e">${txt}</div></div>`;
 const blocoImperdoaveis = `<h4>Imperdoáveis</h4><div class="semim">Sem dado de Imperdoáveis pra essa rota.</div>`;
@@ -622,9 +644,8 @@ function buscaCliente(){
   const grupo = P.COV_GRUPO[aba];              // só os itens da aba ativa
   let chips;
   if(aba==='VOLUME'){
-    // Volume não tem cobertura binária: usa a barra de status de meta por cliente (VOLUME_CLIENTE)
-    const porCliente = ((P.VOLUME_CLIENTE||{})[rota]||{})[achado[0]];
-    chips = grupo.map((k,i)=> tileVolume(k, porCliente ? porCliente[i] : null)).join('');
+    // Volume não tem cobertura binária: usa a barra de status de meta por cliente (VOLUME_CLIENTE + online de hoje)
+    chips = grupo.map((k,i)=> tileVolume(k, blocoVolCliente(rota, achado[0], i, k))).join('');
   } else {
     chips = grupo.map(k=>{
       if(k==='KS TT' && !kstt) return tileCob(k, 'na', 'não elegível');
@@ -661,8 +682,7 @@ function renderRede(rede){
     chips = grupo.map((k,i)=>{
       let metaSum=0, realSum=0, temMeta=false;
       membros.forEach(([r,cid])=>{
-        const porCliente = ((P.VOLUME_CLIENTE||{})[r]||{})[cid];
-        const bloco = porCliente ? porCliente[i] : null;
+        const bloco = blocoVolCliente(r, cid, i, k);
         if(bloco){ metaSum+=bloco[0]; realSum+=bloco[1]; temMeta=true; }
       });
       if(!temMeta || metaSum<=0) return tileVolume(k, null);

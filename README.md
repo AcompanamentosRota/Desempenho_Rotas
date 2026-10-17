@@ -19,10 +19,12 @@ desempenho/
 │   ├── gerador/              consulta, normalização, fórmulas, montagem, validação
 │   ├── scripts/gerar.py      gera os JSONs
 │   ├── scripts/descobrir.py  confere o mapeamento contra os dados reais
+│   ├── scripts/conferir_tendencia.py  confere tendência do SAC e fechamento com os dados reais
 │   └── tests/                testes sem rede (unittest)
 ├── .github/workflows/
 │   ├── atualizar-dados.yml   cron 15 min, seg-sex, 07h-18h45 (Brasília)
 │   ├── deploy-pages.yml      publica frontend/ no Pages
+│   ├── conferir-tendencia.yml  manual: relatório da tendência/fechamento (artifact, sem commit)
 │   └── testes.yml            testes do back-end
 └── index.html                redireciona links antigos para frontend/
 ```
@@ -92,7 +94,8 @@ python -m unittest discover -s tests -t .   # testes (sem rede)
 cd ../frontend && python -m http.server 8000   # abre http://localhost:8000
 ```
 
-Opções úteis do `gerar.py`: `--so-online`, `--fechamento "Setembro/26"`,
+Opções úteis do `gerar.py`: `--so-online`, `--saida DIR`, `--hoje AAAA-MM-DD` (simula a data, ex.: o
+fechamento do mês; o cron não usa), `--fechamento "Setembro/26"` (só sobrepõe o rótulo da tag),
 `--gravar-cache DIR` e `--replay DIR` (reprocessa respostas salvas, sem rede).
 
 ## Regras conferidas com os dados reais (13/10/2026)
@@ -102,17 +105,47 @@ Opções úteis do `gerar.py`: `--so-online`, `--fechamento "Setembro/26"`,
   IT e MO vêm juntas na fonte e são separadas pelo código do supervisor.
 - **Cobertura**: cliente com `FX_COBERTURA_REALIZADO > 0` no agrupador (13 agrupadores do painel).
 - **Online**: medidas `*_WF_ONLINE` (pedidos de hoje).
-- **Metas**: `META_COBERTURA_Chave_Meta_SAP` (ICS e Novos Negócios), `META_VOLUME_Chave_Meta_SAP`
-  (volume), `META_DIA` (meta do dia) e `META_NEG` por cliente (barra de volume por cliente).
-  Na rota 111 todas bateram com o painel antigo.
+- **Metas**: `META_COBERTURA_Chave_Meta_SAP` (ICS e Novos Negócios), `META_NEG` (volume: meta do mês,
+  por cliente e por dia) e `META_RECUPERAVEL_ROTA` (meta do dia do volume). `META_VOLUME_Chave_Meta_SAP`
+  vai no payload só para conferência (`metaRota`).
 - **Venda Zero**: geladeiras `Total Ko` / Fountain em `Concluído(Contrato)` com `Giro Zero`
   (rota 111: os mesmos 67 equipamentos do painel antigo).
 
-Diferenças em relação ao arquivo que era montado à mão:
+## Volume: tendência pelo critério do SAC
 
-- **Tendência de volume**: o modelo não traz a curva diária por rota, então a projeção é linear
-  (realizado até ontem ÷ dias úteis fechados × dias úteis do mês). O arquivo antigo usava outro
-  cálculo e mostrava percentuais maiores.
+Por rota × macro de volume (Refrigerantes, Cervejas, Still, Água Mineral, Dest+Art+Cnd):
+
+| Campo | Conta |
+|---|---|
+| Vol Real | `FX_VOL_PADRAO_FAT` do mês com `NF_STATUS_Nota_Fiscal` em Acertado, Meta Neg ou Em Aberto |
+| Neg Restante | `META_NEG` com `DATA_MOVIMENTO` de hoje (inclusive) até o último dia do mês |
+| Tendência | Vol Real + Neg Restante |
+| Meta | `META_NEG` do mês (denominador em rota, supervisão e gerência) |
+| % Tendência | Tendência ÷ Meta; verde a partir de 100% |
+| Dif | Vol Real − Meta |
+| Meta do dia | `META_RECUPERAVEL_ROTA` com `DATA_MOVIMENTO` = hoje (sem a medida, fica "—") |
+
+Supervisão e gerência somam as rotas e recalculam o % (rotas Neutraliza entram só no total da gerência,
+porque têm supervisão própria). O volume online de hoje não entra na tendência: fica no quadro Online
+e na coluna própria do Resumo de vendas. A **barra por cliente** (busca, aba Volume) é a exceção:
+Real do cliente = Vol Real do cliente + volume online de hoje do cliente (`online.json` → `volumeCliente`),
+com a mesma regra de cor (vermelho abaixo do ritmo do mês, amarelo até 100%, verde a partir de 100%).
+
+## Fechamento do mês (automático)
+
+Do dia 1 do mês até o fim do 1º dia útil — e, a partir do 2º dia útil, enquanto alguma gerência ainda não
+tiver `META_VOLUME` e `META_COBERTURA` do mês novo — o painel mostra o **mês anterior fechado**:
+coberturas, volume (Meta, Real, Dif e % realizado, sem tendência nem meta do dia) e listas do mês anterior,
+calendário completo (dia útil = total, ritmo 100%), Venda Zero indisponível e a tag âmbar
+"Fechamento Mês/AA". O quadro Online e os acompanhamentos que seguem o online (revertidos, sem compra hoje) usam os pedidos de
+hoje. O 1º/2º dia útil vem do calendário do Datasphere (ou do cálculo local, se ele falhar). O input
+`fechamento` do workflow só troca o rótulo da tag e não é necessário no dia a dia.
+
+Para conferir com os dados reais (sem publicar nada): **Actions → Conferir tendência → Run workflow**
+(opcional: `hoje` = 2026-11-01, 2026-11-03...). O artifact traz `relatorio_tendencia.md` (só totais) e o
+`payload.json`/`online.json` que o gerador publicaria naquela data.
+
+Diferenças em relação ao arquivo que era montado à mão:
 - **Visitas de hoje**: vêm do campo `VISITA_HOJE` do SAP e incluem clientes com mais de um dia de
   visita (ex.: "Ter - Sex"); o arquivo antigo só contava quem tinha exatamente o dia de hoje.
 - **Meta de Venda Zero**: o Datasphere só tem a meta por gerência; o gerador reparte entre as

@@ -5,7 +5,12 @@ Uso (na pasta backend/):
     python scripts/gerar.py                     # gera os dois em ../frontend/data
     python scripts/gerar.py --so-online         # só online.json (mais rápido)
     python scripts/gerar.py --rota 111 --forcar # testa uma rota, grava em saida/rota_111/
-    python scripts/gerar.py --fechamento "Setembro/26"   # marca o online como fechamento do mês
+    python scripts/gerar.py --hoje 2026-11-03 --saida saida/sim --forcar   # simula a data (teste, o cron não usa)
+    python scripts/gerar.py --fechamento "Setembro/26"   # só sobrepõe o rótulo da tag de fechamento
+
+Fechamento do mês: detectado sozinho (do dia 1 até o fim do 1º dia útil e, depois, enquanto alguma
+gerência não tiver META_VOLUME e META_COBERTURA do mês). Nesse período o payload mostra o mês anterior
+e o online.json leva fechamentoMes; com --so-online o rótulo sai do payload já publicado.
 
 Fora da janela de execução (padrão 07:00-18:59, horário de Brasília) termina sem fazer nada,
 a não ser com --forcar. Códigos de saída: 0 ok / nada a fazer, 1 erro de execução,
@@ -17,6 +22,7 @@ import argparse
 import logging
 import os
 import sys
+import time as relogio
 from datetime import datetime, time
 from pathlib import Path
 
@@ -48,14 +54,16 @@ def main() -> int:
     ap.add_argument("--saida", type=Path, help="pasta de destino (padrão: SAIDA_DIR ou ../frontend/data)")
     ap.add_argument("--so-online", action="store_true", help="gera só o online.json")
     ap.add_argument("--rota", help="restringe a uma rota (teste); grava em saida/rota_<ROTA>/")
-    ap.add_argument("--hoje", help="simula a data (AAAA-MM-DD), útil com --replay")
-    ap.add_argument("--fechamento", help='rótulo do fechamento do mês, ex.: "Setembro/26"')
+    ap.add_argument("--hoje", help="simula a data (AAAA-MM-DD): teste do fechamento ou --replay; o cron não usa")
+    ap.add_argument("--fechamento", help='sobrepõe o rótulo da tag de fechamento, ex.: "Setembro/26" '
+                                         '(o período de fechamento é detectado sozinho)')
     ap.add_argument("--forcar", action="store_true", help="ignora a janela de horário")
     ap.add_argument("--gravar-cache", type=Path, help="salva as respostas do Datasphere nesta pasta")
     ap.add_argument("--replay", type=Path, help="usa respostas salvas (sem rede)")
     args = ap.parse_args()
 
     log = configurar_log("gerar")
+    inicio = relogio.monotonic()
     agora = calendario.agora()
     if args.hoje:
         agora = datetime.combine(datetime.fromisoformat(args.hoje).date(), agora.time())
@@ -84,6 +92,8 @@ def main() -> int:
     payload = None if args.so_online else montar_payload(f)
     # KS TT do online pelo segmento do roster (com --so-online, o do payload já publicado) ou, fora dele, o da venda
     base = payload or saida.ler(destino / "payload.json")
+    if args.so_online and not f.online.fechamento_mes:
+        f.online.fechamento_mes = fontes.fechamento_pelo_payload(base, agora.date())
     arquivos: dict[str, dict] = {"online.json": montar_online(online_ks_tt(f.online, base, f.segmento_venda))}
     erros, avisos = validacao.validar_online(arquivos["online.json"])
     if payload is not None:
@@ -101,7 +111,8 @@ def main() -> int:
         return 2
 
     mudou = [nome for nome, obj in arquivos.items() if saida.gravar(destino / nome, obj)]
-    log.info("Arquivos atualizados: %s", ", ".join(mudou) or "nenhum (dados iguais)")
+    log.info("Arquivos atualizados: %s (%.0f s no total)", ", ".join(mudou) or "nenhum (dados iguais)",
+             relogio.monotonic() - inicio)
     print("CHANGED=" + ",".join(mudou))
     _github_output(mudou="true" if mudou else "false", arquivos=" ".join(mudou))
     return 0

@@ -57,9 +57,10 @@ def fontes_de(p: dict, o: dict, hoje: date) -> Fontes:
                     b = d["indicators"][k]
                     if b["unavailable"]:
                         continue
-                    acum = (b["real"] * b["meta"] / b["tendencia"] if b["tendencia"] else 0.0) if b["real"] else None
-                    volume[r][k] = VolumeRota(meta=b["meta"], real=b["real"], meta_acum_ontem=acum,
-                                              meta_dia_hoje=b["metaDia"])
+                    # tendência do SAC = real + Neg Restante: o restante sai da tendência publicada
+                    restante = None if b.get("tendencia") is None else b["tendencia"] - b["real"]
+                    volume[r][k] = VolumeRota(meta=b["meta"], real=b["real"], neg_restante=restante,
+                                              meta_dia_hoje=b["metaDia"], meta_rota=b.get("metaRota"))
                 volume_cliente[r] = {
                     int(pv): {k: (bl[0], bl[1]) for k, bl in zip(M.INDICADORES_VOLUME, blocos) if bl is not None}
                     for pv, blocos in p["VOLUME_CLIENTE"][r].items()
