@@ -45,16 +45,21 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   O filtro fica em `payload.py` (`_filtra_ks_tt`, `online_ks_tt`), então o front recebe tudo pronto. O `QUALQUER`
   do online não é filtrado. `validacao.py` reprova KS TT com cliente da base de segmento não elegível; real > `baseKsTt`
   só gera aviso (clientes que saíram da rota).
-- **Tendência de volume = critério do SAC** (`modelo.indicador_volume`, espelhada em `agrega()` do app.js e
-  `soma()` do resumo.js), por rota × macro de volume:
-  Vol Real = `FX_VOL_PADRAO_FAT` do mês com `NF_STATUS_Nota_Fiscal` em `M.STATUS_NF_REAL` (comparado com
-  `normalizar`, a grafia exata vem do relatório da conferência); Neg Restante = `META_NEG` com `DATA_MOVIMENTO`
-  de hoje (inclusive) ao fim do mês; Tendência = Vol Real + Neg Restante; % = Tendência / Meta NEG (soma de
-  `META_NEG` do mês), verde com % >= 100; Dif = Vol Real − Meta NEG; meta do dia = `META_RECUPERAVEL_ROTA` de hoje
-  (sem a medida: `metaDia = null`, nunca outra conta). Meta NEG é o denominador em todos os níveis; supervisão e
-  gerência somam as rotas e recalculam o %. `META_VOLUME` vai só como `metaRota` (conferência). Sem Meta NEG na
-  rota × macro, o indicador fica indisponível. Consultas agregadas no servidor: Vol Real por rota × cliente ×
-  agrupador × status (sem dia); `META_NEG`/`META_RECUPERAVEL_ROTA` por rota × agrupador × `DATA_MOVIMENTO`.
+- **Tendência de volume = critério do SAC** (`modelo.meta_e_restante` + `indicador_volume`, espelhada em
+  `agrega()` do app.js e `soma()` do resumo.js), por rota × macro de volume:
+  Meta = `META_VOLUME_Chave_Meta_SAP` da rota (é o que o SAC mostra como "Meta NEG"; a soma de `META_NEG` dos
+  clientes é menor porque parte da meta não está distribuída — vai no payload só como `metaNegClientes`);
+  Vol Real = `FX_VOL_PADRAO_FAT` do mês com `NF_STATUS_Nota_Fiscal` em `M.STATUS_NF_REAL` (via `normalizar`);
+  Neg Restante = Meta × (`META_NEG` de hoje ao fim do mês / `META_NEG` do mês): a curva dos clientes aplicada à
+  meta da rota; Tendência = Vol Real + Neg Restante; % = Tendência / Meta, verde com % >= 100; Dif = Vol Real − Meta.
+  Casos-limite (aviso por rota × macro): META_VOLUME sem META_NEG → Neg Restante = Meta × dias úteis restantes
+  (com hoje) / dias úteis do mês; sem META_VOLUME → Meta e restante = somas de META_NEG; nenhuma → indisponível.
+  Meta do dia = `META_RECUPERAVEL_ROTA` por rota × agrupador com `DATA_MOVIMENTO` = hoje (se der HTTP 500, repete
+  por gerência; se falhar, `metaDia = null`, nunca outra conta). Supervisão e gerência somam as rotas e recalculam
+  o %. `validacao.py` informa por gerência a meta não distribuída (META_VOLUME − soma META_NEG), sem reprovar.
+  **`DATA_MOVIMENTO` só no `$filter`, nunca no groupby**: por rota × agrupador × dia são ~25 mil linhas e ~150 s
+  por medida (17/10); `META_NEG` do mês e restante são duas consultas por rota × agrupador. Literal de data pelo
+  tipo do `$metadata` (`fontes.literal_data`). Todas as consultas do mês rodam em paralelo (meta: gerar.py < 60 s).
 - **Barra por cliente (aba Volume)**: payload traz [Meta NEG, Vol Real] do cliente; o front soma o volume online de
   hoje do cliente (`online.json` → `volumeCliente`, também na rodada só-online) e recalcula % e status (mesma regra
   de cor; `modelo.bloco_cliente_com_online`). Só na barra: Real de rota/SV/GC e tendência ficam só com o faturado;
@@ -63,7 +68,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (de `M.GC_ORIGEM`, presentes na base) não tiver `META_VOLUME` > 0 e `META_COBERTURA` > 0 para M (meta por rota →
   gerência pela base de clientes). Dia útil pelo calendário do Datasphere (`NO_DIA_UTIL`), senão cálculo local.
   Nesse período TODO o payload é de M−1 (`cal.anomes`), com `FECHAMENTO: true`, calendário fechado
-  (DIA_ONTEM = DIA_HOJE = TOTAL, PACE 100), volume sem tendência/meta do dia (% realizado), Venda Zero indisponível
+  (DIA_ONTEM = DIA_HOJE = TOTAL, PACE 100), volume sem tendência/meta do dia (% realizado = Vol Real / META_VOLUME), Venda Zero indisponível
   (comodato nem é consultado). O online continua sendo o de hoje (consulta extra só `FONTE = 'WF Online'` em M) e
   ganha `fechamentoMes` = rótulo de M−1; na rodada só-online o rótulo sai do payload publicado. O input manual
   `fechamento` do workflow só sobrepõe o rótulo da tag. `validacao.py` compara quedas (rotas, clientes, volume real)

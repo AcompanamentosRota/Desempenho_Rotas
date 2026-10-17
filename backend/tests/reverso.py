@@ -60,7 +60,7 @@ def fontes_de(p: dict, o: dict, hoje: date) -> Fontes:
                     # tendência do SAC = real + Neg Restante: o restante sai da tendência publicada
                     restante = None if b.get("tendencia") is None else b["tendencia"] - b["real"]
                     volume[r][k] = VolumeRota(meta=b["meta"], real=b["real"], neg_restante=restante,
-                                              meta_dia_hoje=b["metaDia"], meta_rota=b.get("metaRota"))
+                                              meta_dia_hoje=b["metaDia"], meta_neg_clientes=b.get("metaNegClientes"))
                 volume_cliente[r] = {
                     int(pv): {k: (bl[0], bl[1]) for k, bl in zip(M.INDICADORES_VOLUME, blocos) if bl is not None}
                     for pv, blocos in p["VOLUME_CLIENTE"][r].items()

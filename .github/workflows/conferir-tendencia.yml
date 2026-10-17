@@ -73,9 +73,9 @@ jobs:
           DURACAO=$(( $(date +%s) - INICIO ))
           {
             echo ""
-            echo "## 8. gerar.py completo"
+            echo "## 10. gerar.py completo"
             echo ""
-            echo "\`gerar.py ${ARGS[*]}\`: código de saída $CODIGO em ${DURACAO} s (limite do workflow Atualizar dados: 15 min)."
+            echo "\`gerar.py ${ARGS[*]}\`: código de saída $CODIGO em ${DURACAO} s (meta: abaixo de 60 s; antes, 189 s)."
           } >> saida/conferencia/relatorio_tendencia.md
           exit $CODIGO
 

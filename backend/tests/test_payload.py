@@ -4,7 +4,7 @@ reconstrói as fontes a partir do payload/online e confere se a montagem gera o 
 
 Diferenças toleradas (são do arquivo antigo, não da montagem):
   - percentuais recalculados a partir de valores já arredondados (pctTendencia e pct por cliente ±1);
-  - chaves novas: FECHAMENTO no payload; negRestante e metaRota no volume (tendência do SAC);
+  - chaves novas: FECHAMENTO no payload; negRestante e metaNegClientes no volume (tendência do SAC);
   - 19 equipamentos de Venda Zero cujo "revertido" foi calculado com um online.json mais antigo que o
     publicado, e rotas de IT/MO cuja oportunidade incluía os já revertidos.
 """
