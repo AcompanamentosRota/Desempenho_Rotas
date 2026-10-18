@@ -138,3 +138,34 @@ class TestRotaClienteXRotaMeta(unittest.TestCase):
         self.assertIn("| rota 514 | Refrigerantes | fora da base de clientes |", txt)
         self.assertIn("| G1 | Refrigerantes | rota do cliente fora do painel | 1 | 40,0 |", txt)
         self.assertIn("curva da META_NEG pela **rota da meta**", txt)
+
+
+class TestSecoesE(unittest.TestCase):
+    """E1-E5 com o cenário sintético do front (15 gerências, Neutraliza, At, DV Frut, Sucos, comodato)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "frontend" / "tests"))
+        import sintetico
+        d = sintetico.dados(False)
+        d[M.OBJ_BASE_CLIENTE] += [dict(d[M.OBJ_BASE_CLIENTE][0], **{CB.ROTA: "EV9"}),
+                                  dict(d[M.OBJ_BASE_CLIENTE][0], **{CB.GC: "Gc. At", CB.SUPERVISOR: "Sv. Bl. At"})]
+        cls.txt = conferir_tendencia.conferir(ConsultaFalsa(d), date(2026, 10, 13))[0].texto("E")
+
+    def test_secoes(self):
+        self.assertNotIn("ERRO", self.txt)
+        for t in ["E1. Gerências nos 3 modelos", "E2. Gc. At", "E3. Agrupadores novos", "E4. Desempenho GDM",
+                  "E5. Neutraliza"]:
+            self.assertIn(t, self.txt)
+        self.assertIn("| AM_BND_BASE_CLIENTE | 'Gc. Pa_Di' | PA, DI | sim |", self.txt)
+        self.assertIn("| AT | Matriz | 3 | 6 |", self.txt)
+        self.assertIn("| sem vendedor | SV.AT.3 | AT31 |", self.txt)
+        self.assertIn("`DV Frut` encontrado; `Sucos` encontrado", self.txt)
+        self.assertIn("| SV.G1.5 | 151 |", self.txt)
+        self.assertIn("| cliente 20 |", self.txt)
+        self.assertNotIn("| cliente 21 |", self.txt)
+
+    def test_sem_pessoas_nem_clientes(self):
+        for v in ["CLIENTE TESTE", "SUPERVISOR G1", "CONSULTOR", "ROTA SEM VENDEDOR", "REDE TESTE", "0000010"]:
+            self.assertNotIn(v, self.txt)

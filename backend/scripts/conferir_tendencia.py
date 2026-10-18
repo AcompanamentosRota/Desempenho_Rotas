@@ -17,7 +17,9 @@ nomes ou códigos de clientes) com:
   6. sobreposição online x faturado de hoje (clientes e volume em WF Online e em NF de hoje, por status);
   7. META_VOLUME e META_COBERTURA por gerência no mês atual e no próximo (critério de virada);
   8. colunas do comodato que podem indicar giro do mês anterior (GIRO, MES, ANT): só nomes e contagens;
-  9. tempo de cada consulta, total e antes x depois.
+  9. tempo de cada consulta, total e antes x depois;
+  E1-E6. 16 gerências, Gc. At, agrupadores novos (DV Frut, Sucos, Ades, Powerade), Desempenho GDM, Neutraliza
+     e tamanho dos JSONs (este no workflow); E7 = seção 4 (aceite), sem mudança.
 """
 from __future__ import annotations
 
@@ -167,8 +169,10 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
     # 0. contexto ----------------------------------------------------------------
     def contexto():
         cal, linhas_cal = fontes.carregar_calendario(cons, hoje)
-        clientes, gcs = fontes.carregar_clientes(cons)
+        est_base: dict = {}
+        clientes, gcs = fontes.carregar_clientes(cons, estatisticas=est_base)
         gc_da_rota = {c.rota: c.gc for c in clientes}
+        estado.update(clientes=clientes, est_base=est_base)
         fech = fontes.decidir_fechamento(cons, hoje, linhas_cal, gc_da_rota)
         estado.update(cal=cal, cal_ref=fech or cal, gcs=gcs, gc_da_rota=gc_da_rota,
                       rotas=sorted(gc_da_rota), dia_util=calmod.dia_util_hoje(linhas_cal, hoje))
@@ -583,6 +587,151 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
             rel.p(f"- `{c}`: {len(distintos)} valores distintos em {len(lin)} linhas"
                   + (" (limite de 5000 linhas atingido)" if len(lin) >= 5000 else ""))
     etapa("comodato", comodato)
+
+    # E1-E5. 16 gerências, At, agrupadores novos, GDM, Neutraliza (só contagens e códigos de SV/rota) ----
+    rel.h("E1. Gerências nos 3 modelos")
+
+    def gerencias():
+        CB = M.ColBase
+        modelos = [(M.OBJ_BASE_CLIENTE, CB.GC, CB.QUANTIDADE, M.FILTRO_BASE_CLIENTE),
+                   (M.OBJ_META, CM.GC, CM.VOL_MES, eq(CM.ANOMES, anomes)),
+                   (M.OBJ_COMODATO, CO.GC, CO.MEDIDA_AUX, M.FILTRO_COMODATO)]
+        linhas = []
+        for obj, col, med, filtro in modelos:
+            try:
+                vals = {limpar(l.get(col)) for l in cons.linhas(obj, [col, med], filtro)}
+            except Exception as erro:  # noqa: BLE001
+                linhas.append([obj, f"erro: {erro}", None, None])
+                continue
+            for v in sorted(vals):
+                cod = M.codigo_gc(v)
+                linhas.append([obj, repr(v), ", ".join(M.GC_SIGLAS_ORIGEM.get(cod, [])) or "**não mapeada**",
+                               "sim" if v in M.GC_ORIGEM else "não"])
+        rel.tabela(["modelo", "gerência (como veio)", "siglas no painel", "em M.GC_ORIGEM"], linhas)
+        por = defaultdict(lambda: [set(), set(), 0])
+        for c in estado["clientes"]:
+            por[c.gc][0].add(c.sv)
+            por[c.gc][1].add(c.rota)
+            por[c.gc][2] += 1
+        rel.p("\nNo painel (base de clientes já filtrada), por sigla:")
+        rel.tabela(["sigla", "região", "supervisões", "rotas", "clientes"],
+                   [[g, next((rg for rg, gs in M.REGIOES.items() if g in gs), "**fora das regiões**"),
+                     len(por[g][0]), len(por[g][1]), por[g][2]] for g in M.GC_ATIVAS + sorted(set(por) - set(M.GC_ATIVAS))])
+        est = estado["est_base"]
+        rel.p("\nLinhas ignoradas da base de clientes, por gerência e motivo:")
+        rel.tabela(["gerência", "motivo", "linhas"],
+                   [[o, m, n] for o, ms in sorted(est.get("ignoradas", {}).items()) for m, n in sorted(ms.items())]
+                   or [["—", "nenhuma", 0]])
+        rel.p("\nSupervisores com prefixo fora das siglas da gerência (entram pelo prefixo): "
+              + ("; ".join(f"{o}: {', '.join(v)}" for o, v in sorted(est.get("fora_padrao", {}).items())) or "nenhum"))
+    etapa("E1 gerências", gerencias)
+
+    rel.h("E2. Gc. At: supervisões e rotas por tipo")
+
+    def atacados():
+        CB = M.ColBase
+        sel_at = [CB.ROTA, CB.SUPERVISOR, CB.NOME_SUPERVISOR, CB.QUANTIDADE]
+        lin = cons.linhas(M.OBJ_BASE_CLIENTE, sel_at, e(M.FILTRO_BASE_CLIENTE, eq(CB.GC, "Gc. At")))
+        grupos = defaultdict(float)
+        for l in lin:
+            r, sv = fontes._rota(l.get(CB.ROTA)), M.codigo_sv(l.get(CB.SUPERVISOR))
+            # o nome do supervisor só classifica ("sem vendedor"); nunca vai para o relatório
+            tipo = ("rota eventual (EV*)" if not M.rota_do_painel(r) else "balcão (SV.BL.*)"
+                    if sv.startswith(M.SV_IGNORAR_PREFIXOS) else "fora do padrão" if not M.sv_do_painel(sv)
+                    else "Neutraliza" if sv in M.NEUTRALIZA else "sem vendedor"
+                    if "SEM VENDEDOR" in normalizar(l.get(CB.NOME_SUPERVISOR)) else "normal")
+            grupos[(tipo, sv, r)] += numero(l.get(CB.QUANTIDADE))
+        rel.p("Na At nada é oculto; EV*, SV.BL.* e supervisor fora do padrão continuam fora (filtros globais).")
+        rel.tabela(["tipo", "supervisão", "rota", "clientes"],
+                   [[t, sv, r, int(n)] for (t, sv, r), n in sorted(grupos.items())] or [["—", "—", "—", 0]])
+    etapa("E2 Gc. At", atacados)
+
+    rel.h("E3. Agrupadores novos (FRUT, SUCO, ADES, POWER)")
+
+    def agrupadores():
+        lin = cons.linhas(M.OBJ_META, [CM.AGRUPADOR, CM.VOL_MES], eq(CM.ANOMES, anomes))
+        alvo = re.compile(r"FRUT|SUCO|ADES|POWER")
+        vals = defaultdict(float)
+        for l in lin:
+            if alvo.search(normalizar(l.get(CM.AGRUPADOR))):
+                vals[limpar(l.get(CM.AGRUPADOR))] += numero(l.get(CM.VOL_MES))
+        rel.tabela(["agrupador (como veio)", "FX_VOL_PADRAO_FAT no mês"], [[repr(v), _n(t)] for v, t in sorted(vals.items())]
+                   or [["nenhum", None]])
+        achados = {normalizar(v) for v in vals}
+        esperados = list(M.AGRUPADORES_VOLUME_EXTRA.values()) + [a for a in M.AGRUPADORES_GDM if a not in
+                                                                  M.AGRUPADORES_VOLUME.values()]
+        rel.p("\nConfere a grafia em mapeamento.py: " + "; ".join(
+            f"`{a}` {'encontrado' if normalizar(a) in achados else '**NÃO encontrado**'}" for a in esperados))
+        _, metas_vol = fontes.carregar_metas(cons, anomes, None)
+        k = M.INDICADORES_VOLUME_EXTRA[0]
+        g2 = [r for r in estado["rotas"] if gc_da_rota[r] in M.VOLUME_EXTRA[k]["gcs"]]
+        rel.p(f"\nMETA_VOLUME de `{M.AGRUPADORES_VOLUME_EXTRA[k]}` por rota da {', '.join(M.VOLUME_EXTRA[k]['gcs'])}:")
+        rel.tabela(["rota", "META_VOLUME"], [[r, _n(metas_vol.get(r, {}).get(k))] for r in g2] or [["—", None]])
+    etapa("E3 agrupadores", agrupadores)
+
+    rel.h("E4. Desempenho GDM: amostra de 20 clientes com geladeira Total Ko (sem identificação)")
+
+    def gdm():
+        vz, atv, vz_meta, por_cli = fontes.carregar_comodato(cons, anomes, None, gc_da_rota)
+        vm = estado.get("vm") or fontes.carregar_volume_real(cons, anomes, gcs, None)
+        # VL_PADRAO por cliente (mesma consulta do comodato, já em memória)
+        sel_co = fontes._colunas(cons, M.OBJ_COMODATO, [CO.ROTA, CO.CLIENTE, CO.NOME, CO.DIA_VISITA, CO.VISITA_HOJE,
+                                                        CO.EQUIPAMENTO, CO.GIRO, CO.META_EQPTO, CO.VOLUME])
+        vl, giros, vistos = defaultdict(list), defaultdict(int), set()
+        for l in cons.linhas(M.OBJ_COMODATO, sel_co, e(M.FILTRO_COMODATO, ou(CO.GC, M.GC_ORIGEM))):
+            r, pv, eq_ = fontes._rota(l.get(CO.ROTA)), inteiro(l.get(CO.CLIENTE)), limpar(l.get(CO.EQUIPAMENTO))
+            if not r or pv is None or (r, eq_) in vistos:
+                continue
+            vistos.add((r, eq_))
+            vl[(r, pv)].append(numero(l.get(CO.VOLUME)))
+            giros[limpar(l.get(CO.GIRO))] += 1
+        amostra = sorted(k_ for k_ in por_cli if k_[0] in gc_da_rota)[:20]
+        linhas = []
+        for i, (r, pv) in enumerate(amostra, 1):
+            meta, n, sits = por_cli[(r, pv)]
+            real = vm.real_gdm_cliente.get(r, {}).get(pv, 0.0)
+            vls = vl.get((r, pv), [0.0])
+            linhas.append([f"cliente {i}", gc_da_rota[r], n, fontes.situacao_cliente(sits) or "desconhecida", _n(meta),
+                           _n(sum(vls)), _n(max(vls)), _n(real), _pct(real, meta)])
+        rel.p("Faturado GDM = Vol Real (status do SAC) em Refrigerantes, Água Mineral, Sucos, Ades e Powerade. "
+              "Compare as unidades: GDM x VL_PADRAO x META_EQPTO.")
+        rel.tabela(["", "gerência", "geladeiras", "situação", "META_EQPTO", "VL_PADRAO (soma)", "VL_PADRAO (máx.)",
+                    "faturado GDM", "% GDM"], linhas or [["—"] + [None] * 8])
+        # situação pelo código do mapeamento; só o texto que NÃO bateu com M.SITUACAO_GIRO aparece (para corrigir grafia)
+        por_cod, sem_mapa = defaultdict(int), defaultdict(int)
+        for g, n in giros.items():
+            cod = M.SITUACAO_GIRO.get(normalizar(g))
+            if cod:
+                por_cod[cod] += n
+            else:
+                sem_mapa[g] += n
+        rel.p("\nGeladeiras por situação (M.SITUACAO_GIRO): " + "; ".join(f"{c}: {por_cod.get(c, 0)}" for c in M.ORDEM_SITUACAO)
+              + " · sem correspondência: " + ("; ".join(f"{g!r}: {n}" for g, n in sorted(sem_mapa.items())) or "nenhuma"))
+        dist = defaultdict(int)
+        mistos = 0
+        for meta, n, sits in por_cli.values():
+            dist["3 ou mais" if n >= 3 else str(n)] += 1
+            mistos += len({s_ for s_ in sits if s_}) > 1
+        rel.p("Geladeiras por cliente: " + "; ".join(f"{k_}: {v} clientes" for k_, v in sorted(dist.items()))
+              + f" · clientes com situações diferentes entre as geladeiras: {mistos}")
+    etapa("E4 GDM", gdm)
+
+    rel.h("E5. Neutraliza")
+
+    def neutraliza():
+        rotas_n = fontes.rotas_neutraliza(estado["clientes"])
+        por_sv = defaultdict(list)
+        for c in estado["clientes"]:
+            if c.rota in rotas_n:
+                por_sv[c.sv].append(c.rota)
+        vz = fontes.carregar_comodato(cons, anomes, None, gc_da_rota)[0]
+        rel.p("Neutraliza (M.NEUTRALIZA): entram só no total da gerência (Meta/Real de Volume, ICS e NN), ficam fora "
+              "das listas e da Venda Zero.")
+        rel.tabela(["supervisão", "rotas", "clientes", "geladeiras zeradas (fora da Venda Zero)"],
+                   [[sv, ", ".join(sorted(set(por_sv.get(sv, [])))) or "**não encontrada na base**", len(por_sv.get(sv, [])),
+                     sum(e_.vdz for r in set(por_sv.get(sv, [])) for e_ in (vz or {}).get(r, []))] for sv in M.NEUTRALIZA])
+        rel.p("\nE7: o aceite contra o SAC é a seção 4 (mesma regra de volume do main para G1, G2, G3, AP, IT e MO).")
+    etapa("E5 Neutraliza", neutraliza)
 
     # 9. tempos --------------------------------------------------------------------------
     total = time.monotonic() - inicio
