@@ -10,10 +10,22 @@ const CONFIG = Object.freeze({
   PAYLOAD_POLL_MS: 15 * 60 * 1000,    // revalida payload.json a cada 15 min (mesmo ritmo do back-end)
   STATUS_TICK_MS: 60 * 1000,          // reavalia a tag "Online" a cada 1 min
   JANELA_VENDAS: { inicio: '07:30', fim: '17:29' },   // horário de Brasília
-  // Supervisões que não entram na comparação "quem mais puxa a média para baixo"
-  // (além destas, qualquer uma cujo nome seja "ROTA SEM VENDEDOR").
-  SV_EXCLUIDOS: ['SV.G2.5', 'SV.G3.3', 'SV.IT.3', 'SV.MO.3'],
-  CREDITOS: 'Desenvolvido por Karen Oliveira · Analista de Inteligência de Vendas – Matriz G2',
+  // Neutraliza e ocultas vêm do payload (NEUTRALIZA/OCULTAS, lista única no back-end). Esta lista só vale
+  // para um payload antigo, sem essas chaves: fora do "puxa a média" (além de "ROTA SEM VENDEDOR").
+  SV_EXCLUIDOS: ['SV.G1.5', 'SV.G2.5', 'SV.G3.3', 'SV.IT.3', 'SV.MO.3'],
+  // Regiões e gerências: vêm do payload (REGIOES); esta cópia só vale para payload antigo
+  REGIOES: {
+    Matriz: ['G1', 'G2', 'G3', 'AT', 'AP'],
+    Sul: ['AN', 'SL', 'RV', 'MO', 'IT'],
+    Norte: ['RI', 'UR', 'GU', 'PO', 'PA', 'DI'],
+  },
+  // Nome da praça no título do Resumo ("Sul GC.IT · Itumbiara"). A CONFIRMAR: nomes das demais gerências
+  NOMES_GC: { IT: 'Itumbiara' },
+  // Placa ATENÇÃO do Resumo: % mínimo de indicadores no ritmo; null = desligada (não aparece)
+  LIMIAR_ATENCAO: null,
+  // Resumo da Diretoria: gerências por faixa (acima disso, quebra em faixas)
+  RS_COLUNAS_FAIXA: 8,
+  CREDITOS: 'Karen Oliveira - Inteligência de Mercado',
   LIMITE_LISTA: 400,
   CDN: {
     html2canvas: {

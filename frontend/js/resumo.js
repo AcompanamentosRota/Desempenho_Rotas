@@ -17,6 +17,7 @@ const RS = (()=>{
   const CURTO_X = {'REFRI SABORES ZERO':'Refri Sab. Zero','CERVEJAS 600ML RETORNAVEL':'Cerv. 600ml Ret.'};
   const blocos = {vol:true, ics:true, nov:false};
   let aberto = false, COMPACTO = false, LARG_MIN = 380;
+  let rsGc = '';    // Diretoria: gerência escolhida só para o resumo ('' = todas); não muda o painel
   const n = v => { const r = Math.round(v); return (r===0?0:r).toLocaleString('pt-BR'); };
   const nome = k => CURTO_X[k] || (P.LABELS_CURTO||{})[k] || LABELS[k] || k;
 
@@ -64,7 +65,7 @@ const RS = (()=>{
     const p = Math.round(x.tot/x.meta*100), ok = p >= P.PACE_ONTEM_PCT;
     const gap = Math.max(0, Math.ceil(x.meta*P.DIA_HOJE/P.TOTAL_DIAS_UTEIS) - x.real);
     const fatia = Math.ceil(x.meta/P.TOTAL_DIAS_UTEIS), obj = gap>0 ? gap : fatia, onOk = x.onl >= obj;
-    const esq = gap>0 ? kpi('Faltam', n(gap)) : kpi(COMPACTO?'M.dia':'Meta dia', n(fatia), 'rs-meta0');
+    const esq = gap>0 ? kpi('Faltam', n(gap), 'rs-faltam') : kpi(COMPACTO?'M.dia':'Meta dia', n(fatia), 'rs-meta0');
     return {ok, h:`<div class="rs-cel"><div class="rs-par">${esq}${kpi('Online', n(x.onl), 'rs-on '+(onOk?'rs-ok':'rs-bad'))}</div><span class="rs-sec">${seta(ok)} ${p}% do mês</span></div>`};
   }
   function celVz(z){
@@ -73,9 +74,22 @@ const RS = (()=>{
     return {ok, h:`<div class="rs-cel"><div class="rs-par">${kpi('Reverter', n(z.op))}${kpi('Revert.', n(z.rev), 'rs-on '+(revOk?'rs-ok':'rs-bad'))}</div><span class="rs-sec">${seta(ok)} ${ok?'no ritmo':'pend. mês '+n(pend)}</span></div>`};
   }
 
-  /* ---- colunas conforme o filtro atual ---- */
+  /* ---- colunas conforme o filtro atual (ou a gerência escolhida no seletor da Diretoria) ---- */
+  // título com a região e o nome da praça quando conhecido: "Sul GC.IT · Itumbiara"
+  const tituloGc = gc => `${regiaoDe(gc) ? regiaoDe(gc)+' ' : ''}GC.${gc}${(CONFIG.NOMES_GC||{})[gc] ? ' · '+CONFIG.NOMES_GC[gc] : ''}`;
   function colunas(){
-    const gc = sel.gc;
+    if(sel.modo==='dir' && !rsGc){
+      // Diretoria: total + uma coluna por gerência com dados (Neutraliza no total de cada uma)
+      const gcs = gcsComDados(sel.reg);
+      const nome = sel.reg ? 'Região '+sel.reg : 'Diretoria';
+      return {titulo: sel.reg ? `Diretoria · ${sel.reg}` : 'Diretoria', sub: `${nome} → gerências`,
+              cols:[[sel.reg || 'Diretoria', gcs.flatMap(g=>rotasDe(g,''))], ...gcs.map(g=>['GC.'+g, rotasDe(g,'')])]};
+    }
+    const gc = (sel.modo==='dir') ? rsGc : sel.gc;
+    if(sel.modo==='dir'){
+      const svs = svsVisiveis(gc);
+      return {titulo:tituloGc(gc), sub:'Gerência → supervisores', cols:[['GC.'+gc, rotasDe(gc,'')], ...svs.map(s=>[s, Object.keys(DATA[gc][s])])]};
+    }
     if(sel.rota){
       const d = nodo(gc, sel.rota);
       return {titulo:'Rota '+sel.rota, sub:`${rotuloSv(rotaSv(gc,sel.rota))} → rota ${sel.rota}${d&&d.consultor?' · '+titulo(d.consultor):''}`, cols:[[sel.rota,[sel.rota]]]};
@@ -86,50 +100,88 @@ const RS = (()=>{
     }
     // Neutraliza sem coluna; o total da gerência (1ª coluna) inclui as rotas delas
     const svs = svsVisiveis(gc);
-    return {titulo:'Matriz GC.'+gc, sub:'Gerência → supervisores', cols:[['GC.'+gc, rotasDe(gc,'')], ...svs.map(s=>[s, Object.keys(DATA[gc][s])])]};
+    return {titulo:tituloGc(gc), sub:'Gerência → supervisores', cols:[['GC.'+gc, rotasDe(gc,'')], ...svs.map(s=>[s, Object.keys(DATA[gc][s])])]};
   }
   // cabeçalho da coluna: código (SV.G1.1 / rota) + primeiro nome do supervisor quando houver
-  const cab = c => { const nm = nomeSv(c[0]); return esc(c[0]) + (nm ? `<small class="rs-svnome">${esc(nm)}</small>` : ''); };
-  const thead = (rot, cols) => `<thead><tr><th class="rs-nome">${rot}</th>${cols.map((c,i)=>`<th class="${i===0?'rs-foco':''}">${cab(c)}</th>`).join('')}</tr></thead>`;
-  function tabela(linhas, todas, comVz){
-    const cols = todas.filter((c,i)=> i===0 || linhas.some(k=>c[2].c[k] && c[2].c[k].meta));
+  const cab = c => { if(c.vazio) return ''; const nm = nomeSv(c[0]); return esc(c[0]) + (nm ? `<small class="rs-svnome">${esc(nm)}</small>` : ''); };
+  // coluna em branco: completa as faixas da Diretoria para as colunas ficarem alinhadas entre as faixas
+  const colVazia = () => Object.assign(['', [], {c:{}, v:{}, vz:{n:0}}], {vazio:true});
+  // foco0: a 1ª coluna é o total (destacada); nas faixas seguintes da Diretoria não é
+  const thead = (rot, cols, foco0=true) => `<thead><tr><th class="rs-nome">${rot}</th>${cols.map((c,i)=>`<th class="${i===0&&foco0?'rs-foco':''}">${cab(c)}</th>`).join('')}</tr></thead>`;
+  function tabela(linhas, todas, comVz, foco0=true){
+    const cols = todas.filter((c,i)=> (i===0 && foco0) || c.vazio || linhas.some(k=>c[2].c[k] && c[2].c[k].meta));
     const cont = cols.map(()=>[0,0]);
-    const td = (i,r)=>{ if(r.ok!==null){cont[i][1]++; if(r.ok) cont[i][0]++;} return `<td>${r.h}</td>`; };
+    const td = (i,r)=>{ if(cols[i].vazio) return '<td></td>'; if(r.ok!==null){cont[i][1]++; if(r.ok) cont[i][0]++;} return `<td>${r.h}</td>`; };
     let body = linhas.map(k=>`<tr><td class="rs-nome">${nome(k)}</td>${cols.map((c,i)=>td(i, celInd(c[2].c[k]))).join('')}</tr>`).join('');
     if(comVz) body += `<tr><td class="rs-nome">Venda Zero</td>${cols.map((c,i)=>td(i, celVz(c[2].vz))).join('')}</tr>`;
-    body += `<tr class="rs-tot"><td class="rs-nome">No ritmo</td>${cont.map(v=>`<td>${v[1]?v[0]+'/'+v[1]:'—'}</td>`).join('')}</tr>`;
+    body += `<tr class="rs-tot"><td class="rs-nome">No ritmo</td>${cont.map((v,i)=>`<td>${cols[i].vazio?'':(v[1]?v[0]+'/'+v[1]:'—')}</td>`).join('')}</tr>`;
     const cards = cols.map((c,i)=>{
+      if(c.vazio) return '';
       const lin = linhas.map(k=>{ const r = celInd(c[2].c[k]); return r.ok===null ? '' : `<div class="rs-lin"><span class="rs-nome">${nome(k)}</span>${r.h}</div>`; }).join('')
         + (comVz ? (()=>{ const r = celVz(c[2].vz); return r.ok===null ? '' : `<div class="rs-lin"><span class="rs-nome">Venda Zero</span>${r.h}</div>`; })() : '');
       const ct = cont[i][1] ? `<small>${cont[i][0]}/${cont[i][1]} no ritmo</small>` : '';
-      return `<div class="rs-card ${i===0?'rs-foco':''}"><div class="rs-cardh"><span>${cab(c)}</span>${ct}</div>${lin}</div>`;
+      return `<div class="rs-card ${i===0&&foco0?'rs-foco':''}"><div class="rs-cardh"><span>${cab(c)}</span>${ct}</div>${lin}</div>`;
     }).join('');
-    return {html:`<div class="rs-tab"><table>${thead('Indicador', cols)}<tbody>${body}</tbody></table></div><div class="rs-cards">${cards}</div>`, cont, cols};
+    return {html:`<div class="rs-tab"><table>${thead('Indicador', cols, foco0)}<tbody>${body}</tbody></table></div><div class="rs-cards">${cards}</div>`, cont, cols};
+  }
+
+  /* ---- faixas: na Diretoria, acima de N gerências (CONFIG.RS_COLUNAS_FAIXA), quebra em faixas de N;
+     o total fica no começo da 1ª faixa ---- */
+  function faixas(cols){
+    const N = CONFIG.RS_COLUNAS_FAIXA || 8;
+    if(!(sel.modo==='dir' && !rsGc) || cols.length-1 <= N) return [cols];
+    const out = [];
+    for(let i=1; i<cols.length; i+=N) out.push(cols.slice(i, i+N));
+    out[0] = [cols[0], ...out[0]];
+    // faixas com o mesmo nº de colunas (as que faltam ficam em branco): colunas alinhadas entre as faixas
+    out.forEach(f=>{ while(f.length < out[0].length) f.push(colVazia()); });
+    return out;
+  }
+  /* ---- placa ATENÇÃO: colunas com menos de LIMIAR_ATENCAO dos indicadores de ICS no ritmo.
+     CONFIG.LIMIAR_ATENCAO = null -> desligada (não aparece). Neutraliza/ocultas não entram. ---- */
+  function placaAtencao(tabs){
+    const lim = CONFIG.LIMIAR_ATENCAO;
+    if(lim==null) return '';
+    const cand = [];
+    tabs.forEach((t,ti)=>t.cols.forEach((c,i)=>{
+      if(ti===0 && i===0) return;                    // o total não entra
+      const ct = t.cont[i];
+      if(ct[1] && !svExcluido(c[0]) && ct[0]/ct[1] < lim) cand.push([c[0], ct]);
+    }));
+    if(!cand.length) return '';
+    return `<div class="rs-atencao">ATENÇÃO: ${cand.map(([c,ct])=>`${esc(rotuloSv(c))} (${ct[0]}/${ct[1]} no ritmo)`).join(' · ')}</div>`;
+  }
+  // seletor da Diretoria: resumo de uma gerência só (gerência + supervisões), sem mudar o painel
+  function pintaSeletor(){
+    const el = document.getElementById('rsGc');
+    el.hidden = sel.modo!=='dir';
+    if(el.hidden) return;
+    el.innerHTML = `<option value="">Todas as gerências</option>` +
+      gcsComDados(sel.reg).map(g=>`<option value="${esc(g)}">Gerência ${esc(g)}</option>`).join('');
+    el.value = rsGc;
   }
 
   /* ---- monta a folha ---- */
   function pinta(){
     if(!aberto || !P) return;
+    pintaSeletor();
     const {titulo:tit, sub, cols} = colunas();
     cols.forEach(c=>c[2] = soma(sel.gc, c[1]));
-    COMPACTO = cols.length >= 7;
+    const fx = faixas(cols);
+    COMPACTO = Math.max(...fx.map(f=>f.length)) >= 7;
     const folha = document.getElementById('rsFolha');
     folha.classList.toggle('rs-compacto', COMPACTO);
-    LARG_MIN = Math.max(380, 130 + cols.length*(COMPACTO?112:150));
+    LARG_MIN = Math.max(380, 130 + Math.max(...fx.map(f=>f.length))*(COMPACTO?112:150));
     folha.style.minWidth = (innerWidth >= 700 && innerWidth < 1000) ? LARG_MIN + 'px' : '';
-    const volTab = `<table>${thead('Agrupador', cols)}<tbody>${VOL_ORD.map(k=>`<tr><td class="rs-nome">${LABELS[k]||k}</td>${cols.map(c=>`<td>${celVol(c[2].v[k])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-    const volCards = cols.map((c,i)=>`<div class="rs-card ${i===0?'rs-foco':''}"><div class="rs-cardh"><span>${cab(c)}</span></div>${VOL_ORD.map(k=>{ const x=c[2].v[k]; return (!x||x.indisp||!x.meta) ? '' : `<div class="rs-lin"><span class="rs-nome">${LABELS[k]||k}</span>${celVol(x)}</div>`; }).join('')}</div>`).join('');
-    const volT = `<div class="rs-tab">${volTab}</div><div class="rs-cards">${volCards}</div>`;
-    const ics = tabela(ICS_ORD, cols, true), nov = tabela(GROUPS.NOVOS_NEG, cols, false);
+    const volT = fx.map((fc,fi)=>{
+      const volTab = `<table>${thead('Agrupador', fc, fi===0)}<tbody>${VOL_ORD.map(k=>`<tr><td class="rs-nome">${LABELS[k]||k}</td>${fc.map(c=>`<td>${c.vazio?'':celVol(c[2].v[k])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+      const volCards = fc.filter(c=>!c.vazio).map((c,i)=>`<div class="rs-card ${i===0&&fi===0?'rs-foco':''}"><div class="rs-cardh"><span>${cab(c)}</span></div>${VOL_ORD.map(k=>{ const x=c[2].v[k]; return (!x||x.indisp||!x.meta) ? '' : `<div class="rs-lin"><span class="rs-nome">${LABELS[k]||k}</span>${celVol(x)}</div>`; }).join('')}</div>`).join('');
+      return `<div class="rs-faixa"><div class="rs-tab">${volTab}</div><div class="rs-cards">${volCards}</div></div>`;
+    }).join('');
+    const ics = fx.map((fc,fi)=>tabela(ICS_ORD, fc, true, fi===0)), nov = fx.map((fc,fi)=>tabela(GROUPS.NOVOS_NEG, fc, false, fi===0));
+    const html = ts => ts.map(t=>`<div class="rs-faixa">${t.html}</div>`).join('');
     const up = (ONLINE && ONLINE.updatedAt) || '';
-    const hhmm = up.split('T')[1] ? up.split('T')[1].slice(0,5) : '';
-    const janela = hhmm && hhmm <= CONFIG.JANELA_VENDAS.fim;
-    let pior = '';
-    const cand = ics.cols.slice(1).map((c,i)=>[c[0], ics.cont[i+1]]).filter(x=>!svExcluido(x[0]) && x[1][1]>0);
-    if(cand.length >= 2){
-      cand.sort((a,b)=>a[1][0]/a[1][1] - b[1][0]/b[1][1]);
-      if(cand[0][1][0] < cand[0][1][1]) pior = `<div class="rs-atencao">Oportunidade de reversão ${janela?'agora':'amanhã'}: ${esc(rotuloSv(cand[0][0]))}</div>`;
-    }
+    const placa = placaAtencao(ics);
     const st = statusAtualizado();
     const tag = st ? `<span class="rs-tag ${st.cor==='verde'?'rs-tag-on':'rs-tag-off'}">${esc(st.texto)}</span>` : `<span class="rs-tag rs-tag-off">sem venda online</span>`;
     const hoje = up ? up.split('T')[0].split('-').reverse().slice(0,2).join('/') : '';
@@ -140,10 +192,10 @@ const RS = (()=>{
           <h2>Resumo de vendas · ${esc(tit)}</h2>
           <div class="rs-sub">${esc(sub)} · ${esc(P.DIA_SEMANA)} ${hoje} · dia útil ${P.DIA_HOJE}/${P.TOTAL_DIAS_UTEIS}</div></div>
         <div class="rs-tags">${tag}<span class="rs-tag rs-tag-rit">Objetivo do ritmo hoje: ${Math.round(P.DIA_HOJE/P.TOTAL_DIAS_UTEIS*100)}%</span></div></div>
-      ${pior}
+      ${placa}
       ${blocos.vol?`<div class="rs-bloco"><h3>Volume — ${P.FECHAMENTO?'realizado do mês (fechamento)':'tendência do mês'} <small>${P.FECHAMENTO?'Online de hoje, sem meta do dia':'Online verde ao bater a Meta dia'}</small></h3>${volT}</div>`:''}
-      ${blocos.ics?`<div class="rs-bloco"><h3>Coberturas — ICS GC <small>Online verde ao bater o faltam</small></h3>${ics.html}</div>`:''}
-      ${blocos.nov?`<div class="rs-bloco"><h3>Novos Negócios <small>Online verde ao bater o faltam</small></h3>${nov.html}</div>`:''}
+      ${blocos.ics?`<div class="rs-bloco"><h3>Coberturas — ICS GC <small>Online verde ao bater o faltam</small></h3>${html(ics)}</div>`:''}
+      ${blocos.nov?`<div class="rs-bloco"><h3>Novos Negócios <small>Online verde ao bater o faltam</small></h3>${html(nov)}</div>`:''}
       <div class="rs-rod">${esc(CONFIG.CREDITOS)}</div>`;
     document.querySelectorAll('[data-rsb]').forEach(b=>b.setAttribute('aria-pressed', blocos[b.dataset.rsb]));
   }
@@ -152,7 +204,8 @@ const RS = (()=>{
   function linkAtual(){
     const q = new URLSearchParams();
     q.set('resumo', Object.keys(blocos).filter(k=>blocos[k]).join(','));
-    q.set('gc', sel.gc); if(sel.sv) q.set('sv', sel.sv); if(sel.rota) q.set('rota', sel.rota);
+    if(sel.modo==='dir'){ q.set('modo', 'dir'); if(sel.reg) q.set('reg', sel.reg); if(rsGc) q.set('gc', rsGc); }
+    else { q.set('gc', sel.gc); if(sel.sv) q.set('sv', sel.sv); if(sel.rota) q.set('rota', sel.rota); }
     return location.origin + location.pathname + '?' + q.toString().replace(/%2C/g, ',');
   }
   const aviso = t => { const el = document.getElementById('rsToast'); el.textContent = t; clearTimeout(aviso.t); aviso.t = setTimeout(()=>el.textContent='', 4000); };
@@ -237,6 +290,7 @@ const RS = (()=>{
   }
 
   function abre(){
+    rsGc = '';      // ao reabrir, a Diretoria volta para "Todas"
     aberto = true; document.getElementById('rsOverlay').hidden = false;
     document.body.classList.add('rs-travado'); pinta();
     document.getElementById('rsOverlay').scrollTop = 0;
@@ -260,7 +314,17 @@ const RS = (()=>{
     if(!q.has('resumo')) return;
     const bl = (q.get('resumo')||'').split(',').filter(k=>k in blocos);
     if(bl.length) Object.keys(blocos).forEach(k=>blocos[k] = bl.includes(k));
-    const gc = q.get('gc'); if(gc && DATA[gc]) sel = {gc, sv:'', rota:''};
+    document.getElementById('entrada').hidden = true;      // link do resumo pula a entrada
+    document.body.classList.remove('na-entrada');
+    const gc = q.get('gc');
+    if(q.get('modo')==='dir'){
+      const reg = q.get('reg');
+      sel = {...sel, modo:'dir', reg: reg && regioes()[reg] ? reg : '', sv:'', rota:''};
+      render(); abre();
+      if(gc && DATA[gc]){ rsGc = gc; pinta(); }
+      return;
+    }
+    if(gc && DATA[gc]) sel = {...sel, modo:'gc', gc, sv:'', rota:''};
     const sv = q.get('sv'); if(sv && DATA[sel.gc][sv]) sel.sv = sv;
     const rota = q.get('rota'); if(rota && rotaSv(sel.gc, rota)){ sel.rota = rota; sel.sv = rotaSv(sel.gc, rota); }
     render(); abre();
@@ -272,6 +336,7 @@ const RS = (()=>{
     document.getElementById('rsVoltar').onclick = fecha;
     document.getElementById('rsLink').onclick = compartilhar;
     document.getElementById('rsImg').onclick = baixarPdf;
+    document.getElementById('rsGc').onchange = e => { rsGc = e.target.value; pinta(); };
     document.addEventListener('keydown', e=>{ if(e.key==='Escape' && aberto) fecha(); });
     let t; addEventListener('resize', ()=>{ clearTimeout(t); t = setTimeout(pinta, 150); });
   }

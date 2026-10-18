@@ -37,6 +37,10 @@ const svExcluido = sv => !semOcultas(sv) && (ehNeutraliza(sv) || ehOculta(sv)
 // rótulo de indicador: LABELS do payload ou, para o volume extra (Del Valle Frut), VOLUME_EXTRA
 const rotuloInd = k => (LABELS||{})[k] || (((P && P.VOLUME_EXTRA)||{})[k]||{}).label || k;
 const volExtras = () => Object.keys((P && P.VOLUME_EXTRA) || {});
+const ehVolume = k => GROUPS.VOLUME.includes(k) || volExtras().includes(k);
+// números: volume inteiro e coberturas com até 1 casa, sempre no formato pt-BR (490.003, nunca 490002.69999)
+const fmt0 = n => Math.round(n||0).toLocaleString('pt-BR');
+const fmtN = n => (n||0).toLocaleString('pt-BR', {maximumFractionDigits:1});
 // torna um elemento não-<button> clicável também pelo teclado (Enter/Espaço)
 function clicavel(el, fn){
   el.onclick = fn;
@@ -118,15 +122,26 @@ function atualizarStatusTag(){
 }
 setInterval(atualizarStatusTag, CONFIG.STATUS_TICK_MS);
 
-let sel = {gc:'', sv:'', rota:''};
+/* Filtro: modo 'gc' (Gerência: gc > sv > rota) ou 'dir' (Diretoria: todas as gerências, ou as de uma região). */
+let sel = {modo:'gc', reg:'', gc:'', sv:'', rota:''};
+let ROTA_IDX = {};   // rota -> [gc, sv] (montado em aplicaPayload; a Diretoria junta rotas de várias gerências)
+
+// regiões e as 16 gerências: vêm do payload (REGIOES, mesma lista do back-end); CONFIG só para payload antigo
+const regioes = () => (P && P.REGIOES) || CONFIG.REGIOES;
+const todasGcs = () => [...new Set([...Object.values(regioes()).flat(), ...((P && P.GC_ATIVAS) || [])])];
+const regiaoDe = gc => Object.keys(regioes()).find(rg=>regioes()[rg].includes(gc)) || '';
+const gcsDaRegiao = reg => reg ? (regioes()[reg] || []) : todasGcs();
+const gcsComDados = reg => gcsDaRegiao(reg).filter(g=>DATA[g]);
+const primeiraGc = () => todasGcs().find(g=>DATA[g]) || Object.keys(DATA)[0];
 
 const svsDe = gc => Object.keys(DATA[gc]||{});
-const rotasDe = (gc,sv) => sv ? Object.keys(DATA[gc][sv]) : svsDe(gc).flatMap(s=>Object.keys(DATA[gc][s]));
-const rotaSv = (gc,r) => svsDe(gc).find(s=>DATA[gc][s][r]);
-const nodo = (gc,r) => DATA[gc][rotaSv(gc,r)][r];
+const rotasDe = (gc,sv) => !DATA[gc] ? [] : sv ? Object.keys(DATA[gc][sv]||{}) : svsDe(gc).flatMap(s=>Object.keys(DATA[gc][s]));
+const rotaSv = (gc,r) => (ROTA_IDX[r]||[])[1];
+const nodo = (gc,r) => { const i = ROTA_IDX[r]; return i ? DATA[i[0]][i[1]][r] : undefined; };
 const ehKstt = c => KSTT_SEG.has((SEGS[c[2]]||'').toUpperCase());
-// rotas do filtro para os indicadores: no total da gerência inclui as Neutraliza
-const rotasAtuais = () => sel.rota ? [sel.rota] : rotasDe(sel.gc, sel.sv);
+// rotas do filtro para os indicadores: no total da gerência (e da Diretoria) inclui as Neutraliza
+const rotasAtuais = () => sel.modo==='dir' ? gcsComDados(sel.reg).flatMap(g=>rotasDe(g,''))
+  : sel.rota ? [sel.rota] : rotasDe(sel.gc, sel.sv);
 // o que aparece: supervisões e rotas sem as Neutraliza (selects, colunas, linhas, contagem de clientes)
 const svsVisiveis = gc => svsDe(gc).filter(s=>!ehNeutraliza(s));
 const rotaNeutraliza = r => ehNeutraliza(rotaSv(sel.gc, r));
@@ -194,10 +209,24 @@ function agrega(rotas){
 let _chaveFiltros = '';
 function montaFiltros(){
   // só reconstrói os <select> quando o filtro (ou o payload) muda -- o polling do online não mexe neles
-  const chave = `${sel.gc}|${sel.sv}|${sel.rota}|${P._versao||''}`;
+  const chave = `${sel.modo}|${sel.reg}|${sel.gc}|${sel.sv}|${sel.rota}|${P._versao||''}`;
   if(chave===_chaveFiltros) return;
   _chaveFiltros = chave;
-  $('fgc').innerHTML = P.GC_ATIVAS.map(g=>`<option value="${esc(g)}">Gerência ${esc(g)}</option>`).join('');
+  const dir = sel.modo==='dir';
+  $('fsv').hidden = dir; $('frota').hidden = dir;
+  $('fgc').classList.toggle('largo', dir);
+  $('qSugestoes').classList.remove('on');
+  if(dir){        // Diretoria: só a região (as gerências aparecem na cascata dos cards)
+    $('fgc').innerHTML = `<option value="">Todas as regiões</option>` +
+      Object.keys(regioes()).map(rg=>`<option value="${esc(rg)}">Região ${esc(rg)}</option>`).join('');
+    $('fgc').value = sel.reg;
+    return;
+  }
+  // Gerência: as 16 por região; gerência sem dados aparece desabilitada
+  const fora = Object.keys(DATA).filter(g=>!Object.values(regioes()).flat().includes(g));
+  const opc = g => `<option value="${esc(g)}"${DATA[g]?'':' disabled'}>Gerência ${esc(g)}${DATA[g]?'':' · sem dados'}</option>`;
+  $('fgc').innerHTML = Object.entries(regioes()).map(([rg, gcs])=>
+    `<optgroup label="${esc(rg)}">${gcs.map(opc).join('')}</optgroup>`).join('') + fora.map(opc).join('');
   $('fgc').value = sel.gc;
   $('fsv').innerHTML = `<option value="">Todos os SVs</option>`+
     svsVisiveis(sel.gc).map(s=>`<option value="${esc(s)}">${esc(rotuloSv(s))}</option>`).join('');
@@ -208,7 +237,11 @@ function montaFiltros(){
   $('frota').value = sel.rota;
   $('qSugestoes').classList.remove('on');
 }
-$('fgc').onchange = e => {sel={gc:e.target.value,sv:'',rota:''}; render();};
+$('fgc').onchange = e => {
+  if(sel.modo==='dir') sel.reg = e.target.value;
+  else sel = {...sel, gc:e.target.value, sv:'', rota:''};
+  render();
+};
 $('fsv').onchange = e => {sel.sv=e.target.value; sel.rota=''; render();};
 $('frota').onchange = e => {
   sel.rota=e.target.value;
@@ -231,7 +264,9 @@ function render(){
   const rotas = rotasAtuais();
   const {ind, tot} = agrega(rotas);
 
-  $('sub').innerHTML = `${esc(P.MES_LABEL)}${tagAtualizado()} · ${esc(sel.gc)}` +
+  const onde = sel.modo==='dir' ? `Diretoria${sel.reg?' · '+esc(sel.reg):''}`
+    : `${regiaoDe(sel.gc)?esc(regiaoDe(sel.gc))+' · ':''}${esc(sel.gc)}`;
+  $('sub').innerHTML = `${esc(P.MES_LABEL)}${tagAtualizado()} · ${onde}` +
     (sel.sv?` · ${esc(rotuloSv(sel.sv))}`:'') +
     (sel.rota?` · Rota ${esc(sel.rota)} — ${esc(titulo(nodo(sel.gc,sel.rota).consultor))}`:'');
   const paceHoje = Math.round(P.DIA_HOJE / P.TOTAL_DIAS_UTEIS * 100);
@@ -266,9 +301,9 @@ function render(){
   // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir
   const oculta = k => k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable);
   // volume extra (Del Valle Frut): card só na aba Volume e só quando as rotas do filtro trazem o dado
-  const extras = aba==='VOLUME' ? volExtras().filter(k=>ind[k] && !ind[k].unavailable) : [];
+  const extras = (aba==='VOLUME' && sel.modo!=='dir') ? volExtras().filter(k=>ind[k] && !ind[k].unavailable) : [];
   $('lista').innerHTML = [...GROUPS[aba].filter(k=>!oculta(k)), ...extras].map(k=>linha(k, ind[k], rotas)).join('');
-  document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k, rotas)));
+  document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k)));
   encaixa($('lista'));
   const upd = (ONLINE && ONLINE.updatedAt) ? ONLINE.updatedAt.replace('T',' ').slice(0,16).split(' ') : null;
   $('rodape').innerHTML =
@@ -283,9 +318,25 @@ function render(){
 function piorSv(){
   if(sel.rota) return '';
   const grupo = P.COV_GRUPO[aba];
+  if(sel.modo==='dir'){
+    // Diretoria: compara as gerências do filtro
+    const gcs = gcsComDados(sel.reg);
+    if(gcs.length < 2) return '';
+    let pior=null;
+    gcs.forEach(g=>{
+      const a = agrega(rotasDe(g,'')).ind;
+      const disp = grupo.filter(k=>a[k] && !a[k].unavailable);
+      if(!disp.length) return;
+      const ok = disp.filter(k=>a[k].onPace).length;
+      if(!pior || ok/disp.length < pior.razao) pior={rotulo:'Gerência '+g,ok,tot:disp.length,razao:ok/disp.length};
+    });
+    if(!pior || pior.ok===pior.tot) return '';
+    return `<div class="puxa"><div class="t">Gerência que mais puxa a média para baixo: <b>${esc(pior.rotulo)}</b></div>
+      <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
+  }
   if(!sel.sv){
     // sem SV selecionado: compara as supervisões da gerência
-    const svs = svsDe(sel.gc);
+    const svs = svsVisiveis(sel.gc);
     if(svs.length < 2) return '';
     let pior=null;
     svs.forEach(sv=>{
@@ -342,7 +393,7 @@ function linha(k, b, rotas){
         <div class="cr"><div class="olab">Online</div>${caixaOnline(k, rotas, b)}</div>
       </div></div>`;
   }
-  if(GROUPS.VOLUME.includes(k)){
+  if(ehVolume(k)){
     if(rotas.length===1 && b.semDadoHoje){
       return `<div class="ind off"><div class="tit">${nome}</div>
         <div class="semdado">indisponível — sem venda hoje pra essa rota</div></div>`;
@@ -394,7 +445,7 @@ function caixaOnline(k, rotas, b){
     const revHoje = rotas.reduce((a,r)=>a+((REVERTIDO_HOJE||{})[r]||0),0);
     return `<div class="obox ok">${numObox(revHoje)}<span>revertidos</span></div>`;
   }
-  if(GROUPS.VOLUME.includes(k)){
+  if(ehVolume(k)){
     const volHoje = rotas.reduce((a,r)=>a+(((ONLINE&&ONLINE.volume||{})[r]||{})[k]||0),0);
     if(b.metaDia==null)   // fechamento do mês (online de hoje, sem meta do dia) ou META_RECUPERAVEL_ROTA ausente
       return `<div class="obox nd">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
@@ -473,37 +524,161 @@ clicavel($('cSem'), ()=>{
     out.length? out.map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') : `<div class="vazio">Todo mundo já comprou.</div>`);
 });
 
-function abreIndicador(k, rotasTotal){
-  const b = agrega(rotasTotal).ind[k];      // número do card (Neutraliza no total da gerência)
+/* ---------- cascata (gaveta dos cards) ----------
+   Uma função para todos os níveis: [gerências ->] supervisões -> rotas -> clientes. O primeiro nível depende do
+   filtro: Diretoria = gerências; gerência = supervisões; supervisão = rotas; rota = clientes. Cada linha usa
+   agrega() das rotas do grupo, o mesmo número dos cards (nada de tendência recalculada aqui). Neutraliza não
+   tem linha, mas está no total da gerência: linhas de um nível + Neutraliza = número do card.
+   Ordem: maior tendência primeiro (cobertura e Venda Zero: maior %); no fechamento, pelo % realizado. */
+const VOLTAR = {gc:'← Gerências', sv:'← Supervisões', rota:'← Rotas'};
+let CASC = null;     // {k, pilha:[{nivel, chave, gc, rotas, nome}]}
+
+function abreIndicador(k){
+  const b = agrega(rotasAtuais()).ind[k];
   if(!b || b.unavailable) return;
-  const rotas = rotasTotal.filter(r=>!rotaNeutraliza(r) && !ehOculta(rotaSv(sel.gc, r)));   // listas
-  const LIM = CONFIG.LIMITE_LISTA;
+  let ctx;
+  if(sel.modo==='dir') ctx = {nivel:'gc', chave:sel.reg, rotas:rotasAtuais(), nome:sel.reg ? 'Região '+sel.reg : 'Diretoria'};
+  else if(sel.rota) ctx = {nivel:'cli', chave:sel.rota, gc:sel.gc, rotas:[sel.rota], nome:'Rota '+sel.rota};
+  else if(sel.sv) ctx = {nivel:'rota', chave:sel.sv, gc:sel.gc, rotas:rotasDe(sel.gc, sel.sv), nome:rotuloSv(sel.sv)};
+  else ctx = {nivel:'sv', chave:sel.gc, gc:sel.gc, rotas:rotasDe(sel.gc,''), nome:'Gerência '+sel.gc};
+  CASC = {k, pilha:[ctx]};
+  abre('', '', '');
+  pintaCascata();
+}
 
-  if(k==='VENDAZERO'){
-    const equip = [];
-    rotas.forEach(r=>(VENDAZERO_CLIENTES[r]||[]).forEach(e=>equip.push([r,e])));
-    let chip='Todos';
-    const pinta=()=>{
-      const vis = equip.filter(([r,e])=> chip==='Todos' ||
-        (chip==='Hoje' ? e.hoje===1 : (e.dia||'').startsWith(chip)))
-        .sort((a,b)=>b[1].vdz-a[1].vdz);
-      $('dCorpo').innerHTML = chipsHtml(chip) +
-        (vis.length? vis.slice(0,LIM).map(([r,e])=>`<div class="item ${e.revertido?'riscado':''}"><div>
-            <div class="nm">${esc(e.nome)}${e.revertido?' <span class="tagOnline">Revertido</span>':''}</div>
-            <div class="sb">${esc(e.tipo)} · rota ${esc(r)} · ${esc(e.dia||'sem agenda')}</div></div>
-            <div class="bd">${e.vdz} geladeira${e.vdz>1?'s':''}</div></div>`).join('')
-                 : `<div class="vazio">Ninguém neste filtro.</div>`) +
-        (vis.length>LIM? `<div class="vazio">+ ${vis.length-LIM} equipamentos — filtre por rota para ver todos.</div>`:'');
-      $('dCorpo').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
-    };
-    const revHoje = rotas.reduce((a,r)=>a+((REVERTIDO_HOJE||{})[r]||0),0);
-    const oportHoje = rotas.reduce((a,r)=>a+((OPORTUNIDADE_HOJE||{})[r]||0),0);
-    abre(rotuloInd(k), `${b.real} equipamentos zerados · ${b.gap>0? `${b.gap} para reverter` : 'no ritmo'} · ${revHoje} revertidos hoje · ${oportHoje} na agenda de hoje`, '');
-    pinta();
-    return;
+// grupos do nível (cada um com as rotas que somam e o contexto do nível de baixo)
+function gruposDo(ctx){
+  if(ctx.nivel==='gc') return gcsDaRegiao(ctx.chave).map(g=>{
+    const rs = rotasDe(g,'');
+    return {nome:'Gerência '+g, rotas:rs, off:!DATA[g],
+      info: DATA[g] ? `${svsVisiveis(g).length} supervisões · ${rs.filter(r=>!rotaNeutraliza(r)).length} rotas` : 'sem dados',
+      filho:{nivel:'sv', chave:g, gc:g, rotas:rs, nome:'Gerência '+g}};
+  });
+  if(ctx.nivel==='sv') return svsVisiveis(ctx.gc).map(s=>{
+    const rs = rotasDe(ctx.gc, s);
+    return {nome:rotuloSv(s), rotas:rs, info:`${rs.length} rota${rs.length>1?'s':''}`,
+      filho:{nivel:'rota', chave:s, gc:ctx.gc, rotas:rs, nome:rotuloSv(s)}};
+  });
+  return ctx.rotas.filter(r=>!rotaNeutraliza(r)).map(r=>{
+    const d = nodo(ctx.gc, r);
+    return {nome:'Rota '+r, rotas:[r], info:`${titulo(d.consultor)} · ${d.baseTotal} clientes`,
+      filho:{nivel:'cli', chave:r, gc:ctx.gc, rotas:[r], nome:'Rota '+r}};
+  });
+}
+
+// números de uma linha: os mesmos de agrega()/caixaOnline() do card
+function metricas(k, rotas){
+  const b = agrega(rotas).ind[k];
+  if(!b || b.unavailable) return null;
+  const fech = !!P.FECHAMENTO, soma = (obj, r) => (((ONLINE && ONLINE[obj]) || {})[r] || {})[k] || 0;
+  if(k==='VENDAZERO') return {b, onl:b.revertidoHoje, md:null, dir:b.pct};
+  if(ehVolume(k)) return {b, onl:rotas.reduce((a,r)=>a+soma('volume', r),0), md:fech ? null : b.metaDia,
+                          dir:fech ? b.pctReal : b.pctTendencia};
+  const fatia = b.meta ? Math.ceil(b.meta/P.TOTAL_DIAS_UTEIS) : 0;
+  return {b, onl:rotas.reduce((a,r)=>a+soma('rotas', r),0), md:fech ? null : (b.gap>0 ? b.gap : fatia), dir:b.pct};
+}
+
+function linhaGrupo(g, m, k, i){
+  if(!m) return `<div class="cLin off"><div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
+    <div class="cInd">${g.off ? 'sem dados' : 'indisponível'}</div></div>`;
+  const {b, onl, md, dir} = m, vz = k==='VENDAZERO', f = ehVolume(k) ? fmt0 : fmtN;
+  const cor = vz ? 'ok' : (md==null ? 'nd' : (onl>=md ? 'ok' : 'no'));
+  const meio = vz ? `<span class="cOn ok">${fmtN(onl)}</span><small>revertidos hoje</small>`
+    : `<span class="cOn ${cor}">${f(onl)}</span><small>${md==null ? (P.FECHAMENTO ? 'online hoje' : 'meta do dia —')
+                                                        : 'meta do dia '+f(md)}</small>`;
+  const rot = ehVolume(k) ? (P.FECHAMENTO ? 'realizado' : 'tendência') : 'do mês';
+  return `<div class="cLin ${b.onPace?'ok':'no'}" role="button" tabindex="0" data-i="${i}"
+      data-meta="${b.meta}" data-real="${b.real}" data-dir="${dir==null?'':dir}">
+    <div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
+    <div class="cEsq"><span>Meta ${f(b.meta)}</span><span>Real ${f(b.real)}</span></div>
+    <div class="cMeio">${meio}</div>
+    <div class="cDir"><b>${dir==null?'—':dir+'%'}</b><small>${rot}</small></div></div>`;
+}
+
+// subtítulo da gaveta (número do card do nível)
+function resumoInd(k, b){
+  if(!b || b.unavailable) return 'indisponível';
+  if(k==='VENDAZERO') return `${fmtN(b.real)} equipamentos zerados · ${b.gap>0? `${b.gap} para reverter` : 'no ritmo'}`+
+    ` · ${b.revertidoHoje} revertidos hoje`;
+  if(ehVolume(k)) return `Meta ${fmt0(b.meta)} · Real ${fmt0(b.real)} · `+
+    (P.FECHAMENTO ? `${b.pctReal==null?'—':b.pctReal+'%'} realizado` : `tendência ${b.pctTendencia==null?'—':b.pctTendencia+'%'}`);
+  const nota = (k==='KS TT') ? ' · lista restrita a bares, lanchonetes, restaurantes e padarias' : '';
+  return `Meta ${fmtN(b.meta)} · Real ${fmtN(b.real)} · ${b.gap>0?`faltam ${b.gap} para o ritmo de hoje`:'no ritmo'}${nota}`;
+}
+
+function pintaCascata(){
+  const {k, pilha} = CASC, ctx = pilha[pilha.length-1];
+  $('dTit').textContent = `${rotuloInd(k)} · ${ctx.nome}`;
+  $('dSub').textContent = resumoInd(k, agrega(ctx.rotas).ind[k]);
+  const volta = pilha.length>1 ? `<button class="cVolta" id="cVolta">${VOLTAR[pilha[pilha.length-2].nivel]}</button>` : '';
+  if(ctx.nivel==='cli'){
+    $('dCorpo').innerHTML = volta + '<div id="dLista"></div>';
+    // listas de clientes: sem Neutraliza e sem ocultas (na AT, tudo)
+    const rotas = ctx.rotas.filter(r=>!rotaNeutraliza(r) && !ehOculta(rotaSv(ctx.gc, r)));
+    if(ehVolume(k)) listaVolume(k, rotas);
+    else if(k==='VENDAZERO') listaVendaZero(rotas);
+    else listaCobertura(k, rotas);
+  } else {
+    const grupos = gruposDo(ctx).map(g=>({g, m: g.off ? null : metricas(k, g.rotas)}));
+    const chave = x => (x.m && x.m.dir!=null) ? x.m.dir : -Infinity;
+    grupos.sort((x,y)=> (x.m?0:1)-(y.m?0:1) || chave(y)-chave(x));
+    $('dCorpo').innerHTML = volta + `<div class="cLista">${grupos.map((x,i)=>linhaGrupo(x.g, x.m, k, i)).join('')
+      || '<div class="vazio">Nada neste filtro.</div>'}</div>`;
+    $('dCorpo').querySelectorAll('.cLin[data-i]').forEach(el=>clicavel(el, ()=>{
+      pilha.push(grupos[Number(el.dataset.i)].g.filho); pintaCascata();
+    }));
   }
+  if($('cVolta')) $('cVolta').onclick = () => { pilha.pop(); pintaCascata(); };
+  $('dCorpo').scrollTop = 0;
+}
 
-  const todos = [];
+/* Clientes de volume: Meta (META_NEG do cliente), Real (faturado + online de hoje, fora do fechamento),
+   Dif. Abs (Real - Meta) e %, do mais negativo para o mais positivo; sem tendência; sem quem não tem meta. */
+function listaVolume(k, rotas){
+  const LIM = CONFIG.LIMITE_LISTA, lin = [];
+  rotas.forEach(r=>{
+    const i = volDaRota(r).indexOf(k);
+    if(i<0) return;
+    (CLIENT_ROSTER[r]||[]).forEach(c=>{
+      const bl = blocoVolCliente(r, c[0], i, k);
+      if(bl) lin.push({r, c, meta:bl[0], real:bl[1], dif:bl[1]-bl[0], pct:bl[2]});
+    });
+  });
+  lin.sort((a,b)=>a.dif-b.dif);
+  const fmt1 = n => n.toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1});
+  $('dLista').innerHTML = lin.length ? `<div class="cCab"><span>Cliente</span><span>Meta</span><span>Real</span>
+      <span>Dif. Abs</span><span>%</span></div>` +
+    lin.slice(0, LIM).map(x=>`<div class="cCli" data-dif="${x.dif}"><div><div class="nm">${esc(x.c[1])}</div>
+      <div class="sb">${esc(SEGS[x.c[2]]||'—')} · rota ${esc(x.r)}</div></div>
+      <span>${fmt1(x.meta)}</span><span>${fmt1(x.real)}</span>
+      <span class="${x.dif>=0?'pos':'neg'}">${x.dif>0?'+':''}${fmt1(x.dif)}</span><span>${x.pct}%</span></div>`).join('') +
+    (lin.length>LIM ? `<div class="vazio">+ ${lin.length-LIM} clientes — filtre por rota para ver todos.</div>` : '')
+    : '<div class="vazio">Nenhum cliente com meta neste agrupador.</div>';
+}
+
+function listaVendaZero(rotas){
+  const LIM = CONFIG.LIMITE_LISTA, equip = [];
+  rotas.forEach(r=>(VENDAZERO_CLIENTES[r]||[]).forEach(e=>equip.push([r,e])));
+  let chip='Todos';
+  const pinta=()=>{
+    const vis = equip.filter(([r,e])=> chip==='Todos' ||
+      (chip==='Hoje' ? e.hoje===1 : (e.dia||'').startsWith(chip)))
+      .sort((a,b)=>b[1].vdz-a[1].vdz);
+    $('dLista').innerHTML = chipsHtml(chip) +
+      (vis.length? vis.slice(0,LIM).map(([r,e])=>`<div class="item ${e.revertido?'riscado':''}"><div>
+          <div class="nm">${esc(e.nome)}${e.revertido?' <span class="tagOnline">Revertido</span>':''}</div>
+          <div class="sb">${esc(e.tipo)} · rota ${esc(r)} · ${esc(e.dia||'sem agenda')}</div></div>
+          <div class="bd">${e.vdz} geladeira${e.vdz>1?'s':''}</div></div>`).join('')
+               : `<div class="vazio">Ninguém neste filtro.</div>`) +
+      (vis.length>LIM? `<div class="vazio">+ ${vis.length-LIM} equipamentos — filtre por rota para ver todos.</div>`:'');
+    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
+  };
+  pinta();
+}
+
+// cobertura: quem ainda falta comprar o indicador (KS TT só nos segmentos elegíveis)
+function listaCobertura(k, rotas){
+  const LIM = CONFIG.LIMITE_LISTA, todos = [];
   rotas.forEach(r => {
     const ja = new Set(((COBERTOS[r]||{})[k])||[]);
     (CLIENT_ROSTER[r]||[]).forEach(c=>{
@@ -519,16 +694,50 @@ function abreIndicador(k, rotasTotal){
       if(chip==='Hoje') return c[4]===1;          // respeita a paridade da semana
       return (DIAS[c[3]]||'').includes(chip);
     }).sort((a,b)=>a[1][1].localeCompare(b[1][1]));
-    $('dCorpo').innerHTML = chipsHtml(chip) +
+    $('dLista').innerHTML = chipsHtml(chip) +
       (vis.length? vis.slice(0,LIM).map(([r,c])=>itemHtml(r,c,null,onlineIds(r,k).includes(c[0]))).join('')
                  : `<div class="vazio">Ninguém neste filtro.</div>`) +
       (vis.length>LIM? `<div class="vazio">+ ${vis.length-LIM} clientes — filtre por rota para ver todos.</div>`:'');
-    $('dCorpo').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
+    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
   };
-  const nota = (k==='KS TT') ? ' · lista restrita a bares, lanchonetes, restaurantes e padarias' : '';
-  abre(rotuloInd(k), `Meta ${b.meta} · Real ${b.real} · ${b.gap>0?`faltam ${b.gap} para o ritmo de hoje`:'no ritmo'}${nota}`, '');
   pinta();
 }
+
+/* ---------- entrada (Diretoria / Gerência) ----------
+   Abre na entrada; o botão sol/lua troca só o fundo da entrada (preto, padrão, ou branco), guardado no aparelho.
+   Sem armazenamento (aba anônima, bloqueado): fica preto. A casa vermelha do topo volta para a entrada. */
+const TEMA_ENTRADA = 'drotas_entrada';
+function temaEntrada(){
+  try { return localStorage.getItem(TEMA_ENTRADA)==='branca' ? 'branca' : 'preta'; } catch(e) { return 'preta'; }
+}
+function aplicaTemaEntrada(t){
+  $('entrada').classList.toggle('branca', t==='branca');
+  $('btnTema').textContent = t==='branca' ? '☾' : '☀';
+  $('btnTema').setAttribute('aria-label', t==='branca' ? 'Entrada com fundo preto' : 'Entrada com fundo branco');
+}
+$('btnTema').onclick = () => {
+  const t = temaEntrada()==='branca' ? 'preta' : 'branca';
+  try { localStorage.setItem(TEMA_ENTRADA, t); } catch(e) { /* sem armazenamento: vale só nesta visita */ }
+  aplicaTemaEntrada(t);
+};
+function mostraEntrada(){
+  fecha();
+  $('entrada').hidden = false;
+  document.body.classList.add('na-entrada');
+}
+function entra(modo){
+  sel = modo==='dir' ? {...sel, modo:'dir', sv:'', rota:''} : {...sel, modo:'gc'};
+  $('entrada').hidden = true;
+  document.body.classList.remove('na-entrada');
+  if(!P) return;
+  if(sel.modo==='gc' && !DATA[sel.gc]) sel.gc = primeiraGc();
+  render();
+  if($('q').value.trim()) buscaCliente();
+}
+document.querySelectorAll('#entrada [data-modo]').forEach(b=>b.onclick=()=>entra(b.dataset.modo));
+$('btnCasa').onclick = mostraEntrada;
+aplicaTemaEntrada(temaEntrada());
+$('entRod').textContent = CONFIG.CREDITOS;
 
 /* ---------- busca de cliente ---------- */
 let ULTIMA_BUSCA = [];   // [ {tipo:'cliente',rota,c} | {tipo:'rede',nome,membros} ], sugestão mostrada agora
