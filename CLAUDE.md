@@ -16,6 +16,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   input `hoje` opcional) → artifact com `relatorio_tendencia.md` + `payload.json`/`online.json` (sem commit).
   `gerar.py --hoje AAAA-MM-DD --saida DIR` simula a data (o cron não usa).
 - Front local: `cd frontend && python -m http.server 8765`.
+- Testes de front (Chromium headless + dado sintético gerado pelo próprio back-end): `node --test frontend/tests/front.test.js`
+  (precisa de Python com as dependências do back-end e do pacote `playwright`; sem ele os testes são pulados; o CI não roda).
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -27,11 +29,18 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Fórmulas em `backend/gerador/modelo.py` espelham `agrega()` em `app.js`; mudou um, mude o outro.
 - **Todo nome de coluna, filtro e agrupador fica em `backend/gerador/mapeamento.py`.** Valores conferidos em 13/10/2026:
   - Base de clientes guarda histórico: filtrar `FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'`.
-  - Gerências do painel na fonte: `Gc. G1/G2/G3/Ap/It_Mo`. IT e MO vêm juntas; o código sai do supervisor
-    (`Sv. It. 1` → `SV.IT.1` → `IT`). Supervisores vêm com espaço (`Sv. G3. 1`). Ignorar `Sv. Bl.*` (balcão) e rotas `EV*`.
+  - Gerências do painel na fonte (`M.GC_ORIGEM`): `Gc. G1/G2/G3/Ap/It_Mo` conferidas; `Gc. At/An/Sl/Rv/Pa_Di/Ur_Ri/Gu_Po`
+    A CONFIRMAR (vistas no comodato). As agrupadas (It_Mo, Pa_Di, Ur_Ri, Gu_Po) são separadas pelo prefixo do supervisor
+    (`Sv. Pa. 3` → `SV.PA.3` → `PA`; `M.GC_SIGLAS_ORIGEM`); prefixo fora da gerência entra e vai para o log.
+    16 siglas em 3 regiões (`M.REGIOES`: Matriz G1 G2 G3 AT AP · Sul AN SL RV MO IT · Norte RI UR GU PO PA DI), no payload
+    em `REGIOES`; `GC_ATIVAS` mantém as 6 antigas primeiro (o front ordena por região).
+    Supervisores vêm com espaço (`Sv. G3. 1`). Ignorar `Sv. Bl.*` (balcão), rotas `EV*` e supervisor fora de
+    `SV.<sigla>.<n>` (também na At); as ignoradas são contadas por gerência e motivo no log.
   - Agrupadores têm grafia própria (`Cctm 2l Pet`, `Ks Tt`...). `Cervejas` é cobertura E volume.
     `Destilados` é outro agrupador já contido em `Dest+Art+Cnd`: nunca somar.
-  - A consulta de vendas SEMPRE filtra os 17 agrupadores (sem filtro vira cliente × 748 agrupadores).
+  - A consulta de vendas SEMPRE filtra os agrupadores (sem filtro vira cliente × 748 agrupadores): os 17 do painel +
+    DV Frut, Sucos e Ades (`M.AGRUPADORES_CONSULTA_VENDAS`). Compras do mês, cobertura e "qualquer compra hoje"
+    (Revertido da VZ) continuam só com os 17 (`M.agrupador_do_painel`).
   - Pedidos de hoje (`FONTE = 'WF Online'`) só contam com `SITUACAO_Pedido = 'Inc. e Exp.'` (fora Cancelado/Reprovado).
     Basis e Meta NEG vêm na mesma consulta: o filtro é `(FONTE ne 'WF Online' or SITUACAO_Pedido eq 'Inc. e Exp.')`,
     nunca `SITUACAO_Pedido eq 'Inc. e Exp.'` puro (sumiria a meta por cliente, que tem situação 'Meta NEG').
@@ -76,6 +85,26 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   ganha `fechamentoMes` = rótulo de M−1; na rodada só-online o rótulo sai do payload publicado. O input manual
   `fechamento` do workflow só sobrepõe o rótulo da tag. `validacao.py` compara quedas (rotas, clientes, volume real)
   só com o payload publicado do mesmo `MES_LABEL`; na virada, só avisa.
+- **Neutraliza** (`M.NEUTRALIZA`: SV.G1.5/151, SV.G2.5/251, SV.IT.3/I31, SV.MO.3/M31) é a ÚNICA lista (vai no payload
+  `NEUTRALIZA`; o front lê de lá; `CONFIG.SV_EXCLUIDOS` só para payload antigo): sem card, coluna, linha ou cliente em
+  lista em lugar nenhum; Meta e Real de Volume/ICS/NN só no total da gerência (e da Diretoria); Venda Zero nunca
+  (fora da lista, das geladeiras ativas e do rateio da meta). Ocultas (`M.OCULTAS`: SV.G3.3): fora do "puxa a média" e
+  das listas de clientes. Na gerência AT (`M.GC_SEM_OCULTAS`) nada é oculto.
+- **Del Valle Frut** (`M.VOLUME_EXTRA`: `VOL DEL VALLE FRUT`, agrupador "DV Frut" A CONFIRMAR, só G2): todas as regras de
+  volume; fora de `GROUPS`/`COV_GRUPO`/`INDICADORES_VOLUME` (nunca somado aos 5 macros; fora do Resumo, da Diretoria, do
+  ritmo de coberturas e do "puxa a média"); nó do indicador e 6º bloco do `VOLUME_CLIENTE` só nas rotas com o dado.
+- **Desempenho GDM e tag de geladeira** (busca de cliente): payload `COMODATO_CLIENTE {rota:{pv:[meta, faturado GDM,
+  situação, nº geladeiras]}}` + online `gdmCliente`. Meta = `META_EQPTO` das geladeiras Total Ko; faturado = Vol Real
+  (mesmo NF_STATUS) em Refrigerantes, Água Mineral, Sucos, Ades, Powerade (`M.AGRUPADORES_GDM`, única soma entre
+  agrupadores permitida); situação = pior `GIRO_STATUS_MES_ATUAL` (`M.SITUACAO_GIRO`, 'Baixo Giro'/'< 30 Dias' A CONFIRMAR).
+  Cores: Zero vermelho, Baixo sempre amarelo, Ok verde, < 30 dias e rede pela venda. Fechamento: sem tag nem quadrinho.
+- **Validação por gerência**: gerência sem rotas, metas ou Real = aviso; quedas (rotas, clientes, volume real) só contra
+  a mesma gerência publicada (gerência nova não é comparada).
+- **Front**: abre na entrada (DIRETORIA / GERÊNCIA; sol/lua só no fundo da entrada, `localStorage 'drotas_entrada'`).
+  Diretoria = todas as gerências (ou uma região). Cards abrem a cascata única (`abreIndicador` → `pintaCascata`):
+  gerências → supervisões → rotas → clientes, linhas com os números de `agrega()` (nada recalculado). Resumo: Diretoria
+  em faixas de 8 gerências, seletor de uma gerência; placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada).
+  Rodapé: "Karen Oliveira - Inteligência de Mercado".
 - **Decisões aceitas** (diferem do arquivo antigo, montado à mão): visitas de hoje pelo campo `VISITA_HOJE` do SAP.
 - **Semana**: `SEMANA_NUM` conta a partir da 1ª segunda-feira do mês; dias antes dela são da última semana do mês anterior.
 - O gerador só grava quando o conteúdo muda (JSON compacto e determinístico) e não grava nada se `validacao.py` reprovar.
