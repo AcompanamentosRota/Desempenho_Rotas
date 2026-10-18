@@ -119,13 +119,15 @@ Por rota × macro de volume (Refrigerantes, Cervejas, Still, Água Mineral, Dest
 |---|---|
 | Meta | `META_VOLUME_Chave_Meta_SAP`: a meta da rota (o SAC mostra ela no campo "Meta NEG") |
 | Vol Real | `FX_VOL_PADRAO_FAT` do mês com `NF_STATUS_Nota_Fiscal` em Acertado, Meta Neg ou Em Aberto |
-| Neg Restante | Meta × (`META_NEG` de hoje até o fim do mês ÷ `META_NEG` do mês): curva dos clientes aplicada à meta da rota |
+| Neg Restante | `META_NEG` de hoje até o fim do mês pela rota da meta (`CD_ROTA_Chave_Meta_SAP`), direto quando a `META_NEG` do mês fica a até 1% da Meta; senão Meta × (restante ÷ mês) |
 | Tendência | Vol Real + Neg Restante |
 | % Tendência | Tendência ÷ Meta; verde a partir de 100% |
 | Dif | Vol Real − Meta |
 | Meta do dia | `META_RECUPERAVEL_ROTA` por rota com `DATA_MOVIMENTO` = hoje (sem a medida, fica "—") |
 
-Casos-limite: rota com META_VOLUME mas sem META_NEG usa os dias úteis restantes (contando hoje) no lugar da
+A rota da meta é a mesma que o SAC usa: pela rota atual do cliente, quem foi transferido levaria a curva
+para outra rota. Se a consulta pela rota da meta não funcionar, o gerador volta à curva pela rota do cliente
+(sempre escalonada) e avisa. Casos-limite: rota com META_VOLUME mas sem META_NEG usa os dias úteis restantes (contando hoje) no lugar da
 curva; rota sem META_VOLUME usa a soma de META_NEG como meta; sem nenhuma das duas, o indicador fica
 indisponível. Cada caso aparece nos avisos da execução, assim como a meta da rota não distribuída nos
 clientes, por gerência (META_VOLUME − soma de META_NEG).

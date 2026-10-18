@@ -95,6 +95,13 @@ class TestAceiteSac(unittest.TestCase):
                       txt)
         self.assertIn("Resultado: **DIVERGE**", txt)          # as outras gerências não estão no fixture
 
+    def test_aceite_tambem_em_18_10(self):
+        txt = conferir_tendencia.conferir(ConsultaFalsa(_dados_17_10()), date(2026, 10, 18))[0].texto("aceite")
+        self.assertIn("| AP | 121.040 | 121.040 | OK | 398.000 | 398.000 | OK | 347.170 | 347.170 | OK |", txt)
+        txt = conferir_tendencia.conferir(ConsultaFalsa(_dados_17_10()), date(2026, 10, 19))[0].texto("aceite")
+        self.assertIn("Aceite só vale", txt)
+        self.assertNotIn("| OK |", txt)
+
     def test_data_simulada_nao_faz_aceite(self):
         rel, _ = conferir_tendencia.conferir(ConsultaFalsa(_dados_17_10()), date(2026, 10, 17), simulado=True)
         txt = rel.texto("aceite")
@@ -117,3 +124,17 @@ class TestAceiteSac(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRotaClienteXRotaMeta(unittest.TestCase):
+    def test_secao_3b(self):
+        from tests.test_tendencia_fechamento import _dados_rota_meta
+        txt = conferir_tendencia.conferir(ConsultaFalsa(_dados_rota_meta()), date(2026, 10, 13))[0].texto("3b")
+        self.assertNotIn("ERRO", txt)
+        self.assertIn("3b. Curva da META_NEG", txt)
+        # (a) pela rota do cliente: 80 no mês, 30 restante; (b) pela rota da meta: 120 e 45; META_VOLUME 120;
+        # atual = 13 + 120 x 30/80 = 58; (b) direto = 13 + 45 = 58; (b) escalonado = 13 + 120 x 45/120 = 58
+        self.assertIn("| rota 111 | Refrigerantes | 80,0 | 30,0 | 120,0 | 45,0 | 120,0 | 13,0 | 58,0 |", txt)
+        self.assertIn("| rota 514 | Refrigerantes | fora da base de clientes |", txt)
+        self.assertIn("| G1 | Refrigerantes | rota do cliente fora do painel | 1 | 40,0 |", txt)
+        self.assertIn("curva da META_NEG pela **rota da meta**", txt)

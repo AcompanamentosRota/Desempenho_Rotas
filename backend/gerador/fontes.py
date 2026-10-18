@@ -270,15 +270,16 @@ def filtro_hoje(cons: Consulta, hoje: date) -> str:
 
 
 def _por_rota(cons: Consulta, medida: str, anomes: str, gcs_originais: list[str], rota: str | None,
-              filtro_extra: str | None = None) -> dict:
+              filtro_extra: str | None = None, col_rota: str = CM.ROTA) -> dict:
     """{rota: {VOL: medida}} agregado no servidor por rota x agrupador (sem dia e sem cliente).
 
+    col_rota: CD_ROTA_Clien (rota atual do cliente, padrão) ou CD_ROTA_Chave_Meta_SAP (rota da meta).
     Se a consulta inteira falhar (ex.: HTTP 500 do objeto analítico), repete dividindo por gerência.
     """
     obj = M.OBJ_META
-    sel = _colunas(cons, obj, [CM.ROTA, CM.AGRUPADOR, medida])
+    sel = _colunas(cons, obj, [col_rota, CM.AGRUPADOR, medida])
     filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())), filtro_extra,
-               eq(CM.ROTA, rota) if rota else None)
+               eq(col_rota, rota) if rota else None)
     try:
         linhas = cons.linhas(obj, sel, filtro)
     except Exception as erro:   # noqa: BLE001
@@ -289,7 +290,7 @@ def _por_rota(cons: Consulta, medida: str, anomes: str, gcs_originais: list[str]
         linhas = [l for ls in cons.em_paralelo(partes).values() for l in ls]
     out: dict = defaultdict(dict)
     for l in linhas:
-        r, k = _rota(l.get(CM.ROTA)), M.indicador_volume(l.get(CM.AGRUPADOR))
+        r, k = _rota(l.get(col_rota)), M.indicador_volume(l.get(CM.AGRUPADOR))
         if r and k and l.get(medida) not in (None, ""):
             out[r][k] = out[r].get(k, 0.0) + numero(l.get(medida))
     return dict(out)
@@ -327,24 +328,51 @@ def meta_neg_e_restante(linhas: list[tuple[str, str, date | None, float]], hoje:
 
 
 def carregar_meta_neg(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None, hoje: date,
-                      com_restante: bool = True) -> tuple[dict, dict | None]:
+                      com_restante: bool = True, col_rota: str = CM.ROTA) -> tuple[dict, dict | None]:
     """Soma de META_NEG do mês e da parte restante (DATA_MOVIMENTO de hoje ao fim do mês) por rota x macro.
 
     Duas consultas em paralelo, sem a data no groupby. Se o filtro de data for recusado, o restante
-    sai da consulta por dia (plano B, lento). com_restante=False (fechamento): só o mês.
+    sai da consulta por dia (plano B, lento; só pela rota do cliente). com_restante=False (fechamento): só o mês.
     """
     if not com_restante:
-        return _por_rota(cons, CM.META_NEG, anomes, gcs_originais, rota), None
+        return _por_rota(cons, CM.META_NEG, anomes, gcs_originais, rota, col_rota=col_rota), None
     with ThreadPoolExecutor(max_workers=2) as ex:
-        f_mes = ex.submit(_por_rota, cons, CM.META_NEG, anomes, gcs_originais, rota)
+        f_mes = ex.submit(_por_rota, cons, CM.META_NEG, anomes, gcs_originais, rota, None, col_rota)
         try:
-            restante = _por_rota(cons, CM.META_NEG, anomes, gcs_originais, rota, filtro_restante(cons, hoje))
+            restante = _por_rota(cons, CM.META_NEG, anomes, gcs_originais, rota, filtro_restante(cons, hoje), col_rota)
         except Exception as erro:   # noqa: BLE001
+            if col_rota != CM.ROTA:
+                raise
             log.warning("META_NEG com filtro de DATA_MOVIMENTO falhou (%s); Neg Restante pela consulta por dia.", erro)
             restante = meta_neg_e_restante(_por_rota_dia(cons, CM.META_NEG, anomes, rota), hoje)[1]
         mes = f_mes.result()
-    log.info("Meta NEG: %d rotas", len(mes))
+    log.info("Meta NEG por %s: %d rotas", col_rota, len(mes))
     return mes, restante
+
+
+ROTA_META, ROTA_CLIENTE = "rota_meta", "rota_cliente"
+
+
+def carregar_curva_neg(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None, hoje: date,
+                       com_restante: bool = True) -> tuple[dict, dict | None, str]:
+    """Curva da META_NEG (mês e restante) por rota: pela rota da META (CD_ROTA_Chave_Meta_SAP), como o SAC.
+
+    Cliente transferido leva a META_NEG para a rota atual dele (CD_ROTA_Clien), então a rota da meta é a
+    preferida. As duas consultas rodam juntas; se a da rota da meta falhar ou vier sem rota, vale a da
+    rota do cliente (regra anterior, sempre escalonada). Devolve (mês, restante, ROTA_META | ROTA_CLIENTE).
+    """
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_meta = ex.submit(carregar_meta_neg, cons, anomes, gcs_originais, rota, hoje, com_restante, CM.META_ROTA)
+        f_cli = ex.submit(carregar_meta_neg, cons, anomes, gcs_originais, rota, hoje, com_restante, CM.ROTA)
+        try:
+            mes, rest = f_meta.result()
+            if any(v for ks in mes.values() for v in ks.values()):
+                return mes, rest, ROTA_META
+            log.warning("META_NEG por %s veio sem rota: usando a rota do cliente (%s).", CM.META_ROTA, CM.ROTA)
+        except Exception as erro:   # noqa: BLE001
+            log.warning("META_NEG por %s falhou (%s): usando a rota do cliente (%s).", CM.META_ROTA, erro, CM.ROTA)
+        mes, rest = f_cli.result()
+        return mes, rest, ROTA_CLIENTE
 
 
 def carregar_meta_dia(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None, hoje: date) -> dict | None:
@@ -564,17 +592,18 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
         f_vendas = ex.submit(vendas)
         f_vm = ex.submit(carregar_volume_real, cons, anomes, gcs, rota)
         f_metas = ex.submit(carregar_metas, cons, anomes, rota)
-        f_neg = ex.submit(carregar_meta_neg, cons, anomes, gcs, rota, hoje, not cal.fechamento)
+        f_neg = ex.submit(carregar_curva_neg, cons, anomes, gcs, rota, hoje, not cal.fechamento)
         f_dia = None if cal.fechamento else ex.submit(carregar_meta_dia, cons, anomes, gcs, rota, hoje)
         f_com = ex.submit(comodato)
         cobertos, compraram, meta_cli, segmento = f_vendas.result()
         vm = f_vm.result()
         metas, metas_vol = f_metas.result()
-        neg_mes, neg_rest = f_neg.result()
+        neg_mes, neg_rest, fonte_neg = f_neg.result()
         meta_dia = f_dia.result() if f_dia else None
         vendazero, ativos, vz_meta = f_com.result()
 
-    # Meta = META_VOLUME da rota; Neg Restante = curva dos clientes (META_NEG) aplicada à meta da rota
+    # Meta = META_VOLUME da rota; Neg Restante = META_NEG restante pela rota da meta (direto se o mês bate com a
+    # META_VOLUME em 1%; senão, escalonado) ou, sem a rota da meta, a curva pela rota do cliente escalonada
     dias_restantes = cal.total_dias_uteis - cal.dia_ontem   # dias úteis de hoje (inclusive) ao fim do mês
     volume: dict = defaultdict(dict)
     casos: dict[str, list[str]] = defaultdict(list)
@@ -583,16 +612,22 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
             nm, real = neg_mes.get(r, {}).get(k), vm.real.get(r, {}).get(k)
             meta, rest, caso = modelo.meta_e_restante(metas_vol.get(r, {}).get(k), nm,
                                                       (neg_rest or {}).get(r, {}).get(k, 0.0),
-                                                      dias_restantes, cal.total_dias_uteis)
+                                                      dias_restantes, cal.total_dias_uteis,
+                                                      direto=fonte_neg == ROTA_META)
             if meta is None and real is None:
                 continue
-            if caso in (modelo.SEM_CURVA, modelo.SEM_META_ROTA):
+            if caso in (modelo.SEM_CURVA, modelo.SEM_META_ROTA) or (caso == modelo.CURVA and fonte_neg == ROTA_META):
                 casos[caso].append(f"{r}/{M.LABELS[k]}")
             volume[r][k] = VolumeRota(
                 meta=meta, real=real or 0.0, meta_neg_clientes=nm,
                 neg_restante=None if cal.fechamento else rest,
                 meta_dia_hoje=None if meta_dia is None else meta_dia.get(r, {}).get(k, 0.0))
     avisos = []
+    if fonte_neg == ROTA_CLIENTE:
+        avisos.append(f"META_NEG por {CM.META_ROTA} indisponível: Neg Restante escalonado pela curva da rota do cliente")
+    elif casos[modelo.CURVA] and not cal.fechamento:
+        avisos.append("Neg Restante escalonado (META_NEG da rota da meta difere mais de 1% da META_VOLUME) em: "
+                      + ", ".join(casos[modelo.CURVA]))
     if casos[modelo.SEM_CURVA]:
         avisos.append("Neg Restante por dias úteis (META_VOLUME sem curva de META_NEG) em: "
                       + ", ".join(casos[modelo.SEM_CURVA]))
