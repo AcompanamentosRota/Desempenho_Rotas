@@ -111,6 +111,67 @@ class TestMetaDaRota(unittest.TestCase):
                             for a in avisos), avisos)
 
 
+def _dados_rota_meta():
+    """META_NEG com a rota da meta (CD_ROTA_Chave_Meta_SAP). Um cliente transferido para a rota 999 (fora do
+    painel) continua com a META_NEG na rota da meta 111. Refrigerantes: META_VOLUME 120 e META_NEG do mês pela
+    rota da meta 120 (direto); Still: META_VOLUME 50 e META_NEG 40 (diverge > 1%: escalonado)."""
+    d = copy.deepcopy(DADOS)
+
+    def neg(ag, dia, v, rota_cli="111"):
+        return dict(_dia(ag, dia, CM.META_NEG, v, rota_cli), **{CM.META_ROTA: "111"})
+
+    d["meta_neg"] = [neg("Refrigerantes", "2026-10-01", 50.0), neg("Refrigerantes", "2026-10-20", 30.0),
+                     neg("Refrigerantes", "2026-10-02", 25.0, "999"), neg("Refrigerantes", "2026-10-21", 15.0, "999"),
+                     neg("Still", "2026-10-01", 30.0), neg("Still", "2026-10-20", 10.0)]
+    d["metas"] = DADOS["metas"] + [_meta("Still", vol="50")]
+    return d
+
+
+class TestNegRestantePelaRotaDaMeta(unittest.TestCase):
+    def test_regra_direto_ate_1_por_cento(self):
+        self.assertEqual(modelo.meta_e_restante(100.0, 100.5, 40.0, 9, 22, direto=True), (100.0, 40.0, modelo.DIRETO))
+        self.assertEqual(modelo.meta_e_restante(100.0, 99.0, 40.0, 9, 22, direto=True)[2], modelo.DIRETO)
+        meta, rest, caso = modelo.meta_e_restante(100.0, 101.5, 40.0, 9, 22, direto=True)
+        self.assertEqual((meta, round(rest, 4), caso), (100.0, round(100 * 40 / 101.5, 4), modelo.CURVA))
+        # sem a rota da meta: sempre escalonado (regra anterior)
+        self.assertEqual(modelo.meta_e_restante(100.0, 100.5, 40.0, 9, 22)[2], modelo.CURVA)
+        # casos-limite não mudam
+        self.assertEqual(modelo.meta_e_restante(220.0, 0.0, 0.0, 9, 22, direto=True), (220.0, 90.0, modelo.SEM_CURVA))
+        self.assertEqual(modelo.meta_e_restante(None, 80.0, 20.0, 9, 22, direto=True), (80.0, 20.0, modelo.SEM_META_ROTA))
+
+    def test_montagem_pela_rota_da_meta(self):
+        cons = ConsultaFalsa(_dados_rota_meta())
+        f = fontes.carregar(cons, datetime(2026, 10, 13, 9, 0))
+        ind = montar_payload(f)["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]
+        r = ind["VOL REFRIGERANTES"]
+        # restante pela rota da meta (30 + 15, inclui o cliente transferido), sem escalonar: 120 bate com 120
+        self.assertEqual((r["meta"], r["negRestante"], r["tendencia"], r["metaNegClientes"]), (120.0, 45.0, 58.0, 120.0))
+        st = ind["VOL STILL"]
+        self.assertEqual((st["meta"], st["negRestante"], st["metaNegClientes"]), (50.0, 12.5, 40.0))   # 50 x 10/40
+        self.assertTrue(any("escalonado" in a and "111/Still" in a and "Refrigerantes" not in a for a in f.avisos),
+                        f.avisos)
+        neg = [c for c in cons.chamadas if c[1] == (CM.META_ROTA, CM.AGRUPADOR, CM.META_NEG)]
+        self.assertEqual(sorted(CM.DATA in c[2] for c in neg), [False, True])
+
+    def test_sem_rota_da_meta_mantem_o_escalonado_pela_rota_do_cliente(self):
+        cons = ConsultaFalsa(_dados_rota_meta(), falha=lambda sel, f: tuple(sel) == (CM.META_ROTA, CM.AGRUPADOR, CM.META_NEG))
+        f = fontes.carregar(cons, datetime(2026, 10, 13, 9, 0))
+        r = montar_payload(f)["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]["VOL REFRIGERANTES"]
+        # pela rota do cliente só entram 50 + 30 = 80 no mês e 30 no restante: 120 x 30/80
+        self.assertEqual((r["negRestante"], r["metaNegClientes"]), (45.0, 80.0))
+        self.assertTrue(any("indisponível" in a and CM.META_ROTA in a for a in f.avisos), f.avisos)
+
+    def test_fechamento_so_o_mes_pela_rota_da_meta(self):
+        d = _dados_rota_meta()
+        d = {**d, M.OBJ_CALENDARIO: [], "vendas": {"202610": d["vendas"]}, "vol_real": {"202610": d["vol_real"]},
+             "meta_neg": {"202610": d["meta_neg"]}, "meta_dia": {}, "metas": {"202610": d["metas"]}}
+        cons = ConsultaFalsa(d)
+        v = montar_payload(fontes.carregar(cons, datetime(2026, 11, 3, 9, 0)))["DATA"]["G1"]["SV.G1.1"]["111"]
+        r = v["indicators"]["VOL REFRIGERANTES"]
+        self.assertEqual((r["meta"], r["negRestante"], r["tendencia"], r["metaNegClientes"]), (120.0, None, None, 120.0))
+        self.assertFalse([c for c in cons.chamadas if CM.META_NEG in c[1] and CM.DATA in (c[2] or "")])
+
+
 class TestFiltrosDeData(unittest.TestCase):
     def _cons(self, tipo="Edm.Date", amostra="2026-10-01"):
         return ConsultaFalsa({"vendas": [dict(_venda(1, "Refrigerantes"), **{CM.DATA: amostra})]}, tipo_data=tipo)

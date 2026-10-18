@@ -50,8 +50,11 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Meta = `META_VOLUME_Chave_Meta_SAP` da rota (é o que o SAC mostra como "Meta NEG"; a soma de `META_NEG` dos
   clientes é menor porque parte da meta não está distribuída — vai no payload só como `metaNegClientes`);
   Vol Real = `FX_VOL_PADRAO_FAT` do mês com `NF_STATUS_Nota_Fiscal` em `M.STATUS_NF_REAL` (via `normalizar`);
-  Neg Restante = Meta × (`META_NEG` de hoje ao fim do mês / `META_NEG` do mês): a curva dos clientes aplicada à
-  meta da rota; Tendência = Vol Real + Neg Restante; % = Tendência / Meta, verde com % >= 100; Dif = Vol Real − Meta.
+  Neg Restante = `META_NEG` de hoje ao fim do mês agrupada pela **rota da meta** (`CD_ROTA_Chave_Meta_SAP`, como o
+  SAC; pela rota atual do cliente, `CD_ROTA_Clien`, cliente transferido leva a curva para a rota errada — AP e MO
+  divergiam em 18/10), direto quando a `META_NEG` do mês dessa rota fica a até 1% da Meta; acima disso, escalonado
+  (Meta × restante / mês) e a rota vai para o aviso. Se a consulta pela rota da meta falhar ou vier sem rota, volta
+  à curva pela rota do cliente, sempre escalonada (`fontes.carregar_curva_neg`); Tendência = Vol Real + Neg Restante; % = Tendência / Meta, verde com % >= 100; Dif = Vol Real − Meta.
   Casos-limite (aviso por rota × macro): META_VOLUME sem META_NEG → Neg Restante = Meta × dias úteis restantes
   (com hoje) / dias úteis do mês; sem META_VOLUME → Meta e restante = somas de META_NEG; nenhuma → indisponível.
   Meta do dia = `META_RECUPERAVEL_ROTA` por rota × agrupador com `DATA_MOVIMENTO` = hoje (se der HTTP 500, repete

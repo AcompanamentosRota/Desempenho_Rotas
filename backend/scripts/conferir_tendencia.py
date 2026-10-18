@@ -44,8 +44,10 @@ from gerador.tipos import Online  # noqa: E402
 CM, CO = M.ColMeta, M.ColComodato
 VOL = M.INDICADORES_VOLUME
 ROTAS_FIXAS = ["111", "211", "311"]
+# rotas da conferência de 18/10 (514, 535, M21 e M24 puxavam a diferença da tendência em AP e MO)
+AMOSTRA_ROTA_META = ["111", "211", "311", "511", "514", "535", "I11", "M11", "M21", "M22", "M24"]
 # Aceite (Refrigerantes) com os valores do SAC de 17/10/2026: gc -> (Real, Meta, Tendência, % Tendência)
-DATA_ACEITE = date(2026, 10, 17)
+DATAS_ACEITE = (date(2026, 10, 17), date(2026, 10, 18))   # fim de semana: sem faturamento novo
 SAC_17_10 = {
     "G1": (125590, 490003, 406863, 83.03),
     "G2": (159417, 533000, 474058, 88.94),
@@ -276,6 +278,8 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
 
     def comparacao():
         vm = estado.get("vm") or fontes.carregar_volume_real(cons, anomes, gcs, None)
+        # curva do gerador (rota da meta, se existir) e, para comparação, a soma pela rota do cliente
+        curva_mes, curva_rest, fonte = fontes.carregar_curva_neg(cons, anomes, gcs, None, hoje)
         neg_mes, neg_rest = fontes.carregar_meta_neg(cons, anomes, gcs, None, hoje)
         _, metas_vol = fontes.carregar_metas(cons, anomes, None)
         sel_dia = [CM.META_ROTA, CM.META_AGRUPADOR, CM.META_DIA]
@@ -292,25 +296,27 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
         calc = {}
         for r in estado["rotas"]:
             for k in VOL:
-                calc[(r, k)] = modelo.meta_e_restante(metas_vol.get(r, {}).get(k), neg_mes.get(r, {}).get(k),
-                                                      neg_rest.get(r, {}).get(k, 0.0), restantes, cal.total_dias_uteis)
-        estado.update(calc=calc, vm=vm)
+                calc[(r, k)] = modelo.meta_e_restante(metas_vol.get(r, {}).get(k), curva_mes.get(r, {}).get(k),
+                                                      (curva_rest or {}).get(r, {}).get(k, 0.0), restantes,
+                                                      cal.total_dias_uteis, direto=fonte == fontes.ROTA_META)
+        estado.update(calc=calc, vm=vm, metas_vol=metas_vol, neg_a=(neg_mes, neg_rest), fonte_neg=fonte)
 
         def valores(rotas: list[str], k: str) -> list:
             def s(d):
                 return sum(d.get(r, {}).get(k, 0.0) for r in rotas)
             real_ant, real, nm, nr = s(vm.todos_status), s(vm.real), s(neg_mes), s(neg_rest)
+            cm, cr = s(curva_mes), s(curva_rest or {})
             mvol, mdia_ant = s(metas_vol), s(antiga)
             meta = sum(calc[(r, k)][0] or 0.0 for r in rotas)
             rest = sum(calc[(r, k)][1] or 0.0 for r in rotas)
             tend, tend_neg = real + rest, real + nr
             linear = real_ant / cal.dia_ontem * cal.total_dias_uteis if cal.dia_ontem else real_ant
-            return [_n(real_ant), _n(real), _n(meta), None if not nm else f"{nr / nm:.4f}".replace(".", ","),
+            return [_n(real_ant), _n(real), _n(meta), None if not cm else f"{cr / cm:.4f}".replace(".", ","),
                     _n(rest), _n(tend), _pct2(tend, meta), _n(nm), _n(nr), _n(tend_neg), _pct2(tend_neg, nm),
                     _n(mvol), _n(linear), _n(mdia_ant), None if nova is None else _n(s(nova))]
 
         cab = ["", "macro", "Real atual", "Vol Real", "Meta (META_VOLUME)", "fração restante", "Neg Rest. novo",
-               "Tend. nova", "% novo", "Meta NEG (clientes)", "Neg Rest. (NEG)", "Tend. (NEG)", "% (NEG)",
+               "Tend. nova", "% novo", "META_NEG (rota cliente)", "Neg Rest. (NEG)", "Tend. (NEG)", "% (NEG)",
                "META_VOLUME bruta", "Tend. linear antiga", "META_DIA antiga", "Meta do dia"]
         linhas = []
         for gc in M.GC_ATIVAS:
@@ -323,16 +329,103 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
             else:
                 linhas.append([f"rota {r}", "não está na base de clientes"] + [None] * (len(cab) - 2))
         rel.p("Real atual = FX_VOL_PADRAO_FAT do mês com todos os status (painel antigo). Vol Real = só os status do SAC. "
-              "**Novo** (o gerador publica): Meta = META_VOLUME da rota; fração restante = META_NEG de hoje ao fim do mês "
-              "/ META_NEG do mês; Neg Rest. novo = Meta x fração (casos-limite: modelo.meta_e_restante); Tendência = "
+              f"**Novo** (o gerador publica; curva da META_NEG pela **{'rota da meta' if fonte == fontes.ROTA_META else 'rota do cliente'}**): "
+              "Meta = META_VOLUME da rota; fração restante = META_NEG de hoje ao fim do mês / META_NEG do mês; "
+              "Neg Rest. novo = restante direto (rota da meta, mês a até 1% da META_VOLUME) ou Meta x fração "
+              "(casos-limite: modelo.meta_e_restante); Tendência = "
               "Vol Real + Neg Rest.; % sobre a Meta. **Versão anterior** (soma de META_NEG dos clientes) ao lado. "
               f"Linear antiga = Real atual / {cal.dia_ontem} x {cal.total_dias_uteis}. "
               "Gerência = soma das rotas do painel (Neutraliza incluída).")
         rel.tabela(cab, linhas)
     etapa("comparação", comparacao)
 
+    # 3b. rota do cliente x rota da meta ---------------------------------------------------
+    rel.h("3b. Curva da META_NEG: rota do cliente x rota da meta (Refrigerantes e Água Mineral)")
+
+    def rota_cliente_x_meta():
+        neg_a_mes, neg_a_rest = estado["neg_a"]
+        metas_vol, calc, vm = estado["metas_vol"], estado["calc"], estado["vm"]
+        try:
+            neg_b_mes, neg_b_rest = fontes.carregar_meta_neg(cons, anomes, gcs, None, hoje, col_rota=CM.META_ROTA)
+            if not any(v for ks in neg_b_mes.values() for v in ks.values()):
+                rel.p(f"META_NEG por `{CM.META_ROTA}` veio sem rota: a medida não aceita essa dimensão.")
+                neg_b_mes = neg_b_rest = None
+        except Exception as erro:  # noqa: BLE001
+            rel.p(f"META_NEG por `{CM.META_ROTA}` falhou: `{erro}`")
+            neg_b_mes = neg_b_rest = None
+        cal = estado["cal"]
+        restantes = cal.total_dias_uteis - cal.dia_ontem
+
+        def linha(rot: str, rotas: list[str], k: str) -> list:
+            def s(d):
+                return sum((d or {}).get(r, {}).get(k, 0.0) for r in rotas)
+            mv, real = s(metas_vol), s(vm.real)
+            esc_a = esc_b = 0.0
+            for r in rotas:
+                m_r = metas_vol.get(r, {}).get(k)
+                esc_a += modelo.meta_e_restante(m_r, neg_a_mes.get(r, {}).get(k), neg_a_rest.get(r, {}).get(k, 0.0),
+                                                restantes, cal.total_dias_uteis)[1] or 0.0
+                if neg_b_mes is not None:
+                    esc_b += modelo.meta_e_restante(m_r, neg_b_mes.get(r, {}).get(k), neg_b_rest.get(r, {}).get(k, 0.0),
+                                                    restantes, cal.total_dias_uteis)[1] or 0.0
+            ger = sum((calc.get((r, k)) or (0, 0, 0))[1] or 0.0 for r in rotas)
+            tb = None if neg_b_mes is None else real + s(neg_b_rest)
+            tbe = None if neg_b_mes is None else real + esc_b
+            return [rot, M.LABELS[k], _n(s(neg_a_mes)), _n(s(neg_a_rest)),
+                    None if neg_b_mes is None else _n(s(neg_b_mes)), None if neg_b_mes is None else _n(s(neg_b_rest)),
+                    _n(mv), _n(real), _n(real + esc_a), _pct2(real + esc_a, mv), _n(tb), _pct2(tb, mv),
+                    _n(tbe), _pct2(tbe, mv), _n(real + ger), _pct2(real + ger, mv)]
+
+        linhas = []
+        for k in ("VOL REFRIGERANTES", "VOL AGUA MINERAL"):
+            for gc in M.GC_ATIVAS:
+                rotas = [r for r in estado["rotas"] if gc_da_rota[r] == gc]
+                if rotas:
+                    linhas.append(linha(f"**{gc}**", rotas, k))
+            for r in AMOSTRA_ROTA_META:
+                linhas.append(linha(f"rota {r}", [r], k) if r in gc_da_rota else
+                              [f"rota {r}", M.LABELS[k], "fora da base de clientes"] + [None] * 13)
+        rel.p("(a) META_NEG agrupada pela rota atual do cliente (CD_ROTA_Clien); (b) pela rota da meta "
+              "(CD_ROTA_Chave_Meta_SAP); (c) META_VOLUME. Tendências: atual = Real + Meta x fração de (a); "
+              "(b) direto = Real + restante de (b); (b) escalonado = Real + Meta x fração de (b); gerador = regra "
+              "publicada (b direto até 1% de diferença, senão escalonado). % sobre a META_VOLUME.")
+        rel.tabela(["", "macro", "(a) mês", "(a) restante", "(b) mês", "(b) restante", "(c) META_VOLUME", "Real",
+                    "Tend. atual", "%", "Tend. (b) direto", "%", "Tend. (b) escalonado", "%", "Tend. gerador", "%"],
+                   linhas)
+
+        # clientes cuja rota atual difere da rota da meta (sem códigos: só contagens e volume)
+        sel = [CM.ROTA, CM.META_ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.META_NEG]
+        lin = cons.linhas(M.OBJ_META, sel, e(eq(CM.ANOMES, anomes),
+                                             ou(CM.AGRUPADOR, [M.AGRUPADORES_VOLUME["VOL REFRIGERANTES"],
+                                                               M.AGRUPADORES_VOLUME["VOL AGUA MINERAL"]])))
+        grupos = defaultdict(lambda: [set(), 0.0])
+        for l in lin:
+            rc, rm = fontes._rota(l.get(CM.ROTA)), fontes._rota(l.get(CM.META_ROTA))
+            k, v = M.indicador_volume(l.get(CM.AGRUPADOR)), numero(l.get(CM.META_NEG))
+            if not k or not v:
+                continue
+            if not rm:
+                tipo, gc = "sem rota da meta", gc_da_rota.get(rc, "fora do painel")
+            elif rm not in gc_da_rota:
+                continue
+            elif rc not in gc_da_rota:
+                tipo, gc = "rota do cliente fora do painel", gc_da_rota[rm]
+            elif rc != rm:
+                tipo, gc = "rota do cliente diferente (transferido)", gc_da_rota[rm]
+            else:
+                continue
+            g = grupos[(gc, M.LABELS[k], tipo)]
+            g[0].add(inteiro(l.get(CM.CLIENTE)))
+            g[1] += v
+        rel.p("\nLinhas de META_NEG cuja rota do cliente difere da rota da meta (rota da meta no painel), por "
+              "gerência da rota da meta:")
+        rel.tabela(["gerência", "macro", "situação", "clientes", "META_NEG do mês"],
+                   [[gc, mac, t, len(g[0]), _n(g[1])] for (gc, mac, t), g in sorted(grupos.items())]
+                   or [["—", "—", "nenhuma", 0, None]])
+    etapa("rota do cliente x rota da meta", rota_cliente_x_meta)
+
     # 4. aceite contra o SAC ------------------------------------------------------------
-    rel.h("4. Aceite contra o SAC (Refrigerantes, 17/10/2026)")
+    rel.h("4. Aceite contra o SAC (Refrigerantes, 17-18/10/2026)")
 
     def aceite():
         calc, vm = estado["calc"], estado["vm"]
@@ -344,9 +437,9 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
                 real = sum(vm.real.get(r, {}).get(k, 0.0) for r in rotas)
                 meta = sum(calc[(r, k)][0] or 0.0 for r in rotas)
                 por_gc[gc] = (real, meta, real + sum(calc[(r, k)][1] or 0.0 for r in rotas))
-        vale = not simulado and hoje == DATA_ACEITE
+        vale = not simulado and hoje in DATAS_ACEITE
         if not vale:
-            rel.p(f"Aceite só vale para hoje = {DATA_ACEITE:%d/%m/%Y} sem simular a data; aqui só a comparação.")
+            rel.p("Aceite só vale para hoje = 17/10/2026 ou 18/10/2026 sem simular a data; aqui só a comparação.")
         rel.p("Tolerância: Real ±0,1% (G3 pode divergir pela SV.G3.3, fora do painel); Meta exata; "
               "Tendência ±0,2%; % ±0,1 p.p.")
         linhas, ok_total = aceite_sac(por_gc, vale)

@@ -71,25 +71,32 @@ def indicador_vendazero(meta: float | None, real: int, revertido_hoje: int, opor
 # ------------------------------------------------------------------ volume
 # Critério do SAC (por rota x macro de volume):
 #   Meta        = META_VOLUME da rota (o SAC mostra a meta da rota no campo "Meta NEG")
-#   Neg Restante= Meta x (META_NEG de hoje ao fim do mês / META_NEG do mês): curva dos clientes na meta da rota
+#   Neg Restante= META_NEG de hoje ao fim do mês agrupada pela rota da META (CD_ROTA_Chave_Meta_SAP), direto
+#                 quando a META_NEG do mês bate com a META_VOLUME (1%); senão Meta x (restante / mês) (escalonado)
 #   Tendência   = Vol Real + Neg Restante; % Tendência = Tendência / Meta; no ritmo (verde) com % >= 100
 #   Dif         = Vol Real - Meta; Meta do dia = META_RECUPERAVEL_ROTA de hoje
 # Supervisão e gerência somam as rotas e recalculam o % (agrega_volume = agrega() do app.js).
 # No fechamento do mês: sem tendência e sem meta do dia; no ritmo com % realizado (Real / Meta) >= 100.
-CURVA, SEM_CURVA, SEM_META_ROTA = "curva", "sem_curva", "sem_meta_rota"
+DIRETO, CURVA, SEM_CURVA, SEM_META_ROTA = "direto", "curva", "sem_curva", "sem_meta_rota"
+TOLERANCIA_DIRETO = 0.01   # META_NEG do mês (rota da meta) a até 1% da META_VOLUME: restante sem escalonar
 
 
 def meta_e_restante(meta_rota: float | None, neg_mes: float | None, neg_restante: float | None,
-                    dias_restantes: int, dias_mes: int) -> tuple[float | None, float | None, str | None]:
+                    dias_restantes: int, dias_mes: int,
+                    direto: bool = False) -> tuple[float | None, float | None, str | None]:
     """(meta, Neg Restante, caso) de uma rota x macro.
 
-    curva         META_VOLUME > 0 e META_NEG do mês > 0: Meta x restante / mês da META_NEG
+    direto        (direto=True: META_NEG pela rota da meta) META_NEG do mês a até 1% da META_VOLUME:
+                  o próprio restante da META_NEG
+    curva         META_VOLUME > 0 e META_NEG do mês > 0: Meta x restante / mês da META_NEG (escalonado)
     sem_curva     META_VOLUME > 0 e META_NEG do mês = 0: Meta x dias úteis restantes (com hoje) / dias úteis
     sem_meta_rota META_VOLUME ausente ou 0 e META_NEG > 0: meta e restante = somas de META_NEG
     None          as duas zeradas: indicador indisponível
     """
     if meta_rota and meta_rota > 0:
         if neg_mes and neg_mes > 0:
+            if direto and abs(neg_mes - meta_rota) <= TOLERANCIA_DIRETO * meta_rota:
+                return meta_rota, neg_restante or 0.0, DIRETO
             return meta_rota, meta_rota * (neg_restante or 0.0) / neg_mes, CURVA
         return meta_rota, (meta_rota * dias_restantes / dias_mes if dias_mes else 0.0), SEM_CURVA
     if neg_mes and neg_mes > 0:
