@@ -11,6 +11,7 @@ from gerador import fontes
 from gerador import mapeamento as M
 from gerador.online import montar_online
 from gerador.payload import montar_payload
+from gerador.texto import data
 from gerador.validacao import validar_online, validar_payload
 
 CM, CB, CO, CC = M.ColMeta, M.ColBase, M.ColComodato, M.ColCalendario
@@ -21,13 +22,21 @@ def _todas(classe):
 
 
 class ConsultaFalsa:
-    def __init__(self, dados: dict):
+    """Datasphere simulado. Nas medidas por dia (META_NEG, META_RECUPERAVEL_ROTA) aplica o filtro de
+    DATA_MOVIMENTO e agrega pelas colunas do $select, como o servidor; `falha(select, filtro)` simula HTTP 500."""
+
+    def __init__(self, dados: dict, tipo_data: str | None = "Edm.Date", falha=None):
         self.dados = dados
         self.chamadas = []
+        self.tipo_data = tipo_data
+        self.falha = falha
 
     def colunas(self, objeto):
         return {M.OBJ_META: _todas(CM), M.OBJ_BASE_CLIENTE: _todas(CB),
                 M.OBJ_COMODATO: _todas(CO), M.OBJ_CALENDARIO: _todas(CC)}[objeto]
+
+    def tipo(self, objeto, coluna):
+        return self.tipo_data if coluna == CM.DATA else None
 
     def _do_mes(self, chave, filtro):
         """dados[chave] pode ser {anomes: linhas} (fechamento) ou só as linhas (mês de hoje)."""
@@ -37,20 +46,43 @@ class ConsultaFalsa:
             linhas = linhas.get(anomes, [])
         return linhas
 
+    @staticmethod
+    def _filtra_data(linhas, filtro):
+        conds = re.findall(rf"{CM.DATA} (ge|le|eq) '?([0-9T:Z-]+)'?", filtro or "")
+        ops = {"ge": lambda a, b: a >= b, "le": lambda a, b: a <= b, "eq": lambda a, b: a == b}
+        return [l for l in linhas if all(ops[op](data(l.get(CM.DATA)), data(v[:10] if "-" in v else v))
+                                         for op, v in conds)]
+
+    @staticmethod
+    def _agrega(linhas, select, medida):
+        dims = [c for c in select if c != medida]
+        out: dict = {}
+        for l in linhas:
+            chave = tuple(l.get(c) for c in dims)
+            atual = out.setdefault(chave, dict(zip(dims, chave), **{medida: 0.0}))
+            atual[medida] += float(l.get(medida) or 0)
+        return list(out.values())
+
     def linhas(self, objeto, select, filtro=None, top=None, orderby=None):
         self.chamadas.append((objeto, tuple(select), filtro))
+        if self.falha and self.falha(select, filtro):
+            raise RuntimeError("HTTP 500 (simulado)")
         if objeto == M.OBJ_META:
-            if CM.DATA in select and CM.META_NEG in select:
-                return self._do_mes("meta_neg", filtro)
-            if CM.META_RECUPERAVEL in select:
-                return self._do_mes("meta_dia", filtro)
+            for medida, chave in ((CM.META_RECUPERAVEL, "meta_dia"), (CM.META_NEG, "meta_neg")):
+                if medida in select and CM.META_COBERTURA not in select and CM.COB_MES not in select:
+                    linhas = self._filtra_data(self._do_mes(chave, filtro), filtro)
+                    if filtro and f"{CM.GC} eq " in filtro:
+                        gc = filtro.split(f"{CM.GC} eq '")[1].split("'")[0]
+                        linhas = [l for l in linhas if l.get("_gc", "Gc. G1") == gc]
+                    return self._agrega(linhas, select, medida)
             if CM.META_COBERTURA in select:
                 return self._do_mes("metas", filtro)
             linhas = self._do_mes("vol_real" if CM.NF_STATUS in select else "vendas", filtro)
             if filtro and f"{CM.GC} eq " in filtro:
                 gc = filtro.split(f"{CM.GC} eq '")[1].split("'")[0]
                 linhas = [l for l in linhas if l.get("_gc", "Gc. G1") == gc]
-            return [{k: v for k, v in l.items() if k in select} for l in linhas]
+            linhas = [{k: v for k, v in l.items() if k in select} for l in linhas]
+            return linhas[:top] if top else linhas
         if objeto == M.OBJ_COMODATO:
             return self.dados["meta_vz"] if CO.META_VZ_GC in select else self.dados["comodato"]
         return self.dados[objeto]
@@ -123,7 +155,7 @@ DADOS = {
         _vr(1015300, "Cervejas", "Meta NEG", 4.0),
         _vr(1200000, "Refrigerantes", "acertado", 3.0),                 # saiu da base: conta na rota
     ],
-    # Meta NEG por dia (hoje = 13/10): mês = 100, restante (13/10 em diante) = 30
+    # META_NEG por dia (hoje = 13/10): mês = 100, restante (13/10 em diante) = 30 -> fração 0,3
     "meta_neg": [
         _dia("Refrigerantes", "2026-10-01", CM.META_NEG, 40.0),
         _dia("Refrigerantes", "2026-10-12", CM.META_NEG, 30.0),
@@ -186,10 +218,11 @@ class TestFontes(unittest.TestCase):
         self.assertTrue(d["indicators"]["CERVEJAS 600ML RETORNAVEL"]["unavailable"])  # sem meta
         self.assertEqual(d["indicators"]["CERVEJAS"]["real"], 1)           # 'Cervejas' também é cobertura
         vol = d["indicators"]["VOL REFRIGERANTES"]
-        # critério do SAC: Vol Real 13 (6 + 4 + 3, sem a Cancelada), Neg Restante 30, Meta NEG 100
+        # Meta = META_VOLUME da rota (120); Neg Restante = 120 x 30/100 (curva da META_NEG) = 36;
+        # Vol Real 13 (6 + 4 + 3, sem a Cancelada); Tendência 49 -> 41%
         self.assertEqual((vol["meta"], vol["real"], vol["dif"], vol["negRestante"], vol["tendencia"],
-                          vol["pctTendencia"], vol["onPace"], vol["metaDia"], vol["metaRota"]),
-                         (100.0, 13.0, -87.0, 30.0, 43.0, 43, False, 5.0, 120.0))
+                          vol["pctTendencia"], vol["onPace"], vol["metaDia"], vol["metaNegClientes"]),
+                         (120.0, 13.0, -107.0, 36.0, 49.0, 41, False, 5.0, 100.0))
         self.assertTrue(d["indicators"]["VOL CERVEJAS"]["unavailable"])     # venda sem Meta NEG
         self.assertFalse(self.p["FECHAMENTO"])
         vz = d["indicators"]["VENDAZERO"]
@@ -238,9 +271,14 @@ class TestFontes(unittest.TestCase):
         meta = [c for c in self.cons.chamadas if c[0] == M.OBJ_META]
         vr = [c for c in meta if CM.NF_STATUS in c[1]]
         self.assertTrue(vr and all(CM.DATA not in c[1] and "Cctm" not in c[2] for c in vr))
-        por_dia = [c for c in meta if CM.DATA in c[1]]
-        self.assertEqual(len(por_dia), 2)
-        self.assertTrue(all(CM.CLIENTE not in c[1] for c in por_dia))
+        self.assertFalse([c for c in meta if CM.DATA in c[1]])          # data só no $filter, nunca no groupby
+        neg = [c for c in meta if c[1] == (CM.ROTA, CM.AGRUPADOR, CM.META_NEG)]
+        self.assertEqual(sorted(CM.DATA in c[2] for c in neg), [False, True])
+        self.assertTrue(any("DATA_MOVIMENTO ge 2026-10-13 and DATA_MOVIMENTO le 2026-10-31" in c[2] for c in neg))
+        dia = [c for c in meta if CM.META_RECUPERAVEL in c[1]]
+        self.assertEqual(len(dia), 1)
+        self.assertEqual(dia[0][1], (CM.ROTA, CM.AGRUPADOR, CM.META_RECUPERAVEL))
+        self.assertIn("DATA_MOVIMENTO eq 2026-10-13", dia[0][2])
         self.assertFalse([c for c in meta if CM.META_DIA in c[1]])
 
     def test_valida(self):

@@ -148,8 +148,9 @@ function agrega(rotas){
       unavailable:false};
   });
   /* Volume (critério do SAC, igual a modelo.agrega_volume): soma as rotas (Vol Real, Neg Restante, Tendência,
-     Meta NEG, Meta do dia) e recalcula o % sobre as somas. Fechamento do mês: sem tendência nem meta do dia,
-     no ritmo pelo % realizado (Real / Meta NEG). */
+     Meta, Meta do dia) e recalcula o % sobre as somas. Meta = META_VOLUME da rota; Neg Restante = curva da
+     META_NEG dos clientes aplicada à meta da rota (calculado no back-end, por rota). Fechamento do mês: sem
+     tendência nem meta do dia, no ritmo pelo % realizado (Real / Meta). */
   const fech = !!P.FECHAMENTO;
   GROUPS.VOLUME.forEach(k=>{
     const a=volAgg[k];

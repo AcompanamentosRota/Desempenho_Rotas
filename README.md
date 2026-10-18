@@ -105,9 +105,9 @@ fechamento do mês; o cron não usa), `--fechamento "Setembro/26"` (só sobrepõ
   IT e MO vêm juntas na fonte e são separadas pelo código do supervisor.
 - **Cobertura**: cliente com `FX_COBERTURA_REALIZADO > 0` no agrupador (13 agrupadores do painel).
 - **Online**: medidas `*_WF_ONLINE` (pedidos de hoje).
-- **Metas**: `META_COBERTURA_Chave_Meta_SAP` (ICS e Novos Negócios), `META_NEG` (volume: meta do mês,
-  por cliente e por dia) e `META_RECUPERAVEL_ROTA` (meta do dia do volume). `META_VOLUME_Chave_Meta_SAP`
-  vai no payload só para conferência (`metaRota`).
+- **Metas**: `META_COBERTURA_Chave_Meta_SAP` (ICS e Novos Negócios), `META_VOLUME_Chave_Meta_SAP` (meta
+  de volume da rota), `META_NEG` (curva diária e meta por cliente da barra de volume) e
+  `META_RECUPERAVEL_ROTA` (meta do dia do volume).
 - **Venda Zero**: geladeiras `Total Ko` / Fountain em `Concluído(Contrato)` com `Giro Zero`
   (rota 111: os mesmos 67 equipamentos do painel antigo).
 
@@ -117,25 +117,31 @@ Por rota × macro de volume (Refrigerantes, Cervejas, Still, Água Mineral, Dest
 
 | Campo | Conta |
 |---|---|
+| Meta | `META_VOLUME_Chave_Meta_SAP`: a meta da rota (o SAC mostra ela no campo "Meta NEG") |
 | Vol Real | `FX_VOL_PADRAO_FAT` do mês com `NF_STATUS_Nota_Fiscal` em Acertado, Meta Neg ou Em Aberto |
-| Neg Restante | `META_NEG` com `DATA_MOVIMENTO` de hoje (inclusive) até o último dia do mês |
+| Neg Restante | Meta × (`META_NEG` de hoje até o fim do mês ÷ `META_NEG` do mês): curva dos clientes aplicada à meta da rota |
 | Tendência | Vol Real + Neg Restante |
-| Meta | `META_NEG` do mês (denominador em rota, supervisão e gerência) |
 | % Tendência | Tendência ÷ Meta; verde a partir de 100% |
 | Dif | Vol Real − Meta |
-| Meta do dia | `META_RECUPERAVEL_ROTA` com `DATA_MOVIMENTO` = hoje (sem a medida, fica "—") |
+| Meta do dia | `META_RECUPERAVEL_ROTA` por rota com `DATA_MOVIMENTO` = hoje (sem a medida, fica "—") |
+
+Casos-limite: rota com META_VOLUME mas sem META_NEG usa os dias úteis restantes (contando hoje) no lugar da
+curva; rota sem META_VOLUME usa a soma de META_NEG como meta; sem nenhuma das duas, o indicador fica
+indisponível. Cada caso aparece nos avisos da execução, assim como a meta da rota não distribuída nos
+clientes, por gerência (META_VOLUME − soma de META_NEG).
 
 Supervisão e gerência somam as rotas e recalculam o % (rotas Neutraliza entram só no total da gerência,
 porque têm supervisão própria). O volume online de hoje não entra na tendência: fica no quadro Online
 e na coluna própria do Resumo de vendas. A **barra por cliente** (busca, aba Volume) é a exceção:
 Real do cliente = Vol Real do cliente + volume online de hoje do cliente (`online.json` → `volumeCliente`),
-com a mesma regra de cor (vermelho abaixo do ritmo do mês, amarelo até 100%, verde a partir de 100%).
+sobre a META_NEG do cliente, com a mesma regra de cor (vermelho abaixo do ritmo do mês, amarelo até 100%,
+verde a partir de 100%).
 
 ## Fechamento do mês (automático)
 
 Do dia 1 do mês até o fim do 1º dia útil — e, a partir do 2º dia útil, enquanto alguma gerência ainda não
 tiver `META_VOLUME` e `META_COBERTURA` do mês novo — o painel mostra o **mês anterior fechado**:
-coberturas, volume (Meta, Real, Dif e % realizado, sem tendência nem meta do dia) e listas do mês anterior,
+coberturas, volume (Meta da rota, Real, Dif e % realizado, sem tendência nem meta do dia) e listas do mês anterior,
 calendário completo (dia útil = total, ritmo 100%), Venda Zero indisponível e a tag âmbar
 "Fechamento Mês/AA". O quadro Online e os acompanhamentos que seguem o online (revertidos, sem compra hoje) usam os pedidos de
 hoje. O 1º/2º dia útil vem do calendário do Datasphere (ou do cálculo local, se ele falhar). O input
