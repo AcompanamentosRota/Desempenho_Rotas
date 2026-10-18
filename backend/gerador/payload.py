@@ -137,7 +137,7 @@ def montar_payload(f: Fontes) -> dict:
     # ---- nós por rota
     data: dict = {}
     cobertos_out, oportunidades, sem_compra_hoje, visitas_sem = {}, {}, {}, {}
-    volume_cliente, redes_out, comodato_out = {}, {}, {}
+    volume_cliente, redes_out, comodato_out, comodato_cliente = {}, {}, {}, {}
     for gc in ordem_gc:
         data[gc] = {}
         for sv in sorted(arvore[gc]):
@@ -211,6 +211,11 @@ def montar_payload(f: Fontes) -> dict:
                 ativos = f.comodato_ativos.get(r)
                 if ativos:
                     comodato_out[r] = {str(pv): n for pv, n in sorted(ativos.items())}
+                # Desempenho GDM e tag de geladeira: só clientes do roster (os que a busca encontra)
+                cc = {str(pv): [modelo._r1(m), modelo._r1(real), sit, n]
+                      for pv, (m, real, sit, n) in sorted(f.comodato_cliente.get(r, {}).items()) if pv in pvs_roster}
+                if cc:
+                    comodato_cliente[r] = cc
 
     fontes = dict(M.FONTES_PADRAO)
     fontes["vendazero"] = vz_ativo
@@ -256,4 +261,5 @@ def montar_payload(f: Fontes) -> dict:
         "OCULTAS": M.OCULTAS,
         "GC_SEM_OCULTAS": M.GC_SEM_OCULTAS,
         "VOLUME_EXTRA": M.VOLUME_EXTRA,
+        "COMODATO_CLIENTE": por_ordem(comodato_cliente),
     }

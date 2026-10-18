@@ -137,11 +137,98 @@ describe('Parte B — Neutraliza, ocultas, AT e Del Valle Frut', {skip: pular}, 
     const pv = await page.evaluate(() => CLIENT_ROSTER['G211'][0][0]);
     await page.fill('#q', String(pv));
     await page.dispatchEvent('#q', 'input');
-    const tiles = await page.$$eval('#cli .tileVol .t', t => t.map(x => x.textContent));
+    const tiles = await page.$$eval('#cli .tileVol:not(.gdm) .t', t => t.map(x => x.textContent));
     assert.equal(tiles.length, 6);
     assert.equal(tiles[5], 'Del Valle Frut');
     const resumo = await page.evaluate(() => { RS.pinta(); return true; });
     assert.ok(resumo);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});
+
+/* Busca um cliente (PV) na gerência e aba informadas; devolve tags e quadrinhos do card do cliente. */
+async function buscaPv(page, gc, pv, aba = 'VOLUME'){
+  await filtra(page, {gc, aba});
+  await page.fill('#q', String(pv));
+  return page.evaluate(() => ({
+    tags: [...document.querySelectorAll('#cli h3 span')].map(s => [s.className, s.textContent]),
+    gdm: [...document.querySelectorAll('#cli .tileVol.gdm')].map(t => [t.className, t.querySelector('.nums').textContent]),
+  }));
+}
+
+describe('Parte C — Desempenho GDM e tag de geladeira', {skip: pular}, () => {
+  test('tag e cor do quadrinho por situação (tabela C2), sem geladeira e desconhecido', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const casos = await page.evaluate(() => {
+      const out = {}, sem = [];
+      for(const gc of ['G1', 'G3', 'AP']){
+        for(const r of svsVisiveis(gc).flatMap(s => Object.keys(DATA[gc][s]))){
+          for(const c of CLIENT_ROSTER[r]){
+            const b = (P.COMODATO_CLIENTE[r] || {})[c[0]];
+            if(!b) sem.push([gc, c[0]]);
+            else if(!out[b[2] || 'nulo']) out[b[2] || 'nulo'] = [gc, r, c[0], b];
+          }
+        }
+      }
+      return {out, sem};
+    });
+    const esperado = {zero: ['tagVZ', 'Venda Zero · '], baixo: ['tagBaixo', 'Baixo Giro · '], ok: ['tagAtivo', ''],
+                      '30d': ['tagNovo', '< 30 dias · ']};
+    for(const [sit, [gc, r, pv, b]] of Object.entries(casos.out)){
+      const res = await buscaPv(page, gc, pv);
+      const onl = await page.evaluate(([r, pv]) => (((ONLINE.gdmCliente || {})[r] || {})[pv] || 0), [r, pv]);
+      const real = b[1] + onl;
+      const ger = `${b[3]} geladeira${b[3] > 1 ? 's' : ''}`;
+      if(sit === 'nulo'){
+        assert.deepEqual(res.tags, [], 'situação desconhecida: sem tag');
+        assert.match(res.gdm[0][0], /\bnc\b/);
+        continue;
+      }
+      assert.deepEqual(res.tags, [[esperado[sit][0], esperado[sit][1] + ger]], sit);
+      const cor = sit === 'zero' ? 'no' : sit === 'baixo' ? 'pace' : sit === 'ok' ? 'ok'
+        : (real <= 0 ? 'no' : real < b[0] ? 'pace' : 'ok');
+      assert.match(res.gdm[0][0], new RegExp(`\\b${cor}\\b`), sit);
+    }
+    assert.deepEqual(Object.keys(casos.out).sort(), ['30d', 'baixo', 'nulo', 'ok', 'zero']);
+    const [gc, pv] = casos.sem[0];
+    const semGel = await buscaPv(page, gc, pv);
+    assert.deepEqual(semGel, {tags: [], gdm: []}, 'sem geladeira: sem tag e sem quadrinho');
+    // fora da aba Volume a tag aparece, o quadrinho não
+    const [g0, r0, pv0] = casos.out.zero;
+    const ics = await buscaPv(page, g0, pv0, 'ICS_GC');
+    assert.equal(ics.gdm.length, 0);
+    assert.equal(ics.tags.length, 1);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('rede soma Meta, Real e geladeiras das lojas com geladeira', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    await filtra(page, {gc: 'G1', aba: 'VOLUME'});
+    const esperado = await page.evaluate(() => {
+      const g = gruposRede(rotasVisiveis()).get('REDE TESTE');
+      const gs = g.membros.map(([r, c]) => gdmCliente(r, c)).filter(Boolean);
+      return {n: gs.reduce((a, x) => a + x.n, 0), meta: gs.reduce((a, x) => a + x.meta, 0),
+              real: gs.reduce((a, x) => a + x.real, 0)};
+    });
+    await page.fill('#q', 'REDE TESTE');
+    const r = await page.evaluate(() => ({
+      tags: [...document.querySelectorAll('#cli h3 span')].map(s => s.textContent),
+      nums: document.querySelector('#cli .tileVol.gdm .nums').textContent,
+    }));
+    const fmt = n => n.toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+    assert.deepEqual(r.tags, ['Rede', `${esperado.n} geladeiras`]);
+    assert.equal(r.nums, `${fmt(esperado.real)} / ${fmt(esperado.meta)}`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('fechamento: sem tag e sem quadrinho', async () => {
+    const {page, ctx, erros} = await abre('fech');
+    const pv = await page.evaluate(() => CLIENT_ROSTER['G111'][0][0]);
+    const res = await buscaPv(page, 'G1', pv);
+    assert.deepEqual(res, {tags: [], gdm: []});
     assert.deepEqual(erros, []);
     await ctx.close();
   });

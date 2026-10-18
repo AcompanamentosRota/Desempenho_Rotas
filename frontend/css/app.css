@@ -132,6 +132,9 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .tileVol.ok .barra{background:var(--verdeE)}
 .tileVol.nd{border-color:var(--linha-forte);background:#fff;color:var(--cinza-claro)}
 .tileVol.nd .barraWrap{visibility:hidden}
+/* Desempenho GDM com situação desconhecida: sem cor */
+.tileVol.nc{border-color:var(--linha-forte);background:#fff;color:var(--preto)}
+.tileVol.nc .barra{background:var(--cinza-claro)}
 .painel h4{font-size:12px;letter-spacing:.09em;color:var(--cinza-txt);margin:16px 0 7px;text-transform:uppercase}
 .painel .semim{font-size:14px;color:var(--cinza-claro)}
 
@@ -190,9 +193,11 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .tagOnline{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;text-decoration:none;
   color:var(--verdeE);background:var(--menta);border-radius:6px;padding:1px 6px;vertical-align:middle;
   text-transform:uppercase;letter-spacing:.02em}
-.tagVZ,.tagAtivo,.tagRede{display:inline-block;margin-left:7px;font-size:10.5px;font-weight:700;color:#fff;
+.tagVZ,.tagAtivo,.tagRede,.tagBaixo,.tagNovo{display:inline-block;margin-left:7px;font-size:10.5px;font-weight:700;color:#fff;
   border-radius:7px;padding:2px 8px;vertical-align:middle}
 .tagVZ{background:var(--vermelho)}
+.tagBaixo{background:#e0a800;color:#1a1300}
+.tagNovo{background:var(--cinza)}
 .tagAtivo{background:#000}
 .tagRede{background:var(--carvao);text-transform:uppercase;letter-spacing:.03em}
 .sugItem .tagRedeSug{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#fff;

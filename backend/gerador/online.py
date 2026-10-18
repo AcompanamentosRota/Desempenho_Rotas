@@ -8,6 +8,7 @@ Formato lido pelo front (puxaOnline em frontend/js/app.js):
     volume    : {rota: {"VOL ...": volume de hoje}}
     volumeCliente: {rota: {pv: {"VOL ...": volume de hoje}}}  (somado ao Real da barra por cliente no front,
                    fora do fechamento do mês)
+    gdmCliente: {rota: {pv: volume de hoje nos agrupadores do Desempenho GDM}}  (somado ao faturado GDM no front)
     fechamentoMes (opcional): "Setembro/26" durante o fechamento do mês (automático) ou pelo --fechamento
 """
 from __future__ import annotations
@@ -17,8 +18,8 @@ from .tipos import Online
 
 
 def montar_online(o: Online) -> dict:
-    rotas_out, clientes_out, volume_out, volume_cli_out = {}, {}, {}, {}
-    todas = sorted(set(o.clientes) | set(o.qualquer) | set(o.volume) | set(o.volume_cliente))
+    rotas_out, clientes_out, volume_out, volume_cli_out, gdm_out = {}, {}, {}, {}, {}
+    todas = sorted(set(o.clientes) | set(o.qualquer) | set(o.volume) | set(o.volume_cliente) | set(o.gdm_cliente))
     for r in todas:
         por_ind = o.clientes.get(r, {})
         contagem = {k: len(por_ind[k]) for k in M.INDICADORES_COBERTURA if por_ind.get(k)}
@@ -40,6 +41,9 @@ def montar_online(o: Online) -> dict:
                 por_cli[str(pv)] = v
         if por_cli:
             volume_cli_out[r] = por_cli
+        gdm = {str(pv): round(v, 4) for pv, v in sorted(o.gdm_cliente.get(r, {}).items()) if round(v, 4)}
+        if gdm:
+            gdm_out[r] = gdm
 
     saida = {
         "updatedAt": o.atualizado_em.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -47,6 +51,7 @@ def montar_online(o: Online) -> dict:
         "clientes": clientes_out,
         "volume": volume_out,
         "volumeCliente": volume_cli_out,
+        "gdmCliente": gdm_out,
     }
     if o.fechamento_mes:
         saida["fechamentoMes"] = o.fechamento_mes

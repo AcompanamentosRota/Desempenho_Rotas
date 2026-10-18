@@ -114,7 +114,7 @@ def dados(fechamento: bool) -> dict:
                         vol_real.append({CM.ROTA: rota, CM.CLIENTE: str(pv), CM.AGRUPADOR: "DV Frut",
                                          CM.NF_STATUS: "Acertado", CM.VOL_MES: 8.0, "_gc": origem})
                     giro = GIROS[pv % len(GIROS)]
-                    for e in range(1 + (pv % 2)):
+                    for e in range(0 if pv % 7 == 0 else 1 + (pv % 2)):     # pv múltiplo de 7: sem geladeira
                         comodato.append({CO.ROTA: rota, CO.CLIENTE: str(pv), CO.NOME: f"CLIENTE TESTE {pv}",
                                          CO.DIA_VISITA: "SEG", CO.VISITA_HOJE: "S" if hoje else "N",
                                          CO.EQUIPAMENTO: f"EQ{pv}{e}", CO.GIRO: giro, CO.META_EQPTO: 40.0,

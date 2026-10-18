@@ -199,6 +199,9 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
             online.clientes.setdefault(r, {}).setdefault(k_cob, set()).add(pv)
         if do_painel and (cob_on > 0 or cob_on_g > 0 or vol_on > 0):
             online.qualquer.setdefault(r, set()).add(pv)
+        if vol_on and M.agrupador_gdm(ag):   # Desempenho GDM: online de hoje nos agrupadores do GDM
+            g = online.gdm_cliente.setdefault(r, {})
+            g[pv] = g.get(pv, 0.0) + vol_on
         if k_vol:
             if vol_on:
                 online.volume.setdefault(r, {}).setdefault(k_vol, 0.0)
@@ -218,6 +221,7 @@ class VolumeMes:
     """Vol Real do mês (FX_VOL_PADRAO_FAT) separado por NF_STATUS."""
     real: dict = field(default_factory=dict)            # rota -> VOL -> Vol Real (status do SAC)
     real_cliente: dict = field(default_factory=dict)    # rota -> pv -> VOL -> Vol Real
+    real_gdm_cliente: dict = field(default_factory=dict)  # rota -> pv -> faturado nos agrupadores do GDM
     todos_status: dict = field(default_factory=dict)    # rota -> VOL -> soma sem filtro de status (Real antigo)
     por_status: dict = field(default_factory=dict)      # status como veio -> [linhas, volume, conta no Vol Real]
 
@@ -235,11 +239,16 @@ def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], 
     linhas = [l for ls in cons.em_paralelo(_por_gerencia(obj, sel, filtro, gcs_originais, rota)).values() for l in ls]
     vm = VolumeMes()
     for l in linhas:
-        r, pv, k = _rota(l.get(CM.ROTA)), inteiro(l.get(CM.CLIENTE)), M.indicador_volume(l.get(CM.AGRUPADOR))
-        if not r or not k:
-            continue
+        r, pv, ag = _rota(l.get(CM.ROTA)), inteiro(l.get(CM.CLIENTE)), l.get(CM.AGRUPADOR)
         vol, status = numero(l.get(CM.VOL_MES)), l.get(CM.NF_STATUS)
         conta = M.status_nf_real(status)
+        # Desempenho GDM: mesmo filtro de NF_STATUS, somando os agrupadores do GDM (só nesse quadrinho)
+        if r and pv is not None and conta and M.agrupador_gdm(ag):
+            g = vm.real_gdm_cliente.setdefault(r, {})
+            g[pv] = g.get(pv, 0.0) + vol
+        k = M.indicador_volume(ag)
+        if not r or not k:
+            continue
         if k in M.INDICADORES_VOLUME:   # estatística por status e "Real atual" só dos 5 macros (conferência)
             st = vm.por_status.setdefault(limpar(status), [0, 0.0, conta])
             st[0] += 1
@@ -507,12 +516,18 @@ def carregar_comodato(cons: Consulta, anomes: str, rota: str | None, gc_da_rota:
     zerados: dict = {}
     vistos: set = set()
     ativos: dict = defaultdict(lambda: defaultdict(int))
+    # Desempenho GDM: (rota, pv) -> [soma META_EQPTO, nº de geladeiras, situações das geladeiras]
+    por_cliente: dict = {}
     for l in linhas:
         r, pv = _rota(l.get(CO.ROTA)), inteiro(l.get(CO.CLIENTE))
         equip = limpar(l.get(CO.EQUIPAMENTO))
         if not r or pv is None or (r, equip) in vistos:
             continue
         vistos.add((r, equip))
+        cli = por_cliente.setdefault((r, pv), [0.0, 0, set()])
+        cli[0] += numero(l.get(CO.META_EQPTO))
+        cli[1] += 1
+        cli[2].add(M.SITUACAO_GIRO.get(normalizar(l.get(CO.GIRO))))
         if normalizar(l.get(CO.GIRO)) in M.GIRO_ZERO:
             item = zerados.setdefault((r, pv), Equipamento(
                 pv=pv, nome=titulo(l.get(CO.NOME)), dia="" if _vazio(l.get(CO.DIA_VISITA)) else _formatar_dias(l.get(CO.DIA_VISITA)),
@@ -550,7 +565,28 @@ def carregar_comodato(cons: Consulta, anomes: str, rota: str | None, gc_da_rota:
         log.warning("Meta de Venda Zero não é calculada com --rota (é rateada entre as rotas da gerência).")
     log.info("Comodato: %d clientes com Venda Zero em %d rotas; meta de VZ em %d gerências",
              len(zerados), len(vendazero), len(metas_gc))
-    return dict(vendazero), {r: dict(v) for r, v in ativos.items()}, vz_meta
+    return dict(vendazero), {r: dict(v) for r, v in ativos.items()}, vz_meta, por_cliente
+
+
+def situacao_cliente(situacoes: set) -> str | None:
+    """Pior situação entre as geladeiras do cliente (Zero > Baixo > < 30 dias > Ok); None se nenhuma conhecida."""
+    return next((s for s in M.ORDEM_SITUACAO if s in situacoes), None)
+
+
+def comodato_cliente(por_cliente: dict, real_gdm: dict, excluir: set[str]) -> dict:
+    """{rota: {pv: [meta GDM, faturado GDM, situação, nº de geladeiras]}} (rotas em `excluir` ficam fora)."""
+    out: dict = defaultdict(dict)
+    desconhecidos = 0
+    for (r, pv), (meta, n, situacoes) in por_cliente.items():
+        if r in excluir:
+            continue
+        situacao = situacao_cliente(situacoes)
+        desconhecidos += situacao is None
+        out[r][pv] = [meta, real_gdm.get(r, {}).get(pv, 0.0), situacao, n]
+    if desconhecidos:
+        log.warning("Comodato: %d clientes com GIRO_STATUS_MES_ATUAL desconhecido (sem tag e quadrinho sem cor).",
+                    desconhecidos)
+    return dict(out)
 
 
 # ------------------------------------------------------------------ tudo junto
@@ -590,7 +626,7 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
 
     if so_online:
         segmento = carregar_vendas(cons, anomes_hoje, list(M.GC_ORIGEM), rota, online)[-1]
-        for d in (online.clientes, online.qualquer, online.volume, online.volume_cliente):
+        for d in (online.clientes, online.qualquer, online.volume, online.volume_cliente, online.gdm_cliente):
             for r in [r for r in d if not M.rota_do_painel(r)]:
                 del d[r]
         return Fontes(cal=calmod.calcular_local(hoje), clientes=[], cobertos={}, compraram={}, metas={},
@@ -618,16 +654,16 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     neutraliza = rotas_neutraliza(clientes)
 
     def comodato():
-        if cal.fechamento:
-            return None, {}, {}
+        if cal.fechamento:   # fechamento: Venda Zero, tag de geladeira e Desempenho GDM indisponíveis
+            return None, {}, {}, {}
         try:
-            vz, atv, vz_meta = carregar_comodato(cons, anomes, rota,
-                                                 {r: g for r, g in gc_da_rota.items() if r not in neutraliza})
+            vz, atv, vz_meta, por_cli = carregar_comodato(cons, anomes, rota,
+                                                          {r: g for r, g in gc_da_rota.items() if r not in neutraliza})
             return ({r: v for r, v in vz.items() if r not in neutraliza},
-                    {r: v for r, v in atv.items() if r not in neutraliza}, vz_meta)
+                    {r: v for r, v in atv.items() if r not in neutraliza}, vz_meta, por_cli)
         except Exception as erro:   # noqa: BLE001
             log.warning("Comodato indisponível (%s); Venda Zero ficará indisponível nesta execução.", erro)
-            return None, {}, {}
+            return None, {}, {}, {}
 
     # todas as consultas do mês rodam ao mesmo tempo (vendas e Vol Real ainda se dividem por gerência)
     with ThreadPoolExecutor(max_workers=6) as ex:
@@ -642,7 +678,7 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
         metas, metas_vol = f_metas.result()
         neg_mes, neg_rest, fonte_neg = f_neg.result()
         meta_dia = f_dia.result() if f_dia else None
-        vendazero, ativos, vz_meta = f_com.result()
+        vendazero, ativos, vz_meta, por_cli_comodato = f_com.result()
 
     # Meta = META_VOLUME da rota; Neg Restante = META_NEG restante pela rota da meta (direto se o mês bate com a
     # META_VOLUME em 1%; senão, escalonado) ou, sem a rota da meta, a curva pela rota do cliente escalonada
@@ -692,8 +728,10 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     online.qualquer = so_painel(online.qualquer)
     online.volume = so_painel(online.volume)
     online.volume_cliente = so_painel(online.volume_cliente)
+    online.gdm_cliente = so_painel(online.gdm_cliente)
     return Fontes(cal=cal, clientes=clientes, cobertos={r: dict(v) for r, v in so_painel(cobertos).items()},
                   compraram=so_painel(compraram), metas=so_painel(dict(metas)), volume=dict(volume),
                   volume_cliente=so_painel(vol_cli), online=online,
                   vendazero=so_painel(vendazero) if vendazero is not None else None,
-                  vz_meta=vz_meta, comodato_ativos=so_painel(ativos), segmento_venda=segmento, avisos=avisos)
+                  vz_meta=vz_meta, comodato_ativos=so_painel(ativos), segmento_venda=segmento, avisos=avisos,
+                  comodato_cliente=so_painel(comodato_cliente(por_cli_comodato, vm.real_gdm_cliente, neutraliza)))

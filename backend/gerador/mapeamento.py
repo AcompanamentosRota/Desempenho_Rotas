@@ -138,6 +138,11 @@ TIPO_EQUIPAMENTO_EXIBICAO = "Geladeira"
 # Comparação por normalizar() (sem acento e caixa); grafia exata: relatório do conferir_tendencia.py.
 STATUS_NF_REAL = ["Acertado", "Meta Neg", "Em Aberto"]
 GIRO_ZERO = {"GIRO ZERO"}   # valores de GIRO_STATUS_MES_ATUAL que contam como Venda Zero
+# Situação da geladeira do cliente (tag e quadrinho "Desempenho GDM"): GIRO_STATUS_MES_ATUAL normalizado -> código
+# do payload. A CONFIRMAR (descoberta): grafia de 'Baixo Giro' e '< 30 Dias'. Outro valor ('--'...) = desconhecido.
+SITUACAO_GIRO = {"GIRO ZERO": "zero", "BAIXO GIRO": "baixo", "< 30 DIAS": "30d", "GIRO OK": "ok"}
+# cliente com mais de uma geladeira: vale a pior situação
+ORDEM_SITUACAO = ["zero", "baixo", "30d", "ok"]
 VALORES_SIM = {"S", "SIM", "1", "X", "TRUE", "Y", "YES"}
 # Meta de Novos Negócios (Campari, Dreher, Perfetti, Aperol) vem de META_COBERTURA, como o ICS
 META_NOVOS_NEG_DE_META_NEG = False

@@ -20,7 +20,8 @@ CHAVES_PAYLOAD = ["MES_LABEL", "TOTAL_DIAS_UTEIS", "DIA_ONTEM", "DIA_HOJE", "PAC
                   "COV_GRUPO", "LABELS_CURTO", "SEGS", "DIAS", "CLIENT_ROSTER", "CLIENTES_HOJE",
                   "OPORTUNIDADES_DIA", "VISITAS_DIA", "COBERTOS", "SEM_COMPRA_HOJE", "VENDAZERO_CLIENTES",
                   "COMODATO_ATIVOS", "REVERTIDO_HOJE", "OPORTUNIDADE_HOJE", "VOLUME_CLIENTE", "REDES_CLIENTE",
-                  "FONTES", "FECHAMENTO", "REGIOES", "NEUTRALIZA", "OCULTAS", "VOLUME_EXTRA"]
+                  "FONTES", "FECHAMENTO", "REGIOES", "NEUTRALIZA", "OCULTAS", "VOLUME_EXTRA",
+                  "COMODATO_CLIENTE"]
 
 # limites de queda em relação à versão publicada do MESMO mês de referência (MES_LABEL);
 # na virada (fechamento -> mês novo, ou mês anterior -> fechamento) a queda só gera aviso

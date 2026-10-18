@@ -655,6 +655,43 @@ function blocoVolCliente(r, pv, i, k){
 }
 const tileCob = (k, cls, txt) =>
   `<div class="tile ${cls}"><div class="t" data-fit="13" data-fit-min="9.5">${esc(P.LABELS_CURTO[k]||rotuloInd(k))}</div><div class="e">${txt}</div></div>`;
+/* Desempenho GDM e tag de geladeira (payload COMODATO_CLIENTE: [meta, faturado GDM, situação, nº de geladeiras]).
+   Real = faturado do mês (mesmo filtro de NF_STATUS do Vol Real) + online de hoje (online.json gdmCliente), só em
+   Refrigerantes, Água Mineral, Sucos, Ades e Powerade; Meta = META_EQPTO das geladeiras Total Ko.
+   Sem geladeira: sem tag nem quadrinho. No fechamento do mês: nenhum dos dois. */
+const SITUACAO_TAG = {zero:['tagVZ','Venda Zero · '], baixo:['tagBaixo','Baixo Giro · '], ok:['tagAtivo',''],
+  '30d':['tagNovo','< 30 dias · ']};
+const geladeiras = n => `${n} geladeira${n>1?'s':''}`;
+const temGdm = () => !!(P && P.COMODATO_CLIENTE) && !P.FECHAMENTO;
+function gdmCliente(r, pv){
+  if(!temGdm()) return null;
+  const b = (P.COMODATO_CLIENTE[r]||{})[pv]; if(!b) return null;
+  const onl = ((((ONLINE && ONLINE.gdmCliente)||{})[r])||{})[pv]||0;
+  return {meta:b[0], real:b[1]+onl, situacao:b[2], n:b[3]};
+}
+function tagGeladeira(g){
+  if(!g || !SITUACAO_TAG[g.situacao]) return '';          // situação desconhecida: sem tag
+  const [cls, pre] = SITUACAO_TAG[g.situacao];
+  return `<span class="${cls}">${pre}${geladeiras(g.n)}</span>`;
+}
+// cor: Giro Zero vermelho; Baixo Giro sempre amarelo; Giro Ok verde; < 30 dias (e rede) pela venda do mês;
+// situação desconhecida: sem cor
+function corGdm(g){
+  if(g.situacao==='zero') return 'no';
+  if(g.situacao==='baixo') return 'pace';
+  if(g.situacao==='ok') return 'ok';
+  if(g.situacao==='30d' || g.situacao==='rede') return g.real<=0 ? 'no' : (g.real<g.meta ? 'pace' : 'ok');
+  return 'nc';
+}
+function tileGdm(g){
+  if(!g) return '';
+  const pct = g.meta ? Math.round(g.real/g.meta*100) : 0;
+  const fmt = n => n.toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1});
+  return `<div class="tileVol gdm ${corGdm(g)}"><div class="t" data-fit="13" data-fit-min="9.5">Desempenho GDM</div>
+    <div class="barraWrap"><div class="barra" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
+    <div class="e" data-fit="10.5" data-fit-min="8.5" data-fit-quebra>${pct}%</div>
+    <div class="nums" data-fit="12" data-fit-min="8">${fmt(g.real)} / ${fmt(g.meta)}</div></div>`;
+}
 const blocoImperdoaveis = `<h4>Imperdoáveis</h4><div class="semim">Sem dado de Imperdoáveis pra essa rota.</div>`;
 
 function buscaCliente(){
@@ -677,7 +714,8 @@ function buscaCliente(){
   let chips;
   if(aba==='VOLUME'){
     // Volume não tem cobertura binária: usa a barra de status de meta por cliente (VOLUME_CLIENTE + online de hoje)
-    chips = volDaRota(rota).map((k,i)=> tileVolume(k, blocoVolCliente(rota, achado[0], i, k))).join('');
+    chips = volDaRota(rota).map((k,i)=> tileVolume(k, blocoVolCliente(rota, achado[0], i, k))).join('')
+      + tileGdm(gdmCliente(rota, achado[0]));
   } else {
     chips = grupo.map(k=>{
       if(k==='KS TT' && !kstt) return tileCob(k, 'na', 'não elegível');
@@ -695,13 +733,22 @@ function buscaCliente(){
   const nAtivo = (((COMODATO_ATIVOS[rota]||{})[String(achado[0])])||0) + vzRevert;
   const tagAtivo = nAtivo>0
     ? `<span class="tagAtivo">${nAtivo} geladeira${nAtivo>1?'s':''}</span>` : '';
-  $('cli').innerHTML = `<div class="cli"><h3>${esc(achado[1])}${tagVZ}${tagAtivo}</h3>
+  // payload com COMODATO_CLIENTE: tag pela situação da geladeira; payload antigo: tags de antes
+  const tags = (P && P.COMODATO_CLIENTE) ? tagGeladeira(gdmCliente(rota, achado[0])) : tagVZ + tagAtivo;
+  $('cli').innerHTML = `<div class="cli"><h3>${esc(achado[1])}${tags}</h3>
     <div class="meta">PV ${esc(achado[0])} · ${esc(SEGS[achado[2]]||'—')} · rota ${esc(rota)} · visita ${esc(DIAS[achado[3]]||'—')}</div>
     <div class="painel">
       <div class="grid13">${chips}</div>
       ${blocoImperdoaveis}
     </div></div>`;
   encaixa($('cli'));
+}
+// rede: soma Meta, Real (faturado + online) e geladeiras das lojas com geladeira Total Ko; cor pela venda do mês
+function gdmRede(membros){
+  const gs = membros.map(([r,cid])=>gdmCliente(r, cid)).filter(Boolean);
+  if(!gs.length) return null;
+  return {meta: gs.reduce((a,g)=>a+g.meta,0), real: gs.reduce((a,g)=>a+g.real,0), n: gs.reduce((a,g)=>a+g.n,0),
+          situacao: 'rede'};
 }
 /* Consolidado de rede: soma meta/real (Volume) ou cobertos/elegíveis (ICS GC, Novos Negócios)
    de todas as lojas da rede dentro do escopo de filtro atual. */
@@ -723,7 +770,7 @@ function renderRede(rede){
       const pct = Math.round(realSum/metaSum*100);
       const status = pct>=100?2:(pct>=P.PACE_ONTEM_PCT?1:0);
       return tileVolume(k, [Math.round(metaSum*10)/10, Math.round(realSum*10)/10, pct, status]);
-    }).join('');
+    }).join('') + tileGdm(gdmRede(membros));
   } else {
     chips = grupo.map(k=>{
       if(!P.FONTES.venda) return tileCob(k, 'nd', 'sem venda');
@@ -750,7 +797,10 @@ function renderRede(rede){
   const tagAtivoR = nAtivoR>0
     ? `<span class="tagAtivo">${nAtivoR} geladeira${nAtivoR>1?'s':''}</span>` : '';
   const rotaTxt = rotasUnicas.length>1 ? `rotas ${rotasUnicas.join(', ')}` : `rota ${rotasUnicas[0]}`;
-  $('cli').innerHTML = `<div class="cli"><h3>${esc(rede.nome)}<span class="tagRede">Rede</span>${tagVZ}${tagAtivoR}</h3>
+  const gR = gdmRede(membros);
+  const tags = (P && P.COMODATO_CLIENTE) ? (gR ? `<span class="tagAtivo">${geladeiras(gR.n)}</span>` : '')
+    : tagVZ + tagAtivoR;
+  $('cli').innerHTML = `<div class="cli"><h3>${esc(rede.nome)}<span class="tagRede">Rede</span>${tags}</h3>
     <div class="meta">${membros.length} loja${membros.length>1?'s':''} · ${esc(rotaTxt)}</div>
     <div class="painel">
       <div class="grid13">${chips}</div>
