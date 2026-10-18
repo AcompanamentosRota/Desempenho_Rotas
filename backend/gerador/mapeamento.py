@@ -110,9 +110,18 @@ class ColCalendario:
 # ---------------------------------------------------------------------------
 # Filtros
 # ---------------------------------------------------------------------------
-# Gerências que o painel mostra (valor original de DS_GC_AGRUPADA_ATUAL). IT e MO vêm juntas
-# na fonte ('Gc. It_Mo'); o código de cada rota sai do supervisor (Sv. It. 1 -> IT).
-GC_ORIGEM = ["Gc. G1", "Gc. G2", "Gc. G3", "Gc. Ap", "Gc. It_Mo"]
+# Gerências que o painel mostra (valor original de DS_GC_AGRUPADA_ATUAL). As agrupadas (It_Mo, Pa_Di, Ur_Ri,
+# Gu_Po) são separadas pelo prefixo do supervisor (Sv. Pa. 3 -> SV.PA.3 -> PA), como IT e MO.
+GC_ORIGEM = ["Gc. G1", "Gc. G2", "Gc. G3", "Gc. Ap", "Gc. It_Mo",
+             # A CONFIRMAR (descoberta): grafias vistas no comodato, ainda não conferidas na base de clientes
+             "Gc. At", "Gc. An", "Gc. Sl", "Gc. Rv", "Gc. Pa_Di", "Gc. Ur_Ri", "Gc. Gu_Po"]
+# siglas do painel que cada gerência de origem pode ter (código de codigo_gc -> siglas dos supervisores)
+GC_SIGLAS_ORIGEM = {
+    "G1": ["G1"], "G2": ["G2"], "G3": ["G3"], "AP": ["AP"], "IT_MO": ["IT", "MO"],
+    # A CONFIRMAR (descoberta): prefixo dos supervisores das gerências novas
+    "AT": ["AT"], "AN": ["AN"], "SL": ["SL"], "RV": ["RV"],
+    "PA_DI": ["PA", "DI"], "UR_RI": ["UR", "RI"], "GU_PO": ["GU", "PO"],
+}
 # Base de clientes guarda o histórico: só a versão corrente de clientes ativos
 FILTRO_BASE_CLIENTE = "FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'"
 # Supervisões que não entram no painel (balcão) e rotas eventuais
@@ -136,7 +145,16 @@ META_NOVOS_NEG_DE_META_NEG = False
 # ---------------------------------------------------------------------------
 # Estrutura do painel (copiada do payload.json que já estava publicado)
 # ---------------------------------------------------------------------------
+# Regiões e ordem das 16 gerências no painel (GC_ATIVAS e REGIOES vão para o payload)
+REGIOES = {
+    "Matriz": ["G1", "G2", "G3", "AT", "AP"],
+    "Sul": ["AN", "SL", "RV", "MO", "IT"],
+    "Norte": ["RI", "UR", "GU", "PO", "PA", "DI"],
+}
+# ordem das chaves no payload (DATA, GC_ATIVAS): as 6 de antes primeiro, para não mudar o que já era publicado;
+# a ordem de exibição por região é a de REGIOES (o front ordena por ela)
 GC_ATIVAS = ["G1", "G2", "G3", "AP", "IT", "MO"]
+GC_ATIVAS += [g for siglas in REGIOES.values() for g in siglas if g not in GC_ATIVAS]
 
 LABELS = {
     "CCTM 2L PET": "CCTM 2L Pet",
@@ -277,9 +295,17 @@ def status_nf_real(valor: object) -> bool:
     return normalizar(valor) in {normalizar(s) for s in STATUS_NF_REAL}
 
 
+_ORIGEM_DA_SIGLA = {sigla: origem for origem, siglas in GC_SIGLAS_ORIGEM.items() for sigla in siglas}
+
+
 def gc_origem(gc: str) -> str:
-    """Código do painel -> gerência de origem: 'IT'/'MO' -> 'IT_MO' (vêm juntas na fonte), 'G1' -> 'G1'."""
-    return "IT_MO" if gc in ("IT", "MO") else gc
+    """Sigla do painel -> gerência de origem: 'IT'/'MO' -> 'IT_MO', 'PA' -> 'PA_DI', 'G1' -> 'G1'."""
+    return _ORIGEM_DA_SIGLA.get(gc, gc)
+
+
+def sigla_esperada(gc_original: object, sigla: str) -> bool:
+    """O prefixo do supervisor é uma das siglas da gerência de origem? ('Gc. Pa_Di', 'PA' -> True)."""
+    return sigla in GC_SIGLAS_ORIGEM.get(codigo_gc(gc_original), [codigo_gc(gc_original)])
 
 
 def eh_sim(valor: object) -> bool:

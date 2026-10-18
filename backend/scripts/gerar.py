@@ -36,6 +36,9 @@ from odata.config import PASTA_SAIDA, carregar_config  # noqa: E402
 from odata.log import configurar_log  # noqa: E402
 
 
+LIMITE_PAYLOAD_BYTES = 8_000_000
+
+
 def _janela(texto: str) -> tuple[time, time]:
     ini, fim = texto.split("-")
     return time.fromisoformat(ini.strip()), time.fromisoformat(fim.strip())
@@ -110,6 +113,11 @@ def main() -> int:
         _github_output(mudou="false")
         return 2
 
+    for nome, obj in arquivos.items():
+        tamanho = len(saida.serializar(obj))
+        log.info("%s: %.2f MB", nome, tamanho / 1e6)
+        if tamanho > LIMITE_PAYLOAD_BYTES:
+            log.warning("%s passou de %.0f MB (celular lento para baixar)", nome, LIMITE_PAYLOAD_BYTES / 1e6)
     mudou = [nome for nome, obj in arquivos.items() if saida.gravar(destino / nome, obj)]
     log.info("Arquivos atualizados: %s (%.0f s no total)", ", ".join(mudou) or "nenhum (dados iguais)",
              relogio.monotonic() - inicio)

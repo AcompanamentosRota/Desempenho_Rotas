@@ -99,8 +99,15 @@ def carregar_calendario(cons: Consulta, hoje: date) -> tuple[Calendario, list[di
 
 
 # ------------------------------------------------------------------ base de clientes
-def carregar_clientes(cons: Consulta, rota: str | None = None) -> tuple[list[Cliente], list[str]]:
-    """Clientes do painel + valores originais de GC presentes (dividem a consulta de vendas)."""
+def carregar_clientes(cons: Consulta, rota: str | None = None,
+                      estatisticas: dict | None = None) -> tuple[list[Cliente], list[str]]:
+    """Clientes do painel + valores originais de GC presentes (dividem a consulta de vendas).
+
+    Nada sai em silêncio: as linhas ignoradas são contadas por gerência e motivo (em `estatisticas`,
+    se informado, e no log), assim como os supervisores cujo prefixo não é sigla da gerência de origem.
+    """
+    ignoradas: dict = defaultdict(lambda: defaultdict(int))
+    fora_padrao: dict = defaultdict(set)
     sel = _colunas(cons, M.OBJ_BASE_CLIENTE,
                    [B.ROTA, B.CLIENTE, B.NOME, B.SEGMENTO, B.DIA_VISITA, B.VISITA_HOJE, B.GC, B.SUPERVISOR,
                     B.NOME_SUPERVISOR, B.VENDEDOR, B.QUANTIDADE],
@@ -110,9 +117,16 @@ def carregar_clientes(cons: Consulta, rota: str | None = None) -> tuple[list[Cli
     clientes, gcs, ignorados = [], set(), 0
     for l in linhas:
         pv, r, sv = inteiro(l.get(B.CLIENTE)), _rota(l.get(B.ROTA)), M.codigo_sv(l.get(B.SUPERVISOR))
-        if pv is None or not M.rota_do_painel(r) or not M.sv_do_painel(sv):
+        origem = limpar(l.get(B.GC))
+        motivo = ("sem PV" if pv is None else "rota vazia ou eventual (EV*)" if not M.rota_do_painel(r)
+                  else "supervisor de balcão (SV.BL.*)" if sv.startswith(M.SV_IGNORAR_PREFIXOS)
+                  else "supervisor fora do padrão SV.<sigla>.<n>" if not M.sv_do_painel(sv) else None)
+        if motivo:
             ignorados += 1
+            ignoradas[origem][motivo] += 1
             continue
+        if not M.sigla_esperada(origem, M.gc_do_sv(sv)):
+            fora_padrao[origem].add(sv)
         gcs.add(str(l.get(B.GC) or ""))
         rede = "" if _vazio(l.get(B.REDE_NOME)) else limpar(l.get(B.REDE_NOME)).upper()
         segmento = "" if _vazio(l.get(B.SEGMENTO)) else limpar(l.get(B.SEGMENTO))
@@ -123,6 +137,14 @@ def carregar_clientes(cons: Consulta, rota: str | None = None) -> tuple[list[Cli
             visita_hoje=M.eh_sim(l.get(B.VISITA_HOJE)), rede=rede))
     log.info("Base de clientes: %d clientes em %d rotas (%d linhas fora do painel ignoradas)",
              len(clientes), len({c.rota for c in clientes}), ignorados)
+    for origem, motivos in sorted(ignoradas.items()):
+        log.info("  %s: ignoradas %s", origem or "(sem gerência)", dict(motivos))
+    for origem, svs in sorted(fora_padrao.items()):
+        log.warning("  %s: supervisores com prefixo fora das siglas da gerência (entram pelo prefixo): %s",
+                    origem, ", ".join(sorted(svs)))
+    if estatisticas is not None:
+        estatisticas["ignoradas"] = {o: dict(m) for o, m in ignoradas.items()}
+        estatisticas["fora_padrao"] = {o: sorted(v) for o, v in fora_padrao.items()}
     return clientes, sorted(g for g in gcs if g)
 
 

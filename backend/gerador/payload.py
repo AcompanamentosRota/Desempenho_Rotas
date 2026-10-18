@@ -249,4 +249,5 @@ def montar_payload(f: Fontes) -> dict:
         "REDES_CLIENTE": por_ordem(redes_out),
         "FONTES": fontes,
         "FECHAMENTO": cal.fechamento,
+        "REGIOES": M.REGIOES,
     }

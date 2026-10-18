@@ -4,6 +4,9 @@ validacao.py — Confere os JSONs antes de publicar.
 Se algo estiver errado (consulta vazia, mapeamento quebrado, queda brusca de
 clientes/rotas), o gerador NÃO grava e termina com erro: o site continua com a
 última versão boa e o GitHub Actions marca a execução como falha (e-mail de aviso).
+
+Gerência de M.GC_ATIVAS sem rotas, sem metas ou sem Real gera só aviso (uma gerência nova não para o
+painel). As quedas são medidas por gerência, só para as que já estavam na versão publicada.
 """
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ CHAVES_PAYLOAD = ["MES_LABEL", "TOTAL_DIAS_UTEIS", "DIA_ONTEM", "DIA_HOJE", "PAC
                   "COV_GRUPO", "LABELS_CURTO", "SEGS", "DIAS", "CLIENT_ROSTER", "CLIENTES_HOJE",
                   "OPORTUNIDADES_DIA", "VISITAS_DIA", "COBERTOS", "SEM_COMPRA_HOJE", "VENDAZERO_CLIENTES",
                   "COMODATO_ATIVOS", "REVERTIDO_HOJE", "OPORTUNIDADE_HOJE", "VOLUME_CLIENTE", "REDES_CLIENTE",
-                  "FONTES", "FECHAMENTO"]
+                  "FONTES", "FECHAMENTO", "REGIOES"]
 
 # limites de queda em relação à versão publicada do MESMO mês de referência (MES_LABEL);
 # na virada (fechamento -> mês novo, ou mês anterior -> fechamento) a queda só gera aviso
@@ -29,6 +32,31 @@ MIN_INDICADORES_DISPONIVEIS = 0.5
 
 def _rotas(p: dict) -> dict:
     return {r: d for svs in p.get("DATA", {}).values() for rotas in svs.values() for r, d in rotas.items()}
+
+
+def _rotas_por_gc(p: dict) -> dict[str, dict]:
+    return {gc: {r: d for rotas in svs.values() for r, d in rotas.items()} for gc, svs in p.get("DATA", {}).items()}
+
+
+def _tem_meta(rotas: dict) -> bool:
+    return any(not (d.get("indicators", {}).get(k) or {"unavailable": True}).get("unavailable", True)
+               for d in rotas.values() for k in M.INDICADORES_COBERTURA + M.INDICADORES_VOLUME)
+
+
+def _gerencias(novo: dict) -> list[str]:
+    """Avisos de gerência sem rotas, sem metas ou sem Real (gerência nova não reprova)."""
+    avisos = []
+    por_gc = _rotas_por_gc(novo)
+    for gc in M.GC_ATIVAS:
+        rotas = por_gc.get(gc)
+        if not rotas:
+            avisos.append(f"{gc}: gerência sem rotas na base de clientes")
+            continue
+        if not _tem_meta(rotas):
+            avisos.append(f"{gc}: gerência sem metas (cobertura e volume)")
+        if not _volume_real(rotas) and not any((novo["COBERTOS"].get(r) or {}) for r in rotas):
+            avisos.append(f"{gc}: gerência sem Real no mês (volume e cobertura)")
+    return avisos
 
 
 def _volume_real(rotas: dict) -> float:
@@ -85,7 +113,9 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
     if ks_acima:
         avisos.append(f"KS TT com real acima da base elegível (clientes que saíram da rota) em: {', '.join(ks_acima[:20])}")
 
-    cob = [d["indicators"][k] for d in rotas.values() for k in M.INDICADORES_COBERTURA]
+    # disponibilidade só nas gerências com alguma meta (as sem meta já viram aviso em _gerencias)
+    com_meta = {r: d for g in _rotas_por_gc(novo).values() if _tem_meta(g) for r, d in g.items()} or rotas
+    cob = [d["indicators"][k] for d in com_meta.values() for k in M.INDICADORES_COBERTURA]
     disp = sum(1 for b in cob if not b["unavailable"]) / max(1, len(cob))
     if disp < MIN_INDICADORES_DISPONIVEIS:
         erros.append(f"só {disp:.0%} dos indicadores de cobertura têm meta (mapeamento de agrupador/meta?)")
@@ -104,20 +134,26 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
                       + "; ".join(f"{M.LABELS[k]} {v:,.1f}" for k, v in difs.items()))
     if not novo["FECHAMENTO"] and vol and all(b.get("metaDia") is None for b in vol if not b["unavailable"]):
         avisos.append("meta do dia do volume indisponível (META_RECUPERAVEL_ROTA não veio): metaDia = null")
+    avisos += _gerencias(novo)
     if sum(novo["VISITAS_DIA"]["geral"].values()) == 0:
         avisos.append("nenhuma visita agendada hoje (fim de semana/feriado ou VISITA_HOJE mudou?)")
 
     if anterior:
         rotas_ant = _rotas(anterior)
-        base_ant = sum(d.get("baseTotal", 0) for d in rotas_ant.values())
-        vol_ant, vol_novo = _volume_real(rotas_ant), _volume_real(rotas)
+        por_gc, por_gc_ant = _rotas_por_gc(novo), _rotas_por_gc(anterior)
         quedas = []
-        if rotas_ant and len(rotas) < MIN_ROTAS * len(rotas_ant):
-            quedas.append(f"rotas caíram de {len(rotas_ant)} para {len(rotas)}")
-        if base_ant and base < MIN_CLIENTES * base_ant:
-            quedas.append(f"clientes na base caíram de {base_ant} para {base}")
-        if vol_ant > 0 and vol_novo < MIN_VOLUME * vol_ant:
-            quedas.append(f"volume real caiu de {vol_ant:.0f} para {vol_novo:.0f} (NF_STATUS / STATUS_NF_REAL?)")
+        # por gerência; gerência que não estava na versão publicada (nova) não é comparada
+        for gc, ant in por_gc_ant.items():
+            nov = por_gc.get(gc, {})
+            base_ant = sum(d.get("baseTotal", 0) for d in ant.values())
+            base_gc = sum(d.get("baseTotal", 0) for d in nov.values())
+            vol_ant, vol_novo = _volume_real(ant), _volume_real(nov)
+            if ant and len(nov) < MIN_ROTAS * len(ant):
+                quedas.append(f"{gc}: rotas caíram de {len(ant)} para {len(nov)}")
+            if base_ant and base_gc < MIN_CLIENTES * base_ant:
+                quedas.append(f"{gc}: clientes na base caíram de {base_ant} para {base_gc}")
+            if vol_ant > 0 and vol_novo < MIN_VOLUME * vol_ant:
+                quedas.append(f"{gc}: volume real caiu de {vol_ant:.0f} para {vol_novo:.0f} (NF_STATUS / STATUS_NF_REAL?)")
         if anterior.get("MES_LABEL") == novo["MES_LABEL"]:
             erros += quedas
         else:   # virada do mês de referência: só avisa
