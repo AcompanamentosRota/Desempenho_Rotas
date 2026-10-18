@@ -20,7 +20,7 @@ CHAVES_PAYLOAD = ["MES_LABEL", "TOTAL_DIAS_UTEIS", "DIA_ONTEM", "DIA_HOJE", "PAC
                   "COV_GRUPO", "LABELS_CURTO", "SEGS", "DIAS", "CLIENT_ROSTER", "CLIENTES_HOJE",
                   "OPORTUNIDADES_DIA", "VISITAS_DIA", "COBERTOS", "SEM_COMPRA_HOJE", "VENDAZERO_CLIENTES",
                   "COMODATO_ATIVOS", "REVERTIDO_HOJE", "OPORTUNIDADE_HOJE", "VOLUME_CLIENTE", "REDES_CLIENTE",
-                  "FONTES", "FECHAMENTO", "REGIOES"]
+                  "FONTES", "FECHAMENTO", "REGIOES", "NEUTRALIZA", "OCULTAS", "VOLUME_EXTRA"]
 
 # limites de queda em relação à versão publicada do MESMO mês de referência (MES_LABEL);
 # na virada (fechamento -> mês novo, ou mês anterior -> fechamento) a queda só gera aviso
@@ -95,7 +95,10 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
     if base == 0:
         erros.append("nenhum cliente na base")
     for r, d in rotas.items():
-        if list(d["indicators"]) != M.ORDEM_INDICADORES:
+        ks = list(d["indicators"])
+        extras = ks[len(M.ORDEM_INDICADORES):]
+        if ks[:len(M.ORDEM_INDICADORES)] != M.ORDEM_INDICADORES or extras != [k for k in M.INDICADORES_VOLUME_EXTRA
+                                                                               if k in extras]:
             erros.append(f"rota {r}: indicadores fora do padrão")
             break
     ks_tt = {i for i, s in enumerate(novo["SEGS"]) if normalizar(s) in M.SEGMENTOS_KS_TT}

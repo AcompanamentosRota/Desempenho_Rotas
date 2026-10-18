@@ -218,6 +218,23 @@ INDICADORES_NOVOS_NEG = set(GROUPS["NOVOS_NEG"]) - set(COV_GRUPO["ICS_GC"])
 INDICADORES_VOLUME = list(GROUPS["VOLUME"])
 ORDEM_INDICADORES = INDICADORES_COBERTURA + ["IMPERDOAVEIS", "VENDAZERO"] + INDICADORES_VOLUME
 
+# Volume de uma gerência só (aba Volume): segue todas as regras de volume, mas NUNCA entra nas somas dos
+# 5 macros (INDICADORES_VOLUME), no Resumo, na Diretoria, no "ritmo de coberturas" nem no "puxa a média";
+# fica fora de GROUPS/COV_GRUPO. O nó do indicador (e o 6º bloco do VOLUME_CLIENTE) só existe nas rotas
+# das gerências listadas e quando há dado. Vai para o payload em VOLUME_EXTRA.
+VOLUME_EXTRA = {"VOL DEL VALLE FRUT": {"label": "Del Valle Frut", "gcs": ["G2"]}}
+INDICADORES_VOLUME_EXTRA = list(VOLUME_EXTRA)
+INDICADORES_VOLUME_TODOS = INDICADORES_VOLUME + INDICADORES_VOLUME_EXTRA
+
+# Supervisões Neutraliza (rotas 151, 251, I31, M31): sem card, coluna ou linha em lugar nenhum; Meta e Real
+# de Volume, ICS GC e Novos Negócios entram só no total da gerência; Venda Zero nunca.
+# ÚNICA fonte da lista: vai para o payload (NEUTRALIZA) e o front lê de lá.
+NEUTRALIZA = ["SV.G1.5", "SV.G2.5", "SV.IT.3", "SV.MO.3"]
+# Supervisões ocultas: fora do "puxa a média" e das listas de clientes (payload OCULTAS)
+OCULTAS = ["SV.G3.3"]
+# Gerências em que nada é oculto (nem Neutraliza, nem ocultas, nem "sem vendedor")
+GC_SEM_OCULTAS = ["AT"]
+
 # Segmentos elegíveis ao KS TT (mesma regra do front: KSTT_SEG)
 SEGMENTOS_KS_TT = {"LANCHONETE", "RESTAURANTE", "BOTECO", "PADARIAS"}
 
@@ -238,9 +255,25 @@ AGRUPADORES_VOLUME = {
     "VOL AGUA MINERAL": "Agua Mineral", "VOL DEST+ART+CND": "Dest+Art+Cnd",
 }
 AGRUPADORES_ORIGEM = sorted(set(AGRUPADORES_COBERTURA.values()) | set(AGRUPADORES_VOLUME.values()))
+# volume extra (VOLUME_EXTRA). A CONFIRMAR (descoberta): grafia do agrupador
+AGRUPADORES_VOLUME_EXTRA = {"VOL DEL VALLE FRUT": "DV Frut"}
+# consultas de volume (Vol Real, META_NEG, meta do dia, META_VOLUME): os 5 macros + os extras
+AGRUPADORES_VOLUME_CONSULTA = list(AGRUPADORES_VOLUME.values()) + list(AGRUPADORES_VOLUME_EXTRA.values())
+
+# Desempenho GDM (busca de cliente, aba Volume): volume dos agrupadores abaixo, somados SÓ nesse quadrinho.
+# A CONFIRMAR (descoberta): grafia de Sucos e Ades
+AGRUPADORES_GDM = ["Refrigerantes", "Agua Mineral", "Sucos", "Ades", "Powerade"]
+
+# Consulta de vendas: os 17 agrupadores do painel + os extras de volume e do GDM. Compras do mês, cobertura e
+# "comprou qualquer coisa hoje" continuam só com os 17 (AGRUPADORES_ORIGEM).
+AGRUPADORES_CONSULTA_VENDAS = sorted(set(AGRUPADORES_ORIGEM) | set(AGRUPADORES_VOLUME_EXTRA.values())
+                                     | set(AGRUPADORES_GDM))
+# Vol Real: macros de volume + extras + GDM (o GDM usa o mesmo filtro de NF_STATUS)
+AGRUPADORES_VOL_REAL = sorted(set(AGRUPADORES_VOLUME_CONSULTA) | set(AGRUPADORES_GDM))
 
 APELIDOS_COBERTURA: dict[str, list[str]] = {k: [v] for k, v in AGRUPADORES_COBERTURA.items()}
-APELIDOS_VOLUME: dict[str, list[str]] = {k: [v] for k, v in AGRUPADORES_VOLUME.items()}
+APELIDOS_VOLUME: dict[str, list[str]] = {k: [v] for k, v in
+                                         {**AGRUPADORES_VOLUME, **AGRUPADORES_VOLUME_EXTRA}.items()}
 
 
 def _indice(apelidos: dict[str, list[str]]) -> dict[str, str]:
@@ -256,7 +289,26 @@ def indicador_cobertura(agrupador: object) -> str | None:
 
 
 def indicador_volume(agrupador: object) -> str | None:
+    """Chave de volume (os 5 macros ou um extra, ex.: 'VOL DEL VALLE FRUT')."""
     return INDICE_VOLUME.get(normalizar(agrupador))
+
+
+_INDICE_ORIGEM = {normalizar(a) for a in AGRUPADORES_ORIGEM}
+_INDICE_GDM = {normalizar(a) for a in AGRUPADORES_GDM}
+
+
+def agrupador_do_painel(agrupador: object) -> bool:
+    """Um dos 17 agrupadores originais (compras do mês, cobertura, "qualquer compra hoje")."""
+    return normalizar(agrupador) in _INDICE_ORIGEM
+
+
+def agrupador_gdm(agrupador: object) -> bool:
+    return normalizar(agrupador) in _INDICE_GDM
+
+
+def volume_extra_da_gc(k: str, gc: str) -> bool:
+    """O volume extra `k` existe na gerência `gc`? (os 5 macros existem em todas)."""
+    return k not in VOLUME_EXTRA or gc in VOLUME_EXTRA[k]["gcs"]
 
 
 # ---------------------------------------------------------------------------

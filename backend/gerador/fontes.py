@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -167,7 +167,7 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
     sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_MES, CM.VOL_MES],
                    [CM.COB_ONLINE, CM.COB_ONLINE_GERAL, CM.VOL_ONLINE, CM.META_VOLUME_CLIENTE, CM.SEGMENTO])
     _colunas(cons, obj, [CM.FONTE, CM.SITUACAO_PEDIDO])   # só confere: entram no $filter, não no $select
-    base = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_ORIGEM), M.FILTRO_PEDIDOS_ONLINE,
+    base = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_CONSULTA_VENDAS), M.FILTRO_PEDIDOS_ONLINE,
              eq(CM.FONTE, "WF Online") if so_pedidos_hoje else None, eq(CM.ROTA, rota) if rota else None)
     partes = _por_gerencia(obj, sel, base, gcs_originais, rota)
     linhas = [l for ls in cons.em_paralelo(partes).values() for l in ls]
@@ -180,21 +180,24 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
         r, pv = _rota(l.get(CM.ROTA)), inteiro(l.get(CM.CLIENTE))
         if not r or pv is None:
             continue
-        compraram[r]   # rota presente na fonte de vendas (mesmo sem compra)
+        ag = l.get(CM.AGRUPADOR)
+        # compras do mês, cobertura e "qualquer compra hoje" só com os 17 agrupadores do painel
+        do_painel = M.agrupador_do_painel(ag)
+        if do_painel:
+            compraram[r]   # rota presente na fonte de vendas (mesmo sem compra)
         if not _vazio(l.get(CM.SEGMENTO)):
             segmento[pv] = limpar(l.get(CM.SEGMENTO))
-        ag = l.get(CM.AGRUPADOR)
         k_cob, k_vol = M.indicador_cobertura(ag), M.indicador_volume(ag)
         cob_mes, vol_mes = numero(l.get(CM.COB_MES)), numero(l.get(CM.VOL_MES))
         cob_on, cob_on_g = numero(l.get(CM.COB_ONLINE)), numero(l.get(CM.COB_ONLINE_GERAL))
         vol_on = numero(l.get(CM.VOL_ONLINE))
-        if cob_mes > 0 or vol_mes > 0:
+        if do_painel and (cob_mes > 0 or vol_mes > 0):
             compraram[r].add(pv)
         if k_cob and cob_mes > 0:
             cobertos[r][k_cob].add(pv)
         if k_cob and cob_on > 0:
             online.clientes.setdefault(r, {}).setdefault(k_cob, set()).add(pv)
-        if cob_on > 0 or cob_on_g > 0 or vol_on > 0:
+        if do_painel and (cob_on > 0 or cob_on_g > 0 or vol_on > 0):
             online.qualquer.setdefault(r, set()).add(pv)
         if k_vol:
             if vol_on:
@@ -227,7 +230,7 @@ def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], 
     """
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES])
-    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())),
+    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_VOL_REAL),
                M.FILTRO_PEDIDOS_ONLINE, eq(CM.ROTA, rota) if rota else None)
     linhas = [l for ls in cons.em_paralelo(_por_gerencia(obj, sel, filtro, gcs_originais, rota)).values() for l in ls]
     vm = VolumeMes()
@@ -237,11 +240,12 @@ def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], 
             continue
         vol, status = numero(l.get(CM.VOL_MES)), l.get(CM.NF_STATUS)
         conta = M.status_nf_real(status)
-        st = vm.por_status.setdefault(limpar(status), [0, 0.0, conta])
-        st[0] += 1
-        st[1] += vol
-        tot = vm.todos_status.setdefault(r, {})
-        tot[k] = tot.get(k, 0.0) + vol
+        if k in M.INDICADORES_VOLUME:   # estatística por status e "Real atual" só dos 5 macros (conferência)
+            st = vm.por_status.setdefault(limpar(status), [0, 0.0, conta])
+            st[0] += 1
+            st[1] += vol
+            tot = vm.todos_status.setdefault(r, {})
+            tot[k] = tot.get(k, 0.0) + vol
         if not conta:
             continue
         rr = vm.real.setdefault(r, {})
@@ -300,7 +304,7 @@ def _por_rota(cons: Consulta, medida: str, anomes: str, gcs_originais: list[str]
     """
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [col_rota, CM.AGRUPADOR, medida])
-    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())), filtro_extra,
+    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_VOLUME_CONSULTA), filtro_extra,
                eq(col_rota, rota) if rota else None)
     try:
         linhas = cons.linhas(obj, sel, filtro)
@@ -322,7 +326,7 @@ def _por_rota_dia(cons: Consulta, medida: str, anomes: str, rota: str | None) ->
     """(rota, VOL, DATA_MOVIMENTO, medida) por rota x macro x dia. Lenta (~150 s): só plano B do Neg Restante."""
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.ROTA, CM.AGRUPADOR, CM.DATA, medida])
-    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())),
+    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_VOLUME_CONSULTA),
                eq(CM.ROTA, rota) if rota else None)
     out = []
     for l in cons.linhas(obj, sel, filtro):
@@ -420,7 +424,9 @@ def carregar_metas(cons: Consulta, anomes: str, rota: str | None):
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.META_ROTA, CM.META_AGRUPADOR, CM.META_COBERTURA, CM.META_VOLUME], [CM.META_NEG])
     f_rota = eq(CM.META_ROTA, rota) if rota else None
-    linhas = cons.linhas(obj, sel, e(eq(CM.META_ANOMES, anomes), ou(CM.META_AGRUPADOR, M.AGRUPADORES_ORIGEM), f_rota))
+    linhas = cons.linhas(obj, sel, e(eq(CM.META_ANOMES, anomes),
+                                     ou(CM.META_AGRUPADOR, M.AGRUPADORES_ORIGEM + list(M.AGRUPADORES_VOLUME_EXTRA.values())),
+                                     f_rota))
     metas: dict = defaultdict(dict)
     metas_vol: dict = defaultdict(dict)
     for l in linhas:
@@ -548,6 +554,14 @@ def carregar_comodato(cons: Consulta, anomes: str, rota: str | None, gc_da_rota:
 
 
 # ------------------------------------------------------------------ tudo junto
+def rotas_neutraliza(clientes: list[Cliente]) -> set[str]:
+    """Rotas cuja supervisão (a mais comum entre os clientes, como no payload) é Neutraliza."""
+    por_rota: dict[str, Counter] = defaultdict(Counter)
+    for c in clientes:
+        por_rota[c.rota][c.sv] += 1
+    return {r for r, svs in por_rota.items() if svs.most_common(1)[0][0] in M.NEUTRALIZA}
+
+
 def decidir_fechamento(cons: Consulta, hoje: date, linhas_cal: list[dict], gc_da_rota: dict[str, str]) -> Calendario | None:
     """Calendário fechado do mês anterior se hoje está no período de fechamento; None se não está."""
     dia_util = calmod.dia_util_hoje(linhas_cal, hoje)
@@ -600,11 +614,17 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
         seg_hoje = carregar_vendas(cons, anomes_hoje, gcs, rota, online, so_pedidos_hoje=True)[-1]
         return cob, comp, mcli, {**seg_hoje, **seg}
 
+    # Neutraliza nunca entra na Venda Zero: fora da lista, das geladeiras ativas e do rateio da meta
+    neutraliza = rotas_neutraliza(clientes)
+
     def comodato():
         if cal.fechamento:
             return None, {}, {}
         try:
-            return carregar_comodato(cons, anomes, rota, gc_da_rota)
+            vz, atv, vz_meta = carregar_comodato(cons, anomes, rota,
+                                                 {r: g for r, g in gc_da_rota.items() if r not in neutraliza})
+            return ({r: v for r, v in vz.items() if r not in neutraliza},
+                    {r: v for r, v in atv.items() if r not in neutraliza}, vz_meta)
         except Exception as erro:   # noqa: BLE001
             log.warning("Comodato indisponível (%s); Venda Zero ficará indisponível nesta execução.", erro)
             return None, {}, {}
@@ -630,7 +650,9 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     volume: dict = defaultdict(dict)
     casos: dict[str, list[str]] = defaultdict(list)
     for r in sorted(rotas_painel):
-        for k in M.INDICADORES_VOLUME:
+        for k in M.INDICADORES_VOLUME_TODOS:
+            if not M.volume_extra_da_gc(k, gc_da_rota.get(r, "")):
+                continue
             nm, real = neg_mes.get(r, {}).get(k), vm.real.get(r, {}).get(k)
             meta, rest, caso = modelo.meta_e_restante(metas_vol.get(r, {}).get(k), nm,
                                                       (neg_rest or {}).get(r, {}).get(k, 0.0),

@@ -169,7 +169,9 @@ def montar_payload(f: Fontes) -> dict:
                     f.vz_meta.get(r) if vz_ativo else None, sum(e["vdz"] for e in vz_lista),
                     revertido_hoje[r], oportunidade_hoje[r])
                 vol_online = f.online.volume.get(r)
-                for k in M.INDICADORES_VOLUME:
+                # volume extra (Del Valle Frut): só quando a montagem trouxe o dado (gerências de M.VOLUME_EXTRA)
+                ks_vol = M.INDICADORES_VOLUME + [k for k in M.INDICADORES_VOLUME_EXTRA if k in f.volume.get(r, {})]
+                for k in ks_vol:
                     v = f.volume.get(r, {}).get(k)
                     sem_dado = bool(v is not None and v.meta is not None and round(v.real, 1) == 0
                                     and vol_online is not None and k not in vol_online)
@@ -196,7 +198,7 @@ def montar_payload(f: Fontes) -> dict:
                 volume_cliente[r] = {
                     str(c[0]): [modelo.bloco_volume_cliente(*vc[c[0]][k], cal.pace_ontem_pct)
                                 if c[0] in vc and k in vc[c[0]] else None
-                                for k in M.INDICADORES_VOLUME]
+                                for k in ks_vol]
                     for c in lista_roster
                 }
 
@@ -250,4 +252,8 @@ def montar_payload(f: Fontes) -> dict:
         "FONTES": fontes,
         "FECHAMENTO": cal.fechamento,
         "REGIOES": M.REGIOES,
+        "NEUTRALIZA": M.NEUTRALIZA,
+        "OCULTAS": M.OCULTAS,
+        "GC_SEM_OCULTAS": M.GC_SEM_OCULTAS,
+        "VOLUME_EXTRA": M.VOLUME_EXTRA,
     }

@@ -30,12 +30,12 @@ def montar_online(o: Online) -> dict:
             listas["QUALQUER"] = sorted(qualquer)
         if listas:
             clientes_out[r] = listas
-        vol = {k: round(o.volume[r][k], 4) for k in M.INDICADORES_VOLUME if k in o.volume.get(r, {})}
+        vol = {k: round(o.volume[r][k], 4) for k in M.INDICADORES_VOLUME_TODOS if k in o.volume.get(r, {})}
         if vol:
             volume_out[r] = vol
         por_cli = {}
         for pv, ks in sorted(o.volume_cliente.get(r, {}).items()):
-            v = {k: round(ks[k], 4) for k in M.INDICADORES_VOLUME if round(ks.get(k, 0.0), 4)}
+            v = {k: round(ks[k], 4) for k in M.INDICADORES_VOLUME_TODOS if round(ks.get(k, 0.0), 4)}
             if v:
                 por_cli[str(pv)] = v
         if por_cli:

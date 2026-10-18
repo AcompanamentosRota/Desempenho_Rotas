@@ -8,9 +8,8 @@
    Volume verde por % Tendência >= 100 sobre a meta da rota (tendência do SAC: só o faturado + Neg Restante; o online de hoje
    fica na coluna própria e não entra); no fechamento do mês, verde por % realizado >= 100, sem meta do dia.
    Online verde ao bater o número ao lado.
-   SV.G2.5/SV.IT.3/SV.MO.3 (Neutraliza -- 251/I31/M31) entram no Volume;
-   em ICS/NN a coluna some (sem meta). SV.IT.3/SV.MO.3 adicionadas 05/10/26,
-   mesmo tratamento da SV.G2.5 original.
+   Neutraliza (payload NEUTRALIZA: SV.G1.5/151, SV.G2.5/251, SV.IT.3/I31, SV.MO.3/M31) não tem coluna;
+   Meta e Real delas entram só no total da gerência (1ª coluna).
    ===================================================================== */
 const RS = (()=>{
   const VOL_ORD = ['VOL REFRIGERANTES','VOL CERVEJAS','VOL STILL','VOL AGUA MINERAL','VOL DEST+ART+CND'];
@@ -85,7 +84,8 @@ const RS = (()=>{
       const rs = Object.keys(DATA[gc][sel.sv]);
       return {titulo:sel.sv, sub:rotuloSv(sel.sv)+' → rotas', cols:[[sel.sv, rs], ...rs.map(r=>[r,[r]])]};
     }
-    const svs = svsDe(gc);
+    // Neutraliza sem coluna; o total da gerência (1ª coluna) inclui as rotas delas
+    const svs = svsVisiveis(gc);
     return {titulo:'Matriz GC.'+gc, sub:'Gerência → supervisores', cols:[['GC.'+gc, rotasDe(gc,'')], ...svs.map(s=>[s, Object.keys(DATA[gc][s])])]};
   }
   // cabeçalho da coluna: código (SV.G1.1 / rota) + primeiro nome do supervisor quando houver

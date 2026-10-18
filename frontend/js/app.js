@@ -20,9 +20,23 @@ function nomeSv(sv){
   return titulo(n.split(/\s+/)[0]);
 }
 const rotuloSv = sv => { const n = nomeSv(sv); return n ? `${sv} · ${n}` : sv; };
-// supervisões sem SUP/VEND de verdade ("ROTA SEM VENDEDOR" / Neutraliza / rotas online)
+/* Neutraliza e ocultas: a lista única fica no back-end (mapeamento.py) e chega no payload (NEUTRALIZA,
+   OCULTAS, GC_SEM_OCULTAS). Neutraliza: sem card, coluna, linha nem cliente em lista; Meta e Real de Volume,
+   ICS GC e Novos Negócios só no total da gerência (a Venda Zero delas já vem indisponível do back-end).
+   Ocultas: fora do "puxa a média" e das listas de clientes. Na gerência AT nada é oculto.
+   CONFIG.SV_EXCLUIDOS só vale para payload antigo, sem essas chaves. */
+const gcDoSv = sv => String(sv||'').split('.')[1] || '';
+const semOcultas = sv => ((P && P.GC_SEM_OCULTAS) || ['AT']).includes(gcDoSv(sv));
+const ehNeutraliza = sv => !!(P && P.NEUTRALIZA) && !semOcultas(sv) && P.NEUTRALIZA.includes(sv);
+const ehOculta = sv => !semOcultas(sv) && ((P && P.OCULTAS) ? P.OCULTAS.includes(sv)
+  : CONFIG.SV_EXCLUIDOS.includes(sv));
+// supervisões sem SUP/VEND de verdade ("ROTA SEM VENDEDOR" / Neutraliza / ocultas)
 // não entram na comparação "quem mais puxa a média para baixo"
-const svExcluido = sv => CONFIG.SV_EXCLUIDOS.includes(sv) || /SEM VENDEDOR/i.test(((P && P.NOME_SUPERVISOR)||{})[sv]||'');
+const svExcluido = sv => !semOcultas(sv) && (ehNeutraliza(sv) || ehOculta(sv)
+  || /SEM VENDEDOR/i.test(((P && P.NOME_SUPERVISOR)||{})[sv]||''));
+// rótulo de indicador: LABELS do payload ou, para o volume extra (Del Valle Frut), VOLUME_EXTRA
+const rotuloInd = k => (LABELS||{})[k] || (((P && P.VOLUME_EXTRA)||{})[k]||{}).label || k;
+const volExtras = () => Object.keys((P && P.VOLUME_EXTRA) || {});
 // torna um elemento não-<button> clicável também pelo teclado (Enter/Espaço)
 function clicavel(el, fn){
   el.onclick = fn;
@@ -111,22 +125,33 @@ const rotasDe = (gc,sv) => sv ? Object.keys(DATA[gc][sv]) : svsDe(gc).flatMap(s=
 const rotaSv = (gc,r) => svsDe(gc).find(s=>DATA[gc][s][r]);
 const nodo = (gc,r) => DATA[gc][rotaSv(gc,r)][r];
 const ehKstt = c => KSTT_SEG.has((SEGS[c[2]]||'').toUpperCase());
+// rotas do filtro para os indicadores: no total da gerência inclui as Neutraliza
 const rotasAtuais = () => sel.rota ? [sel.rota] : rotasDe(sel.gc, sel.sv);
+// o que aparece: supervisões e rotas sem as Neutraliza (selects, colunas, linhas, contagem de clientes)
+const svsVisiveis = gc => svsDe(gc).filter(s=>!ehNeutraliza(s));
+const rotaNeutraliza = r => ehNeutraliza(rotaSv(sel.gc, r));
+const rotasVisiveis = () => rotasAtuais().filter(r=>!rotaNeutraliza(r));
+// listas de clientes: também sem as ocultas (na AT, tudo aparece)
+const rotasListas = () => rotasVisiveis().filter(r=>!ehOculta(rotaSv(sel.gc, r)));
 
 /* ---------- agregação ---------- */
 function agrega(rotas){
   const ind={}, tot={baseTotal:0,compraram:null,semCompra:null};
   [...GROUPS.ICS_GC,...GROUPS.NOVOS_NEG].forEach(k=>ind[k]={meta:0,real:0,n:0});
-  const volAgg={}; GROUPS.VOLUME.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,neg:0,mdia:null,n:0});
+  const volKs=[...GROUPS.VOLUME, ...volExtras()];
+  const volAgg={}; volKs.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,neg:0,mdia:null,n:0});
   rotas.forEach(r=>{
-    const d=nodo(sel.gc,r); tot.baseTotal+=d.baseTotal||0;
-    if(d.compraram!=null){tot.compraram=(tot.compraram||0)+d.compraram;
-      tot.semCompra=(tot.semCompra||0)+d.semCompra;}
+    const d=nodo(sel.gc,r);
+    if(!rotaNeutraliza(r)){          // clientes das Neutraliza não aparecem (só os indicadores somam)
+      tot.baseTotal+=d.baseTotal||0;
+      if(d.compraram!=null){tot.compraram=(tot.compraram||0)+d.compraram;
+        tot.semCompra=(tot.semCompra||0)+d.semCompra;}
+    }
     Object.keys(ind).forEach(k=>{
       const b=d.indicators[k]; if(!b||b.unavailable) return;
       ind[k].meta+=b.meta||0; ind[k].real+=b.real||0; ind[k].n++;
     });
-    GROUPS.VOLUME.forEach(k=>{
+    volKs.forEach(k=>{
       const b=d.indicators[k], a=volAgg[k]; if(!b||b.unavailable) return;
       a.meta+=b.meta||0; a.real+=b.real||0; a.tend+=b.tendencia||0; a.neg+=b.negRestante||0;
       if(b.metaDia!=null) a.mdia=(a.mdia||0)+b.metaDia;
@@ -152,7 +177,7 @@ function agrega(rotas){
      META_NEG dos clientes aplicada à meta da rota (calculado no back-end, por rota). Fechamento do mês: sem
      tendência nem meta do dia, no ritmo pelo % realizado (Real / Meta). */
   const fech = !!P.FECHAMENTO;
-  GROUPS.VOLUME.forEach(k=>{
+  volKs.forEach(k=>{
     const a=volAgg[k];
     if(!a.n){out[k]={unavailable:true};return;}
     const pctT = (!fech && a.meta) ? Math.round(a.tend/a.meta*100) : null;
@@ -175,9 +200,9 @@ function montaFiltros(){
   $('fgc').innerHTML = P.GC_ATIVAS.map(g=>`<option value="${esc(g)}">Gerência ${esc(g)}</option>`).join('');
   $('fgc').value = sel.gc;
   $('fsv').innerHTML = `<option value="">Todos os SVs</option>`+
-    svsDe(sel.gc).map(s=>`<option value="${esc(s)}">${esc(rotuloSv(s))}</option>`).join('');
+    svsVisiveis(sel.gc).map(s=>`<option value="${esc(s)}">${esc(rotuloSv(s))}</option>`).join('');
   $('fsv').value = sel.sv;
-  const rs = rotasDe(sel.gc, sel.sv);
+  const rs = rotasDe(sel.gc, sel.sv).filter(r=>!rotaNeutraliza(r));
   $('frota').innerHTML = `<option value="">Todas rotas</option>`+
     rs.map(r=>`<option value="${esc(r)}">Rota ${esc(r)}</option>`).join('');
   $('frota').value = sel.rota;
@@ -215,12 +240,13 @@ function render(){
     ` · para entrar no ritmo hoje: <span class="pct">${paceHoje}%</span></span>`+
     `<span>Hoje é o dia <b>${P.DIA_HOJE}</b> · ${esc(P.DIA_SEMANA)} · semana <b>N°${P.SEMANA_NUM}</b> (${esc(P.SEMANA_TIPO)})</span>`;
 
-  const visitas = rotas.reduce((a,r)=>a+(VISITAS_DIA.geral[r]||0),0);
+  const visiveis = rotasVisiveis();
+  const visitas = visiveis.reduce((a,r)=>a+(VISITAS_DIA.geral[r]||0),0);
   $('nBase').textContent = tot.baseTotal.toLocaleString('pt-BR');
   $('xBase').innerHTML = `visitas hoje <b class="ok">${visitas}</b>`;
 
-  const scHoje = rotas.every(r=>VISITAS_DIA.semCompra[r]!=null)
-    ? rotas.reduce((a,r)=>a+VISITAS_DIA.semCompra[r],0) : null;
+  const scHoje = visiveis.every(r=>VISITAS_DIA.semCompra[r]!=null)
+    ? visiveis.reduce((a,r)=>a+VISITAS_DIA.semCompra[r],0) : null;
   const pctSem = (tot.semCompra!=null && tot.baseTotal)
     ? Math.round(tot.semCompra/tot.baseTotal*100) : null;
   $('nSem').textContent = tot.semCompra==null? '—' : tot.semCompra.toLocaleString('pt-BR');
@@ -239,12 +265,14 @@ function render(){
 
   // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir
   const oculta = k => k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable);
-  $('lista').innerHTML = GROUPS[aba].filter(k=>!oculta(k)).map(k=>linha(k, ind[k], rotas)).join('');
+  // volume extra (Del Valle Frut): card só na aba Volume e só quando as rotas do filtro trazem o dado
+  const extras = aba==='VOLUME' ? volExtras().filter(k=>ind[k] && !ind[k].unavailable) : [];
+  $('lista').innerHTML = [...GROUPS[aba].filter(k=>!oculta(k)), ...extras].map(k=>linha(k, ind[k], rotas)).join('');
   document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k, rotas)));
   encaixa($('lista'));
   const upd = (ONLINE && ONLINE.updatedAt) ? ONLINE.updatedAt.replace('T',' ').slice(0,16).split(' ') : null;
   $('rodape').innerHTML =
-    `${rotas.length} rota${rotas.length>1?'s':''} · ${esc(P.MES_LABEL)} · ${P.TOTAL_DIAS_UTEIS} dias úteis<br>`+
+    `${visiveis.length} rota${visiveis.length>1?'s':''} · ${esc(P.MES_LABEL)} · ${P.TOTAL_DIAS_UTEIS} dias úteis<br>`+
     (tot.compraram!=null? `${tot.compraram.toLocaleString('pt-BR')} de ${tot.baseTotal.toLocaleString('pt-BR')} clientes já compraram no mês<br>`:'')+
     `<span id="rodapeStatus">${esc((statusAtualizado()||{}).texto || 'sem dados de venda online neste export')}</span>`+
     (upd? `<br><span class="fonte">Fonte: SAP Datasphere · ${upd[0].split('-').reverse().join('/')} ${upd[1]}</span>`:'')+
@@ -289,7 +317,7 @@ function piorSv(){
 }
 
 function linha(k, b, rotas){
-  const nome = esc(LABELS[k]||k);
+  const nome = esc(rotuloInd(k));
   if(!b || b.unavailable)
     return `<div class="ind off"><div class="tit">${nome}</div>
       <div class="semdado">indisponível — falta a fonte deste indicador</div></div>`;
@@ -423,13 +451,13 @@ function itemHtml(r,c,extra,online){
 }
 
 clicavel($('cBase'), ()=>{
-  const rotas = rotasAtuais();
+  const rotas = rotasListas();
   const l = listaClientes(rotas);
   abre('Visitas de hoje', `${l.length} clientes · ${P.DIA_SEMANA}, semana N°${P.SEMANA_NUM} (${P.SEMANA_TIPO})`,
     l.length? l.map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') : `<div class="vazio">Nenhuma visita agendada.</div>`);
 });
 clicavel($('cSem'), ()=>{
-  const rotas = rotasAtuais();
+  const rotas = rotasListas();
   if(!P.FONTES.venda){
     abre('Sem compra hoje','',
       `<div class="vazio">Depende da planilha de venda do dia.</div>`); return;
@@ -445,9 +473,10 @@ clicavel($('cSem'), ()=>{
     out.length? out.map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') : `<div class="vazio">Todo mundo já comprou.</div>`);
 });
 
-function abreIndicador(k, rotas){
-  const b = agrega(rotas).ind[k];
+function abreIndicador(k, rotasTotal){
+  const b = agrega(rotasTotal).ind[k];      // número do card (Neutraliza no total da gerência)
   if(!b || b.unavailable) return;
+  const rotas = rotasTotal.filter(r=>!rotaNeutraliza(r) && !ehOculta(rotaSv(sel.gc, r)));   // listas
   const LIM = CONFIG.LIMITE_LISTA;
 
   if(k==='VENDAZERO'){
@@ -469,7 +498,7 @@ function abreIndicador(k, rotas){
     };
     const revHoje = rotas.reduce((a,r)=>a+((REVERTIDO_HOJE||{})[r]||0),0);
     const oportHoje = rotas.reduce((a,r)=>a+((OPORTUNIDADE_HOJE||{})[r]||0),0);
-    abre(LABELS[k]||k, `${b.real} equipamentos zerados · ${b.gap>0? `${b.gap} para reverter` : 'no ritmo'} · ${revHoje} revertidos hoje · ${oportHoje} na agenda de hoje`, '');
+    abre(rotuloInd(k), `${b.real} equipamentos zerados · ${b.gap>0? `${b.gap} para reverter` : 'no ritmo'} · ${revHoje} revertidos hoje · ${oportHoje} na agenda de hoje`, '');
     pinta();
     return;
   }
@@ -497,7 +526,7 @@ function abreIndicador(k, rotas){
     $('dCorpo').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
   };
   const nota = (k==='KS TT') ? ' · lista restrita a bares, lanchonetes, restaurantes e padarias' : '';
-  abre(LABELS[k]||k, `Meta ${b.meta} · Real ${b.real} · ${b.gap>0?`faltam ${b.gap} para o ritmo de hoje`:'no ritmo'}${nota}`, '');
+  abre(rotuloInd(k), `Meta ${b.meta} · Real ${b.real} · ${b.gap>0?`faltam ${b.gap} para o ritmo de hoje`:'no ritmo'}${nota}`, '');
   pinta();
 }
 
@@ -538,7 +567,7 @@ function buscaSugestoes(){
   const v = $('q').value.trim().toLowerCase();
   const box = $('qSugestoes');
   if(!v){ box.classList.remove('on'); box.innerHTML=''; ULTIMA_BUSCA=[]; return; }
-  const rotas = rotasAtuais();
+  const rotas = rotasVisiveis();
   const out = [];
   for(const g of gruposRede(rotas).values()){
     if(g.nome.toLowerCase().includes(v)){
@@ -592,7 +621,7 @@ $('qSugestoes').addEventListener('keydown', e=>{
    `bloco` = [meta,real,pct,status] (0 fora do ritmo, 1 dentro do ritmo, 2 meta batida) ou null.
    As linhas de texto usam data-fit: encaixa() reduz a fonte até caber na largura real do tile. */
 function tileVolume(k, bloco){
-  const label = esc(P.LABELS_CURTO[k]||LABELS[k]);
+  const label = esc(P.LABELS_CURTO[k]||rotuloInd(k));
   if(!P.FONTES.venda)
     return `<div class="tileVol nd"><div class="t" data-fit="13" data-fit-min="9.5">${label}</div>
       <div class="barraWrap"><div class="barra"></div></div>
@@ -611,6 +640,8 @@ function tileVolume(k, bloco){
     <div class="e" data-fit="10.5" data-fit-min="8.5" data-fit-quebra>${pct}% · ${rotulo}</div>
     <div class="nums" data-fit="12" data-fit-min="8">${fmtNum(real)} / ${fmtNum(meta)}</div></div>`;
 }
+// blocos de volume da rota, na ordem do VOLUME_CLIENTE: os 5 macros + os extras que a rota tem (Del Valle Frut na G2)
+const volDaRota = r => [...GROUPS.VOLUME, ...volExtras().filter(k=>((nodo(sel.gc,r)||{}).indicators||{})[k])];
 /* Real da barra por cliente = Vol Real do payload + volume online de hoje do cliente (online.json volumeCliente),
    fora do fechamento do mês. % e status recalculados com a mesma regra (modelo.bloco_cliente_com_online). */
 function blocoVolCliente(r, pv, i, k){
@@ -623,13 +654,13 @@ function blocoVolCliente(r, pv, i, k){
   return [meta, Math.round(real*10)/10, pct, pct>=100?2:(pct>=P.PACE_ONTEM_PCT?1:0)];
 }
 const tileCob = (k, cls, txt) =>
-  `<div class="tile ${cls}"><div class="t" data-fit="13" data-fit-min="9.5">${esc(P.LABELS_CURTO[k]||LABELS[k])}</div><div class="e">${txt}</div></div>`;
+  `<div class="tile ${cls}"><div class="t" data-fit="13" data-fit-min="9.5">${esc(P.LABELS_CURTO[k]||rotuloInd(k))}</div><div class="e">${txt}</div></div>`;
 const blocoImperdoaveis = `<h4>Imperdoáveis</h4><div class="semim">Sem dado de Imperdoáveis pra essa rota.</div>`;
 
 function buscaCliente(){
   const v=$('q').value.trim(); if(!v){$('cli').innerHTML='';return;}
   const id=parseInt(v,10);
-  const rotas = rotasAtuais();
+  const rotas = rotasVisiveis();
   let achado=null, rota=null;
   for(const r of rotas){
     const c=(CLIENT_ROSTER[r]||[]).find(x=> x[0]===id || x[1].toLowerCase()===v.toLowerCase()
@@ -646,7 +677,7 @@ function buscaCliente(){
   let chips;
   if(aba==='VOLUME'){
     // Volume não tem cobertura binária: usa a barra de status de meta por cliente (VOLUME_CLIENTE + online de hoje)
-    chips = grupo.map((k,i)=> tileVolume(k, blocoVolCliente(rota, achado[0], i, k))).join('');
+    chips = volDaRota(rota).map((k,i)=> tileVolume(k, blocoVolCliente(rota, achado[0], i, k))).join('');
   } else {
     chips = grupo.map(k=>{
       if(k==='KS TT' && !kstt) return tileCob(k, 'na', 'não elegível');
@@ -680,10 +711,12 @@ function renderRede(rede){
   const grupo = P.COV_GRUPO[aba];
   let chips;
   if(aba==='VOLUME'){
-    chips = grupo.map((k,i)=>{
+    const ks = [...grupo, ...volExtras().filter(k=>rotasUnicas.some(r=>volDaRota(r).includes(k)))];
+    chips = ks.map(k=>{
       let metaSum=0, realSum=0, temMeta=false;
       membros.forEach(([r,cid])=>{
-        const bloco = blocoVolCliente(r, cid, i, k);
+        const i = volDaRota(r).indexOf(k);
+        const bloco = i<0 ? null : blocoVolCliente(r, cid, i, k);
         if(bloco){ metaSum+=bloco[0]; realSum+=bloco[1]; temMeta=true; }
       });
       if(!temMeta || metaSum<=0) return tileVolume(k, null);
