@@ -159,7 +159,7 @@ class TestSecoesE(unittest.TestCase):
                   "E5. Rotas Neutraliza e virtuais"]:
             self.assertIn(t, self.txt)
         self.assertIn("| AM_BND_BASE_CLIENTE | 'Gc. Pa_Di' | PA, DI | sim |", self.txt)
-        self.assertIn("| AT | Matriz | 3 | 7 |", self.txt)
+        self.assertIn("| AT | Atacados | 3 | 7 |", self.txt)
         self.assertIn("| sem vendedor | SV.AT.3 | AT31 |", self.txt)
         self.assertIn("| Neutraliza | SV.AT.3 | 431 |", self.txt)
         self.assertIn("| normal | SV.AT.1 | 411 |", self.txt)

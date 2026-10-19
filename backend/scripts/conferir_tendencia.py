@@ -617,8 +617,8 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
             por[c.gc][1].add(c.rota)
             por[c.gc][2] += 1
         rel.p("\nNo painel (base de clientes já filtrada), por sigla:")
-        rel.tabela(["sigla", "região", "supervisões", "rotas", "clientes"],
-                   [[g, next((rg for rg, gs in M.REGIOES.items() if g in gs), "**fora das regiões**"),
+        rel.tabela(["sigla", "nome", "supervisões", "rotas", "clientes"],
+                   [[g, M.GC_NOMES.get(g, "**fora de M.GC_NOMES**"),
                      len(por[g][0]), len(por[g][1]), por[g][2]] for g in M.GC_ATIVAS + sorted(set(por) - set(M.GC_ATIVAS))])
         est = estado["est_base"]
         rel.p("\nLinhas ignoradas da base de clientes, por gerência e motivo:")

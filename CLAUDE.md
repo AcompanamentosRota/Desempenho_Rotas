@@ -33,8 +33,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   - Gerências do painel na fonte (`M.GC_ORIGEM`): `Gc. G1/G2/G3/Ap/It_Mo` conferidas; `Gc. At/An/Sl/Rv/Pa_Di/Ur_Ri/Gu_Po`
     A CONFIRMAR (vistas no comodato). As agrupadas (It_Mo, Pa_Di, Ur_Ri, Gu_Po) são separadas pelo prefixo do supervisor
     (`Sv. Pa. 3` → `SV.PA.3` → `PA`; `M.GC_SIGLAS_ORIGEM`); prefixo fora da gerência entra e vai para o log.
-    16 siglas em 3 regiões (`M.REGIOES`: Matriz G1 G2 G3 AT AP · Sul AN SL RV MO IT · Norte RI UR GU PO PA DI), no payload
-    em `REGIOES`; `GC_ATIVAS` mantém as 6 antigas primeiro (o front ordena por região).
+    16 siglas com o nome da praça em `M.GC_NOMES` (fonte única, no payload em `GC_NOMES`), na ordem do painel:
+    AN AP AT G1 G2 G3 PA DI RV SL GU PO IT MO UR RI. `GC_ATIVAS` (payload) = as com dados, nessa ordem (é também a de
+    `DATA`); o front lista as 16 por `GC_NOMES` (sem dados = desabilitada) e rotula "GC.G1 · Goiânia 01" (`rotuloGc`).
+    Não há mais regiões: payload antigo com `REGIOES` é ignorado (sem `GC_NOMES`: ordem do `GC_ATIVAS`, só o código).
     Supervisores vêm com espaço (`Sv. G3. 1`). Ignorar `Sv. Bl.*` (balcão), rotas `EV*` e supervisor fora de
     `SV.<sigla>.<n>` (também na At); as ignoradas são contadas por gerência e motivo no log.
   - Agrupadores têm grafia própria (`Cctm 2l Pet`, `Ks Tt`...). `Cervejas` é cobertura E volume.
@@ -116,9 +118,12 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - **Validação por gerência**: gerência sem rotas, metas ou Real = aviso; quedas (rotas, clientes, volume real) só contra
   a mesma gerência publicada (gerência nova não é comparada).
 - **Front**: abre na entrada (DIRETORIA / GERÊNCIA; sol/lua só no fundo da entrada, `localStorage 'drotas_entrada'`).
-  Diretoria = todas as gerências (ou uma região). Cards abrem a cascata única (`abreIndicador` → `pintaCascata`):
-  gerências → supervisões → rotas → clientes, linhas com os números de `agrega()` (nada recalculado). Resumo: Diretoria
-  em faixas de 8 gerências, seletor de uma gerência; placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada).
+  Diretoria: filtro "Todas as gerências" ou uma delas (`sel.dgc`, separado do `sel.gc` da Gerência; volta para "Todas"
+  ao reabrir a Diretoria). Cards abrem a cascata única (`abreIndicador` → `pintaCascata`): gerências → supervisões →
+  rotas → clientes; com uma gerência no filtro da Diretoria, começa nas supervisões dela (`ctxGerencia`), como na
+  Gerência. Linhas com os números de `agrega()` (nada recalculado). Resumo segue o filtro (Diretoria "Todas": as 16
+  em faixas de 8; uma gerência: gerência + supervisões; sem seletor próprio); placa ATENÇÃO só com
+  `CONFIG.LIMIAR_ATENCAO` (null = desligada). Del Valle Frut continua fora da Diretoria, mesmo com uma gerência.
   Rodapé: "Karen Oliveira - Inteligência de Mercado".
 - **Decisões aceitas** (diferem do arquivo antigo, montado à mão): visitas de hoje pelo campo `VISITA_HOJE` do SAP.
 - **Semana**: `SEMANA_NUM` conta a partir da 1ª segunda-feira do mês; dias antes dela são da última semana do mês anterior.

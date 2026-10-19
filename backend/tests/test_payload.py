@@ -28,7 +28,7 @@ from tests.reverso import fontes_de, online_de
 DADOS = Path(__file__).resolve().parent / "dados"
 HOJE = date(2026, 10, 13)
 # chaves que o arquivo antigo não tinha (acrescentadas no fim do payload)
-CHAVES_NOVAS = {"FECHAMENTO", "REGIOES", "NEUTRALIZA_ROTAS", "VIRTUAIS_ROTAS", "OCULTAS", "GC_SEM_OCULTAS",
+CHAVES_NOVAS = {"FECHAMENTO", "GC_NOMES", "NEUTRALIZA_ROTAS", "VIRTUAIS_ROTAS", "OCULTAS", "GC_SEM_OCULTAS",
                 "VOLUME_EXTRA", "COMODATO_CLIENTE"}
 
 
@@ -49,9 +49,12 @@ class TestIdaEVolta(unittest.TestCase):
         self.assertEqual([k for k in self.g if k not in CHAVES_NOVAS], list(self.p))
         self.assertFalse(self.g["FECHAMENTO"])
         for k in ["MES_LABEL", "TOTAL_DIAS_UTEIS", "DIA_ONTEM", "DIA_HOJE", "PACE_ONTEM_PCT", "SEMANA_NUM",
-                  "SEMANA_TIPO", "DIA_SEMANA", "GC_ATIVAS", "NOME_SUPERVISOR", "LABELS", "GROUPS", "COV_GRUPO",
+                  "SEMANA_TIPO", "DIA_SEMANA", "NOME_SUPERVISOR", "LABELS", "GROUPS", "COV_GRUPO",
                   "LABELS_CURTO", "SEGS", "DIAS", "FONTES"]:
             self.assertEqual(self.g[k], self.p[k], k)
+        # as mesmas gerências, agora na ordem de M.GC_NOMES (a amostra é da ordem antiga: G1, G2, G3, AP, IT, MO)
+        self.assertEqual(sorted(self.g["GC_ATIVAS"]), sorted(self.p["GC_ATIVAS"]))
+        self.assertEqual(self.g["GC_ATIVAS"], ["AP", "G1", "G2", "G3", "IT", "MO"])
 
     def test_arvore_e_ordem(self):
         self.assertEqual({gc: {sv: list(r) for sv, r in s.items()} for gc, s in self.g["DATA"].items()},

@@ -336,8 +336,6 @@ body.rs-travado{overflow:hidden}
 .rs-par{grid-template-columns:repeat(2,minmax(0,1fr))}
 .rs-k{min-width:0}
 .rs-faixa+.rs-faixa{margin-top:10px}
-.rs-sel{flex:0 1 220px;background:var(--escuro-2);color:#fff;border:1px solid var(--escuro-borda2);border-radius:10px;
-  padding:8px 26px 8px 10px;font-size:13px}
 .rs-sec{font-size:10px;color:var(--cinza-txt);white-space:nowrap;margin-top:2px}
 .rs-ok{color:var(--verde)} .rs-bad{color:var(--ruim)}
 .rs-k.rs-on.rs-ok,.rs-k.rs-on.rs-bad{color:#fff}
