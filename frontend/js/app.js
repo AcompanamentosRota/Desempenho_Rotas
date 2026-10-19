@@ -546,7 +546,8 @@ clicavel($('cSem'), ()=>{
    filtro: Diretoria = gerências; gerência = supervisões; supervisão = rotas; rota = clientes. Cada linha usa
    agrega() das rotas do grupo, o mesmo número dos cards (nada de tendência recalculada aqui). Nas supervisões
    de uma gerência, a última linha é "Neutraliza" (as rotas Neutraliza juntas; dentro, as rotas e os clientes;
-   fora da Venda Zero). As virtuais não têm linha, mas estão no total da gerência: linhas + virtuais = card.
+   fora da Venda Zero). As virtuais não têm linha, mas estão no total da gerência: uma nota discreta no fim das
+   supervisões mostra só a Meta e o Real delas (sem rotas nem clientes), e linhas + nota = card.
    Ordem: maior tendência primeiro (cobertura e Venda Zero: maior %); no fechamento, pelo % realizado. */
 const VOLTAR = {gc:'← Gerências', sv:'← Supervisões', rota:'← Rotas'};
 let CASC = null;     // {k, pilha:[{nivel, chave, gc, rotas, nome}]}
@@ -592,6 +593,15 @@ function gruposDo(ctx, k){
     return {nome:'Rota '+r, rotas:[r], info:`${titulo(d.consultor)} · ${d.baseTotal} clientes`,
       filho:{nivel:'cli', chave:r, gc:ctx.gc, rotas:[r], nome:'Rota '+r}};
   });
+}
+
+// rotas virtuais da gerência: sem linha, rota ou cliente; só a Meta e o Real, para a conta das linhas fechar com o card
+function notaVirtuais(k, gc){
+  const rs = rotasDe(gc, '').filter(ehVirtual);
+  const b = rs.length ? agrega(rs).ind[k] : null;
+  if(!b || b.unavailable) return '';
+  const f = ehVolume(k) ? fmt0 : fmtN;
+  return `<div class="cNota" data-meta="${b.meta}" data-real="${b.real}">Inclui rotas virtuais: Meta ${f(b.meta)} · Real ${f(b.real)}</div>`;
 }
 
 // números de uma linha: os mesmos de agrega()/caixaOnline() do card
@@ -651,7 +661,7 @@ function pintaCascata(){
     const chave = x => (x.m && x.m.dir!=null) ? x.m.dir : -Infinity;
     grupos.sort((x,y)=> (x.g.fim?1:0)-(y.g.fim?1:0) || (x.m?0:1)-(y.m?0:1) || chave(y)-chave(x));
     $('dCorpo').innerHTML = volta + `<div class="cLista">${grupos.map((x,i)=>linhaGrupo(x.g, x.m, k, i)).join('')
-      || '<div class="vazio">Nada neste filtro.</div>'}</div>`;
+      || '<div class="vazio">Nada neste filtro.</div>'}${ctx.nivel==='sv' ? notaVirtuais(k, ctx.gc) : ''}</div>`;
     $('dCorpo').querySelectorAll('.cLin[data-i]').forEach(el=>clicavel(el, ()=>{
       pilha.push(grupos[Number(el.dataset.i)].g.filho); pintaCascata();
     }));

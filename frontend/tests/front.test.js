@@ -378,6 +378,8 @@ function lerGaveta(page){
       meio: (el.querySelector('.cMeio') || {}).textContent || ''})),
     clientes: [...document.querySelectorAll('#dCorpo .cCli')].map(el => Number(el.dataset.dif)),
     itens: document.querySelectorAll('#dCorpo .item').length,
+    nota: [...document.querySelectorAll('#dCorpo .cNota')].map(el => ({texto: el.textContent, meta: Number(el.dataset.meta),
+      real: Number(el.dataset.real), ultima: el === el.parentElement.lastElementChild})),
   }));
 }
 const somaMeta = ls => ls.filter(l => !l.off).reduce((a, l) => a + l.meta, 0);
@@ -472,8 +474,9 @@ describe('Parte D — cascata', {skip: pular}, () => {
     const n = g.linhas[g.linhas.length - 1];
     assert.deepEqual([n.nome, n.meta, n.real, n.dir], ['Neutraliza', esperado.meta, esperado.real, esperado.dir]);
     assert.equal(n.meio, `${esperado.onl}meta do dia ${esperado.md}`, 'Online e Meta do dia');
-    assert.equal(await page.textContent('#dCorpo .cLin:last-child .cNome small'), '1 rota');
-    await page.click('#dCorpo .cLin:last-child');
+    const iN = g.linhas.length - 1;      // a linha "Neutraliza" é a última linha (depois dela só a nota das virtuais)
+    assert.equal(await page.textContent(`#dCorpo .cLin[data-i="${iN}"] .cNome small`), '1 rota');
+    await page.click(`#dCorpo .cLin[data-i="${iN}"]`);
     g = await lerGaveta(page);
     assert.equal(g.tit, 'Refrigerantes · Neutraliza · G1');
     assert.equal(g.volta, '← Supervisões');
@@ -506,9 +509,49 @@ describe('Parte D — cascata', {skip: pular}, () => {
     assert.equal(g.linhas[2].meta, an.a41);
     assert.ok(an.virt > 0);
     assert.ok(Math.abs(somaMeta(g.linhas) + an.virt - an.card) < 1e-6, 'linhas + virtuais = card');
-    await page.click('#dCorpo .cLin:last-child');
+    await page.click('#dCorpo .cLin[data-i="2"]');
     g = await lerGaveta(page);
     assert.deepEqual(g.linhas.map(l => l.nome), ['Rota A41']);
+    assert.deepEqual(g.nota, [], 'a nota das virtuais só fica nas supervisões');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('nota das rotas virtuais no fim das supervisões: só Meta e Real, e a conta fecha com o card', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const virtuais = (k, gc) => page.evaluate(([k, gc]) => {
+      const b = agrega(rotasDe(gc, '').filter(ehVirtual)).ind[k], f = ehVolume(k) ? fmt0 : fmtN;
+      return {meta: b.meta, real: b.real, texto: `Inclui rotas virtuais: Meta ${f(b.meta)} · Real ${f(b.real)}`,
+              card: agrega(rotasDe(gc, '')).ind[k].meta};
+    }, [k, gc]);
+    for(const [k, aba] of [['VOL REFRIGERANTES', 'VOLUME'], ['CCTM 2L PET', 'ICS_GC']]){
+      for(const gc of ['AN', 'RV']){
+        await filtra(page, {gc});
+        const g = await cascata(page, k, aba), v = await virtuais(k, gc);
+        assert.equal(g.nota.length, 1, `${gc} ${k}`);
+        assert.deepEqual([g.nota[0].texto, g.nota[0].meta, g.nota[0].real, g.nota[0].ultima], [v.texto, v.meta, v.real, true]);
+        assert.match(g.nota[0].texto, /^Inclui rotas virtuais: Meta [\d.,]+ · Real [\d.,]+$/, 'sem rota nem cliente');
+        assert.ok(Math.abs(somaMeta(g.linhas) + g.nota[0].meta - v.card) < 1e-6, `${gc} ${k}: linhas + nota = card`);
+        await page.keyboard.press('Escape');
+      }
+    }
+    // sem virtuais na gerência, na Venda Zero (virtuais fora dela) e no nível das rotas: sem nota
+    await filtra(page, {gc: 'G1'});
+    assert.deepEqual((await cascata(page, 'VOL REFRIGERANTES', 'VOLUME')).nota, []);
+    await page.keyboard.press('Escape');
+    await filtra(page, {gc: 'AN'});
+    assert.deepEqual((await cascata(page, 'VENDAZERO', 'ICS_GC')).nota, []);
+    await page.keyboard.press('Escape');
+    await filtra(page, {gc: 'AN', sv: 'SV.AN.1'});
+    assert.deepEqual((await cascata(page, 'VOL REFRIGERANTES', 'VOLUME')).nota, []);
+    await page.keyboard.press('Escape');
+    // Diretoria: a nota aparece ao abrir a gerência, não na lista de gerências (que já somam as virtuais)
+    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    let g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
+    assert.deepEqual(g.nota, []);
+    await page.click(`#dCorpo .cLin[data-i="${g.linhas.findIndex(l => l.nome === 'Gerência AN')}"]`);
+    g = await lerGaveta(page);
+    assert.equal(g.nota.length, 1);
     assert.deepEqual(erros, []);
     await ctx.close();
   });

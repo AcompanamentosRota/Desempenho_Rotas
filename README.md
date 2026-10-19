@@ -138,8 +138,9 @@ escolha). A casa vermelha do topo volta para a entrada.
   (card, listas, contagens e revertidos). A 551 não tem cliente corrente na base (só histórico na Ap/At) e
   por isso não aparece; se voltar, entra como Neutraliza.
 - **Rotas virtuais** (A42, A43, A44, R32): ocultas em todo o painel (cascata, listas, filtros, busca e Resumo);
-  Volume, ICS GC e Novos Negócios só no total da gerência; fora da Venda Zero. Por isso, na AN e na RV, as
-  linhas da cascata somam o card menos as virtuais.
+  Volume, ICS GC e Novos Negócios só no total da gerência; fora da Venda Zero. Para a conta fechar, a cascata
+  traz no fim das supervisões uma nota discreta só com os números delas (ex.: "Inclui rotas virtuais: Meta 56.453 ·
+  Real 11.733"), sem rotas nem clientes: linhas + nota = card.
 - Supervisão que só tem rotas Neutraliza ou virtuais (SV.G1.5, SV.AN.4...) não aparece; a que mistura soma só
   as rotas normais. SV.G3.3 continua oculta. Na gerência **AT** nenhuma supervisão é oculta (a 431 vai para a
   linha "Neutraliza"; a 411 é rota normal).
