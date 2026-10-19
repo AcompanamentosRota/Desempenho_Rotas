@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -591,11 +591,13 @@ def comodato_cliente(por_cliente: dict, real_gdm: dict, excluir: set[str]) -> di
 
 # ------------------------------------------------------------------ tudo junto
 def rotas_neutraliza(clientes: list[Cliente]) -> set[str]:
-    """Rotas cuja supervisão (a mais comum entre os clientes, como no payload) é Neutraliza."""
-    por_rota: dict[str, Counter] = defaultdict(Counter)
-    for c in clientes:
-        por_rota[c.rota][c.sv] += 1
-    return {r for r, svs in por_rota.items() if svs.most_common(1)[0][0] in M.NEUTRALIZA}
+    """Rotas Neutraliza (M.NEUTRALIZA_ROTAS) presentes na base de clientes."""
+    return {c.rota for c in clientes if c.rota in M.NEUTRALIZA_ROTAS}
+
+
+def rotas_virtuais(clientes: list[Cliente]) -> set[str]:
+    """Rotas virtuais (M.VIRTUAIS_ROTAS) presentes na base de clientes."""
+    return {c.rota for c in clientes if c.rota in M.VIRTUAIS_ROTAS}
 
 
 def decidir_fechamento(cons: Consulta, hoje: date, linhas_cal: list[dict], gc_da_rota: dict[str, str]) -> Calendario | None:
@@ -650,17 +652,19 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
         seg_hoje = carregar_vendas(cons, anomes_hoje, gcs, rota, online, so_pedidos_hoje=True)[-1]
         return cob, comp, mcli, {**seg_hoje, **seg}
 
-    # Neutraliza nunca entra na Venda Zero: fora da lista, das geladeiras ativas e do rateio da meta
-    neutraliza = rotas_neutraliza(clientes)
+    # Neutraliza e virtuais nunca entram na Venda Zero: fora da lista, das geladeiras ativas e do rateio da meta.
+    # A tag de geladeira e o Desempenho GDM (busca de cliente) valem para a Neutraliza; a virtual não aparece.
+    virtuais = rotas_virtuais(clientes)
+    fora_vz = rotas_neutraliza(clientes) | virtuais
 
     def comodato():
         if cal.fechamento:   # fechamento: Venda Zero, tag de geladeira e Desempenho GDM indisponíveis
             return None, {}, {}, {}
         try:
             vz, atv, vz_meta, por_cli = carregar_comodato(cons, anomes, rota,
-                                                          {r: g for r, g in gc_da_rota.items() if r not in neutraliza})
-            return ({r: v for r, v in vz.items() if r not in neutraliza},
-                    {r: v for r, v in atv.items() if r not in neutraliza}, vz_meta, por_cli)
+                                                          {r: g for r, g in gc_da_rota.items() if r not in fora_vz})
+            return ({r: v for r, v in vz.items() if r not in fora_vz},
+                    {r: v for r, v in atv.items() if r not in fora_vz}, vz_meta, por_cli)
         except Exception as erro:   # noqa: BLE001
             log.warning("Comodato indisponível (%s); Venda Zero ficará indisponível nesta execução.", erro)
             return None, {}, {}, {}
@@ -697,7 +701,7 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
             if meta is None and real is None:
                 continue
             if caso in (modelo.SEM_CURVA, modelo.SEM_META_ROTA) or (caso == modelo.CURVA and fonte_neg == ROTA_META):
-                casos[caso].append(f"{r}/{M.LABELS[k]}")
+                casos[caso].append(f"{r}/{M.LABELS.get(k) or M.VOLUME_EXTRA[k]['label']}")
             volume[r][k] = VolumeRota(
                 meta=meta, real=real or 0.0, meta_neg_clientes=nm,
                 neg_restante=None if cal.fechamento else rest,
@@ -713,6 +717,13 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                       + ", ".join(casos[modelo.SEM_CURVA]))
     if casos[modelo.SEM_META_ROTA]:
         avisos.append("meta = soma de META_NEG (sem META_VOLUME da rota) em: " + ", ".join(casos[modelo.SEM_META_ROTA]))
+    # volume extra (Del Valle Frut): gerência sem META_VOLUME nem META_NEG fica sem o card (indicador indisponível)
+    for k in M.INDICADORES_VOLUME_EXTRA:
+        for gc in M.VOLUME_EXTRA[k]["gcs"]:
+            rotas_gc = [r for r in rotas_painel if gc_da_rota.get(r) == gc]
+            if rotas_gc and not any(volume.get(r, {}).get(k) and volume[r][k].meta is not None for r in rotas_gc):
+                avisos.append(f"{M.VOLUME_EXTRA[k]['label']}: {gc} sem meta (META_VOLUME e META_NEG de "
+                              f"'{M.AGRUPADORES_VOLUME_EXTRA[k]}' zeradas ou ausentes): o card não aparece")
     for a in avisos:
         log.warning(a)
     # barra por cliente: (Meta NEG do cliente, Vol Real do cliente) onde o cliente tem meta
@@ -734,4 +745,4 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                   volume_cliente=so_painel(vol_cli), online=online,
                   vendazero=so_painel(vendazero) if vendazero is not None else None,
                   vz_meta=vz_meta, comodato_ativos=so_painel(ativos), segmento_venda=segmento, avisos=avisos,
-                  comodato_cliente=so_painel(comodato_cliente(por_cli_comodato, vm.real_gdm_cliente, neutraliza)))
+                  comodato_cliente=so_painel(comodato_cliente(por_cli_comodato, vm.real_gdm_cliente, virtuais)))

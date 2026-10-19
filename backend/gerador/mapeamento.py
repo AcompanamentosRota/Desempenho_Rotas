@@ -231,13 +231,19 @@ VOLUME_EXTRA = {"VOL DEL VALLE FRUT": {"label": "Del Valle Frut", "gcs": ["G2"]}
 INDICADORES_VOLUME_EXTRA = list(VOLUME_EXTRA)
 INDICADORES_VOLUME_TODOS = INDICADORES_VOLUME + INDICADORES_VOLUME_EXTRA
 
-# Supervisões Neutraliza (rotas 151, 251, I31, M31): sem card, coluna ou linha em lugar nenhum; Meta e Real
-# de Volume, ICS GC e Novos Negócios entram só no total da gerência; Venda Zero nunca.
-# ÚNICA fonte da lista: vai para o payload (NEUTRALIZA) e o front lê de lá.
-NEUTRALIZA = ["SV.G1.5", "SV.G2.5", "SV.IT.3", "SV.MO.3"]
+# Rotas Neutraliza e virtuais: listas POR ROTA (valem em qualquer gerência, inclusive na AT, e independem da
+# supervisão). ÚNICA fonte: vão para o payload (NEUTRALIZA_ROTAS, VIRTUAIS_ROTAS) e o front lê de lá.
+# Neutraliza: Meta e Real de Volume, ICS GC e Novos Negócios no total da gerência; na tela, uma linha "Neutraliza"
+# por gerência (cascata e filtro de supervisão) com as rotas e os clientes dentro; fora do Resumo de Vendas, do
+# "puxa a média" e da Venda Zero. A 551 não tem cliente corrente na base (só histórico na Ap/At): fica na lista
+# para entrar como Neutraliza se voltar.
+NEUTRALIZA_ROTAS = ["A41", "431", "251", "I31", "M31", "C31", "R31", "S31", "U31", "151", "O21", "551"]
+# Virtuais: ocultas em todo o painel (cascata, listas, filtro, busca, Resumo); só no total da gerência
+# (Volume, ICS GC, NN); fora da Venda Zero
+VIRTUAIS_ROTAS = ["A42", "A43", "A44", "R32"]
 # Supervisões ocultas: fora do "puxa a média" e das listas de clientes (payload OCULTAS)
 OCULTAS = ["SV.G3.3"]
-# Gerências em que nada é oculto (nem Neutraliza, nem ocultas, nem "sem vendedor")
+# Gerências em que nenhuma supervisão é oculta (nem as de OCULTAS, nem "sem vendedor"); as listas por rota valem
 GC_SEM_OCULTAS = ["AT"]
 
 # Segmentos elegíveis ao KS TT (mesma regra do front: KSTT_SEG)
@@ -260,8 +266,9 @@ AGRUPADORES_VOLUME = {
     "VOL AGUA MINERAL": "Agua Mineral", "VOL DEST+ART+CND": "Dest+Art+Cnd",
 }
 AGRUPADORES_ORIGEM = sorted(set(AGRUPADORES_COBERTURA.values()) | set(AGRUPADORES_VOLUME.values()))
-# volume extra (VOLUME_EXTRA). A CONFIRMAR (descoberta): grafia do agrupador
-AGRUPADORES_VOLUME_EXTRA = {"VOL DEL VALLE FRUT": "DV Frut"}
+# volume extra (VOLUME_EXTRA). Agrupador oficial "Del Valle Frut" (conferido em 19/10/2026: META_VOLUME e META_NEG
+# nas rotas da G2; "Dv Frut" traz os mesmos números, mas não é o oficial)
+AGRUPADORES_VOLUME_EXTRA = {"VOL DEL VALLE FRUT": "Del Valle Frut"}
 # consultas de volume (Vol Real, META_NEG, meta do dia, META_VOLUME): os 5 macros + os extras
 AGRUPADORES_VOLUME_CONSULTA = list(AGRUPADORES_VOLUME.values()) + list(AGRUPADORES_VOLUME_EXTRA.values())
 

@@ -156,16 +156,63 @@ class TestSecoesE(unittest.TestCase):
     def test_secoes(self):
         self.assertNotIn("ERRO", self.txt)
         for t in ["E1. Gerências nos 3 modelos", "E2. Gc. At", "E3. Agrupadores novos", "E4. Desempenho GDM",
-                  "E5. Neutraliza"]:
+                  "E5. Rotas Neutraliza e virtuais"]:
             self.assertIn(t, self.txt)
         self.assertIn("| AM_BND_BASE_CLIENTE | 'Gc. Pa_Di' | PA, DI | sim |", self.txt)
-        self.assertIn("| AT | Matriz | 3 | 6 |", self.txt)
+        self.assertIn("| AT | Matriz | 3 | 7 |", self.txt)
         self.assertIn("| sem vendedor | SV.AT.3 | AT31 |", self.txt)
-        self.assertIn("`DV Frut` encontrado; `Sucos` encontrado", self.txt)
-        self.assertIn("| SV.G1.5 | 151 |", self.txt)
+        self.assertIn("| Neutraliza | SV.AT.3 | 431 |", self.txt)
+        self.assertIn("| normal | SV.AT.1 | 411 |", self.txt)
+        self.assertIn("`Del Valle Frut` encontrado; `Sucos` encontrado", self.txt)
+        # E5 por rota: Meta e Real de Refrigerantes (sintético, G1: meta 1000, real 150 + 300 + 450)
+        self.assertIn("| 151 | Neutraliza | G1 | SV.G1.5 | 3 | 1.000,0 | 900,0 |", self.txt)
+        self.assertIn("| aparece (linha Neutraliza) |", self.txt)
+        self.assertIn("| A42 | virtual | AN | SV.AN.4 | 3 |", self.txt)
+        self.assertIn("| oculta (só no total) |", self.txt)
+        self.assertIn("| 551 | Neutraliza | — | — | 0 | — | — | — | **fora da base de clientes** (não aparece) |", self.txt)
         self.assertIn("| cliente 20 |", self.txt)
         self.assertNotIn("| cliente 21 |", self.txt)
 
     def test_sem_pessoas_nem_clientes(self):
         for v in ["CLIENTE TESTE", "SUPERVISOR G1", "CONSULTOR", "ROTA SEM VENDEDOR", "REDE TESTE", "0000010"]:
             self.assertNotIn(v, self.txt)
+
+    def test_del_valle_frut_por_rota_da_g2(self):
+        self.assertIn("E3b. Del Valle Frut na G2: meta e real por rota", self.txt)
+        # sintético: META_VOLUME 80 e META_NEG 50 + 30 por rota da G2; Vol Real 8 por cliente (3 clientes)
+        self.assertIn("| G211 | G2 | normal | 80,0 | 80,0 | 80,0 | 24,0 | 30% |", self.txt)
+        self.assertIn("| 251 | G2 | Neutraliza | 80,0 | 80,0 | 80,0 | 24,0 | 30% |", self.txt)
+        self.assertIn("Card de Del Valle Frut: **aparece**", self.txt)
+
+    def test_rota_551(self):
+        self.assertIn("E5b. Rota 551", self.txt)
+        self.assertIn("| clientes correntes e ativos (o que o painel lê) | 0 |", self.txt)
+        self.assertIn("a 551 **não aparece** porque não tem cliente corrente e ativo na base de clientes (nenhuma versão)",
+                      self.txt)
+
+
+class TestSecoesSemMetaDv(unittest.TestCase):
+    def test_sem_meta_o_card_nao_aparece(self):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "frontend" / "tests"))
+        import sintetico
+        txt = conferir_tendencia.conferir(ConsultaFalsa(sintetico.dados(False, sem_meta_dv=True)),
+                                          date(2026, 10, 13))[0].texto("E3b")
+        self.assertNotIn("ERRO", txt)
+        self.assertIn("| G211 | G2 | normal | — | — | — | 24,0 | — |", txt)
+        self.assertIn("**Sem meta de `Del Valle Frut`: o card não aparece**", txt)
+
+
+class TestRota551NaBase(unittest.TestCase):
+    """Se a 551 voltar à base de clientes (corrente e ativa), aparece como Neutraliza na gerência dela."""
+
+    def test_volta_como_neutraliza(self):
+        d = copy.deepcopy(DADOS)
+        d[M.OBJ_BASE_CLIENTE] = DADOS[M.OBJ_BASE_CLIENTE] + [
+            dict(_cliente(5501, "551", "X", "Boteco", "Seg", True, sv="Sv. At. 3"), **{CB.GC: "Gc. At"})]
+        txt = conferir_tendencia.conferir(ConsultaFalsa(d), date(2026, 10, 13))[0].texto("551")
+        self.assertNotIn("ERRO", txt)
+        self.assertIn("| clientes correntes e ativos (o que o painel lê) | 1 |", txt)
+        self.assertIn("a 551 tem 1 clientes correntes na AT e entra como **Neutraliza** na gerência AT", txt)
+        self.assertIn("| 551 | Neutraliza | AT | SV.AT.3 | 1 |", txt)
+        self.assertNotIn("5501", txt)

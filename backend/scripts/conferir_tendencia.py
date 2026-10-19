@@ -18,8 +18,10 @@ nomes ou códigos de clientes) com:
   7. META_VOLUME e META_COBERTURA por gerência no mês atual e no próximo (critério de virada);
   8. colunas do comodato que podem indicar giro do mês anterior (GIRO, MES, ANT): só nomes e contagens;
   9. tempo de cada consulta, total e antes x depois;
-  E1-E6. 16 gerências, Gc. At, agrupadores novos (DV Frut, Sucos, Ades, Powerade), Desempenho GDM, Neutraliza
-     e tamanho dos JSONs (este no workflow); E7 = seção 4 (aceite), sem mudança.
+  E1-E6. 16 gerências, Gc. At, agrupadores novos (Del Valle Frut, Sucos, Ades, Powerade) e E3b Del Valle Frut na
+     G2 (meta e real por rota), Desempenho GDM, E5 rotas Neutraliza e virtuais (por rota: gerência, supervisão,
+     clientes, Meta e Real de Refrigerantes, aparece/oculta) e E5b rota 551, tamanho dos JSONs (este no workflow);
+     E7 = seção 4 (aceite), sem mudança.
 """
 from __future__ import annotations
 
@@ -303,7 +305,8 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
                 calc[(r, k)] = modelo.meta_e_restante(metas_vol.get(r, {}).get(k), curva_mes.get(r, {}).get(k),
                                                       (curva_rest or {}).get(r, {}).get(k, 0.0), restantes,
                                                       cal.total_dias_uteis, direto=fonte == fontes.ROTA_META)
-        estado.update(calc=calc, vm=vm, metas_vol=metas_vol, neg_a=(neg_mes, neg_rest), fonte_neg=fonte)
+        estado.update(calc=calc, vm=vm, metas_vol=metas_vol, neg_a=(neg_mes, neg_rest), fonte_neg=fonte,
+                      curva=(curva_mes, curva_rest))
 
         def valores(rotas: list[str], k: str) -> list:
             def s(d):
@@ -638,10 +641,11 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
             # o nome do supervisor só classifica ("sem vendedor"); nunca vai para o relatório
             tipo = ("rota eventual (EV*)" if not M.rota_do_painel(r) else "balcão (SV.BL.*)"
                     if sv.startswith(M.SV_IGNORAR_PREFIXOS) else "fora do padrão" if not M.sv_do_painel(sv)
-                    else "Neutraliza" if sv in M.NEUTRALIZA else "sem vendedor"
-                    if "SEM VENDEDOR" in normalizar(l.get(CB.NOME_SUPERVISOR)) else "normal")
+                    else "Neutraliza" if r in M.NEUTRALIZA_ROTAS else "virtual" if r in M.VIRTUAIS_ROTAS
+                    else "sem vendedor" if "SEM VENDEDOR" in normalizar(l.get(CB.NOME_SUPERVISOR)) else "normal")
             grupos[(tipo, sv, r)] += numero(l.get(CB.QUANTIDADE))
-        rel.p("Na At nada é oculto; EV*, SV.BL.* e supervisor fora do padrão continuam fora (filtros globais).")
+        rel.p("Na At nenhuma supervisão é oculta; as listas por rota (Neutraliza e virtuais) valem; EV*, SV.BL.* e "
+              "supervisor fora do padrão continuam fora (filtros globais).")
         rel.tabela(["tipo", "supervisão", "rota", "clientes"],
                    [[t, sv, r, int(n)] for (t, sv, r), n in sorted(grupos.items())] or [["—", "—", "—", 0]])
     etapa("E2 Gc. At", atacados)
@@ -662,12 +666,46 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
                                                                   M.AGRUPADORES_VOLUME.values()]
         rel.p("\nConfere a grafia em mapeamento.py: " + "; ".join(
             f"`{a}` {'encontrado' if normalizar(a) in achados else '**NÃO encontrado**'}" for a in esperados))
-        _, metas_vol = fontes.carregar_metas(cons, anomes, None)
-        k = M.INDICADORES_VOLUME_EXTRA[0]
-        g2 = [r for r in estado["rotas"] if gc_da_rota[r] in M.VOLUME_EXTRA[k]["gcs"]]
-        rel.p(f"\nMETA_VOLUME de `{M.AGRUPADORES_VOLUME_EXTRA[k]}` por rota da {', '.join(M.VOLUME_EXTRA[k]['gcs'])}:")
-        rel.tabela(["rota", "META_VOLUME"], [[r, _n(metas_vol.get(r, {}).get(k))] for r in g2] or [["—", None]])
     etapa("E3 agrupadores", agrupadores)
+
+    k_extra = M.INDICADORES_VOLUME_EXTRA[0]
+    rel.h(f"E3b. {M.VOLUME_EXTRA[k_extra]['label']} na {', '.join(M.VOLUME_EXTRA[k_extra]['gcs'])}: meta e real por rota")
+
+    def del_valle():
+        k, ag = k_extra, M.AGRUPADORES_VOLUME_EXTRA[k_extra]
+        vm = estado.get("vm") or fontes.carregar_volume_real(cons, anomes, gcs, None)
+        metas_vol = estado.get("metas_vol") or fontes.carregar_metas(cons, anomes, None)[1]
+        if "curva" in estado:
+            (neg_mes, neg_rest), fonte = estado["curva"], estado["fonte_neg"]
+        else:
+            neg_mes, neg_rest, fonte = fontes.carregar_curva_neg(cons, anomes, gcs, None, hoje)
+        direto = fonte == fontes.ROTA_META
+        cal = estado["cal"]
+        restantes = cal.total_dias_uteis - cal.dia_ontem
+        linhas, metas, reais = [], [], []
+        for gc in M.VOLUME_EXTRA[k]["gcs"]:
+            for r in [r for r in estado["rotas"] if gc_da_rota[r] == gc]:
+                mv, nm = metas_vol.get(r, {}).get(k), neg_mes.get(r, {}).get(k)
+                meta = modelo.meta_e_restante(mv, nm, (neg_rest or {}).get(r, {}).get(k, 0.0), restantes,
+                                              cal.total_dias_uteis, direto=direto)[0]
+                real = vm.real.get(r, {}).get(k)
+                metas.append(meta)
+                reais.append(real or 0.0)
+                tipo = ("Neutraliza" if r in M.NEUTRALIZA_ROTAS else "virtual" if r in M.VIRTUAIS_ROTAS else "normal")
+                linhas.append([r, gc, tipo, _n(mv), _n(nm), _n(meta), _n(real), _pct(real, meta)])
+        meta_tot = sum(m for m in metas if m is not None)
+        linhas.append(["**total**", "", "", None, None, _n(meta_tot), _n(sum(reais)), _pct(sum(reais), meta_tot)])
+        rel.p(f"Agrupador `{ag}` (M.AGRUPADORES_VOLUME_EXTRA). META_VOLUME pela rota da meta; META_NEG do mês pela "
+              "rota da meta (a curva do gerador); Meta = a do gerador (META_VOLUME; sem ela, a META_NEG); Vol Real com "
+              "os status do SAC.")
+        rel.tabela(["rota", "gerência", "tipo", "META_VOLUME", "META_NEG do mês", "Meta (gerador)", "Vol Real", "% real"],
+                   linhas)
+        if any(m is not None for m in metas):
+            rel.p(f"\nCard de {M.VOLUME_EXTRA[k]['label']}: **aparece** (rotas com meta: "
+                  f"{sum(m is not None for m in metas)} de {len(metas)}).")
+        else:
+            rel.p(f"\n**Sem meta de `{ag}`: o card não aparece** (o gerar.py avisa no log).")
+    etapa("E3b Del Valle Frut", del_valle)
 
     rel.h("E4. Desempenho GDM: amostra de 20 clientes com geladeira Total Ko (sem identificação)")
 
@@ -716,22 +754,97 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
               + f" · clientes com situações diferentes entre as geladeiras: {mistos}")
     etapa("E4 GDM", gdm)
 
-    rel.h("E5. Neutraliza")
+    rel.h("E5. Rotas Neutraliza e virtuais")
 
     def neutraliza():
-        rotas_n = fontes.rotas_neutraliza(estado["clientes"])
-        por_sv = defaultdict(list)
+        por_rota = defaultdict(lambda: [defaultdict(int), defaultdict(int), set()])   # rota -> [gc, sv, PVs]
         for c in estado["clientes"]:
-            if c.rota in rotas_n:
-                por_sv[c.sv].append(c.rota)
+            if c.rota in M.NEUTRALIZA_ROTAS or c.rota in M.VIRTUAIS_ROTAS:
+                p = por_rota[c.rota]
+                p[0][c.gc] += 1
+                p[1][c.sv] += 1
+                p[2].add(c.pv)
         vz = fontes.carregar_comodato(cons, anomes, None, gc_da_rota)[0]
-        rel.p("Neutraliza (M.NEUTRALIZA): entram só no total da gerência (Meta/Real de Volume, ICS e NN), ficam fora "
-              "das listas e da Venda Zero.")
-        rel.tabela(["supervisão", "rotas", "clientes", "geladeiras zeradas (fora da Venda Zero)"],
-                   [[sv, ", ".join(sorted(set(por_sv.get(sv, [])))) or "**não encontrada na base**", len(por_sv.get(sv, [])),
-                     sum(e_.vdz for r in set(por_sv.get(sv, [])) for e_ in (vz or {}).get(r, []))] for sv in M.NEUTRALIZA])
+        vm = estado.get("vm") or fontes.carregar_volume_real(cons, anomes, gcs, None)
+        metas_vol = estado.get("metas_vol") or fontes.carregar_metas(cons, anomes, None)[1]
+        k = "VOL REFRIGERANTES"
+        linhas = []
+        for tipo, rotas in (("Neutraliza", M.NEUTRALIZA_ROTAS), ("virtual", M.VIRTUAIS_ROTAS)):
+            for r in rotas:
+                if r not in por_rota:
+                    linhas.append([r, tipo, None, None, 0, None, None, None, "**fora da base de clientes** (não aparece)"])
+                    continue
+                gc_, sv_, pvs = por_rota[r]
+                # meta como o gerador (META_VOLUME da rota; sem ela, soma de META_NEG)
+                meta = (estado.get("calc", {}).get((r, k)) or (metas_vol.get(r, {}).get(k),))[0]
+                linhas.append([r, tipo, max(gc_, key=gc_.get), max(sv_, key=sv_.get), len(pvs), _n(meta),
+                               _n(vm.real.get(r, {}).get(k)), sum(e_.vdz for e_ in (vz or {}).get(r, [])),
+                               "aparece (linha Neutraliza)" if tipo == "Neutraliza" else "oculta (só no total)"])
+        rel.p("Listas por rota (M.NEUTRALIZA_ROTAS, M.VIRTUAIS_ROTAS). Neutraliza: no total da gerência (Meta/Real de "
+              "Volume, ICS e NN) e numa linha \"Neutraliza\" da cascata e do filtro de supervisão; fora do Resumo, do "
+              "\"puxa a média\" e da Venda Zero. Virtuais: ocultas em todo o painel, só no total da gerência; fora "
+              "da Venda Zero. Meta e Real de Refrigerantes do mês de referência; geladeiras zeradas que ficam fora "
+              "da Venda Zero.")
+        rel.tabela(["rota", "tipo", "gerência", "supervisão", "clientes", "Meta Refrigerantes", "Real Refrigerantes",
+                    "geladeiras zeradas (fora da VZ)", "no painel"], linhas)
+    etapa("E5 Neutraliza e virtuais", neutraliza)
+
+    rel.h("E5b. Rota 551 (Neutraliza que não aparece no payload)")
+
+    def rota_551(r: str = "551"):
+        CB = M.ColBase
+        corrente = {c.pv for c in estado["clientes"] if c.rota == r}
+        # todas as versões da base (sem o filtro de corrente/ativo): só gerência, supervisão, status e datas
+        sel_b = fontes._colunas(cons, M.OBJ_BASE_CLIENTE, [CB.ROTA, CB.GC, CB.SUPERVISOR, CB.STATUS, CB.QUANTIDADE],
+                                ["FL_CORRENTE", "DATA_FINAL"])
+        versoes = defaultdict(lambda: [0.0, ""])
+        for l in cons.linhas(M.OBJ_BASE_CLIENTE, sel_b, eq(CB.ROTA, r)):
+            if fontes._rota(l.get(CB.ROTA)) != r:
+                continue
+            v = versoes[(limpar(l.get(CB.GC)), M.codigo_sv(l.get(CB.SUPERVISOR)), limpar(l.get(CB.STATUS)),
+                         limpar(l.get("FL_CORRENTE")) or "—")]
+            v[0] += numero(l.get(CB.QUANTIDADE))
+            v[1] = max(v[1], limpar(l.get("DATA_FINAL"))[:10])
+        # Análise Meta no mês de referência: venda pela rota do cliente, metas e META_NEG pela rota da meta
+        vendas = [l for l in cons.linhas(M.OBJ_META, [CM.ROTA, CM.CLIENTE, CM.VOL_MES],
+                                         e(eq(CM.ANOMES, anomes), eq(CM.ROTA, r))) if fontes._rota(l.get(CM.ROTA)) == r]
+        metas = [l for l in cons.linhas(M.OBJ_META, [CM.META_ROTA, CM.META_VOLUME, CM.META_COBERTURA],
+                                        e(eq(CM.META_ANOMES, anomes), eq(CM.META_ROTA, r)))
+                 if fontes._rota(l.get(CM.META_ROTA)) == r]
+        neg = [l for l in cons.linhas(M.OBJ_META, [CM.META_ROTA, CM.META_NEG], e(eq(CM.ANOMES, anomes), eq(CM.META_ROTA, r)))
+               if fontes._rota(l.get(CM.META_ROTA)) == r]
+        por_cli = fontes.carregar_comodato(cons, anomes, None, gc_da_rota)[3]
+        geladeiras = sum(v[1] for (rr, _), v in por_cli.items() if rr == r)
+        meta_vol = sum(numero(l.get(CM.META_VOLUME)) for l in metas)
+        meta_cob = sum(numero(l.get(CM.META_COBERTURA)) for l in metas)
+        meta_neg = sum(numero(l.get(CM.META_NEG)) for l in neg)
+        rel.tabela(["base de clientes", "valor"], [
+            ["clientes correntes e ativos (o que o painel lê)", len(corrente)],
+            ["versões no histórico (todas as situações)", int(sum(v[0] for v in versoes.values()))],
+            [f"clientes com venda no mês ({anomes}, rota do cliente)", len({l.get(CM.CLIENTE) for l in vendas})],
+            ["FX_VOL_PADRAO_FAT no mês (todos os agrupadores)", _n(sum(numero(l.get(CM.VOL_MES)) for l in vendas))],
+            ["META_VOLUME da rota (soma dos agrupadores)", _n(meta_vol)],
+            ["META_COBERTURA da rota (soma dos agrupadores)", _n(meta_cob, 0)],
+            ["META_NEG do mês (rota da meta)", _n(meta_neg)],
+            ["geladeiras Total Ko em contrato", geladeiras]])
+        rel.p("\nVersões da rota na base de clientes (sem o filtro FL_CORRENTE = 'S' e Ativo):")
+        rel.tabela(["gerência", "supervisão", "situação", "FL_CORRENTE", "linhas", "último DATA_FINAL"],
+                   [[*k_, int(v[0]), v[1] or None] for k_, v in sorted(versoes.items(), key=lambda kv: kv[1][1])]
+                   or [["—", "—", "—", "—", 0, None]])
+        if corrente:
+            gc_ = gc_da_rota[r]
+            rel.p(f"\nResultado: a {r} tem {len(corrente)} clientes correntes na {gc_} e entra como **Neutraliza** "
+                  f"na gerência {gc_}.")
+        else:
+            ultima = max(versoes.items(), key=lambda kv: kv[1][1], default=None)
+            rel.p(f"\nResultado: a {r} **não aparece** porque não tem cliente corrente e ativo na base de clientes"
+                  + (f" (última versão: {ultima[0][0]} / {ultima[0][1]}, {ultima[0][2]}, até {ultima[1][1]})" if ultima else
+                     " (nenhuma versão)")
+                  + ("; também não tem venda nem meta no mês" if not vendas and not (meta_vol or meta_cob or meta_neg)
+                     else "; **tem venda ou meta no mês: conferir a base de clientes**")
+                  + ". Fica em M.NEUTRALIZA_ROTAS: se voltar à base, entra como Neutraliza na gerência a que pertencer.")
         rel.p("\nE7: o aceite contra o SAC é a seção 4 (mesma regra de volume do main para G1, G2, G3, AP, IT e MO).")
-    etapa("E5 Neutraliza", neutraliza)
+    etapa("E5b rota 551", rota_551)
 
     # 9. tempos --------------------------------------------------------------------------
     total = time.monotonic() - inicio

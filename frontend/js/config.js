@@ -10,8 +10,9 @@ const CONFIG = Object.freeze({
   PAYLOAD_POLL_MS: 15 * 60 * 1000,    // revalida payload.json a cada 15 min (mesmo ritmo do back-end)
   STATUS_TICK_MS: 60 * 1000,          // reavalia a tag "Online" a cada 1 min
   JANELA_VENDAS: { inicio: '07:30', fim: '17:29' },   // horário de Brasília
-  // Neutraliza e ocultas vêm do payload (NEUTRALIZA/OCULTAS, lista única no back-end). Esta lista só vale
-  // para um payload antigo, sem essas chaves: fora do "puxa a média" (além de "ROTA SEM VENDEDOR").
+  // Neutraliza, virtuais e ocultas vêm do payload (NEUTRALIZA_ROTAS/VIRTUAIS_ROTAS/OCULTAS, listas únicas no
+  // back-end). Esta lista só vale para um payload antigo, sem essas chaves: fora do "puxa a média" (além de
+  // "ROTA SEM VENDEDOR") e das listas de clientes.
   SV_EXCLUIDOS: ['SV.G1.5', 'SV.G2.5', 'SV.G3.3', 'SV.IT.3', 'SV.MO.3'],
   // Regiões e gerências: vêm do payload (REGIOES); esta cópia só vale para payload antigo
   REGIOES: {

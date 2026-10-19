@@ -106,7 +106,9 @@ fechamento do mês; o cron não usa), `--fechamento "Setembro/26"` (só sobrepõ
   balcão (`Sv. Bl.`) e rotas eventuais (`EV*`) ficam fora, também na At. As gerências que vêm juntas na fonte
   (It_Mo, Pa_Di, Ur_Ri, Gu_Po) são separadas pelo código do supervisor.
 - **Cobertura**: cliente com `FX_COBERTURA_REALIZADO > 0` no agrupador (13 agrupadores do painel).
-- **Online**: medidas `*_WF_ONLINE` (pedidos de hoje).
+- **Online**: medidas `*_WF_ONLINE` (pedidos de hoje). Em dia útil, das 07:00 às 18:45, se a consulta vier sem
+  nenhum cliente online (o Datasphere em recarga: 0 às 09:28 de 19/10/2026, 199 rotas às 10:13) e o
+  `online.json` publicado for do mesmo dia e tiver dados, ele fica (o vazio não é gravado) e o log avisa.
 - **Metas**: `META_COBERTURA_Chave_Meta_SAP` (ICS e Novos Negócios), `META_VOLUME_Chave_Meta_SAP` (meta
   de volume da rota), `META_NEG` (curva diária e meta por cliente da barra de volume) e
   `META_RECUPERAVEL_ROTA` (meta do dia do volume).
@@ -126,11 +128,24 @@ escolha). A casa vermelha do topo volta para a entrada.
   com botões para subir um nível. Cada linha mostra Meta e Real, Online e meta do dia (verde quando o online
   bate a meta do dia) e a tendência, da maior para a menor (no fechamento do mês, o % realizado). Na lista de
   clientes de volume: Meta, Real (faturado + online de hoje), diferença e %, do mais negativo para o mais positivo.
-- **Neutraliza** (SV.G1.5/151, SV.G2.5/251, SV.IT.3/I31, SV.MO.3/M31): não aparecem em card, coluna, linha
-  nem lista; Meta e Real de Volume, ICS GC e Novos Negócios entram só no total da gerência; Venda Zero nunca.
-  SV.G3.3 continua oculta. Na gerência **AT** nada é oculto.
-- **Del Valle Frut**: card de volume só na G2 (inclusive por supervisor e rota), com as mesmas regras de
-  volume e nunca somado aos 5 agrupadores; fora do Resumo e da Diretoria.
+- **Rotas Neutraliza** (por rota, em qualquer gerência: A41, 431, 251, I31, M31, C31, R31, S31, U31, 151, O21 e
+  551): Meta e Real de Volume, ICS GC e Novos Negócios entram no total da gerência (e da Diretoria). Na cascata,
+  ao abrir as supervisões de uma gerência, a última linha é **"Neutraliza"** (todas as rotas Neutraliza da
+  gerência juntas: Meta, Real, Online, meta do dia e tendência, com o nº de rotas); dentro dela, as rotas e,
+  dentro de cada rota, os clientes. O filtro de supervisão tem a opção "Neutraliza" (cards só dessas rotas).
+  Os clientes delas aparecem na busca (tag de geladeira e Desempenho GDM). Ficam fora das supervisões, do
+  Resumo de vendas (nenhuma coluna; os números seguem no total da gerência), do "puxa a média" e da Venda Zero
+  (card, listas, contagens e revertidos). A 551 não tem cliente corrente na base (só histórico na Ap/At) e
+  por isso não aparece; se voltar, entra como Neutraliza.
+- **Rotas virtuais** (A42, A43, A44, R32): ocultas em todo o painel (cascata, listas, filtros, busca e Resumo);
+  Volume, ICS GC e Novos Negócios só no total da gerência; fora da Venda Zero. Por isso, na AN e na RV, as
+  linhas da cascata somam o card menos as virtuais.
+- Supervisão que só tem rotas Neutraliza ou virtuais (SV.G1.5, SV.AN.4...) não aparece; a que mistura soma só
+  as rotas normais. SV.G3.3 continua oculta. Na gerência **AT** nenhuma supervisão é oculta (a 431 vai para a
+  linha "Neutraliza"; a 411 é rota normal).
+- **Del Valle Frut** (agrupador "Del Valle Frut"): card de volume só na G2 (inclusive por supervisor e rota), com
+  as mesmas regras de volume e nunca somado aos 5 agrupadores; fora do Resumo e da Diretoria. Sem META_VOLUME
+  nem META_NEG do agrupador na G2, o card não aparece e o gerador avisa no log.
 - **Desempenho GDM** (busca de cliente, aba Volume): Real = faturado do mês + online de hoje em Refrigerantes,
   Água Mineral, Sucos, Ades e Powerade; Meta = META_EQPTO das geladeiras Total Ko. Tag e cor pela situação da
   geladeira (GIRO_STATUS_MES_ATUAL): Giro Zero = vermelho "Venda Zero · x geladeira(s)"; Baixo Giro = amarelo;
@@ -164,8 +179,8 @@ curva; rota sem META_VOLUME usa a soma de META_NEG como meta; sem nenhuma das du
 indisponível. Cada caso aparece nos avisos da execução, assim como a meta da rota não distribuída nos
 clientes, por gerência (META_VOLUME − soma de META_NEG).
 
-Supervisão e gerência somam as rotas e recalculam o % (rotas Neutraliza entram só no total da gerência,
-porque têm supervisão própria). O volume online de hoje não entra na tendência: fica no quadro Online
+Supervisão e gerência somam as rotas e recalculam o % (rotas Neutraliza e virtuais entram no total da
+gerência, nunca na supervisão; as Neutraliza têm a linha "Neutraliza"). O volume online de hoje não entra na tendência: fica no quadro Online
 e na coluna própria do Resumo de vendas. A **barra por cliente** (busca, aba Volume) é a exceção:
 Real do cliente = Vol Real do cliente + volume online de hoje do cliente (`online.json` → `volumeCliente`),
 sobre a META_NEG do cliente, com a mesma regra de cor (vermelho abaixo do ritmo do mês, amarelo até 100%,

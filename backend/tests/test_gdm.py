@@ -73,9 +73,10 @@ class TestComodatoCliente(unittest.TestCase):
     def test_desconhecido_vai_para_o_log(self):
         self.assertTrue(any("desconhecido" in m for m in self.logs.output), self.logs.output)
 
-    def test_sem_geladeira_e_neutraliza_ficam_fora(self):
+    def test_sem_geladeira_fica_fora_e_neutraliza_tem_tag(self):
         self.assertEqual(set(self.cc), {"1007382", "1011537", "1015300", "1015301", "1015302"})
-        self.assertNotIn("151", self.p["COMODATO_CLIENTE"])
+        # rota Neutraliza: o cliente aparece na busca com a tag e o Desempenho GDM
+        self.assertEqual(self.p["COMODATO_CLIENTE"]["151"], {"2001": [30.0, 0.0, "ok", 1]})
 
     def test_online_gdm(self):
         # 1011537: Refrigerantes 1,25 (fixture base) + Sucos 1,5; 1015300: Refrigerantes 2,5 + Powerade 0,5

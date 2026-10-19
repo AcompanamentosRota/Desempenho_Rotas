@@ -20,20 +20,25 @@ function nomeSv(sv){
   return titulo(n.split(/\s+/)[0]);
 }
 const rotuloSv = sv => { const n = nomeSv(sv); return n ? `${sv} · ${n}` : sv; };
-/* Neutraliza e ocultas: a lista única fica no back-end (mapeamento.py) e chega no payload (NEUTRALIZA,
-   OCULTAS, GC_SEM_OCULTAS). Neutraliza: sem card, coluna, linha nem cliente em lista; Meta e Real de Volume,
-   ICS GC e Novos Negócios só no total da gerência (a Venda Zero delas já vem indisponível do back-end).
-   Ocultas: fora do "puxa a média" e das listas de clientes. Na gerência AT nada é oculto.
+/* Neutraliza e virtuais (por rota, em qualquer gerência) e ocultas (por supervisão): listas únicas no back-end
+   (mapeamento.py), no payload em NEUTRALIZA_ROTAS, VIRTUAIS_ROTAS, OCULTAS e GC_SEM_OCULTAS.
+   Neutraliza: Meta e Real de Volume, ICS GC e Novos Negócios no total da gerência; na cascata e no filtro de
+   supervisão aparecem juntas como "Neutraliza" (rotas e clientes dentro); fora das supervisões, do Resumo, do
+   "puxa a média" e da Venda Zero (que já vem indisponível do back-end). Virtuais: ocultas em tudo, só no total.
+   Ocultas: fora do "puxa a média" e das listas de clientes; na gerência AT nenhuma supervisão é oculta.
    CONFIG.SV_EXCLUIDOS só vale para payload antigo, sem essas chaves. */
+const SV_NEUTRA = 'Neutraliza';    // "supervisão" do filtro e da cascata que junta as rotas Neutraliza da gerência
 const gcDoSv = sv => String(sv||'').split('.')[1] || '';
 const semOcultas = sv => ((P && P.GC_SEM_OCULTAS) || ['AT']).includes(gcDoSv(sv));
-const ehNeutraliza = sv => !!(P && P.NEUTRALIZA) && !semOcultas(sv) && P.NEUTRALIZA.includes(sv);
+const ehNeutraliza = r => ((P && P.NEUTRALIZA_ROTAS) || []).includes(r);
+const ehVirtual = r => ((P && P.VIRTUAIS_ROTAS) || []).includes(r);
+const ehNormal = r => !ehNeutraliza(r) && !ehVirtual(r);
 const ehOculta = sv => !semOcultas(sv) && ((P && P.OCULTAS) ? P.OCULTAS.includes(sv)
   : CONFIG.SV_EXCLUIDOS.includes(sv));
 // supervisões sem SUP/VEND de verdade ("ROTA SEM VENDEDOR" / Neutraliza / ocultas)
 // não entram na comparação "quem mais puxa a média para baixo"
-const svExcluido = sv => !semOcultas(sv) && (ehNeutraliza(sv) || ehOculta(sv)
-  || /SEM VENDEDOR/i.test(((P && P.NOME_SUPERVISOR)||{})[sv]||''));
+const svExcluido = sv => sv===SV_NEUTRA || (!semOcultas(sv) && (ehOculta(sv)
+  || /SEM VENDEDOR/i.test(((P && P.NOME_SUPERVISOR)||{})[sv]||'')));
 // rótulo de indicador: LABELS do payload ou, para o volume extra (Del Valle Frut), VOLUME_EXTRA
 const rotuloInd = k => (LABELS||{})[k] || (((P && P.VOLUME_EXTRA)||{})[k]||{}).label || k;
 const volExtras = () => Object.keys((P && P.VOLUME_EXTRA) || {});
@@ -139,13 +144,20 @@ const rotasDe = (gc,sv) => !DATA[gc] ? [] : sv ? Object.keys(DATA[gc][sv]||{}) :
 const rotaSv = (gc,r) => (ROTA_IDX[r]||[])[1];
 const nodo = (gc,r) => { const i = ROTA_IDX[r]; return i ? DATA[i[0]][i[1]][r] : undefined; };
 const ehKstt = c => KSTT_SEG.has((SEGS[c[2]]||'').toUpperCase());
-// rotas do filtro para os indicadores: no total da gerência (e da Diretoria) inclui as Neutraliza
+// rotas de uma supervisão sem as Neutraliza e as virtuais; as Neutraliza da gerência (linha "Neutraliza")
+const rotasNormais = (gc,sv) => rotasDe(gc, sv).filter(ehNormal);
+const rotasNeutraliza = gc => rotasDe(gc, '').filter(ehNeutraliza);
+// supervisões que aparecem (selects, colunas, linhas): as que têm alguma rota normal
+const svsVisiveis = gc => svsDe(gc).filter(s=>rotasNormais(gc, s).length);
+// supervisão do filtro para a rota: "Neutraliza" ou a da rota
+const svDaRota = r => ehNeutraliza(r) ? SV_NEUTRA : rotaSv(sel.gc, r);
+// rotas do filtro para os indicadores: o total da gerência (e da Diretoria) inclui Neutraliza e virtuais;
+// uma supervisão soma só as rotas normais dela e "Neutraliza", só as Neutraliza da gerência
 const rotasAtuais = () => sel.modo==='dir' ? gcsComDados(sel.reg).flatMap(g=>rotasDe(g,''))
-  : sel.rota ? [sel.rota] : rotasDe(sel.gc, sel.sv);
-// o que aparece: supervisões e rotas sem as Neutraliza (selects, colunas, linhas, contagem de clientes)
-const svsVisiveis = gc => svsDe(gc).filter(s=>!ehNeutraliza(s));
-const rotaNeutraliza = r => ehNeutraliza(rotaSv(sel.gc, r));
-const rotasVisiveis = () => rotasAtuais().filter(r=>!rotaNeutraliza(r));
+  : sel.rota ? [sel.rota] : sel.sv===SV_NEUTRA ? rotasNeutraliza(sel.gc)
+  : sel.sv ? rotasNormais(sel.gc, sel.sv) : rotasDe(sel.gc, '');
+// o que aparece (clientes, visitas, rotas, busca): sem as virtuais
+const rotasVisiveis = () => rotasAtuais().filter(r=>!ehVirtual(r));
 // listas de clientes: também sem as ocultas (na AT, tudo aparece)
 const rotasListas = () => rotasVisiveis().filter(r=>!ehOculta(rotaSv(sel.gc, r)));
 
@@ -157,7 +169,7 @@ function agrega(rotas){
   const volAgg={}; volKs.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,neg:0,mdia:null,n:0});
   rotas.forEach(r=>{
     const d=nodo(sel.gc,r);
-    if(!rotaNeutraliza(r)){          // clientes das Neutraliza não aparecem (só os indicadores somam)
+    if(!ehVirtual(r)){               // clientes das virtuais não aparecem (só os indicadores somam)
       tot.baseTotal+=d.baseTotal||0;
       if(d.compraram!=null){tot.compraram=(tot.compraram||0)+d.compraram;
         tot.semCompra=(tot.semCompra||0)+d.semCompra;}
@@ -228,10 +240,12 @@ function montaFiltros(){
   $('fgc').innerHTML = Object.entries(regioes()).map(([rg, gcs])=>
     `<optgroup label="${esc(rg)}">${gcs.map(opc).join('')}</optgroup>`).join('') + fora.map(opc).join('');
   $('fgc').value = sel.gc;
+  const neutra = rotasNeutraliza(sel.gc);
   $('fsv').innerHTML = `<option value="">Todos os SVs</option>`+
-    svsVisiveis(sel.gc).map(s=>`<option value="${esc(s)}">${esc(rotuloSv(s))}</option>`).join('');
+    svsVisiveis(sel.gc).map(s=>`<option value="${esc(s)}">${esc(rotuloSv(s))}</option>`).join('')+
+    (neutra.length ? `<option value="${SV_NEUTRA}">${SV_NEUTRA}</option>` : '');
   $('fsv').value = sel.sv;
-  const rs = rotasDe(sel.gc, sel.sv).filter(r=>!rotaNeutraliza(r));
+  const rs = sel.sv===SV_NEUTRA ? neutra : sel.sv ? rotasNormais(sel.gc, sel.sv) : rotasDe(sel.gc,'').filter(r=>!ehVirtual(r));
   $('frota').innerHTML = `<option value="">Todas rotas</option>`+
     rs.map(r=>`<option value="${esc(r)}">Rota ${esc(r)}</option>`).join('');
   $('frota').value = sel.rota;
@@ -245,7 +259,7 @@ $('fgc').onchange = e => {
 $('fsv').onchange = e => {sel.sv=e.target.value; sel.rota=''; render();};
 $('frota').onchange = e => {
   sel.rota=e.target.value;
-  if(sel.rota && !sel.sv) sel.sv = rotaSv(sel.gc, sel.rota);
+  if(sel.rota && !sel.sv) sel.sv = svDaRota(sel.rota);
   render();
 };
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
@@ -298,8 +312,10 @@ function render(){
 
   $('puxa').innerHTML = piorSv();
 
-  // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir
-  const oculta = k => k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable);
+  // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir;
+  // a Venda Zero não vale para a Neutraliza: sem card quando o filtro só tem rotas Neutraliza
+  const soNeutra = rotas.length>0 && rotas.every(ehNeutraliza);
+  const oculta = k => (k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable)) || (k==='VENDAZERO' && soNeutra);
   // volume extra (Del Valle Frut): card só na aba Volume e só quando as rotas do filtro trazem o dado
   const extras = (aba==='VOLUME' && sel.modo!=='dir') ? volExtras().filter(k=>ind[k] && !ind[k].unavailable) : [];
   $('lista').innerHTML = [...GROUPS[aba].filter(k=>!oculta(k)), ...extras].map(k=>linha(k, ind[k], rotas)).join('');
@@ -335,13 +351,13 @@ function piorSv(){
       <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
   }
   if(!sel.sv){
-    // sem SV selecionado: compara as supervisões da gerência
+    // sem SV selecionado: compara as supervisões da gerência (só as rotas normais de cada uma; a Neutraliza fica fora)
     const svs = svsVisiveis(sel.gc);
     if(svs.length < 2) return '';
     let pior=null;
     svs.forEach(sv=>{
       if(svExcluido(sv)) return;
-      const a = agrega(Object.keys(DATA[sel.gc][sv])).ind;
+      const a = agrega(rotasNormais(sel.gc, sv)).ind;
       const disp = grupo.filter(k=>a[k] && !a[k].unavailable);
       if(!disp.length) return;
       const ok = disp.filter(k=>a[k].onPace).length;
@@ -351,8 +367,9 @@ function piorSv(){
     return `<div class="puxa"><div class="t">Supervisão que mais puxa a média para baixo: <b>${esc(pior.rotulo)}</b></div>
       <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
   }
-  // SV selecionado, sem rota: compara as rotas dentro do SV
-  const rotas = Object.keys(DATA[sel.gc][sel.sv]);
+  // SV selecionado, sem rota: compara as rotas dentro do SV (a Neutraliza não entra na comparação)
+  if(sel.sv===SV_NEUTRA) return '';
+  const rotas = rotasNormais(sel.gc, sel.sv);
   if(rotas.length < 2) return '';
   let pior=null;
   rotas.forEach(r=>{
@@ -527,8 +544,9 @@ clicavel($('cSem'), ()=>{
 /* ---------- cascata (gaveta dos cards) ----------
    Uma função para todos os níveis: [gerências ->] supervisões -> rotas -> clientes. O primeiro nível depende do
    filtro: Diretoria = gerências; gerência = supervisões; supervisão = rotas; rota = clientes. Cada linha usa
-   agrega() das rotas do grupo, o mesmo número dos cards (nada de tendência recalculada aqui). Neutraliza não
-   tem linha, mas está no total da gerência: linhas de um nível + Neutraliza = número do card.
+   agrega() das rotas do grupo, o mesmo número dos cards (nada de tendência recalculada aqui). Nas supervisões
+   de uma gerência, a última linha é "Neutraliza" (as rotas Neutraliza juntas; dentro, as rotas e os clientes;
+   fora da Venda Zero). As virtuais não têm linha, mas estão no total da gerência: linhas + virtuais = card.
    Ordem: maior tendência primeiro (cobertura e Venda Zero: maior %); no fechamento, pelo % realizado. */
 const VOLTAR = {gc:'← Gerências', sv:'← Supervisões', rota:'← Rotas'};
 let CASC = null;     // {k, pilha:[{nivel, chave, gc, rotas, nome}]}
@@ -539,27 +557,37 @@ function abreIndicador(k){
   let ctx;
   if(sel.modo==='dir') ctx = {nivel:'gc', chave:sel.reg, rotas:rotasAtuais(), nome:sel.reg ? 'Região '+sel.reg : 'Diretoria'};
   else if(sel.rota) ctx = {nivel:'cli', chave:sel.rota, gc:sel.gc, rotas:[sel.rota], nome:'Rota '+sel.rota};
-  else if(sel.sv) ctx = {nivel:'rota', chave:sel.sv, gc:sel.gc, rotas:rotasDe(sel.gc, sel.sv), nome:rotuloSv(sel.sv)};
+  else if(sel.sv===SV_NEUTRA) ctx = ctxNeutraliza(sel.gc);
+  else if(sel.sv) ctx = {nivel:'rota', chave:sel.sv, gc:sel.gc, rotas:rotasNormais(sel.gc, sel.sv), nome:rotuloSv(sel.sv)};
   else ctx = {nivel:'sv', chave:sel.gc, gc:sel.gc, rotas:rotasDe(sel.gc,''), nome:'Gerência '+sel.gc};
   CASC = {k, pilha:[ctx]};
   abre('', '', '');
   pintaCascata();
 }
 
+const nRotas = rs => `${rs.length} rota${rs.length>1?'s':''}`;
+// nível das rotas Neutraliza de uma gerência (linha "Neutraliza" da cascata ou filtro de supervisão "Neutraliza")
+const ctxNeutraliza = gc => ({nivel:'rota', chave:SV_NEUTRA, gc, rotas:rotasNeutraliza(gc), nome:`${SV_NEUTRA} · ${gc}`});
+
 // grupos do nível (cada um com as rotas que somam e o contexto do nível de baixo)
-function gruposDo(ctx){
+function gruposDo(ctx, k){
   if(ctx.nivel==='gc') return gcsDaRegiao(ctx.chave).map(g=>{
     const rs = rotasDe(g,'');
     return {nome:'Gerência '+g, rotas:rs, off:!DATA[g],
-      info: DATA[g] ? `${svsVisiveis(g).length} supervisões · ${rs.filter(r=>!rotaNeutraliza(r)).length} rotas` : 'sem dados',
+      info: DATA[g] ? `${svsVisiveis(g).length} supervisões · ${rs.filter(r=>!ehVirtual(r)).length} rotas` : 'sem dados',
       filho:{nivel:'sv', chave:g, gc:g, rotas:rs, nome:'Gerência '+g}};
   });
-  if(ctx.nivel==='sv') return svsVisiveis(ctx.gc).map(s=>{
-    const rs = rotasDe(ctx.gc, s);
-    return {nome:rotuloSv(s), rotas:rs, info:`${rs.length} rota${rs.length>1?'s':''}`,
-      filho:{nivel:'rota', chave:s, gc:ctx.gc, rotas:rs, nome:rotuloSv(s)}};
-  });
-  return ctx.rotas.filter(r=>!rotaNeutraliza(r)).map(r=>{
+  if(ctx.nivel==='sv'){
+    const grupos = svsVisiveis(ctx.gc).map(s=>{
+      const rs = rotasNormais(ctx.gc, s);
+      return {nome:rotuloSv(s), rotas:rs, info:nRotas(rs), filho:{nivel:'rota', chave:s, gc:ctx.gc, rotas:rs, nome:rotuloSv(s)}};
+    });
+    // "Neutraliza": as rotas Neutraliza da gerência numa linha só, sempre a última (fora da Venda Zero)
+    const n = ctxNeutraliza(ctx.gc);
+    if(n.rotas.length && k!=='VENDAZERO') grupos.push({nome:SV_NEUTRA, rotas:n.rotas, info:nRotas(n.rotas), fim:true, filho:n});
+    return grupos;
+  }
+  return ctx.rotas.filter(r=>!ehVirtual(r)).map(r=>{
     const d = nodo(ctx.gc, r);
     return {nome:'Rota '+r, rotas:[r], info:`${titulo(d.consultor)} · ${d.baseTotal} clientes`,
       filho:{nivel:'cli', chave:r, gc:ctx.gc, rotas:[r], nome:'Rota '+r}};
@@ -613,15 +641,15 @@ function pintaCascata(){
   const volta = pilha.length>1 ? `<button class="cVolta" id="cVolta">${VOLTAR[pilha[pilha.length-2].nivel]}</button>` : '';
   if(ctx.nivel==='cli'){
     $('dCorpo').innerHTML = volta + '<div id="dLista"></div>';
-    // listas de clientes: sem Neutraliza e sem ocultas (na AT, tudo)
-    const rotas = ctx.rotas.filter(r=>!rotaNeutraliza(r) && !ehOculta(rotaSv(ctx.gc, r)));
+    // listas de clientes: sem virtuais e sem ocultas (na AT, tudo)
+    const rotas = ctx.rotas.filter(r=>!ehVirtual(r) && !ehOculta(rotaSv(ctx.gc, r)));
     if(ehVolume(k)) listaVolume(k, rotas);
     else if(k==='VENDAZERO') listaVendaZero(rotas);
     else listaCobertura(k, rotas);
   } else {
-    const grupos = gruposDo(ctx).map(g=>({g, m: g.off ? null : metricas(k, g.rotas)}));
+    const grupos = gruposDo(ctx, k).map(g=>({g, m: g.off ? null : metricas(k, g.rotas)}));
     const chave = x => (x.m && x.m.dir!=null) ? x.m.dir : -Infinity;
-    grupos.sort((x,y)=> (x.m?0:1)-(y.m?0:1) || chave(y)-chave(x));
+    grupos.sort((x,y)=> (x.g.fim?1:0)-(y.g.fim?1:0) || (x.m?0:1)-(y.m?0:1) || chave(y)-chave(x));
     $('dCorpo').innerHTML = volta + `<div class="cLista">${grupos.map((x,i)=>linhaGrupo(x.g, x.m, k, i)).join('')
       || '<div class="vazio">Nada neste filtro.</div>'}</div>`;
     $('dCorpo').querySelectorAll('.cLin[data-i]').forEach(el=>clicavel(el, ()=>{

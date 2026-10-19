@@ -7,10 +7,13 @@ exatamente o do main (negRestante, metaDia, FECHAMENTO, COMODATO_CLIENTE, gdmCli
 
     python frontend/tests/sintetico.py SAIDA            # dia útil normal (13/10/2026)
     python frontend/tests/sintetico.py SAIDA --fechamento   # fechamento do mês (03/11/2026)
+    python frontend/tests/sintetico.py SAIDA --sem-meta-dv  # dia útil normal sem meta de Del Valle Frut
 
 Cenário: 15 gerências com 2 supervisões x 2 rotas x 3 clientes (a DI fica sem dados, para aparecer
-desabilitada); Neutraliza SV.G1.5/151, SV.G2.5/251, SV.IT.3/I31, SV.MO.3/M31; oculta SV.G3.3/331;
-na AT uma supervisão "sem vendedor" (SV.AT.3). Del Valle Frut só nas rotas da G2.
+desabilitada). Rotas Neutraliza em supervisão própria (SV.G1.5/151, SV.G2.5/251, SV.IT.3/I31, SV.MO.3/M31) e
+misturadas com rotas normais (SV.AT.3/431, SV.PO.2/O21) ou virtuais (SV.AN.4/A41 com as virtuais A42-A44,
+SV.RV.3/R31 com a virtual R32); oculta SV.G3.3/331; na AT a 411 é normal (SV.AT.1) e a SV.AT.3 é
+"sem vendedor". Del Valle Frut só nas rotas da G2.
 """
 from __future__ import annotations
 
@@ -44,8 +47,10 @@ def _supervisoes(sigla: str) -> list[tuple[str, str, str]]:
     n = [1, 2]
     if sigla in ("G1", "G2"):
         n.append(5)            # Neutraliza SV.G1.5 / SV.G2.5
-    if sigla in ("IT", "MO", "G3", "AT"):
-        n.append(3)            # Neutraliza SV.IT.3 / SV.MO.3, oculta SV.G3.3, AT "sem vendedor"
+    if sigla in ("IT", "MO", "G3", "AT", "RV"):
+        n.append(3)            # Neutraliza SV.IT.3 / SV.MO.3, oculta SV.G3.3, AT "sem vendedor", RV R31 + R32
+    if sigla == "AN":
+        n.append(4)            # A41 (Neutraliza) + A42-A44 (virtuais)
     out = []
     for i in n:
         nome = "ROTA SEM VENDEDOR" if (sigla, i) == ("AT", 3) else f"SUPERVISOR {sigla} {i}"
@@ -54,11 +59,13 @@ def _supervisoes(sigla: str) -> list[tuple[str, str, str]]:
 
 
 def _rotas(sigla: str, i: int) -> list[str]:
-    especiais = {("G1", 5): ["151"], ("G2", 5): ["251"], ("IT", 3): ["I31"], ("MO", 3): ["M31"], ("G3", 3): ["331"]}
+    especiais = {("G1", 5): ["151"], ("G2", 5): ["251"], ("IT", 3): ["I31"], ("MO", 3): ["M31"], ("G3", 3): ["331"],
+                 ("AT", 1): ["411", "AT12"], ("AT", 3): ["AT31", "AT32", "431"], ("AN", 4): ["A41", "A42", "A43", "A44"],
+                 ("RV", 3): ["R31", "R32"], ("PO", 2): ["PO21", "PO22", "O21"]}
     return especiais.get((sigla, i), [f"{sigla}{i}{j}" for j in (1, 2)])
 
 
-def dados(fechamento: bool) -> dict:
+def dados(fechamento: bool, sem_meta_dv: bool = False) -> dict:
     base, vendas, vol_real, metas, meta_neg, meta_dia, comodato, meta_vz = [], [], [], [], [], [], [], []
     pv = 10000
     for gi, sigla in enumerate(M.GC_ATIVAS):
@@ -77,10 +84,10 @@ def dados(fechamento: bool) -> dict:
                                          CM.META_NEG: round(vol * fator * parte, 1), "_gc": origem})
                     meta_dia.append({CM.ROTA: rota, CM.AGRUPADOR: ag, CM.DATA: "2026-10-13",
                                      CM.META_RECUPERAVEL: round(vol * fator / 21, 1), "_gc": origem})
-                if sigla == "G2":
-                    metas.append({CM.META_ROTA: rota, CM.META_AGRUPADOR: "DV Frut", CM.META_VOLUME: "80",
+                if sigla == "G2" and not sem_meta_dv:
+                    metas.append({CM.META_ROTA: rota, CM.META_AGRUPADOR: "Del Valle Frut", CM.META_VOLUME: "80",
                                   CM.META_COBERTURA: None})
-                    meta_neg += [{CM.ROTA: rota, CM.META_ROTA: rota, CM.AGRUPADOR: "DV Frut", CM.DATA: d,
+                    meta_neg += [{CM.ROTA: rota, CM.META_ROTA: rota, CM.AGRUPADOR: "Del Valle Frut", CM.DATA: d,
                                   CM.META_NEG: v, "_gc": origem} for d, v in (("2026-10-02", 50.0), ("2026-10-20", 30.0))]
                 for ag in M.AGRUPADORES_COBERTURA.values():
                     metas.append({CM.META_ROTA: rota, CM.META_AGRUPADOR: ag, CM.META_VOLUME: None, CM.META_COBERTURA: "2"})
@@ -108,10 +115,10 @@ def dados(fechamento: bool) -> dict:
                     vol_real.append({CM.ROTA: rota, CM.CLIENTE: str(pv), CM.AGRUPADOR: "Sucos",
                                      CM.NF_STATUS: "Acertado", CM.VOL_MES: 5.0, "_gc": origem})
                     if sigla == "G2":
-                        vendas.append({CM.ROTA: rota, CM.CLIENTE: str(pv), CM.AGRUPADOR: "DV Frut", CM.VOL_MES: 8.0,
+                        vendas.append({CM.ROTA: rota, CM.CLIENTE: str(pv), CM.AGRUPADOR: "Del Valle Frut", CM.VOL_MES: 8.0,
                                        CM.VOL_ONLINE: 2.0 if c == 0 else 0.0, CM.META_VOLUME_CLIENTE: 25.0,
                                        "_gc": origem})
-                        vol_real.append({CM.ROTA: rota, CM.CLIENTE: str(pv), CM.AGRUPADOR: "DV Frut",
+                        vol_real.append({CM.ROTA: rota, CM.CLIENTE: str(pv), CM.AGRUPADOR: "Del Valle Frut",
                                          CM.NF_STATUS: "Acertado", CM.VOL_MES: 8.0, "_gc": origem})
                     giro = GIROS[pv % len(GIROS)]
                     for e in range(0 if pv % 7 == 0 else 1 + (pv % 2)):     # pv múltiplo de 7: sem geladeira
@@ -131,9 +138,9 @@ def dados(fechamento: bool) -> dict:
     return d
 
 
-def gerar(saida: Path, fechamento: bool = False) -> tuple[dict, dict]:
+def gerar(saida: Path, fechamento: bool = False, sem_meta_dv: bool = False) -> tuple[dict, dict]:
     agora = datetime(2026, 11, 3, 10, 30) if fechamento else datetime(2026, 10, 13, 10, 30)
-    f = fontes.carregar(ConsultaFalsa(dados(fechamento)), agora)
+    f = fontes.carregar(ConsultaFalsa(dados(fechamento, sem_meta_dv)), agora)
     p = montar_payload(f)
     o = montar_online(online_ks_tt(f.online, p, f.segmento_venda))
     saida.mkdir(parents=True, exist_ok=True)
@@ -145,4 +152,4 @@ def gerar(saida: Path, fechamento: bool = False) -> tuple[dict, dict]:
 if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.ERROR)
-    gerar(Path(sys.argv[1]), "--fechamento" in sys.argv[2:])
+    gerar(Path(sys.argv[1]), "--fechamento" in sys.argv[2:], "--sem-meta-dv" in sys.argv[2:])

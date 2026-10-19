@@ -28,8 +28,8 @@ from tests.reverso import fontes_de, online_de
 DADOS = Path(__file__).resolve().parent / "dados"
 HOJE = date(2026, 10, 13)
 # chaves que o arquivo antigo não tinha (acrescentadas no fim do payload)
-CHAVES_NOVAS = {"FECHAMENTO", "REGIOES", "NEUTRALIZA", "OCULTAS", "GC_SEM_OCULTAS", "VOLUME_EXTRA",
-                "COMODATO_CLIENTE"}
+CHAVES_NOVAS = {"FECHAMENTO", "REGIOES", "NEUTRALIZA_ROTAS", "VIRTUAIS_ROTAS", "OCULTAS", "GC_SEM_OCULTAS",
+                "VOLUME_EXTRA", "COMODATO_CLIENTE"}
 
 
 def _carregar():

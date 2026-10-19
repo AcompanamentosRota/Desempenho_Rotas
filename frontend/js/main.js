@@ -12,8 +12,9 @@ function aplicaPayload(novo){
   // preserva o filtro atual se ele ainda existir no payload novo
   if(!DATA[sel.gc]) sel = {...sel, gc:primeiraGc(), sv:'', rota:''};
   if(sel.reg && !regioes()[sel.reg]) sel.reg = '';
-  if(sel.sv && !(DATA[sel.gc]||{})[sel.sv]) { sel.sv=''; sel.rota=''; }
-  if(sel.rota && !rotaSv(sel.gc, sel.rota)) sel.rota='';
+  // supervisão: uma que ainda tem rota normal ou "Neutraliza" se a gerência ainda tem rota Neutraliza
+  if(sel.sv && !(sel.sv===SV_NEUTRA ? rotasNeutraliza(sel.gc).length : svsVisiveis(sel.gc).includes(sel.sv))) { sel.sv=''; sel.rota=''; }
+  if(sel.rota && (!rotaSv(sel.gc, sel.rota) || ehVirtual(sel.rota))) sel.rota='';
 }
 
 async function recarregaPayload(){

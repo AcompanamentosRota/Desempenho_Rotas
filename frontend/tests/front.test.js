@@ -31,7 +31,7 @@ const DADOS = {};
 before(async () => {
   if(pular) return;
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'drotas-'));
-  for(const [nome, args] of [['normal', []], ['fech', ['--fechamento']]]){
+  for(const [nome, args] of [['normal', []], ['fech', ['--fechamento']], ['semdv', ['--sem-meta-dv']]]){
     const dir = path.join(tmp, nome);
     execFileSync('python3', [path.join(FRONT, 'tests', 'sintetico.py'), dir, ...args], {cwd: RAIZ});
     DADOS[nome] = dir;
@@ -46,7 +46,7 @@ after(async () => {
 const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json',
   '.png':'image/png', '.webmanifest':'application/manifest+json'};
 
-/* Abre o painel com os dados `nome` ('normal' | 'fech'); devolve {page, erros}. `armazenado` = localStorage inicial. */
+/* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv'); devolve {page, erros}. `armazenado` = localStorage inicial. */
 async function abre(nome, {armazenado = {}, largura = 1200, entrar = 'gc'} = {}){
   const ctx = await browser.newContext({viewport: {width: largura, height: 1000}});
   const page = await ctx.newPage();
@@ -83,45 +83,157 @@ async function filtra(page, {gc, sv = '', rota = '', aba} = {}){
   }, {gc, sv, rota, aba});
 }
 
-describe('Parte B — Neutraliza, ocultas, AT e Del Valle Frut', {skip: pular}, () => {
-  test('Neutraliza fora dos selects, somada no total da gerência', async () => {
+/* opções dos selects de supervisão e de rota */
+const opcoes = page => page.evaluate(() => ({
+  sv: [...document.querySelectorAll('#fsv option')].map(o => o.value).filter(Boolean),
+  rota: [...document.querySelectorAll('#frota option')].map(o => o.value).filter(Boolean),
+}));
+/* Põe o real de todos os indicadores das rotas em `fator` x meta (cobertura e tendência de volume). */
+const ritmo = (page, gc, rotas, fator) => page.evaluate(([gc, rotas, fator]) => rotas.forEach(r => {
+  for(const b of Object.values(nodo(gc, r).indicators)){
+    if(b.unavailable || b.meta == null) continue;
+    b.real = b.meta * fator;
+    if(b.tendencia != null) b.tendencia = b.meta * fator;
+  }
+}), [gc, rotas, fator]);
+
+describe('Parte B — Neutraliza e virtuais por rota, ocultas, AT e Del Valle Frut', {skip: pular}, () => {
+  test('filtro: opção "Neutraliza" abre os cards só dessas rotas; virtuais fora dos selects e no total', async () => {
     const {page, ctx, erros} = await abre('normal');
+    const k = 'VOL REFRIGERANTES';
     await filtra(page, {gc: 'G1', aba: 'VOLUME'});
-    const r = await page.evaluate(() => {
-      const opSv = [...document.querySelectorAll('#fsv option')].map(o => o.value);
-      const opRota = [...document.querySelectorAll('#frota option')].map(o => o.value);
-      const k = 'VOL REFRIGERANTES';
-      const total = agrega(rotasAtuais()).ind[k].meta;
-      const soma = Object.values(DATA.G1).flatMap(s => Object.values(s)).reduce((a, d) => a + d.indicators[k].meta, 0);
-      const visiveis = svsVisiveis('G1').flatMap(s => Object.keys(DATA.G1[s]));
-      const semNeutra = agrega(visiveis).ind[k].meta;
-      const neutra = DATA.G1['SV.G1.5']['151'].indicators[k].meta;
-      return {opSv, opRota, total, soma, semNeutra, neutra, base: agrega(rotasAtuais()).tot.baseTotal,
-              baseVis: visiveis.reduce((a, r) => a + nodo('G1', r).baseTotal, 0)};
-    });
-    assert.ok(!r.opSv.includes('SV.G1.5'));
-    assert.ok(!r.opRota.includes('151'));
+    let op = await opcoes(page);
+    assert.deepEqual(op.sv, ['SV.G1.1', 'SV.G1.2', 'Neutraliza'], 'SV.G1.5 só tem a 151: vira "Neutraliza"');
+    assert.ok(op.rota.includes('151'), 'a rota Neutraliza aparece em "Todas rotas"');
+    let r = await page.evaluate(k => ({total: agrega(rotasAtuais()).ind[k].meta, base: agrega(rotasAtuais()).tot.baseTotal,
+      soma: Object.values(DATA.G1).flatMap(s => Object.values(s)).reduce((a, d) => a + d.indicators[k].meta, 0),
+      baseTodas: Object.values(DATA.G1).flatMap(s => Object.values(s)).reduce((a, d) => a + d.baseTotal, 0)}), k);
     assert.equal(r.total, r.soma);
-    assert.ok(Math.abs(r.total - (r.semNeutra + r.neutra)) < 1e-6);
-    assert.equal(r.base, r.baseVis, 'clientes da Neutraliza não contam na base');
+    assert.equal(r.base, r.baseTodas, 'os clientes da Neutraliza contam na base da gerência');
+    // filtro "Neutraliza": só a 151, sem card de Venda Zero e sem "puxa a média"
+    await page.selectOption('#fsv', 'Neutraliza');
+    op = await opcoes(page);
+    assert.deepEqual(op.rota, ['151']);
+    r = await page.evaluate(k => ({meta: agrega(rotasAtuais()).ind[k].meta, n151: DATA.G1['SV.G1.5']['151'].indicators[k].meta,
+      base: document.getElementById('nBase').textContent, sub: document.getElementById('sub').textContent,
+      puxa: document.getElementById('puxa').innerHTML}), k);
+    assert.equal(r.meta, r.n151);
+    assert.equal(r.base, '3');
+    assert.match(r.sub, /· Neutraliza$/);
+    assert.equal(r.puxa, '');
+    await filtra(page, {aba: 'ICS_GC'});
+    let tits = await page.$$eval('#lista .ind .tit', t => t.map(x => x.textContent));
+    assert.ok(tits.includes('CCTM 2L Pet') && !tits.includes('Venda Zero'), 'Venda Zero não vale para a Neutraliza');
+    await filtra(page, {gc: 'G1', aba: 'ICS_GC'});
+    tits = await page.$$eval('#lista .ind .tit', t => t.map(x => x.textContent));
+    assert.ok(tits.includes('Venda Zero'));
+    // AN: SV.AN.4 só tem A41 (Neutraliza) e as virtuais A42-A44
+    await filtra(page, {gc: 'AN', aba: 'VOLUME'});
+    op = await opcoes(page);
+    assert.deepEqual(op.sv, ['SV.AN.1', 'SV.AN.2', 'Neutraliza']);
+    assert.ok(op.rota.includes('A41') && !op.rota.some(x => ['A42', 'A43', 'A44'].includes(x)), op.rota.join('|'));
+    r = await page.evaluate(k => {
+      const todas = rotasDe('AN', ''), vis = todas.filter(x => !['A42', 'A43', 'A44'].includes(x));
+      return {total: agrega(rotasAtuais()).ind[k].meta, soma: todas.reduce((a, x) => a + nodo('AN', x).indicators[k].meta, 0),
+              base: agrega(rotasAtuais()).tot.baseTotal, baseVis: vis.reduce((a, x) => a + nodo('AN', x).baseTotal, 0),
+              rodape: document.getElementById('rodape').textContent};
+    }, k);
+    assert.equal(r.total, r.soma, 'virtuais somam no total da gerência');
+    assert.equal(r.base, r.baseVis, 'clientes das virtuais não aparecem');
+    assert.match(r.rodape, /^5 rotas/);
+    // supervisão mista (SV.PO.2 = PO21, PO22 e a Neutraliza O21): a supervisão soma só as normais
+    await filtra(page, {gc: 'PO', sv: 'SV.PO.2', aba: 'VOLUME'});
+    op = await opcoes(page);
+    assert.deepEqual(op.rota, ['PO21', 'PO22']);
+    r = await page.evaluate(k => ({meta: agrega(rotasAtuais()).ind[k].meta,
+      soma: ['PO21', 'PO22'].reduce((a, x) => a + nodo('PO', x).indicators[k].meta, 0)}), k);
+    assert.equal(r.meta, r.soma);
+    // escolher uma rota Neutraliza em "Todos os SVs" leva o filtro de supervisão para "Neutraliza"
+    await filtra(page, {gc: 'AT', aba: 'VOLUME'});
+    await page.selectOption('#frota', '431');
+    assert.deepEqual(await page.evaluate(() => [sel.sv, sel.rota, document.getElementById('fsv').value]),
+                     ['Neutraliza', '431', 'Neutraliza']);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
-  test('Neutraliza e ocultas fora do "puxa a média" e do Resumo; AT mostra tudo', async () => {
+  test('"puxa a média" sem Neutraliza, virtuais e ocultas; AT e a 411 normais', async () => {
     const {page, ctx, erros} = await abre('normal');
     const r = await page.evaluate(() => ({
-      excl: ['SV.G1.5', 'SV.G2.5', 'SV.IT.3', 'SV.MO.3', 'SV.G3.3', 'SV.AT.3'].map(s => [s, svExcluido(s)]),
-      at: svsVisiveis('AT'),
+      excl: ['Neutraliza', 'SV.G3.3', 'SV.AT.3', 'SV.G1.1'].map(s => [s, svExcluido(s)]),
+      at: svsVisiveis('AT'), at1: rotasNormais('AT', 'SV.AT.1'), at3: rotasNormais('AT', 'SV.AT.3'),
+      neutra: rotasNeutraliza('AT'),
     }));
-    assert.deepEqual(Object.fromEntries(r.excl), {'SV.G1.5': true, 'SV.G2.5': true, 'SV.IT.3': true, 'SV.MO.3': true,
-                                                  'SV.G3.3': true, 'SV.AT.3': false});
-    assert.deepEqual(r.at, ['SV.AT.1', 'SV.AT.2', 'SV.AT.3']);
+    assert.deepEqual(Object.fromEntries(r.excl), {'Neutraliza': true, 'SV.G3.3': true, 'SV.AT.3': false, 'SV.G1.1': false});
+    assert.deepEqual(r.at, ['SV.AT.1', 'SV.AT.2', 'SV.AT.3'], 'na AT nenhuma supervisão é oculta');
+    assert.deepEqual(r.at1, ['411', 'AT12'], '411 é normal');
+    assert.deepEqual(r.at3, ['AT31', 'AT32']);
+    assert.deepEqual(r.neutra, ['431']);
+    // supervisões no ritmo (40% com 33% do mês) e a Neutraliza (ou a virtual) zerada: ninguém "puxa a média"
+    // (na SV.PO.2, somar a O21 derrubaria a supervisão para 27%)
+    for(const [gc, ruins] of [['G1', ['151']], ['AN', ['A41', 'A42', 'A43', 'A44']], ['PO', ['O21']]]){
+      await filtra(page, {gc, aba: 'ICS_GC'});
+      const todas = await page.evaluate(gc => rotasDe(gc, ''), gc);
+      await ritmo(page, gc, todas.filter(x => !ruins.includes(x)), 0.4);
+      await ritmo(page, gc, ruins, 0);
+      await filtra(page, {gc});
+      assert.equal(await page.innerHTML('#puxa'), '', gc);
+    }
+    // controle: com uma supervisão abaixo, ela aparece
+    await ritmo(page, 'G1', ['G111'], 0);
+    await filtra(page, {gc: 'G1'});
+    assert.match(await page.textContent('#puxa'), /Supervisão que mais puxa a média para baixo: SV\.G1\.1/);
+    // AT: a 411 entra na comparação das rotas da SV.AT.1
+    await ritmo(page, 'AT', ['AT12'], 1);
+    await ritmo(page, 'AT', ['411'], 0);
+    await filtra(page, {gc: 'AT', sv: 'SV.AT.1'});
+    assert.match(await page.textContent('#puxa'), /Rota que mais puxa a média para baixo: Rota 411/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Resumo sem coluna de Neutraliza nem de virtual; filtro "Neutraliza" mostra a gerência', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const cabecalhos = () => page.$$eval('#rsFolha .rs-tab thead th', ths => ths.map(t => t.firstChild ? t.firstChild.textContent : ''));
     await filtra(page, {gc: 'G2'});
     await page.click('#btnResumo');
-    const cols = await page.$$eval('#rsFolha .rs-tab thead th', ths => ths.map(t => t.textContent));
-    assert.ok(cols.some(c => c.startsWith('GC.G2')));
-    assert.ok(!cols.some(c => c.includes('SV.G2.5')), cols.join('|'));
+    let cols = await cabecalhos();
+    assert.ok(cols.includes('GC.G2'));
+    assert.ok(!cols.some(c => c.includes('SV.G2.5') || c.includes('Neutraliza') || c === '251'), cols.join('|'));
+    await page.click('#rsVoltar');
+    await filtra(page, {gc: 'AN', sv: 'Neutraliza'});
+    await page.click('#btnResumo');
+    cols = await cabecalhos();
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · Sul GC.AN');
+    assert.ok(cols.includes('SV.AN.1') && !cols.some(c => /SV\.AN\.4|A4\d|Neutraliza/.test(c)), cols.join('|'));
+    await page.click('#rsVoltar');
+    // supervisão mista: colunas só com as rotas normais
+    await filtra(page, {gc: 'PO', sv: 'SV.PO.2'});
+    await page.click('#btnResumo');
+    cols = await cabecalhos();
+    assert.ok(cols.includes('PO21') && cols.includes('PO22') && !cols.includes('O21'), cols.join('|'));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('busca: cliente de rota Neutraliza aparece (tag e GDM); de rota virtual, não', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    await filtra(page, {gc: 'G1', aba: 'VOLUME'});
+    const [pv, gdm] = await page.evaluate(() => {
+      // um cliente com geladeira de situação conhecida (tem tag)
+      const c = CLIENT_ROSTER['151'].find(x => ((P.COMODATO_CLIENTE['151'] || {})[x[0]] || [])[2]);
+      return [c[0], P.COMODATO_CLIENTE['151'][c[0]]];
+    });
+    await page.fill('#q', String(pv));
+    const r = await page.evaluate(() => ({h3: (document.querySelector('#cli h3') || {}).textContent || '',
+      meta: (document.querySelector('#cli .meta') || {}).textContent || '', gdm: document.querySelectorAll('#cli .tileVol.gdm').length}));
+    assert.match(r.meta, /rota 151/);
+    assert.match(r.h3, new RegExp(`${gdm[3]} geladeira`));
+    assert.equal(r.gdm, 1);
+    await filtra(page, {gc: 'AN', aba: 'VOLUME'});
+    const pvVirtual = await page.evaluate(() => CLIENT_ROSTER['A42'][0][0]);
+    await page.fill('#q', String(pvVirtual));
+    assert.equal(await page.innerHTML('#cli'), '');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -144,6 +256,18 @@ describe('Parte B — Neutraliza, ocultas, AT e Del Valle Frut', {skip: pular}, 
     assert.equal(tiles[5], 'Del Valle Frut');
     const resumo = await page.evaluate(() => { RS.pinta(); return true; });
     assert.ok(resumo);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Del Valle Frut sem meta (META_VOLUME e META_NEG): sem card na G2', async () => {
+    const {page, ctx, erros} = await abre('semdv');
+    for(const f of [{gc: 'G2'}, {gc: 'G2', sv: 'SV.G2.1'}, {gc: 'G2', sv: 'SV.G2.1', rota: 'G211'}]){
+      await filtra(page, {...f, aba: 'VOLUME'});
+      const tits = await page.$$eval('#lista .ind .tit', t => t.map(x => x.textContent));
+      assert.ok(tits.includes('Refrigerantes') && !tits.includes('Del Valle Frut'), tits.join('|'));
+    }
+    assert.ok(await page.evaluate(() => DATA.G2['SV.G2.1'].G211.indicators['VOL DEL VALLE FRUT'].unavailable));
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -310,11 +434,11 @@ describe('Parte D — cascata', {skip: pular}, () => {
     await filtra(page, {gc: 'G1'});
     const k = 'VOL REFRIGERANTES';
     const card = await page.evaluate(k => agrega(rotasAtuais()).ind[k], k);
-    const neutra = await page.evaluate(k => DATA.G1['SV.G1.5']['151'].indicators[k].meta, k);
     let g = await cascata(page, k, 'VOLUME');
-    assert.deepEqual(g.linhas.map(l => l.nome).sort(), ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor']);
-    assert.ok(Math.abs(somaMeta(g.linhas) + neutra - card.meta) < 1e-6, 'linhas + Neutraliza = card');
-    assert.ok(decrescente(g.linhas.map(l => l.dir)));
+    assert.deepEqual(g.linhas.map(l => l.nome), [...g.linhas.slice(0, 2).map(l => l.nome), 'Neutraliza']);
+    assert.deepEqual(g.linhas.map(l => l.nome).slice(0, 2).sort(), ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor']);
+    assert.ok(Math.abs(somaMeta(g.linhas) - card.meta) < 1e-6, 'linhas (com a Neutraliza) = card');
+    assert.ok(decrescente(g.linhas.slice(0, 2).map(l => l.dir)));
     assert.match(g.sub, /^Meta [\d.]+ · Real [\d.]+ · tendência \d+%$/, 'D2: números pt-BR');
     await page.click('#dCorpo .cLin[data-i="0"]');
     g = await lerGaveta(page);
@@ -329,7 +453,62 @@ describe('Parte D — cascata', {skip: pular}, () => {
     await page.click('#cVolta'); await page.click('#cVolta');
     g = await lerGaveta(page);
     assert.equal(g.volta, '');
-    assert.equal(g.linhas.length, 2);
+    assert.equal(g.linhas.length, 3);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('linha "Neutraliza" nos dois modos: rotas e clientes dentro; soma das linhas = card; fora da Venda Zero', async () => {
+    const k = 'VOL REFRIGERANTES';
+    // modo Gerência: G1 (sem virtual) -> a soma das linhas é o card
+    let {page, ctx, erros} = await abre('normal');
+    await filtra(page, {gc: 'G1'});
+    const esperado = await page.evaluate(k => {
+      const b = agrega(['151']).ind[k];
+      return {meta: b.meta, real: b.real, dir: b.pctTendencia, md: Math.round(b.metaDia).toLocaleString('pt-BR'),
+              onl: Math.round(ONLINE.volume['151'] ? ONLINE.volume['151'][k] || 0 : 0).toLocaleString('pt-BR')};
+    }, k);
+    let g = await cascata(page, k, 'VOLUME');
+    const n = g.linhas[g.linhas.length - 1];
+    assert.deepEqual([n.nome, n.meta, n.real, n.dir], ['Neutraliza', esperado.meta, esperado.real, esperado.dir]);
+    assert.equal(n.meio, `${esperado.onl}meta do dia ${esperado.md}`, 'Online e Meta do dia');
+    assert.equal(await page.textContent('#dCorpo .cLin:last-child .cNome small'), '1 rota');
+    await page.click('#dCorpo .cLin:last-child');
+    g = await lerGaveta(page);
+    assert.equal(g.tit, 'Refrigerantes · Neutraliza · G1');
+    assert.equal(g.volta, '← Supervisões');
+    assert.deepEqual(g.linhas.map(l => l.nome), ['Rota 151']);
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    g = await lerGaveta(page);
+    assert.equal(g.volta, '← Rotas');
+    assert.equal(g.clientes.length, 3, 'clientes da rota Neutraliza');
+    await page.keyboard.press('Escape');
+    // Venda Zero: sem linha Neutraliza
+    g = await cascata(page, 'VENDAZERO', 'ICS_GC');
+    assert.ok(g.linhas.length && !g.linhas.some(l => l.nome === 'Neutraliza'));
+    await page.keyboard.press('Escape');
+    // filtro "Neutraliza": a gaveta começa nas rotas
+    await filtra(page, {gc: 'G1', sv: 'Neutraliza'});
+    g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    assert.deepEqual([g.tit, g.linhas.map(l => l.nome)], ['CCTM 2L Pet · Neutraliza · G1', ['Rota 151']]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // modo Diretoria: AN tem a Neutraliza A41 e as virtuais A42-A44 (sem linha): linhas + virtuais = card
+    ({page, ctx, erros} = await abre('normal', {entrar: 'dir'}));
+    g = await cascata(page, k, 'VOLUME');
+    await page.click(`#dCorpo .cLin[data-i="${g.linhas.findIndex(l => l.nome === 'Gerência AN')}"]`);
+    g = await lerGaveta(page);
+    const an = await page.evaluate(k => ({card: agrega(rotasDe('AN', '')).ind[k].meta,
+      virt: ['A42', 'A43', 'A44'].reduce((a, r) => a + nodo('AN', r).indicators[k].meta, 0),
+      a41: nodo('AN', 'A41').indicators[k].meta}), k);
+    assert.deepEqual(g.linhas.map(l => l.nome).sort(), ['Neutraliza', 'SV.AN.1 · Supervisor', 'SV.AN.2 · Supervisor']);
+    assert.equal(g.linhas[2].nome, 'Neutraliza');
+    assert.equal(g.linhas[2].meta, an.a41);
+    assert.ok(an.virt > 0);
+    assert.ok(Math.abs(somaMeta(g.linhas) + an.virt - an.card) < 1e-6, 'linhas + virtuais = card');
+    await page.click('#dCorpo .cLin:last-child');
+    g = await lerGaveta(page);
+    assert.deepEqual(g.linhas.map(l => l.nome), ['Rota A41']);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -384,7 +563,11 @@ describe('Parte D — cascata', {skip: pular}, () => {
     const {page, ctx, erros} = await abre('normal');
     await filtra(page, {gc: 'AT'});
     let g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
-    assert.equal(g.linhas.length, 3, 'SV.AT.3 (sem vendedor) aparece');
+    assert.deepEqual(g.linhas.map(l => l.nome.split(' ·')[0]).slice(0, 3).sort(), ['SV.AT.1', 'SV.AT.2', 'SV.AT.3'],
+                     'SV.AT.3 (sem vendedor) aparece');
+    assert.equal(g.linhas[3].nome, 'Neutraliza', 'a 431 vai para a linha Neutraliza');
+    const at3 = await page.evaluate(() => agrega(['AT31', 'AT32']).ind['CCTM 2L PET'].meta);
+    assert.equal(g.linhas.find(l => l.nome.startsWith('SV.AT.3')).meta, at3, 'a SV.AT.3 soma só as normais');
     await page.keyboard.press('Escape');
     await filtra(page, {gc: 'G1'});
     g = await cascata(page, 'VENDAZERO', 'ICS_GC');
@@ -397,9 +580,11 @@ describe('Parte D — cascata', {skip: pular}, () => {
     const {page, ctx, erros} = await abre('fech');
     await filtra(page, {gc: 'G1'});
     const g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
-    const pctReal = await page.evaluate(() => svsVisiveis('G1').map(s => agrega(rotasDe('G1', s)).ind['VOL REFRIGERANTES'].pctReal));
+    const pctReal = await page.evaluate(() => [...svsVisiveis('G1').map(s => agrega(rotasNormais('G1', s))),
+      agrega(rotasNeutraliza('G1'))].map(a => a.ind['VOL REFRIGERANTES'].pctReal));
     assert.deepEqual(g.linhas.map(l => l.dir).sort(), pctReal.sort());
-    assert.ok(decrescente(g.linhas.map(l => l.dir)));
+    assert.ok(decrescente(g.linhas.slice(0, -1).map(l => l.dir)));
+    assert.equal(g.linhas[g.linhas.length - 1].nome, 'Neutraliza');
     assert.ok(g.linhas.every(l => /online hoje/.test(l.meio)));
     assert.match(g.sub, /realizado$/);
     assert.match(await page.textContent('#sub'), /Fechamento/);

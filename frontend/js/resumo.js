@@ -8,8 +8,9 @@
    Volume verde por % Tendência >= 100 sobre a meta da rota (tendência do SAC: só o faturado + Neg Restante; o online de hoje
    fica na coluna própria e não entra); no fechamento do mês, verde por % realizado >= 100, sem meta do dia.
    Online verde ao bater o número ao lado.
-   Neutraliza (payload NEUTRALIZA: SV.G1.5/151, SV.G2.5/251, SV.IT.3/I31, SV.MO.3/M31) não tem coluna;
-   Meta e Real delas entram só no total da gerência (1ª coluna).
+   Rotas Neutraliza e virtuais (payload NEUTRALIZA_ROTAS / VIRTUAIS_ROTAS) não têm coluna nem entram na coluna da
+   supervisão; Meta e Real delas entram só no total da gerência (1ª coluna). Com o filtro "Neutraliza" (ou uma
+   rota Neutraliza), o Resumo mostra a gerência.
    ===================================================================== */
 const RS = (()=>{
   const VOL_ORD = ['VOL REFRIGERANTES','VOL CERVEJAS','VOL STILL','VOL AGUA MINERAL','VOL DEST+ART+CND'];
@@ -77,6 +78,9 @@ const RS = (()=>{
   /* ---- colunas conforme o filtro atual (ou a gerência escolhida no seletor da Diretoria) ---- */
   // título com a região e o nome da praça quando conhecido: "Sul GC.IT · Itumbiara"
   const tituloGc = gc => `${regiaoDe(gc) ? regiaoDe(gc)+' ' : ''}GC.${gc}${(CONFIG.NOMES_GC||{})[gc] ? ' · '+CONFIG.NOMES_GC[gc] : ''}`;
+  // filtro do Resumo: a Neutraliza não tem coluna, então o filtro "Neutraliza" (ou uma rota dela) vira a gerência
+  const filtroRs = () => (sel.sv===SV_NEUTRA || (sel.rota && ehNeutraliza(sel.rota))) ? {sv:'', rota:''}
+    : {sv:sel.sv, rota:sel.rota};
   function colunas(){
     if(sel.modo==='dir' && !rsGc){
       // Diretoria: total + uma coluna por gerência com dados (Neutraliza no total de cada uma)
@@ -86,21 +90,20 @@ const RS = (()=>{
               cols:[[sel.reg || 'Diretoria', gcs.flatMap(g=>rotasDe(g,''))], ...gcs.map(g=>['GC.'+g, rotasDe(g,'')])]};
     }
     const gc = (sel.modo==='dir') ? rsGc : sel.gc;
-    if(sel.modo==='dir'){
-      const svs = svsVisiveis(gc);
-      return {titulo:tituloGc(gc), sub:'Gerência → supervisores', cols:[['GC.'+gc, rotasDe(gc,'')], ...svs.map(s=>[s, Object.keys(DATA[gc][s])])]};
+    // Neutraliza e virtuais sem coluna; o total da gerência (1ª coluna) inclui as rotas delas
+    const porSv = () => ({titulo:tituloGc(gc), sub:'Gerência → supervisores',
+      cols:[['GC.'+gc, rotasDe(gc,'')], ...svsVisiveis(gc).map(s=>[s, rotasNormais(gc, s)])]});
+    if(sel.modo==='dir') return porSv();
+    const {sv, rota} = filtroRs();
+    if(rota){
+      const d = nodo(gc, rota);
+      return {titulo:'Rota '+rota, sub:`${rotuloSv(rotaSv(gc,rota))} → rota ${rota}${d&&d.consultor?' · '+titulo(d.consultor):''}`, cols:[[rota,[rota]]]};
     }
-    if(sel.rota){
-      const d = nodo(gc, sel.rota);
-      return {titulo:'Rota '+sel.rota, sub:`${rotuloSv(rotaSv(gc,sel.rota))} → rota ${sel.rota}${d&&d.consultor?' · '+titulo(d.consultor):''}`, cols:[[sel.rota,[sel.rota]]]};
+    if(sv){
+      const rs = rotasNormais(gc, sv);
+      return {titulo:sv, sub:rotuloSv(sv)+' → rotas', cols:[[sv, rs], ...rs.map(r=>[r,[r]])]};
     }
-    if(sel.sv){
-      const rs = Object.keys(DATA[gc][sel.sv]);
-      return {titulo:sel.sv, sub:rotuloSv(sel.sv)+' → rotas', cols:[[sel.sv, rs], ...rs.map(r=>[r,[r]])]};
-    }
-    // Neutraliza sem coluna; o total da gerência (1ª coluna) inclui as rotas delas
-    const svs = svsVisiveis(gc);
-    return {titulo:tituloGc(gc), sub:'Gerência → supervisores', cols:[['GC.'+gc, rotasDe(gc,'')], ...svs.map(s=>[s, Object.keys(DATA[gc][s])])]};
+    return porSv();
   }
   // cabeçalho da coluna: código (SV.G1.1 / rota) + primeiro nome do supervisor quando houver
   const cab = c => { if(c.vazio) return ''; const nm = nomeSv(c[0]); return esc(c[0]) + (nm ? `<small class="rs-svnome">${esc(nm)}</small>` : ''); };
@@ -205,7 +208,7 @@ const RS = (()=>{
     const q = new URLSearchParams();
     q.set('resumo', Object.keys(blocos).filter(k=>blocos[k]).join(','));
     if(sel.modo==='dir'){ q.set('modo', 'dir'); if(sel.reg) q.set('reg', sel.reg); if(rsGc) q.set('gc', rsGc); }
-    else { q.set('gc', sel.gc); if(sel.sv) q.set('sv', sel.sv); if(sel.rota) q.set('rota', sel.rota); }
+    else { const f = filtroRs(); q.set('gc', sel.gc); if(f.sv) q.set('sv', f.sv); if(f.rota) q.set('rota', f.rota); }
     return location.origin + location.pathname + '?' + q.toString().replace(/%2C/g, ',');
   }
   const aviso = t => { const el = document.getElementById('rsToast'); el.textContent = t; clearTimeout(aviso.t); aviso.t = setTimeout(()=>el.textContent='', 4000); };
@@ -325,8 +328,8 @@ const RS = (()=>{
       return;
     }
     if(gc && DATA[gc]) sel = {...sel, modo:'gc', gc, sv:'', rota:''};
-    const sv = q.get('sv'); if(sv && DATA[sel.gc][sv]) sel.sv = sv;
-    const rota = q.get('rota'); if(rota && rotaSv(sel.gc, rota)){ sel.rota = rota; sel.sv = rotaSv(sel.gc, rota); }
+    const sv = q.get('sv'); if(sv && svsVisiveis(sel.gc).includes(sv)) sel.sv = sv;
+    const rota = q.get('rota'); if(rota && rotaSv(sel.gc, rota) && !ehVirtual(rota)){ sel.rota = rota; sel.sv = svDaRota(rota); }
     render(); abre();
   }
 
