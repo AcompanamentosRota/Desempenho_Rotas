@@ -6,10 +6,15 @@ function aplicaPayload(novo){
   P._versao = Date.now();
   ({DATA,LABELS,GROUPS,CLIENT_ROSTER,CLIENTES_HOJE,OPORTUNIDADES_DIA,VISITAS_DIA,SEGS,DIAS,COBERTOS,SEM_COMPRA_HOJE,VENDAZERO_CLIENTES,COMODATO_ATIVOS,REVERTIDO_HOJE,OPORTUNIDADE_HOJE} = P);
   COMODATO_ATIVOS = COMODATO_ATIVOS || {};
+  // índice rota -> [gerência, supervisão]: a Diretoria e a cascata juntam rotas de várias gerências
+  ROTA_IDX = {};
+  for(const gc in DATA) for(const sv in DATA[gc]) for(const r in DATA[gc][sv]) ROTA_IDX[r] = [gc, sv];
   // preserva o filtro atual se ele ainda existir no payload novo
-  if(!DATA[sel.gc]) sel = {gc:P.GC_ATIVAS[0], sv:'', rota:''};
-  if(sel.sv && !(DATA[sel.gc]||{})[sel.sv]) { sel.sv=''; sel.rota=''; }
-  if(sel.rota && !rotaSv(sel.gc, sel.rota)) sel.rota='';
+  if(!DATA[sel.gc]) sel = {...sel, gc:primeiraGc(), sv:'', rota:''};
+  if(sel.reg && !regioes()[sel.reg]) sel.reg = '';
+  // supervisão: uma que ainda tem rota normal ou "Neutraliza" se a gerência ainda tem rota Neutraliza
+  if(sel.sv && !(sel.sv===SV_NEUTRA ? rotasNeutraliza(sel.gc).length : svsVisiveis(sel.gc).includes(sel.sv))) { sel.sv=''; sel.rota=''; }
+  if(sel.rota && (!rotaSv(sel.gc, sel.rota) || ehVirtual(sel.rota))) sel.rota='';
 }
 
 async function recarregaPayload(){

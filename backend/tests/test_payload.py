@@ -27,6 +27,9 @@ from tests.reverso import fontes_de, online_de
 # amostra congelada (16 rotas) do payload/online publicados à mão em 13/10/2026 14:10
 DADOS = Path(__file__).resolve().parent / "dados"
 HOJE = date(2026, 10, 13)
+# chaves que o arquivo antigo não tinha (acrescentadas no fim do payload)
+CHAVES_NOVAS = {"FECHAMENTO", "REGIOES", "NEUTRALIZA_ROTAS", "VIRTUAIS_ROTAS", "OCULTAS", "GC_SEM_OCULTAS",
+                "VOLUME_EXTRA", "COMODATO_CLIENTE"}
 
 
 def _carregar():
@@ -43,7 +46,7 @@ class TestIdaEVolta(unittest.TestCase):
         cls.g = montar_payload(fontes_de(cls.p, cls.o, HOJE))
 
     def test_chaves_e_constantes(self):
-        self.assertEqual([k for k in self.g if k != "FECHAMENTO"], list(self.p))
+        self.assertEqual([k for k in self.g if k not in CHAVES_NOVAS], list(self.p))
         self.assertFalse(self.g["FECHAMENTO"])
         for k in ["MES_LABEL", "TOTAL_DIAS_UTEIS", "DIA_ONTEM", "DIA_HOJE", "PACE_ONTEM_PCT", "SEMANA_NUM",
                   "SEMANA_TIPO", "DIA_SEMANA", "GC_ATIVAS", "NOME_SUPERVISOR", "LABELS", "GROUPS", "COV_GRUPO",

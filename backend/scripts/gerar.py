@@ -12,6 +12,9 @@ Fechamento do mês: detectado sozinho (do dia 1 até o fim do 1º dia útil e, d
 gerência não tiver META_VOLUME e META_COBERTURA do mês). Nesse período o payload mostra o mês anterior
 e o online.json leva fechamentoMes; com --so-online o rótulo sai do payload já publicado.
 
+Janela de recarga do Datasphere: em dia útil, das 07:00 às 18:45, consulta sem nenhum cliente online com o
+online.json publicado do mesmo dia com dados -> o publicado fica (não grava o vazio) e vai um aviso para o log.
+
 Fora da janela de execução (padrão 07:00-18:59, horário de Brasília) termina sem fazer nada,
 a não ser com --forcar. Códigos de saída: 0 ok / nada a fazer, 1 erro de execução,
 2 dados reprovados na validação (nada é gravado).
@@ -30,10 +33,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gerador import calendario, fontes, saida, validacao  # noqa: E402
 from gerador.consulta import Consulta  # noqa: E402
-from gerador.online import montar_online  # noqa: E402
+from gerador.online import do_publicado, manter_publicado, montar_online  # noqa: E402
 from gerador.payload import montar_payload, online_ks_tt  # noqa: E402
 from odata.config import PASTA_SAIDA, carregar_config  # noqa: E402
 from odata.log import configurar_log  # noqa: E402
+
+
+LIMITE_PAYLOAD_BYTES = 8_000_000
 
 
 def _janela(texto: str) -> tuple[time, time]:
@@ -89,13 +95,23 @@ def main() -> int:
         log.error("Falha ao consultar o Datasphere: %s", erro)
         return 1
 
+    # janela de recarga: consulta sem nenhum cliente online e o online.json publicado do mesmo dia com dados ->
+    # fica o publicado (não grava o vazio); o payload desta rodada usa o online dele (revertidos da Venda Zero)
+    online_publicado = saida.ler(destino / "online.json")
+    recarga = manter_publicado(f.online, online_publicado, agora)
+    if recarga:
+        f.online = do_publicado(online_publicado, f.online)
     payload = None if args.so_online else montar_payload(f)
     # KS TT do online pelo segmento do roster (com --so-online, o do payload já publicado) ou, fora dele, o da venda
     base = payload or saida.ler(destino / "payload.json")
     if args.so_online and not f.online.fechamento_mes:
         f.online.fechamento_mes = fontes.fechamento_pelo_payload(base, agora.date())
-    arquivos: dict[str, dict] = {"online.json": montar_online(online_ks_tt(f.online, base, f.segmento_venda))}
-    erros, avisos = validacao.validar_online(arquivos["online.json"])
+    arquivos: dict[str, dict] = {}
+    if recarga:
+        erros, avisos = [], [recarga]
+    else:
+        arquivos["online.json"] = montar_online(online_ks_tt(f.online, base, f.segmento_venda))
+        erros, avisos = validacao.validar_online(arquivos["online.json"])
     if payload is not None:
         arquivos["payload.json"] = payload
         anterior = None if args.rota else saida.ler(destino / "payload.json")
@@ -110,6 +126,11 @@ def main() -> int:
         _github_output(mudou="false")
         return 2
 
+    for nome, obj in arquivos.items():
+        tamanho = len(saida.serializar(obj))
+        log.info("%s: %.2f MB", nome, tamanho / 1e6)
+        if tamanho > LIMITE_PAYLOAD_BYTES:
+            log.warning("%s passou de %.0f MB (celular lento para baixar)", nome, LIMITE_PAYLOAD_BYTES / 1e6)
     mudou = [nome for nome, obj in arquivos.items() if saida.gravar(destino / nome, obj)]
     log.info("Arquivos atualizados: %s (%.0f s no total)", ", ".join(mudou) or "nenhum (dados iguais)",
              relogio.monotonic() - inicio)

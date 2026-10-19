@@ -1,6 +1,6 @@
 # Desempenho de Rotas · Comercial Bandeirantes
 
-Painel de desempenho por rota (ICS GC, Novos Negócios, Volume e Venda Zero),
+Painel de desempenho por rota (ICS GC, Novos Negócios, Volume e Venda Zero) das 16 gerências,
 publicado no GitHub Pages e alimentado automaticamente pelo **SAP Datasphere** via OData.
 
 ```
@@ -8,11 +8,12 @@ desempenho/
 ├── frontend/                 site estático (GitHub Pages)
 │   ├── index.html
 │   ├── css/app.css
-│   ├── js/config.js          URLs dos dados, intervalos, supervisões excluídas, CDN (com SRI)
-│   ├── js/app.js             painel (filtros, cards, indicadores, drawer, busca)
+│   ├── js/config.js          URLs dos dados, intervalos, regiões, placa ATENÇÃO, CDN (com SRI)
+│   ├── js/app.js             painel (entrada, filtros, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/main.js            carga e atualização periódica dos JSONs
 │   ├── assets/, manifest.webmanifest
+│   ├── tests/                testes de front (Chromium headless, dado sintético)
 │   └── data/payload.json, data/online.json   ← gerados pelo back-end
 ├── backend/                  gerador Python (roda no GitHub Actions)
 │   ├── odata/                cliente OData (copiado do kit Teste_ODATA)
@@ -101,15 +102,62 @@ fechamento do mês; o cron não usa), `--fechamento "Setembro/26"` (só sobrepõ
 ## Regras conferidas com os dados reais (13/10/2026)
 
 - **Base de clientes**: versão corrente (`FL_CORRENTE = 'S'`) de clientes `Ativo` das gerências
-  G1, G2, G3, AP e IT_MO. Supervisões de balcão (`Sv. Bl.`) e rotas eventuais (`EV*`) ficam fora.
-  IT e MO vêm juntas na fonte e são separadas pelo código do supervisor.
+  G1, G2, G3, AP e IT_MO (conferidas) e At, An, Sl, Rv, Pa_Di, Ur_Ri e Gu_Po (a confirmar). Supervisões de
+  balcão (`Sv. Bl.`) e rotas eventuais (`EV*`) ficam fora, também na At. As gerências que vêm juntas na fonte
+  (It_Mo, Pa_Di, Ur_Ri, Gu_Po) são separadas pelo código do supervisor.
 - **Cobertura**: cliente com `FX_COBERTURA_REALIZADO > 0` no agrupador (13 agrupadores do painel).
-- **Online**: medidas `*_WF_ONLINE` (pedidos de hoje).
+- **Online**: medidas `*_WF_ONLINE` (pedidos de hoje). Em dia útil, das 07:00 às 18:45, se a consulta vier sem
+  nenhum cliente online (o Datasphere em recarga: 0 às 09:28 de 19/10/2026, 199 rotas às 10:13) e o
+  `online.json` publicado for do mesmo dia e tiver dados, ele fica (o vazio não é gravado) e o log avisa.
 - **Metas**: `META_COBERTURA_Chave_Meta_SAP` (ICS e Novos Negócios), `META_VOLUME_Chave_Meta_SAP` (meta
   de volume da rota), `META_NEG` (curva diária e meta por cliente da barra de volume) e
   `META_RECUPERAVEL_ROTA` (meta do dia do volume).
 - **Venda Zero**: geladeiras `Total Ko` / Fountain em `Concluído(Contrato)` com `Giro Zero`
   (rota 111: os mesmos 67 equipamentos do painel antigo).
+
+## Gerências, regiões e telas
+
+16 gerências em 3 regiões: **Matriz** G1, G2, G3, AT, AP · **Sul** AN, SL, RV, MO, IT · **Norte** RI, UR, GU,
+PO, PA, DI (lista em `backend/gerador/mapeamento.py`, enviada no payload). O painel abre na **entrada**
+(DIRETORIA ou GERÊNCIA; o botão sol/lua troca só o fundo da entrada, preto ou branco, e o aparelho guarda a
+escolha). A casa vermelha do topo volta para a entrada.
+
+- **Gerência**: filtros de gerência (as sem dados aparecem desabilitadas), supervisão e rota.
+- **Diretoria**: total das 16 gerências (ou de uma região) nos cards.
+- **Cascata**: clicar num card abre gerências → supervisões → rotas → clientes, a partir do nível do filtro,
+  com botões para subir um nível. Cada linha mostra Meta e Real, Online e meta do dia (verde quando o online
+  bate a meta do dia) e a tendência, da maior para a menor (no fechamento do mês, o % realizado). Na lista de
+  clientes de volume: Meta, Real (faturado + online de hoje), diferença e %, do mais negativo para o mais positivo.
+- **Rotas Neutraliza** (por rota, em qualquer gerência: A41, 431, 251, I31, M31, C31, R31, S31, U31, 151, O21 e
+  551): Meta e Real de Volume, ICS GC e Novos Negócios entram no total da gerência (e da Diretoria). Na cascata,
+  ao abrir as supervisões de uma gerência, a última linha é **"Neutraliza"** (todas as rotas Neutraliza da
+  gerência juntas: Meta, Real, Online, meta do dia e tendência, com o nº de rotas); dentro dela, as rotas e,
+  dentro de cada rota, os clientes. O filtro de supervisão tem a opção "Neutraliza" (cards só dessas rotas).
+  Os clientes delas aparecem na busca (tag de geladeira e Desempenho GDM). Ficam fora das supervisões, do
+  Resumo de vendas (nenhuma coluna; os números seguem no total da gerência), do "puxa a média" e da Venda Zero
+  (card, listas, contagens e revertidos). A 551 não tem cliente corrente na base (só histórico na Ap/At) e
+  por isso não aparece; se voltar, entra como Neutraliza.
+- **Rotas virtuais** (A42, A43, A44, R32): ocultas em todo o painel (cascata, listas, filtros, busca e Resumo);
+  Volume, ICS GC e Novos Negócios só no total da gerência; fora da Venda Zero. Para a conta fechar, a cascata
+  traz no fim das supervisões uma nota discreta só com os números delas (ex.: "Inclui rotas virtuais: Meta 56.453 ·
+  Real 11.733"), sem rotas nem clientes: linhas + nota = card.
+- Supervisão que só tem rotas Neutraliza ou virtuais (SV.G1.5, SV.AN.4...) não aparece; a que mistura soma só
+  as rotas normais. SV.G3.3 continua oculta. Na gerência **AT** nenhuma supervisão é oculta (a 431 vai para a
+  linha "Neutraliza"; a 411 é rota normal).
+- **Del Valle Frut** (agrupador "Del Valle Frut"): card de volume só na G2 (inclusive por supervisor e rota), com
+  as mesmas regras de volume e nunca somado aos 5 agrupadores; fora do Resumo e da Diretoria. Sem META_VOLUME
+  nem META_NEG do agrupador na G2, o card não aparece e o gerador avisa no log.
+- **Desempenho GDM** (busca de cliente, aba Volume): Real = faturado do mês + online de hoje em Refrigerantes,
+  Água Mineral, Sucos, Ades e Powerade; Meta = META_EQPTO das geladeiras Total Ko. Tag e cor pela situação da
+  geladeira (GIRO_STATUS_MES_ATUAL): Giro Zero = vermelho "Venda Zero · x geladeira(s)"; Baixo Giro = amarelo;
+  Giro Ok = preto/verde; < 30 dias = cinza, quadrinho pela venda do mês. Rede soma as lojas com geladeira.
+- **Resumo de vendas**: segue o filtro; na Diretoria, gerências lado a lado em faixas de 8 e seletor para gerar o
+  resumo de uma gerência sem mudar o painel. A placa ATENÇÃO existe, mas está desligada
+  (`CONFIG.LIMIAR_ATENCAO = null`).
+- Rodapé: "Karen Oliveira - Inteligência de Mercado".
+
+Testes do front: `node --test frontend/tests/front.test.js` (Chromium headless com `playwright`; usa dado
+sintético gerado pelo próprio back-end em `frontend/tests/sintetico.py`).
 
 ## Volume: tendência pelo critério do SAC
 
@@ -132,8 +180,8 @@ curva; rota sem META_VOLUME usa a soma de META_NEG como meta; sem nenhuma das du
 indisponível. Cada caso aparece nos avisos da execução, assim como a meta da rota não distribuída nos
 clientes, por gerência (META_VOLUME − soma de META_NEG).
 
-Supervisão e gerência somam as rotas e recalculam o % (rotas Neutraliza entram só no total da gerência,
-porque têm supervisão própria). O volume online de hoje não entra na tendência: fica no quadro Online
+Supervisão e gerência somam as rotas e recalculam o % (rotas Neutraliza e virtuais entram no total da
+gerência, nunca na supervisão; as Neutraliza têm a linha "Neutraliza"). O volume online de hoje não entra na tendência: fica no quadro Online
 e na coluna própria do Resumo de vendas. A **barra por cliente** (busca, aba Volume) é a exceção:
 Real do cliente = Vol Real do cliente + volume online de hoje do cliente (`online.json` → `volumeCliente`),
 sobre a META_NEG do cliente, com a mesma regra de cor (vermelho abaixo do ritmo do mês, amarelo até 100%,

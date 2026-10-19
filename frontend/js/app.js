@@ -20,9 +20,32 @@ function nomeSv(sv){
   return titulo(n.split(/\s+/)[0]);
 }
 const rotuloSv = sv => { const n = nomeSv(sv); return n ? `${sv} · ${n}` : sv; };
-// supervisões sem SUP/VEND de verdade ("ROTA SEM VENDEDOR" / Neutraliza / rotas online)
+/* Neutraliza e virtuais (por rota, em qualquer gerência) e ocultas (por supervisão): listas únicas no back-end
+   (mapeamento.py), no payload em NEUTRALIZA_ROTAS, VIRTUAIS_ROTAS, OCULTAS e GC_SEM_OCULTAS.
+   Neutraliza: Meta e Real de Volume, ICS GC e Novos Negócios no total da gerência; na cascata e no filtro de
+   supervisão aparecem juntas como "Neutraliza" (rotas e clientes dentro); fora das supervisões, do Resumo, do
+   "puxa a média" e da Venda Zero (que já vem indisponível do back-end). Virtuais: ocultas em tudo, só no total.
+   Ocultas: fora do "puxa a média" e das listas de clientes; na gerência AT nenhuma supervisão é oculta.
+   CONFIG.SV_EXCLUIDOS só vale para payload antigo, sem essas chaves. */
+const SV_NEUTRA = 'Neutraliza';    // "supervisão" do filtro e da cascata que junta as rotas Neutraliza da gerência
+const gcDoSv = sv => String(sv||'').split('.')[1] || '';
+const semOcultas = sv => ((P && P.GC_SEM_OCULTAS) || ['AT']).includes(gcDoSv(sv));
+const ehNeutraliza = r => ((P && P.NEUTRALIZA_ROTAS) || []).includes(r);
+const ehVirtual = r => ((P && P.VIRTUAIS_ROTAS) || []).includes(r);
+const ehNormal = r => !ehNeutraliza(r) && !ehVirtual(r);
+const ehOculta = sv => !semOcultas(sv) && ((P && P.OCULTAS) ? P.OCULTAS.includes(sv)
+  : CONFIG.SV_EXCLUIDOS.includes(sv));
+// supervisões sem SUP/VEND de verdade ("ROTA SEM VENDEDOR" / Neutraliza / ocultas)
 // não entram na comparação "quem mais puxa a média para baixo"
-const svExcluido = sv => CONFIG.SV_EXCLUIDOS.includes(sv) || /SEM VENDEDOR/i.test(((P && P.NOME_SUPERVISOR)||{})[sv]||'');
+const svExcluido = sv => sv===SV_NEUTRA || (!semOcultas(sv) && (ehOculta(sv)
+  || /SEM VENDEDOR/i.test(((P && P.NOME_SUPERVISOR)||{})[sv]||'')));
+// rótulo de indicador: LABELS do payload ou, para o volume extra (Del Valle Frut), VOLUME_EXTRA
+const rotuloInd = k => (LABELS||{})[k] || (((P && P.VOLUME_EXTRA)||{})[k]||{}).label || k;
+const volExtras = () => Object.keys((P && P.VOLUME_EXTRA) || {});
+const ehVolume = k => GROUPS.VOLUME.includes(k) || volExtras().includes(k);
+// números: volume inteiro e coberturas com até 1 casa, sempre no formato pt-BR (490.003, nunca 490002.69999)
+const fmt0 = n => Math.round(n||0).toLocaleString('pt-BR');
+const fmtN = n => (n||0).toLocaleString('pt-BR', {maximumFractionDigits:1});
 // torna um elemento não-<button> clicável também pelo teclado (Enter/Espaço)
 function clicavel(el, fn){
   el.onclick = fn;
@@ -104,29 +127,58 @@ function atualizarStatusTag(){
 }
 setInterval(atualizarStatusTag, CONFIG.STATUS_TICK_MS);
 
-let sel = {gc:'', sv:'', rota:''};
+/* Filtro: modo 'gc' (Gerência: gc > sv > rota) ou 'dir' (Diretoria: todas as gerências, ou as de uma região). */
+let sel = {modo:'gc', reg:'', gc:'', sv:'', rota:''};
+let ROTA_IDX = {};   // rota -> [gc, sv] (montado em aplicaPayload; a Diretoria junta rotas de várias gerências)
+
+// regiões e as 16 gerências: vêm do payload (REGIOES, mesma lista do back-end); CONFIG só para payload antigo
+const regioes = () => (P && P.REGIOES) || CONFIG.REGIOES;
+const todasGcs = () => [...new Set([...Object.values(regioes()).flat(), ...((P && P.GC_ATIVAS) || [])])];
+const regiaoDe = gc => Object.keys(regioes()).find(rg=>regioes()[rg].includes(gc)) || '';
+const gcsDaRegiao = reg => reg ? (regioes()[reg] || []) : todasGcs();
+const gcsComDados = reg => gcsDaRegiao(reg).filter(g=>DATA[g]);
+const primeiraGc = () => todasGcs().find(g=>DATA[g]) || Object.keys(DATA)[0];
 
 const svsDe = gc => Object.keys(DATA[gc]||{});
-const rotasDe = (gc,sv) => sv ? Object.keys(DATA[gc][sv]) : svsDe(gc).flatMap(s=>Object.keys(DATA[gc][s]));
-const rotaSv = (gc,r) => svsDe(gc).find(s=>DATA[gc][s][r]);
-const nodo = (gc,r) => DATA[gc][rotaSv(gc,r)][r];
+const rotasDe = (gc,sv) => !DATA[gc] ? [] : sv ? Object.keys(DATA[gc][sv]||{}) : svsDe(gc).flatMap(s=>Object.keys(DATA[gc][s]));
+const rotaSv = (gc,r) => (ROTA_IDX[r]||[])[1];
+const nodo = (gc,r) => { const i = ROTA_IDX[r]; return i ? DATA[i[0]][i[1]][r] : undefined; };
 const ehKstt = c => KSTT_SEG.has((SEGS[c[2]]||'').toUpperCase());
-const rotasAtuais = () => sel.rota ? [sel.rota] : rotasDe(sel.gc, sel.sv);
+// rotas de uma supervisão sem as Neutraliza e as virtuais; as Neutraliza da gerência (linha "Neutraliza")
+const rotasNormais = (gc,sv) => rotasDe(gc, sv).filter(ehNormal);
+const rotasNeutraliza = gc => rotasDe(gc, '').filter(ehNeutraliza);
+// supervisões que aparecem (selects, colunas, linhas): as que têm alguma rota normal
+const svsVisiveis = gc => svsDe(gc).filter(s=>rotasNormais(gc, s).length);
+// supervisão do filtro para a rota: "Neutraliza" ou a da rota
+const svDaRota = r => ehNeutraliza(r) ? SV_NEUTRA : rotaSv(sel.gc, r);
+// rotas do filtro para os indicadores: o total da gerência (e da Diretoria) inclui Neutraliza e virtuais;
+// uma supervisão soma só as rotas normais dela e "Neutraliza", só as Neutraliza da gerência
+const rotasAtuais = () => sel.modo==='dir' ? gcsComDados(sel.reg).flatMap(g=>rotasDe(g,''))
+  : sel.rota ? [sel.rota] : sel.sv===SV_NEUTRA ? rotasNeutraliza(sel.gc)
+  : sel.sv ? rotasNormais(sel.gc, sel.sv) : rotasDe(sel.gc, '');
+// o que aparece (clientes, visitas, rotas, busca): sem as virtuais
+const rotasVisiveis = () => rotasAtuais().filter(r=>!ehVirtual(r));
+// listas de clientes: também sem as ocultas (na AT, tudo aparece)
+const rotasListas = () => rotasVisiveis().filter(r=>!ehOculta(rotaSv(sel.gc, r)));
 
 /* ---------- agregação ---------- */
 function agrega(rotas){
   const ind={}, tot={baseTotal:0,compraram:null,semCompra:null};
   [...GROUPS.ICS_GC,...GROUPS.NOVOS_NEG].forEach(k=>ind[k]={meta:0,real:0,n:0});
-  const volAgg={}; GROUPS.VOLUME.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,neg:0,mdia:null,n:0});
+  const volKs=[...GROUPS.VOLUME, ...volExtras()];
+  const volAgg={}; volKs.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,neg:0,mdia:null,n:0});
   rotas.forEach(r=>{
-    const d=nodo(sel.gc,r); tot.baseTotal+=d.baseTotal||0;
-    if(d.compraram!=null){tot.compraram=(tot.compraram||0)+d.compraram;
-      tot.semCompra=(tot.semCompra||0)+d.semCompra;}
+    const d=nodo(sel.gc,r);
+    if(!ehVirtual(r)){               // clientes das virtuais não aparecem (só os indicadores somam)
+      tot.baseTotal+=d.baseTotal||0;
+      if(d.compraram!=null){tot.compraram=(tot.compraram||0)+d.compraram;
+        tot.semCompra=(tot.semCompra||0)+d.semCompra;}
+    }
     Object.keys(ind).forEach(k=>{
       const b=d.indicators[k]; if(!b||b.unavailable) return;
       ind[k].meta+=b.meta||0; ind[k].real+=b.real||0; ind[k].n++;
     });
-    GROUPS.VOLUME.forEach(k=>{
+    volKs.forEach(k=>{
       const b=d.indicators[k], a=volAgg[k]; if(!b||b.unavailable) return;
       a.meta+=b.meta||0; a.real+=b.real||0; a.tend+=b.tendencia||0; a.neg+=b.negRestante||0;
       if(b.metaDia!=null) a.mdia=(a.mdia||0)+b.metaDia;
@@ -152,7 +204,7 @@ function agrega(rotas){
      META_NEG dos clientes aplicada à meta da rota (calculado no back-end, por rota). Fechamento do mês: sem
      tendência nem meta do dia, no ritmo pelo % realizado (Real / Meta). */
   const fech = !!P.FECHAMENTO;
-  GROUPS.VOLUME.forEach(k=>{
+  volKs.forEach(k=>{
     const a=volAgg[k];
     if(!a.n){out[k]={unavailable:true};return;}
     const pctT = (!fech && a.meta) ? Math.round(a.tend/a.meta*100) : null;
@@ -169,25 +221,45 @@ function agrega(rotas){
 let _chaveFiltros = '';
 function montaFiltros(){
   // só reconstrói os <select> quando o filtro (ou o payload) muda -- o polling do online não mexe neles
-  const chave = `${sel.gc}|${sel.sv}|${sel.rota}|${P._versao||''}`;
+  const chave = `${sel.modo}|${sel.reg}|${sel.gc}|${sel.sv}|${sel.rota}|${P._versao||''}`;
   if(chave===_chaveFiltros) return;
   _chaveFiltros = chave;
-  $('fgc').innerHTML = P.GC_ATIVAS.map(g=>`<option value="${esc(g)}">Gerência ${esc(g)}</option>`).join('');
+  const dir = sel.modo==='dir';
+  $('fsv').hidden = dir; $('frota').hidden = dir;
+  $('fgc').classList.toggle('largo', dir);
+  $('qSugestoes').classList.remove('on');
+  if(dir){        // Diretoria: só a região (as gerências aparecem na cascata dos cards)
+    $('fgc').innerHTML = `<option value="">Todas as regiões</option>` +
+      Object.keys(regioes()).map(rg=>`<option value="${esc(rg)}">Região ${esc(rg)}</option>`).join('');
+    $('fgc').value = sel.reg;
+    return;
+  }
+  // Gerência: as 16 por região; gerência sem dados aparece desabilitada
+  const fora = Object.keys(DATA).filter(g=>!Object.values(regioes()).flat().includes(g));
+  const opc = g => `<option value="${esc(g)}"${DATA[g]?'':' disabled'}>Gerência ${esc(g)}${DATA[g]?'':' · sem dados'}</option>`;
+  $('fgc').innerHTML = Object.entries(regioes()).map(([rg, gcs])=>
+    `<optgroup label="${esc(rg)}">${gcs.map(opc).join('')}</optgroup>`).join('') + fora.map(opc).join('');
   $('fgc').value = sel.gc;
+  const neutra = rotasNeutraliza(sel.gc);
   $('fsv').innerHTML = `<option value="">Todos os SVs</option>`+
-    svsDe(sel.gc).map(s=>`<option value="${esc(s)}">${esc(rotuloSv(s))}</option>`).join('');
+    svsVisiveis(sel.gc).map(s=>`<option value="${esc(s)}">${esc(rotuloSv(s))}</option>`).join('')+
+    (neutra.length ? `<option value="${SV_NEUTRA}">${SV_NEUTRA}</option>` : '');
   $('fsv').value = sel.sv;
-  const rs = rotasDe(sel.gc, sel.sv);
+  const rs = sel.sv===SV_NEUTRA ? neutra : sel.sv ? rotasNormais(sel.gc, sel.sv) : rotasDe(sel.gc,'').filter(r=>!ehVirtual(r));
   $('frota').innerHTML = `<option value="">Todas rotas</option>`+
     rs.map(r=>`<option value="${esc(r)}">Rota ${esc(r)}</option>`).join('');
   $('frota').value = sel.rota;
   $('qSugestoes').classList.remove('on');
 }
-$('fgc').onchange = e => {sel={gc:e.target.value,sv:'',rota:''}; render();};
+$('fgc').onchange = e => {
+  if(sel.modo==='dir') sel.reg = e.target.value;
+  else sel = {...sel, gc:e.target.value, sv:'', rota:''};
+  render();
+};
 $('fsv').onchange = e => {sel.sv=e.target.value; sel.rota=''; render();};
 $('frota').onchange = e => {
   sel.rota=e.target.value;
-  if(sel.rota && !sel.sv) sel.sv = rotaSv(sel.gc, sel.rota);
+  if(sel.rota && !sel.sv) sel.sv = svDaRota(sel.rota);
   render();
 };
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
@@ -206,7 +278,9 @@ function render(){
   const rotas = rotasAtuais();
   const {ind, tot} = agrega(rotas);
 
-  $('sub').innerHTML = `${esc(P.MES_LABEL)}${tagAtualizado()} · ${esc(sel.gc)}` +
+  const onde = sel.modo==='dir' ? `Diretoria${sel.reg?' · '+esc(sel.reg):''}`
+    : `${regiaoDe(sel.gc)?esc(regiaoDe(sel.gc))+' · ':''}${esc(sel.gc)}`;
+  $('sub').innerHTML = `${esc(P.MES_LABEL)}${tagAtualizado()} · ${onde}` +
     (sel.sv?` · ${esc(rotuloSv(sel.sv))}`:'') +
     (sel.rota?` · Rota ${esc(sel.rota)} — ${esc(titulo(nodo(sel.gc,sel.rota).consultor))}`:'');
   const paceHoje = Math.round(P.DIA_HOJE / P.TOTAL_DIAS_UTEIS * 100);
@@ -215,12 +289,13 @@ function render(){
     ` · para entrar no ritmo hoje: <span class="pct">${paceHoje}%</span></span>`+
     `<span>Hoje é o dia <b>${P.DIA_HOJE}</b> · ${esc(P.DIA_SEMANA)} · semana <b>N°${P.SEMANA_NUM}</b> (${esc(P.SEMANA_TIPO)})</span>`;
 
-  const visitas = rotas.reduce((a,r)=>a+(VISITAS_DIA.geral[r]||0),0);
+  const visiveis = rotasVisiveis();
+  const visitas = visiveis.reduce((a,r)=>a+(VISITAS_DIA.geral[r]||0),0);
   $('nBase').textContent = tot.baseTotal.toLocaleString('pt-BR');
   $('xBase').innerHTML = `visitas hoje <b class="ok">${visitas}</b>`;
 
-  const scHoje = rotas.every(r=>VISITAS_DIA.semCompra[r]!=null)
-    ? rotas.reduce((a,r)=>a+VISITAS_DIA.semCompra[r],0) : null;
+  const scHoje = visiveis.every(r=>VISITAS_DIA.semCompra[r]!=null)
+    ? visiveis.reduce((a,r)=>a+VISITAS_DIA.semCompra[r],0) : null;
   const pctSem = (tot.semCompra!=null && tot.baseTotal)
     ? Math.round(tot.semCompra/tot.baseTotal*100) : null;
   $('nSem').textContent = tot.semCompra==null? '—' : tot.semCompra.toLocaleString('pt-BR');
@@ -237,14 +312,18 @@ function render(){
 
   $('puxa').innerHTML = piorSv();
 
-  // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir
-  const oculta = k => k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable);
-  $('lista').innerHTML = GROUPS[aba].filter(k=>!oculta(k)).map(k=>linha(k, ind[k], rotas)).join('');
-  document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k, rotas)));
+  // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir;
+  // a Venda Zero não vale para a Neutraliza: sem card quando o filtro só tem rotas Neutraliza
+  const soNeutra = rotas.length>0 && rotas.every(ehNeutraliza);
+  const oculta = k => (k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable)) || (k==='VENDAZERO' && soNeutra);
+  // volume extra (Del Valle Frut): card só na aba Volume e só quando as rotas do filtro trazem o dado
+  const extras = (aba==='VOLUME' && sel.modo!=='dir') ? volExtras().filter(k=>ind[k] && !ind[k].unavailable) : [];
+  $('lista').innerHTML = [...GROUPS[aba].filter(k=>!oculta(k)), ...extras].map(k=>linha(k, ind[k], rotas)).join('');
+  document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k)));
   encaixa($('lista'));
   const upd = (ONLINE && ONLINE.updatedAt) ? ONLINE.updatedAt.replace('T',' ').slice(0,16).split(' ') : null;
   $('rodape').innerHTML =
-    `${rotas.length} rota${rotas.length>1?'s':''} · ${esc(P.MES_LABEL)} · ${P.TOTAL_DIAS_UTEIS} dias úteis<br>`+
+    `${visiveis.length} rota${visiveis.length>1?'s':''} · ${esc(P.MES_LABEL)} · ${P.TOTAL_DIAS_UTEIS} dias úteis<br>`+
     (tot.compraram!=null? `${tot.compraram.toLocaleString('pt-BR')} de ${tot.baseTotal.toLocaleString('pt-BR')} clientes já compraram no mês<br>`:'')+
     `<span id="rodapeStatus">${esc((statusAtualizado()||{}).texto || 'sem dados de venda online neste export')}</span>`+
     (upd? `<br><span class="fonte">Fonte: SAP Datasphere · ${upd[0].split('-').reverse().join('/')} ${upd[1]}</span>`:'')+
@@ -255,14 +334,30 @@ function render(){
 function piorSv(){
   if(sel.rota) return '';
   const grupo = P.COV_GRUPO[aba];
+  if(sel.modo==='dir'){
+    // Diretoria: compara as gerências do filtro
+    const gcs = gcsComDados(sel.reg);
+    if(gcs.length < 2) return '';
+    let pior=null;
+    gcs.forEach(g=>{
+      const a = agrega(rotasDe(g,'')).ind;
+      const disp = grupo.filter(k=>a[k] && !a[k].unavailable);
+      if(!disp.length) return;
+      const ok = disp.filter(k=>a[k].onPace).length;
+      if(!pior || ok/disp.length < pior.razao) pior={rotulo:'Gerência '+g,ok,tot:disp.length,razao:ok/disp.length};
+    });
+    if(!pior || pior.ok===pior.tot) return '';
+    return `<div class="puxa"><div class="t">Gerência que mais puxa a média para baixo: <b>${esc(pior.rotulo)}</b></div>
+      <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
+  }
   if(!sel.sv){
-    // sem SV selecionado: compara as supervisões da gerência
-    const svs = svsDe(sel.gc);
+    // sem SV selecionado: compara as supervisões da gerência (só as rotas normais de cada uma; a Neutraliza fica fora)
+    const svs = svsVisiveis(sel.gc);
     if(svs.length < 2) return '';
     let pior=null;
     svs.forEach(sv=>{
       if(svExcluido(sv)) return;
-      const a = agrega(Object.keys(DATA[sel.gc][sv])).ind;
+      const a = agrega(rotasNormais(sel.gc, sv)).ind;
       const disp = grupo.filter(k=>a[k] && !a[k].unavailable);
       if(!disp.length) return;
       const ok = disp.filter(k=>a[k].onPace).length;
@@ -272,8 +367,9 @@ function piorSv(){
     return `<div class="puxa"><div class="t">Supervisão que mais puxa a média para baixo: <b>${esc(pior.rotulo)}</b></div>
       <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
   }
-  // SV selecionado, sem rota: compara as rotas dentro do SV
-  const rotas = Object.keys(DATA[sel.gc][sel.sv]);
+  // SV selecionado, sem rota: compara as rotas dentro do SV (a Neutraliza não entra na comparação)
+  if(sel.sv===SV_NEUTRA) return '';
+  const rotas = rotasNormais(sel.gc, sel.sv);
   if(rotas.length < 2) return '';
   let pior=null;
   rotas.forEach(r=>{
@@ -289,7 +385,7 @@ function piorSv(){
 }
 
 function linha(k, b, rotas){
-  const nome = esc(LABELS[k]||k);
+  const nome = esc(rotuloInd(k));
   if(!b || b.unavailable)
     return `<div class="ind off"><div class="tit">${nome}</div>
       <div class="semdado">indisponível — falta a fonte deste indicador</div></div>`;
@@ -314,7 +410,7 @@ function linha(k, b, rotas){
         <div class="cr"><div class="olab">Online</div>${caixaOnline(k, rotas, b)}</div>
       </div></div>`;
   }
-  if(GROUPS.VOLUME.includes(k)){
+  if(ehVolume(k)){
     if(rotas.length===1 && b.semDadoHoje){
       return `<div class="ind off"><div class="tit">${nome}</div>
         <div class="semdado">indisponível — sem venda hoje pra essa rota</div></div>`;
@@ -366,7 +462,7 @@ function caixaOnline(k, rotas, b){
     const revHoje = rotas.reduce((a,r)=>a+((REVERTIDO_HOJE||{})[r]||0),0);
     return `<div class="obox ok">${numObox(revHoje)}<span>revertidos</span></div>`;
   }
-  if(GROUPS.VOLUME.includes(k)){
+  if(ehVolume(k)){
     const volHoje = rotas.reduce((a,r)=>a+(((ONLINE&&ONLINE.volume||{})[r]||{})[k]||0),0);
     if(b.metaDia==null)   // fechamento do mês (online de hoje, sem meta do dia) ou META_RECUPERAVEL_ROTA ausente
       return `<div class="obox nd">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
@@ -423,13 +519,13 @@ function itemHtml(r,c,extra,online){
 }
 
 clicavel($('cBase'), ()=>{
-  const rotas = rotasAtuais();
+  const rotas = rotasListas();
   const l = listaClientes(rotas);
   abre('Visitas de hoje', `${l.length} clientes · ${P.DIA_SEMANA}, semana N°${P.SEMANA_NUM} (${P.SEMANA_TIPO})`,
     l.length? l.map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') : `<div class="vazio">Nenhuma visita agendada.</div>`);
 });
 clicavel($('cSem'), ()=>{
-  const rotas = rotasAtuais();
+  const rotas = rotasListas();
   if(!P.FONTES.venda){
     abre('Sem compra hoje','',
       `<div class="vazio">Depende da planilha de venda do dia.</div>`); return;
@@ -445,36 +541,182 @@ clicavel($('cSem'), ()=>{
     out.length? out.map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') : `<div class="vazio">Todo mundo já comprou.</div>`);
 });
 
-function abreIndicador(k, rotas){
-  const b = agrega(rotas).ind[k];
+/* ---------- cascata (gaveta dos cards) ----------
+   Uma função para todos os níveis: [gerências ->] supervisões -> rotas -> clientes. O primeiro nível depende do
+   filtro: Diretoria = gerências; gerência = supervisões; supervisão = rotas; rota = clientes. Cada linha usa
+   agrega() das rotas do grupo, o mesmo número dos cards (nada de tendência recalculada aqui). Nas supervisões
+   de uma gerência, a última linha é "Neutraliza" (as rotas Neutraliza juntas; dentro, as rotas e os clientes;
+   fora da Venda Zero). As virtuais não têm linha, mas estão no total da gerência: uma nota discreta no fim das
+   supervisões mostra só a Meta e o Real delas (sem rotas nem clientes), e linhas + nota = card.
+   Ordem: maior tendência primeiro (cobertura e Venda Zero: maior %); no fechamento, pelo % realizado. */
+const VOLTAR = {gc:'← Gerências', sv:'← Supervisões', rota:'← Rotas'};
+let CASC = null;     // {k, pilha:[{nivel, chave, gc, rotas, nome}]}
+
+function abreIndicador(k){
+  const b = agrega(rotasAtuais()).ind[k];
   if(!b || b.unavailable) return;
-  const LIM = CONFIG.LIMITE_LISTA;
+  let ctx;
+  if(sel.modo==='dir') ctx = {nivel:'gc', chave:sel.reg, rotas:rotasAtuais(), nome:sel.reg ? 'Região '+sel.reg : 'Diretoria'};
+  else if(sel.rota) ctx = {nivel:'cli', chave:sel.rota, gc:sel.gc, rotas:[sel.rota], nome:'Rota '+sel.rota};
+  else if(sel.sv===SV_NEUTRA) ctx = ctxNeutraliza(sel.gc);
+  else if(sel.sv) ctx = {nivel:'rota', chave:sel.sv, gc:sel.gc, rotas:rotasNormais(sel.gc, sel.sv), nome:rotuloSv(sel.sv)};
+  else ctx = {nivel:'sv', chave:sel.gc, gc:sel.gc, rotas:rotasDe(sel.gc,''), nome:'Gerência '+sel.gc};
+  CASC = {k, pilha:[ctx]};
+  abre('', '', '');
+  pintaCascata();
+}
 
-  if(k==='VENDAZERO'){
-    const equip = [];
-    rotas.forEach(r=>(VENDAZERO_CLIENTES[r]||[]).forEach(e=>equip.push([r,e])));
-    let chip='Todos';
-    const pinta=()=>{
-      const vis = equip.filter(([r,e])=> chip==='Todos' ||
-        (chip==='Hoje' ? e.hoje===1 : (e.dia||'').startsWith(chip)))
-        .sort((a,b)=>b[1].vdz-a[1].vdz);
-      $('dCorpo').innerHTML = chipsHtml(chip) +
-        (vis.length? vis.slice(0,LIM).map(([r,e])=>`<div class="item ${e.revertido?'riscado':''}"><div>
-            <div class="nm">${esc(e.nome)}${e.revertido?' <span class="tagOnline">Revertido</span>':''}</div>
-            <div class="sb">${esc(e.tipo)} · rota ${esc(r)} · ${esc(e.dia||'sem agenda')}</div></div>
-            <div class="bd">${e.vdz} geladeira${e.vdz>1?'s':''}</div></div>`).join('')
-                 : `<div class="vazio">Ninguém neste filtro.</div>`) +
-        (vis.length>LIM? `<div class="vazio">+ ${vis.length-LIM} equipamentos — filtre por rota para ver todos.</div>`:'');
-      $('dCorpo').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
-    };
-    const revHoje = rotas.reduce((a,r)=>a+((REVERTIDO_HOJE||{})[r]||0),0);
-    const oportHoje = rotas.reduce((a,r)=>a+((OPORTUNIDADE_HOJE||{})[r]||0),0);
-    abre(LABELS[k]||k, `${b.real} equipamentos zerados · ${b.gap>0? `${b.gap} para reverter` : 'no ritmo'} · ${revHoje} revertidos hoje · ${oportHoje} na agenda de hoje`, '');
-    pinta();
-    return;
+const nRotas = rs => `${rs.length} rota${rs.length>1?'s':''}`;
+// nível das rotas Neutraliza de uma gerência (linha "Neutraliza" da cascata ou filtro de supervisão "Neutraliza")
+const ctxNeutraliza = gc => ({nivel:'rota', chave:SV_NEUTRA, gc, rotas:rotasNeutraliza(gc), nome:`${SV_NEUTRA} · ${gc}`});
+
+// grupos do nível (cada um com as rotas que somam e o contexto do nível de baixo)
+function gruposDo(ctx, k){
+  if(ctx.nivel==='gc') return gcsDaRegiao(ctx.chave).map(g=>{
+    const rs = rotasDe(g,'');
+    return {nome:'Gerência '+g, rotas:rs, off:!DATA[g],
+      info: DATA[g] ? `${svsVisiveis(g).length} supervisões · ${rs.filter(r=>!ehVirtual(r)).length} rotas` : 'sem dados',
+      filho:{nivel:'sv', chave:g, gc:g, rotas:rs, nome:'Gerência '+g}};
+  });
+  if(ctx.nivel==='sv'){
+    const grupos = svsVisiveis(ctx.gc).map(s=>{
+      const rs = rotasNormais(ctx.gc, s);
+      return {nome:rotuloSv(s), rotas:rs, info:nRotas(rs), filho:{nivel:'rota', chave:s, gc:ctx.gc, rotas:rs, nome:rotuloSv(s)}};
+    });
+    // "Neutraliza": as rotas Neutraliza da gerência numa linha só, sempre a última (fora da Venda Zero)
+    const n = ctxNeutraliza(ctx.gc);
+    if(n.rotas.length && k!=='VENDAZERO') grupos.push({nome:SV_NEUTRA, rotas:n.rotas, info:nRotas(n.rotas), fim:true, filho:n});
+    return grupos;
   }
+  return ctx.rotas.filter(r=>!ehVirtual(r)).map(r=>{
+    const d = nodo(ctx.gc, r);
+    return {nome:'Rota '+r, rotas:[r], info:`${titulo(d.consultor)} · ${d.baseTotal} clientes`,
+      filho:{nivel:'cli', chave:r, gc:ctx.gc, rotas:[r], nome:'Rota '+r}};
+  });
+}
 
-  const todos = [];
+// rotas virtuais da gerência: sem linha, rota ou cliente; só a Meta e o Real, para a conta das linhas fechar com o card
+function notaVirtuais(k, gc){
+  const rs = rotasDe(gc, '').filter(ehVirtual);
+  const b = rs.length ? agrega(rs).ind[k] : null;
+  if(!b || b.unavailable) return '';
+  const f = ehVolume(k) ? fmt0 : fmtN;
+  return `<div class="cNota" data-meta="${b.meta}" data-real="${b.real}">Inclui rotas virtuais: Meta ${f(b.meta)} · Real ${f(b.real)}</div>`;
+}
+
+// números de uma linha: os mesmos de agrega()/caixaOnline() do card
+function metricas(k, rotas){
+  const b = agrega(rotas).ind[k];
+  if(!b || b.unavailable) return null;
+  const fech = !!P.FECHAMENTO, soma = (obj, r) => (((ONLINE && ONLINE[obj]) || {})[r] || {})[k] || 0;
+  if(k==='VENDAZERO') return {b, onl:b.revertidoHoje, md:null, dir:b.pct};
+  if(ehVolume(k)) return {b, onl:rotas.reduce((a,r)=>a+soma('volume', r),0), md:fech ? null : b.metaDia,
+                          dir:fech ? b.pctReal : b.pctTendencia};
+  const fatia = b.meta ? Math.ceil(b.meta/P.TOTAL_DIAS_UTEIS) : 0;
+  return {b, onl:rotas.reduce((a,r)=>a+soma('rotas', r),0), md:fech ? null : (b.gap>0 ? b.gap : fatia), dir:b.pct};
+}
+
+function linhaGrupo(g, m, k, i){
+  if(!m) return `<div class="cLin off"><div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
+    <div class="cInd">${g.off ? 'sem dados' : 'indisponível'}</div></div>`;
+  const {b, onl, md, dir} = m, vz = k==='VENDAZERO', f = ehVolume(k) ? fmt0 : fmtN;
+  const cor = vz ? 'ok' : (md==null ? 'nd' : (onl>=md ? 'ok' : 'no'));
+  const meio = vz ? `<span class="cOn ok">${fmtN(onl)}</span><small>revertidos hoje</small>`
+    : `<span class="cOn ${cor}">${f(onl)}</span><small>${md==null ? (P.FECHAMENTO ? 'online hoje' : 'meta do dia —')
+                                                        : 'meta do dia '+f(md)}</small>`;
+  const rot = ehVolume(k) ? (P.FECHAMENTO ? 'realizado' : 'tendência') : 'do mês';
+  return `<div class="cLin ${b.onPace?'ok':'no'}" role="button" tabindex="0" data-i="${i}"
+      data-meta="${b.meta}" data-real="${b.real}" data-dir="${dir==null?'':dir}">
+    <div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
+    <div class="cEsq"><span>Meta ${f(b.meta)}</span><span>Real ${f(b.real)}</span></div>
+    <div class="cMeio">${meio}</div>
+    <div class="cDir"><b>${dir==null?'—':dir+'%'}</b><small>${rot}</small></div></div>`;
+}
+
+// subtítulo da gaveta (número do card do nível)
+function resumoInd(k, b){
+  if(!b || b.unavailable) return 'indisponível';
+  if(k==='VENDAZERO') return `${fmtN(b.real)} equipamentos zerados · ${b.gap>0? `${b.gap} para reverter` : 'no ritmo'}`+
+    ` · ${b.revertidoHoje} revertidos hoje`;
+  if(ehVolume(k)) return `Meta ${fmt0(b.meta)} · Real ${fmt0(b.real)} · `+
+    (P.FECHAMENTO ? `${b.pctReal==null?'—':b.pctReal+'%'} realizado` : `tendência ${b.pctTendencia==null?'—':b.pctTendencia+'%'}`);
+  const nota = (k==='KS TT') ? ' · lista restrita a bares, lanchonetes, restaurantes e padarias' : '';
+  return `Meta ${fmtN(b.meta)} · Real ${fmtN(b.real)} · ${b.gap>0?`faltam ${b.gap} para o ritmo de hoje`:'no ritmo'}${nota}`;
+}
+
+function pintaCascata(){
+  const {k, pilha} = CASC, ctx = pilha[pilha.length-1];
+  $('dTit').textContent = `${rotuloInd(k)} · ${ctx.nome}`;
+  $('dSub').textContent = resumoInd(k, agrega(ctx.rotas).ind[k]);
+  const volta = pilha.length>1 ? `<button class="cVolta" id="cVolta">${VOLTAR[pilha[pilha.length-2].nivel]}</button>` : '';
+  if(ctx.nivel==='cli'){
+    $('dCorpo').innerHTML = volta + '<div id="dLista"></div>';
+    // listas de clientes: sem virtuais e sem ocultas (na AT, tudo)
+    const rotas = ctx.rotas.filter(r=>!ehVirtual(r) && !ehOculta(rotaSv(ctx.gc, r)));
+    if(ehVolume(k)) listaVolume(k, rotas);
+    else if(k==='VENDAZERO') listaVendaZero(rotas);
+    else listaCobertura(k, rotas);
+  } else {
+    const grupos = gruposDo(ctx, k).map(g=>({g, m: g.off ? null : metricas(k, g.rotas)}));
+    const chave = x => (x.m && x.m.dir!=null) ? x.m.dir : -Infinity;
+    grupos.sort((x,y)=> (x.g.fim?1:0)-(y.g.fim?1:0) || (x.m?0:1)-(y.m?0:1) || chave(y)-chave(x));
+    $('dCorpo').innerHTML = volta + `<div class="cLista">${grupos.map((x,i)=>linhaGrupo(x.g, x.m, k, i)).join('')
+      || '<div class="vazio">Nada neste filtro.</div>'}${ctx.nivel==='sv' ? notaVirtuais(k, ctx.gc) : ''}</div>`;
+    $('dCorpo').querySelectorAll('.cLin[data-i]').forEach(el=>clicavel(el, ()=>{
+      pilha.push(grupos[Number(el.dataset.i)].g.filho); pintaCascata();
+    }));
+  }
+  if($('cVolta')) $('cVolta').onclick = () => { pilha.pop(); pintaCascata(); };
+  $('dCorpo').scrollTop = 0;
+}
+
+/* Clientes de volume: Meta (META_NEG do cliente), Real (faturado + online de hoje, fora do fechamento),
+   Dif. Abs (Real - Meta) e %, do mais negativo para o mais positivo; sem tendência; sem quem não tem meta. */
+function listaVolume(k, rotas){
+  const LIM = CONFIG.LIMITE_LISTA, lin = [];
+  rotas.forEach(r=>{
+    const i = volDaRota(r).indexOf(k);
+    if(i<0) return;
+    (CLIENT_ROSTER[r]||[]).forEach(c=>{
+      const bl = blocoVolCliente(r, c[0], i, k);
+      if(bl) lin.push({r, c, meta:bl[0], real:bl[1], dif:bl[1]-bl[0], pct:bl[2]});
+    });
+  });
+  lin.sort((a,b)=>a.dif-b.dif);
+  const fmt1 = n => n.toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1});
+  $('dLista').innerHTML = lin.length ? `<div class="cCab"><span>Cliente</span><span>Meta</span><span>Real</span>
+      <span>Dif. Abs</span><span>%</span></div>` +
+    lin.slice(0, LIM).map(x=>`<div class="cCli" data-dif="${x.dif}"><div><div class="nm">${esc(x.c[1])}</div>
+      <div class="sb">${esc(SEGS[x.c[2]]||'—')} · rota ${esc(x.r)}</div></div>
+      <span>${fmt1(x.meta)}</span><span>${fmt1(x.real)}</span>
+      <span class="${x.dif>=0?'pos':'neg'}">${x.dif>0?'+':''}${fmt1(x.dif)}</span><span>${x.pct}%</span></div>`).join('') +
+    (lin.length>LIM ? `<div class="vazio">+ ${lin.length-LIM} clientes — filtre por rota para ver todos.</div>` : '')
+    : '<div class="vazio">Nenhum cliente com meta neste agrupador.</div>';
+}
+
+function listaVendaZero(rotas){
+  const LIM = CONFIG.LIMITE_LISTA, equip = [];
+  rotas.forEach(r=>(VENDAZERO_CLIENTES[r]||[]).forEach(e=>equip.push([r,e])));
+  let chip='Todos';
+  const pinta=()=>{
+    const vis = equip.filter(([r,e])=> chip==='Todos' ||
+      (chip==='Hoje' ? e.hoje===1 : (e.dia||'').startsWith(chip)))
+      .sort((a,b)=>b[1].vdz-a[1].vdz);
+    $('dLista').innerHTML = chipsHtml(chip) +
+      (vis.length? vis.slice(0,LIM).map(([r,e])=>`<div class="item ${e.revertido?'riscado':''}"><div>
+          <div class="nm">${esc(e.nome)}${e.revertido?' <span class="tagOnline">Revertido</span>':''}</div>
+          <div class="sb">${esc(e.tipo)} · rota ${esc(r)} · ${esc(e.dia||'sem agenda')}</div></div>
+          <div class="bd">${e.vdz} geladeira${e.vdz>1?'s':''}</div></div>`).join('')
+               : `<div class="vazio">Ninguém neste filtro.</div>`) +
+      (vis.length>LIM? `<div class="vazio">+ ${vis.length-LIM} equipamentos — filtre por rota para ver todos.</div>`:'');
+    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
+  };
+  pinta();
+}
+
+// cobertura: quem ainda falta comprar o indicador (KS TT só nos segmentos elegíveis)
+function listaCobertura(k, rotas){
+  const LIM = CONFIG.LIMITE_LISTA, todos = [];
   rotas.forEach(r => {
     const ja = new Set(((COBERTOS[r]||{})[k])||[]);
     (CLIENT_ROSTER[r]||[]).forEach(c=>{
@@ -490,16 +732,50 @@ function abreIndicador(k, rotas){
       if(chip==='Hoje') return c[4]===1;          // respeita a paridade da semana
       return (DIAS[c[3]]||'').includes(chip);
     }).sort((a,b)=>a[1][1].localeCompare(b[1][1]));
-    $('dCorpo').innerHTML = chipsHtml(chip) +
+    $('dLista').innerHTML = chipsHtml(chip) +
       (vis.length? vis.slice(0,LIM).map(([r,c])=>itemHtml(r,c,null,onlineIds(r,k).includes(c[0]))).join('')
                  : `<div class="vazio">Ninguém neste filtro.</div>`) +
       (vis.length>LIM? `<div class="vazio">+ ${vis.length-LIM} clientes — filtre por rota para ver todos.</div>`:'');
-    $('dCorpo').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
+    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
   };
-  const nota = (k==='KS TT') ? ' · lista restrita a bares, lanchonetes, restaurantes e padarias' : '';
-  abre(LABELS[k]||k, `Meta ${b.meta} · Real ${b.real} · ${b.gap>0?`faltam ${b.gap} para o ritmo de hoje`:'no ritmo'}${nota}`, '');
   pinta();
 }
+
+/* ---------- entrada (Diretoria / Gerência) ----------
+   Abre na entrada; o botão sol/lua troca só o fundo da entrada (preto, padrão, ou branco), guardado no aparelho.
+   Sem armazenamento (aba anônima, bloqueado): fica preto. A casa vermelha do topo volta para a entrada. */
+const TEMA_ENTRADA = 'drotas_entrada';
+function temaEntrada(){
+  try { return localStorage.getItem(TEMA_ENTRADA)==='branca' ? 'branca' : 'preta'; } catch(e) { return 'preta'; }
+}
+function aplicaTemaEntrada(t){
+  $('entrada').classList.toggle('branca', t==='branca');
+  $('btnTema').textContent = t==='branca' ? '☾' : '☀';
+  $('btnTema').setAttribute('aria-label', t==='branca' ? 'Entrada com fundo preto' : 'Entrada com fundo branco');
+}
+$('btnTema').onclick = () => {
+  const t = temaEntrada()==='branca' ? 'preta' : 'branca';
+  try { localStorage.setItem(TEMA_ENTRADA, t); } catch(e) { /* sem armazenamento: vale só nesta visita */ }
+  aplicaTemaEntrada(t);
+};
+function mostraEntrada(){
+  fecha();
+  $('entrada').hidden = false;
+  document.body.classList.add('na-entrada');
+}
+function entra(modo){
+  sel = modo==='dir' ? {...sel, modo:'dir', sv:'', rota:''} : {...sel, modo:'gc'};
+  $('entrada').hidden = true;
+  document.body.classList.remove('na-entrada');
+  if(!P) return;
+  if(sel.modo==='gc' && !DATA[sel.gc]) sel.gc = primeiraGc();
+  render();
+  if($('q').value.trim()) buscaCliente();
+}
+document.querySelectorAll('#entrada [data-modo]').forEach(b=>b.onclick=()=>entra(b.dataset.modo));
+$('btnCasa').onclick = mostraEntrada;
+aplicaTemaEntrada(temaEntrada());
+$('entRod').textContent = CONFIG.CREDITOS;
 
 /* ---------- busca de cliente ---------- */
 let ULTIMA_BUSCA = [];   // [ {tipo:'cliente',rota,c} | {tipo:'rede',nome,membros} ], sugestão mostrada agora
@@ -538,7 +814,7 @@ function buscaSugestoes(){
   const v = $('q').value.trim().toLowerCase();
   const box = $('qSugestoes');
   if(!v){ box.classList.remove('on'); box.innerHTML=''; ULTIMA_BUSCA=[]; return; }
-  const rotas = rotasAtuais();
+  const rotas = rotasVisiveis();
   const out = [];
   for(const g of gruposRede(rotas).values()){
     if(g.nome.toLowerCase().includes(v)){
@@ -592,7 +868,7 @@ $('qSugestoes').addEventListener('keydown', e=>{
    `bloco` = [meta,real,pct,status] (0 fora do ritmo, 1 dentro do ritmo, 2 meta batida) ou null.
    As linhas de texto usam data-fit: encaixa() reduz a fonte até caber na largura real do tile. */
 function tileVolume(k, bloco){
-  const label = esc(P.LABELS_CURTO[k]||LABELS[k]);
+  const label = esc(P.LABELS_CURTO[k]||rotuloInd(k));
   if(!P.FONTES.venda)
     return `<div class="tileVol nd"><div class="t" data-fit="13" data-fit-min="9.5">${label}</div>
       <div class="barraWrap"><div class="barra"></div></div>
@@ -611,6 +887,8 @@ function tileVolume(k, bloco){
     <div class="e" data-fit="10.5" data-fit-min="8.5" data-fit-quebra>${pct}% · ${rotulo}</div>
     <div class="nums" data-fit="12" data-fit-min="8">${fmtNum(real)} / ${fmtNum(meta)}</div></div>`;
 }
+// blocos de volume da rota, na ordem do VOLUME_CLIENTE: os 5 macros + os extras que a rota tem (Del Valle Frut na G2)
+const volDaRota = r => [...GROUPS.VOLUME, ...volExtras().filter(k=>((nodo(sel.gc,r)||{}).indicators||{})[k])];
 /* Real da barra por cliente = Vol Real do payload + volume online de hoje do cliente (online.json volumeCliente),
    fora do fechamento do mês. % e status recalculados com a mesma regra (modelo.bloco_cliente_com_online). */
 function blocoVolCliente(r, pv, i, k){
@@ -623,13 +901,50 @@ function blocoVolCliente(r, pv, i, k){
   return [meta, Math.round(real*10)/10, pct, pct>=100?2:(pct>=P.PACE_ONTEM_PCT?1:0)];
 }
 const tileCob = (k, cls, txt) =>
-  `<div class="tile ${cls}"><div class="t" data-fit="13" data-fit-min="9.5">${esc(P.LABELS_CURTO[k]||LABELS[k])}</div><div class="e">${txt}</div></div>`;
+  `<div class="tile ${cls}"><div class="t" data-fit="13" data-fit-min="9.5">${esc(P.LABELS_CURTO[k]||rotuloInd(k))}</div><div class="e">${txt}</div></div>`;
+/* Desempenho GDM e tag de geladeira (payload COMODATO_CLIENTE: [meta, faturado GDM, situação, nº de geladeiras]).
+   Real = faturado do mês (mesmo filtro de NF_STATUS do Vol Real) + online de hoje (online.json gdmCliente), só em
+   Refrigerantes, Água Mineral, Sucos, Ades e Powerade; Meta = META_EQPTO das geladeiras Total Ko.
+   Sem geladeira: sem tag nem quadrinho. No fechamento do mês: nenhum dos dois. */
+const SITUACAO_TAG = {zero:['tagVZ','Venda Zero · '], baixo:['tagBaixo','Baixo Giro · '], ok:['tagAtivo',''],
+  '30d':['tagNovo','< 30 dias · ']};
+const geladeiras = n => `${n} geladeira${n>1?'s':''}`;
+const temGdm = () => !!(P && P.COMODATO_CLIENTE) && !P.FECHAMENTO;
+function gdmCliente(r, pv){
+  if(!temGdm()) return null;
+  const b = (P.COMODATO_CLIENTE[r]||{})[pv]; if(!b) return null;
+  const onl = ((((ONLINE && ONLINE.gdmCliente)||{})[r])||{})[pv]||0;
+  return {meta:b[0], real:b[1]+onl, situacao:b[2], n:b[3]};
+}
+function tagGeladeira(g){
+  if(!g || !SITUACAO_TAG[g.situacao]) return '';          // situação desconhecida: sem tag
+  const [cls, pre] = SITUACAO_TAG[g.situacao];
+  return `<span class="${cls}">${pre}${geladeiras(g.n)}</span>`;
+}
+// cor: Giro Zero vermelho; Baixo Giro sempre amarelo; Giro Ok verde; < 30 dias (e rede) pela venda do mês;
+// situação desconhecida: sem cor
+function corGdm(g){
+  if(g.situacao==='zero') return 'no';
+  if(g.situacao==='baixo') return 'pace';
+  if(g.situacao==='ok') return 'ok';
+  if(g.situacao==='30d' || g.situacao==='rede') return g.real<=0 ? 'no' : (g.real<g.meta ? 'pace' : 'ok');
+  return 'nc';
+}
+function tileGdm(g){
+  if(!g) return '';
+  const pct = g.meta ? Math.round(g.real/g.meta*100) : 0;
+  const fmt = n => n.toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1});
+  return `<div class="tileVol gdm ${corGdm(g)}"><div class="t" data-fit="13" data-fit-min="9.5">Desempenho GDM</div>
+    <div class="barraWrap"><div class="barra" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
+    <div class="e" data-fit="10.5" data-fit-min="8.5" data-fit-quebra>${pct}%</div>
+    <div class="nums" data-fit="12" data-fit-min="8">${fmt(g.real)} / ${fmt(g.meta)}</div></div>`;
+}
 const blocoImperdoaveis = `<h4>Imperdoáveis</h4><div class="semim">Sem dado de Imperdoáveis pra essa rota.</div>`;
 
 function buscaCliente(){
   const v=$('q').value.trim(); if(!v){$('cli').innerHTML='';return;}
   const id=parseInt(v,10);
-  const rotas = rotasAtuais();
+  const rotas = rotasVisiveis();
   let achado=null, rota=null;
   for(const r of rotas){
     const c=(CLIENT_ROSTER[r]||[]).find(x=> x[0]===id || x[1].toLowerCase()===v.toLowerCase()
@@ -646,7 +961,8 @@ function buscaCliente(){
   let chips;
   if(aba==='VOLUME'){
     // Volume não tem cobertura binária: usa a barra de status de meta por cliente (VOLUME_CLIENTE + online de hoje)
-    chips = grupo.map((k,i)=> tileVolume(k, blocoVolCliente(rota, achado[0], i, k))).join('');
+    chips = volDaRota(rota).map((k,i)=> tileVolume(k, blocoVolCliente(rota, achado[0], i, k))).join('')
+      + tileGdm(gdmCliente(rota, achado[0]));
   } else {
     chips = grupo.map(k=>{
       if(k==='KS TT' && !kstt) return tileCob(k, 'na', 'não elegível');
@@ -664,13 +980,22 @@ function buscaCliente(){
   const nAtivo = (((COMODATO_ATIVOS[rota]||{})[String(achado[0])])||0) + vzRevert;
   const tagAtivo = nAtivo>0
     ? `<span class="tagAtivo">${nAtivo} geladeira${nAtivo>1?'s':''}</span>` : '';
-  $('cli').innerHTML = `<div class="cli"><h3>${esc(achado[1])}${tagVZ}${tagAtivo}</h3>
+  // payload com COMODATO_CLIENTE: tag pela situação da geladeira; payload antigo: tags de antes
+  const tags = (P && P.COMODATO_CLIENTE) ? tagGeladeira(gdmCliente(rota, achado[0])) : tagVZ + tagAtivo;
+  $('cli').innerHTML = `<div class="cli"><h3>${esc(achado[1])}${tags}</h3>
     <div class="meta">PV ${esc(achado[0])} · ${esc(SEGS[achado[2]]||'—')} · rota ${esc(rota)} · visita ${esc(DIAS[achado[3]]||'—')}</div>
     <div class="painel">
       <div class="grid13">${chips}</div>
       ${blocoImperdoaveis}
     </div></div>`;
   encaixa($('cli'));
+}
+// rede: soma Meta, Real (faturado + online) e geladeiras das lojas com geladeira Total Ko; cor pela venda do mês
+function gdmRede(membros){
+  const gs = membros.map(([r,cid])=>gdmCliente(r, cid)).filter(Boolean);
+  if(!gs.length) return null;
+  return {meta: gs.reduce((a,g)=>a+g.meta,0), real: gs.reduce((a,g)=>a+g.real,0), n: gs.reduce((a,g)=>a+g.n,0),
+          situacao: 'rede'};
 }
 /* Consolidado de rede: soma meta/real (Volume) ou cobertos/elegíveis (ICS GC, Novos Negócios)
    de todas as lojas da rede dentro do escopo de filtro atual. */
@@ -680,17 +1005,19 @@ function renderRede(rede){
   const grupo = P.COV_GRUPO[aba];
   let chips;
   if(aba==='VOLUME'){
-    chips = grupo.map((k,i)=>{
+    const ks = [...grupo, ...volExtras().filter(k=>rotasUnicas.some(r=>volDaRota(r).includes(k)))];
+    chips = ks.map(k=>{
       let metaSum=0, realSum=0, temMeta=false;
       membros.forEach(([r,cid])=>{
-        const bloco = blocoVolCliente(r, cid, i, k);
+        const i = volDaRota(r).indexOf(k);
+        const bloco = i<0 ? null : blocoVolCliente(r, cid, i, k);
         if(bloco){ metaSum+=bloco[0]; realSum+=bloco[1]; temMeta=true; }
       });
       if(!temMeta || metaSum<=0) return tileVolume(k, null);
       const pct = Math.round(realSum/metaSum*100);
       const status = pct>=100?2:(pct>=P.PACE_ONTEM_PCT?1:0);
       return tileVolume(k, [Math.round(metaSum*10)/10, Math.round(realSum*10)/10, pct, status]);
-    }).join('');
+    }).join('') + tileGdm(gdmRede(membros));
   } else {
     chips = grupo.map(k=>{
       if(!P.FONTES.venda) return tileCob(k, 'nd', 'sem venda');
@@ -717,7 +1044,10 @@ function renderRede(rede){
   const tagAtivoR = nAtivoR>0
     ? `<span class="tagAtivo">${nAtivoR} geladeira${nAtivoR>1?'s':''}</span>` : '';
   const rotaTxt = rotasUnicas.length>1 ? `rotas ${rotasUnicas.join(', ')}` : `rota ${rotasUnicas[0]}`;
-  $('cli').innerHTML = `<div class="cli"><h3>${esc(rede.nome)}<span class="tagRede">Rede</span>${tagVZ}${tagAtivoR}</h3>
+  const gR = gdmRede(membros);
+  const tags = (P && P.COMODATO_CLIENTE) ? (gR ? `<span class="tagAtivo">${geladeiras(gR.n)}</span>` : '')
+    : tagVZ + tagAtivoR;
+  $('cli').innerHTML = `<div class="cli"><h3>${esc(rede.nome)}<span class="tagRede">Rede</span>${tags}</h3>
     <div class="meta">${membros.length} loja${membros.length>1?'s':''} · ${esc(rotaTxt)}</div>
     <div class="painel">
       <div class="grid13">${chips}</div>

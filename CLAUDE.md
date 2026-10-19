@@ -16,6 +16,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   input `hoje` opcional) → artifact com `relatorio_tendencia.md` + `payload.json`/`online.json` (sem commit).
   `gerar.py --hoje AAAA-MM-DD --saida DIR` simula a data (o cron não usa).
 - Front local: `cd frontend && python -m http.server 8765`.
+- Testes de front (Chromium headless + dado sintético gerado pelo próprio back-end): `node --test frontend/tests/front.test.js`
+  (precisa de Python com as dependências do back-end e do pacote `playwright`; sem ele os testes são pulados; o CI não roda).
+  O teste chama `python3` (no Windows, ponha um `python3.exe` do venv no PATH) e acha o `playwright` por `NODE_PATH`.
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -27,11 +30,18 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Fórmulas em `backend/gerador/modelo.py` espelham `agrega()` em `app.js`; mudou um, mude o outro.
 - **Todo nome de coluna, filtro e agrupador fica em `backend/gerador/mapeamento.py`.** Valores conferidos em 13/10/2026:
   - Base de clientes guarda histórico: filtrar `FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'`.
-  - Gerências do painel na fonte: `Gc. G1/G2/G3/Ap/It_Mo`. IT e MO vêm juntas; o código sai do supervisor
-    (`Sv. It. 1` → `SV.IT.1` → `IT`). Supervisores vêm com espaço (`Sv. G3. 1`). Ignorar `Sv. Bl.*` (balcão) e rotas `EV*`.
+  - Gerências do painel na fonte (`M.GC_ORIGEM`): `Gc. G1/G2/G3/Ap/It_Mo` conferidas; `Gc. At/An/Sl/Rv/Pa_Di/Ur_Ri/Gu_Po`
+    A CONFIRMAR (vistas no comodato). As agrupadas (It_Mo, Pa_Di, Ur_Ri, Gu_Po) são separadas pelo prefixo do supervisor
+    (`Sv. Pa. 3` → `SV.PA.3` → `PA`; `M.GC_SIGLAS_ORIGEM`); prefixo fora da gerência entra e vai para o log.
+    16 siglas em 3 regiões (`M.REGIOES`: Matriz G1 G2 G3 AT AP · Sul AN SL RV MO IT · Norte RI UR GU PO PA DI), no payload
+    em `REGIOES`; `GC_ATIVAS` mantém as 6 antigas primeiro (o front ordena por região).
+    Supervisores vêm com espaço (`Sv. G3. 1`). Ignorar `Sv. Bl.*` (balcão), rotas `EV*` e supervisor fora de
+    `SV.<sigla>.<n>` (também na At); as ignoradas são contadas por gerência e motivo no log.
   - Agrupadores têm grafia própria (`Cctm 2l Pet`, `Ks Tt`...). `Cervejas` é cobertura E volume.
     `Destilados` é outro agrupador já contido em `Dest+Art+Cnd`: nunca somar.
-  - A consulta de vendas SEMPRE filtra os 17 agrupadores (sem filtro vira cliente × 748 agrupadores).
+  - A consulta de vendas SEMPRE filtra os agrupadores (sem filtro vira cliente × 748 agrupadores): os 17 do painel +
+    Del Valle Frut, Sucos e Ades (`M.AGRUPADORES_CONSULTA_VENDAS`). Compras do mês, cobertura e "qualquer compra hoje"
+    (Revertido da VZ) continuam só com os 17 (`M.agrupador_do_painel`).
   - Pedidos de hoje (`FONTE = 'WF Online'`) só contam com `SITUACAO_Pedido = 'Inc. e Exp.'` (fora Cancelado/Reprovado).
     Basis e Meta NEG vêm na mesma consulta: o filtro é `(FONTE ne 'WF Online' or SITUACAO_Pedido eq 'Inc. e Exp.')`,
     nunca `SITUACAO_Pedido eq 'Inc. e Exp.'` puro (sumiria a meta por cliente, que tem situação 'Meta NEG').
@@ -76,6 +86,40 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   ganha `fechamentoMes` = rótulo de M−1; na rodada só-online o rótulo sai do payload publicado. O input manual
   `fechamento` do workflow só sobrepõe o rótulo da tag. `validacao.py` compara quedas (rotas, clientes, volume real)
   só com o payload publicado do mesmo `MES_LABEL`; na virada, só avisa.
+- **Neutraliza e virtuais são POR ROTA** (`M.NEUTRALIZA_ROTAS`, `M.VIRTUAIS_ROTAS`; listas únicas, no payload
+  `NEUTRALIZA_ROTAS`/`VIRTUAIS_ROTAS`, o front lê de lá; `CONFIG.SV_EXCLUIDOS` só para payload antigo). Valem em qualquer
+  gerência, inclusive na AT. A supervisão no front soma só as rotas normais dela (`rotasNormais`) e só aparece se tiver
+  alguma (`svsVisiveis`); o total da gerência e da Diretoria soma tudo (`rotasDe(gc,'')`).
+  Neutraliza: no total; linha "Neutraliza" no fim das supervisões da cascata (`ctxNeutraliza`, rotas e clientes dentro)
+  e opção "Neutraliza" no filtro de supervisão (`SV_NEUTRA`; o Resumo e o link dele viram a gerência); clientes na busca,
+  na base e nas listas; fora do Resumo, do "puxa a média" e da Venda Zero (card escondido se o filtro só tem Neutraliza;
+  sem linha na cascata da VZ). Virtuais: só no total (Volume/ICS/NN), ocultas em tudo o mais (sem cliente na base);
+  na cascata, só uma nota no fim das supervisões com Meta e Real delas (`notaVirtuais`; linhas + nota = card).
+  As duas fora da Venda Zero no back-end (lista, geladeiras ativas e rateio da meta); `COMODATO_CLIENTE` (tag/GDM) só
+  sem as virtuais. A 551 não tem versão corrente na base (FL_CORRENTE = 'S'; só histórico Ap/At até 03/2026), nem venda
+  ou meta em out/26: fica na lista e entra sozinha se voltar. Ocultas (`M.OCULTAS`: SV.G3.3): fora do "puxa a média" e
+  das listas de clientes; na AT (`M.GC_SEM_OCULTAS`) nenhuma supervisão é oculta (nem "sem vendedor").
+- **Del Valle Frut** (`M.VOLUME_EXTRA`: `VOL DEL VALLE FRUT`, agrupador oficial "Del Valle Frut", conferido em 19/10/2026
+  nas 18 rotas da G2; "Dv Frut" tem os mesmos números mas não é o oficial; só G2): todas as regras de volume; fora de
+  `GROUPS`/`COV_GRUPO`/`INDICADORES_VOLUME` (nunca somado aos 5 macros; fora do Resumo, da Diretoria, do ritmo de
+  coberturas e do "puxa a média"); nó do indicador e 6º bloco do `VOLUME_CLIENTE` só nas rotas com o dado. Sem
+  META_VOLUME nem META_NEG na G2: indicador indisponível (sem card) e aviso no log. Rótulo do extra: `VOLUME_EXTRA[k]
+  ['label']` (não está em `M.LABELS`).
+- **Online na janela de recarga** (`online.manter_publicado`): dia útil, 07:00-18:45, consulta sem nenhum cliente online
+  e `online.json` publicado do mesmo dia com dados -> o publicado fica (não grava o vazio), aviso no log, e o payload da
+  rodada calcula os revertidos com o online publicado (`online.do_publicado`). Fora disso, grava como sempre.
+- **Desempenho GDM e tag de geladeira** (busca de cliente): payload `COMODATO_CLIENTE {rota:{pv:[meta, faturado GDM,
+  situação, nº geladeiras]}}` + online `gdmCliente`. Meta = `META_EQPTO` das geladeiras Total Ko; faturado = Vol Real
+  (mesmo NF_STATUS) em Refrigerantes, Água Mineral, Sucos, Ades, Powerade (`M.AGRUPADORES_GDM`, única soma entre
+  agrupadores permitida); situação = pior `GIRO_STATUS_MES_ATUAL` (`M.SITUACAO_GIRO`, 'Baixo Giro'/'< 30 Dias' A CONFIRMAR).
+  Cores: Zero vermelho, Baixo sempre amarelo, Ok verde, < 30 dias e rede pela venda. Fechamento: sem tag nem quadrinho.
+- **Validação por gerência**: gerência sem rotas, metas ou Real = aviso; quedas (rotas, clientes, volume real) só contra
+  a mesma gerência publicada (gerência nova não é comparada).
+- **Front**: abre na entrada (DIRETORIA / GERÊNCIA; sol/lua só no fundo da entrada, `localStorage 'drotas_entrada'`).
+  Diretoria = todas as gerências (ou uma região). Cards abrem a cascata única (`abreIndicador` → `pintaCascata`):
+  gerências → supervisões → rotas → clientes, linhas com os números de `agrega()` (nada recalculado). Resumo: Diretoria
+  em faixas de 8 gerências, seletor de uma gerência; placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada).
+  Rodapé: "Karen Oliveira - Inteligência de Mercado".
 - **Decisões aceitas** (diferem do arquivo antigo, montado à mão): visitas de hoje pelo campo `VISITA_HOJE` do SAP.
 - **Semana**: `SEMANA_NUM` conta a partir da 1ª segunda-feira do mês; dias antes dela são da última semana do mês anterior.
 - O gerador só grava quando o conteúdo muda (JSON compacto e determinístico) e não grava nada se `validacao.py` reprovar.

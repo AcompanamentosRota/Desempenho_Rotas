@@ -75,7 +75,18 @@ jobs:
             echo ""
             echo "## 10. gerar.py completo"
             echo ""
-            echo "\`gerar.py ${ARGS[*]}\`: código de saída $CODIGO em ${DURACAO} s (meta: abaixo de 60 s; antes, 189 s)."
+            echo "\`gerar.py ${ARGS[*]}\`: código de saída $CODIGO em ${DURACAO} s (meta com 16 gerências: abaixo de 120 s)."
+            echo ""
+            echo "## E6. Tamanho dos JSONs"
+            echo ""
+            for f in saida/conferencia/payload.json saida/conferencia/online.json; do
+              if [ -f "$f" ]; then
+                echo "- $(basename "$f"): $(awk -v b="$(stat -c %s "$f")" 'BEGIN{printf "%.2f MB", b/1e6}')"
+              else
+                echo "- $(basename "$f"): não gerado"
+              fi
+            done
+            echo "(limite de atenção do payload: 8 MB)"
           } >> saida/conferencia/relatorio_tendencia.md
           exit $CODIGO
 

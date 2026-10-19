@@ -110,9 +110,18 @@ class ColCalendario:
 # ---------------------------------------------------------------------------
 # Filtros
 # ---------------------------------------------------------------------------
-# Gerências que o painel mostra (valor original de DS_GC_AGRUPADA_ATUAL). IT e MO vêm juntas
-# na fonte ('Gc. It_Mo'); o código de cada rota sai do supervisor (Sv. It. 1 -> IT).
-GC_ORIGEM = ["Gc. G1", "Gc. G2", "Gc. G3", "Gc. Ap", "Gc. It_Mo"]
+# Gerências que o painel mostra (valor original de DS_GC_AGRUPADA_ATUAL). As agrupadas (It_Mo, Pa_Di, Ur_Ri,
+# Gu_Po) são separadas pelo prefixo do supervisor (Sv. Pa. 3 -> SV.PA.3 -> PA), como IT e MO.
+GC_ORIGEM = ["Gc. G1", "Gc. G2", "Gc. G3", "Gc. Ap", "Gc. It_Mo",
+             # A CONFIRMAR (descoberta): grafias vistas no comodato, ainda não conferidas na base de clientes
+             "Gc. At", "Gc. An", "Gc. Sl", "Gc. Rv", "Gc. Pa_Di", "Gc. Ur_Ri", "Gc. Gu_Po"]
+# siglas do painel que cada gerência de origem pode ter (código de codigo_gc -> siglas dos supervisores)
+GC_SIGLAS_ORIGEM = {
+    "G1": ["G1"], "G2": ["G2"], "G3": ["G3"], "AP": ["AP"], "IT_MO": ["IT", "MO"],
+    # A CONFIRMAR (descoberta): prefixo dos supervisores das gerências novas
+    "AT": ["AT"], "AN": ["AN"], "SL": ["SL"], "RV": ["RV"],
+    "PA_DI": ["PA", "DI"], "UR_RI": ["UR", "RI"], "GU_PO": ["GU", "PO"],
+}
 # Base de clientes guarda o histórico: só a versão corrente de clientes ativos
 FILTRO_BASE_CLIENTE = "FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'"
 # Supervisões que não entram no painel (balcão) e rotas eventuais
@@ -129,6 +138,11 @@ TIPO_EQUIPAMENTO_EXIBICAO = "Geladeira"
 # Comparação por normalizar() (sem acento e caixa); grafia exata: relatório do conferir_tendencia.py.
 STATUS_NF_REAL = ["Acertado", "Meta Neg", "Em Aberto"]
 GIRO_ZERO = {"GIRO ZERO"}   # valores de GIRO_STATUS_MES_ATUAL que contam como Venda Zero
+# Situação da geladeira do cliente (tag e quadrinho "Desempenho GDM"): GIRO_STATUS_MES_ATUAL normalizado -> código
+# do payload. A CONFIRMAR (descoberta): grafia de 'Baixo Giro' e '< 30 Dias'. Outro valor ('--'...) = desconhecido.
+SITUACAO_GIRO = {"GIRO ZERO": "zero", "BAIXO GIRO": "baixo", "< 30 DIAS": "30d", "GIRO OK": "ok"}
+# cliente com mais de uma geladeira: vale a pior situação
+ORDEM_SITUACAO = ["zero", "baixo", "30d", "ok"]
 VALORES_SIM = {"S", "SIM", "1", "X", "TRUE", "Y", "YES"}
 # Meta de Novos Negócios (Campari, Dreher, Perfetti, Aperol) vem de META_COBERTURA, como o ICS
 META_NOVOS_NEG_DE_META_NEG = False
@@ -136,7 +150,16 @@ META_NOVOS_NEG_DE_META_NEG = False
 # ---------------------------------------------------------------------------
 # Estrutura do painel (copiada do payload.json que já estava publicado)
 # ---------------------------------------------------------------------------
+# Regiões e ordem das 16 gerências no painel (GC_ATIVAS e REGIOES vão para o payload)
+REGIOES = {
+    "Matriz": ["G1", "G2", "G3", "AT", "AP"],
+    "Sul": ["AN", "SL", "RV", "MO", "IT"],
+    "Norte": ["RI", "UR", "GU", "PO", "PA", "DI"],
+}
+# ordem das chaves no payload (DATA, GC_ATIVAS): as 6 de antes primeiro, para não mudar o que já era publicado;
+# a ordem de exibição por região é a de REGIOES (o front ordena por ela)
 GC_ATIVAS = ["G1", "G2", "G3", "AP", "IT", "MO"]
+GC_ATIVAS += [g for siglas in REGIOES.values() for g in siglas if g not in GC_ATIVAS]
 
 LABELS = {
     "CCTM 2L PET": "CCTM 2L Pet",
@@ -200,6 +223,29 @@ INDICADORES_NOVOS_NEG = set(GROUPS["NOVOS_NEG"]) - set(COV_GRUPO["ICS_GC"])
 INDICADORES_VOLUME = list(GROUPS["VOLUME"])
 ORDEM_INDICADORES = INDICADORES_COBERTURA + ["IMPERDOAVEIS", "VENDAZERO"] + INDICADORES_VOLUME
 
+# Volume de uma gerência só (aba Volume): segue todas as regras de volume, mas NUNCA entra nas somas dos
+# 5 macros (INDICADORES_VOLUME), no Resumo, na Diretoria, no "ritmo de coberturas" nem no "puxa a média";
+# fica fora de GROUPS/COV_GRUPO. O nó do indicador (e o 6º bloco do VOLUME_CLIENTE) só existe nas rotas
+# das gerências listadas e quando há dado. Vai para o payload em VOLUME_EXTRA.
+VOLUME_EXTRA = {"VOL DEL VALLE FRUT": {"label": "Del Valle Frut", "gcs": ["G2"]}}
+INDICADORES_VOLUME_EXTRA = list(VOLUME_EXTRA)
+INDICADORES_VOLUME_TODOS = INDICADORES_VOLUME + INDICADORES_VOLUME_EXTRA
+
+# Rotas Neutraliza e virtuais: listas POR ROTA (valem em qualquer gerência, inclusive na AT, e independem da
+# supervisão). ÚNICA fonte: vão para o payload (NEUTRALIZA_ROTAS, VIRTUAIS_ROTAS) e o front lê de lá.
+# Neutraliza: Meta e Real de Volume, ICS GC e Novos Negócios no total da gerência; na tela, uma linha "Neutraliza"
+# por gerência (cascata e filtro de supervisão) com as rotas e os clientes dentro; fora do Resumo de Vendas, do
+# "puxa a média" e da Venda Zero. A 551 não tem cliente corrente na base (só histórico na Ap/At): fica na lista
+# para entrar como Neutraliza se voltar.
+NEUTRALIZA_ROTAS = ["A41", "431", "251", "I31", "M31", "C31", "R31", "S31", "U31", "151", "O21", "551"]
+# Virtuais: ocultas em todo o painel (cascata, listas, filtro, busca, Resumo); só no total da gerência
+# (Volume, ICS GC, NN); fora da Venda Zero
+VIRTUAIS_ROTAS = ["A42", "A43", "A44", "R32"]
+# Supervisões ocultas: fora do "puxa a média" e das listas de clientes (payload OCULTAS)
+OCULTAS = ["SV.G3.3"]
+# Gerências em que nenhuma supervisão é oculta (nem as de OCULTAS, nem "sem vendedor"); as listas por rota valem
+GC_SEM_OCULTAS = ["AT"]
+
 # Segmentos elegíveis ao KS TT (mesma regra do front: KSTT_SEG)
 SEGMENTOS_KS_TT = {"LANCHONETE", "RESTAURANTE", "BOTECO", "PADARIAS"}
 
@@ -220,9 +266,26 @@ AGRUPADORES_VOLUME = {
     "VOL AGUA MINERAL": "Agua Mineral", "VOL DEST+ART+CND": "Dest+Art+Cnd",
 }
 AGRUPADORES_ORIGEM = sorted(set(AGRUPADORES_COBERTURA.values()) | set(AGRUPADORES_VOLUME.values()))
+# volume extra (VOLUME_EXTRA). Agrupador oficial "Del Valle Frut" (conferido em 19/10/2026: META_VOLUME e META_NEG
+# nas rotas da G2; "Dv Frut" traz os mesmos números, mas não é o oficial)
+AGRUPADORES_VOLUME_EXTRA = {"VOL DEL VALLE FRUT": "Del Valle Frut"}
+# consultas de volume (Vol Real, META_NEG, meta do dia, META_VOLUME): os 5 macros + os extras
+AGRUPADORES_VOLUME_CONSULTA = list(AGRUPADORES_VOLUME.values()) + list(AGRUPADORES_VOLUME_EXTRA.values())
+
+# Desempenho GDM (busca de cliente, aba Volume): volume dos agrupadores abaixo, somados SÓ nesse quadrinho.
+# A CONFIRMAR (descoberta): grafia de Sucos e Ades
+AGRUPADORES_GDM = ["Refrigerantes", "Agua Mineral", "Sucos", "Ades", "Powerade"]
+
+# Consulta de vendas: os 17 agrupadores do painel + os extras de volume e do GDM. Compras do mês, cobertura e
+# "comprou qualquer coisa hoje" continuam só com os 17 (AGRUPADORES_ORIGEM).
+AGRUPADORES_CONSULTA_VENDAS = sorted(set(AGRUPADORES_ORIGEM) | set(AGRUPADORES_VOLUME_EXTRA.values())
+                                     | set(AGRUPADORES_GDM))
+# Vol Real: macros de volume + extras + GDM (o GDM usa o mesmo filtro de NF_STATUS)
+AGRUPADORES_VOL_REAL = sorted(set(AGRUPADORES_VOLUME_CONSULTA) | set(AGRUPADORES_GDM))
 
 APELIDOS_COBERTURA: dict[str, list[str]] = {k: [v] for k, v in AGRUPADORES_COBERTURA.items()}
-APELIDOS_VOLUME: dict[str, list[str]] = {k: [v] for k, v in AGRUPADORES_VOLUME.items()}
+APELIDOS_VOLUME: dict[str, list[str]] = {k: [v] for k, v in
+                                         {**AGRUPADORES_VOLUME, **AGRUPADORES_VOLUME_EXTRA}.items()}
 
 
 def _indice(apelidos: dict[str, list[str]]) -> dict[str, str]:
@@ -238,7 +301,26 @@ def indicador_cobertura(agrupador: object) -> str | None:
 
 
 def indicador_volume(agrupador: object) -> str | None:
+    """Chave de volume (os 5 macros ou um extra, ex.: 'VOL DEL VALLE FRUT')."""
     return INDICE_VOLUME.get(normalizar(agrupador))
+
+
+_INDICE_ORIGEM = {normalizar(a) for a in AGRUPADORES_ORIGEM}
+_INDICE_GDM = {normalizar(a) for a in AGRUPADORES_GDM}
+
+
+def agrupador_do_painel(agrupador: object) -> bool:
+    """Um dos 17 agrupadores originais (compras do mês, cobertura, "qualquer compra hoje")."""
+    return normalizar(agrupador) in _INDICE_ORIGEM
+
+
+def agrupador_gdm(agrupador: object) -> bool:
+    return normalizar(agrupador) in _INDICE_GDM
+
+
+def volume_extra_da_gc(k: str, gc: str) -> bool:
+    """O volume extra `k` existe na gerência `gc`? (os 5 macros existem em todas)."""
+    return k not in VOLUME_EXTRA or gc in VOLUME_EXTRA[k]["gcs"]
 
 
 # ---------------------------------------------------------------------------
@@ -277,9 +359,17 @@ def status_nf_real(valor: object) -> bool:
     return normalizar(valor) in {normalizar(s) for s in STATUS_NF_REAL}
 
 
+_ORIGEM_DA_SIGLA = {sigla: origem for origem, siglas in GC_SIGLAS_ORIGEM.items() for sigla in siglas}
+
+
 def gc_origem(gc: str) -> str:
-    """Código do painel -> gerência de origem: 'IT'/'MO' -> 'IT_MO' (vêm juntas na fonte), 'G1' -> 'G1'."""
-    return "IT_MO" if gc in ("IT", "MO") else gc
+    """Sigla do painel -> gerência de origem: 'IT'/'MO' -> 'IT_MO', 'PA' -> 'PA_DI', 'G1' -> 'G1'."""
+    return _ORIGEM_DA_SIGLA.get(gc, gc)
+
+
+def sigla_esperada(gc_original: object, sigla: str) -> bool:
+    """O prefixo do supervisor é uma das siglas da gerência de origem? ('Gc. Pa_Di', 'PA' -> True)."""
+    return sigla in GC_SIGLAS_ORIGEM.get(codigo_gc(gc_original), [codigo_gc(gc_original)])
 
 
 def eh_sim(valor: object) -> bool:

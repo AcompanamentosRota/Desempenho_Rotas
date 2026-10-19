@@ -56,6 +56,11 @@ def feriados_nacionais(ano: int) -> set[date]:
     return {date(ano, m, d) for m, d in fixos} | set(moveis)
 
 
+def eh_dia_util(d: date) -> bool:
+    """Segunda a sexta, fora dos feriados nacionais."""
+    return d.weekday() < 5 and d not in feriados_nacionais(d.year)
+
+
 def dias_uteis_do_mes(ano: int, mes: int, feriados: set[date] | None = None) -> list[date]:
     feriados = feriados_nacionais(ano) if feriados is None else feriados
     d = date(ano, mes, 1)

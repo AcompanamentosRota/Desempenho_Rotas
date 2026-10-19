@@ -83,6 +83,8 @@ class Online:
     volume: dict[str, dict[str, float]] = field(default_factory=dict)        # rota -> VOL -> volume hoje
     # rota -> pv -> VOL -> volume hoje (somado ao Real da barra por cliente no front, fora do fechamento)
     volume_cliente: dict[str, dict[int, dict[str, float]]] = field(default_factory=dict)
+    # rota -> pv -> volume de hoje nos agrupadores do Desempenho GDM (somado ao faturado no front)
+    gdm_cliente: dict[str, dict[int, float]] = field(default_factory=dict)
     fechamento_mes: str | None = None
 
 
@@ -109,3 +111,5 @@ class Fontes:
     segmento_venda: dict[int, str] = field(default_factory=dict)
     # avisos da montagem (ex.: rota x macro sem curva de META_NEG), somados aos da validação no gerar.py
     avisos: list[str] = field(default_factory=list)
+    # Desempenho GDM e tag de geladeira: rota -> pv -> [meta, faturado GDM, situação, nº de geladeiras]
+    comodato_cliente: dict[str, dict[int, list]] = field(default_factory=dict)

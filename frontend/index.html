@@ -16,10 +16,27 @@
 <meta name="theme-color" content="#000000">
 <link rel="stylesheet" href="css/app.css">
 </head>
-<body>
+<body class="na-entrada">
+
+<!-- entrada: Diretoria / Gerência (o sol/lua troca só o fundo desta tela) -->
+<div id="entrada" class="entrada" role="dialog" aria-modal="true" aria-labelledby="entTit">
+  <button id="btnTema" class="entTema" type="button" aria-label="Entrada com fundo branco">☀</button>
+  <div class="entMeio">
+    <div class="entMarca"><img src="assets/helm.png" alt="" width="11" height="19">Comercial Bandeirantes</div>
+    <h1 id="entTit">Desempenho de Rotas</h1>
+    <div class="entBotoes">
+      <button type="button" data-modo="dir">DIRETORIA</button>
+      <button type="button" data-modo="gc">GERÊNCIA</button>
+    </div>
+  </div>
+  <div class="entRod" id="entRod">Karen Oliveira - Inteligência de Mercado</div>
+</div>
 
 <header class="topo">
   <div class="hd">
+    <button id="btnCasa" class="casa" type="button" aria-label="Voltar para a entrada" title="Entrada">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9.5 10 3.5l7 6V17h-4.5v-4.5h-5V17H3z" fill="#fff"/></svg>
+    </button>
     <div class="marca"><img class="helm" src="assets/helm.png" alt="" width="11" height="19">Comercial Bandeirantes</div>
     <h1>Desempenho de Rotas</h1>
     <div class="sub" id="sub"></div>
@@ -90,6 +107,8 @@
       <button data-rsb="ics" aria-pressed="true">ICS GC</button>
       <button data-rsb="nov" aria-pressed="false">Novos Neg.</button>
     </div>
+    <label class="sr-only" for="rsGc">Gerência do resumo</label>
+    <select id="rsGc" class="rs-sel" hidden></select>
     <div class="rs-acoes">
       <button class="rs-btn rs-pri" id="rsLink">Compartilhar link</button>
       <button class="rs-btn" id="rsImg">Baixar PDF</button>

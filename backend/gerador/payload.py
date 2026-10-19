@@ -137,7 +137,7 @@ def montar_payload(f: Fontes) -> dict:
     # ---- nós por rota
     data: dict = {}
     cobertos_out, oportunidades, sem_compra_hoje, visitas_sem = {}, {}, {}, {}
-    volume_cliente, redes_out, comodato_out = {}, {}, {}
+    volume_cliente, redes_out, comodato_out, comodato_cliente = {}, {}, {}, {}
     for gc in ordem_gc:
         data[gc] = {}
         for sv in sorted(arvore[gc]):
@@ -169,7 +169,9 @@ def montar_payload(f: Fontes) -> dict:
                     f.vz_meta.get(r) if vz_ativo else None, sum(e["vdz"] for e in vz_lista),
                     revertido_hoje[r], oportunidade_hoje[r])
                 vol_online = f.online.volume.get(r)
-                for k in M.INDICADORES_VOLUME:
+                # volume extra (Del Valle Frut): só quando a montagem trouxe o dado (gerências de M.VOLUME_EXTRA)
+                ks_vol = M.INDICADORES_VOLUME + [k for k in M.INDICADORES_VOLUME_EXTRA if k in f.volume.get(r, {})]
+                for k in ks_vol:
                     v = f.volume.get(r, {}).get(k)
                     sem_dado = bool(v is not None and v.meta is not None and round(v.real, 1) == 0
                                     and vol_online is not None and k not in vol_online)
@@ -196,7 +198,7 @@ def montar_payload(f: Fontes) -> dict:
                 volume_cliente[r] = {
                     str(c[0]): [modelo.bloco_volume_cliente(*vc[c[0]][k], cal.pace_ontem_pct)
                                 if c[0] in vc and k in vc[c[0]] else None
-                                for k in M.INDICADORES_VOLUME]
+                                for k in ks_vol]
                     for c in lista_roster
                 }
 
@@ -209,6 +211,11 @@ def montar_payload(f: Fontes) -> dict:
                 ativos = f.comodato_ativos.get(r)
                 if ativos:
                     comodato_out[r] = {str(pv): n for pv, n in sorted(ativos.items())}
+                # Desempenho GDM e tag de geladeira: só clientes do roster (os que a busca encontra)
+                cc = {str(pv): [modelo._r1(m), modelo._r1(real), sit, n]
+                      for pv, (m, real, sit, n) in sorted(f.comodato_cliente.get(r, {}).items()) if pv in pvs_roster}
+                if cc:
+                    comodato_cliente[r] = cc
 
     fontes = dict(M.FONTES_PADRAO)
     fontes["vendazero"] = vz_ativo
@@ -249,4 +256,11 @@ def montar_payload(f: Fontes) -> dict:
         "REDES_CLIENTE": por_ordem(redes_out),
         "FONTES": fontes,
         "FECHAMENTO": cal.fechamento,
+        "REGIOES": M.REGIOES,
+        "NEUTRALIZA_ROTAS": M.NEUTRALIZA_ROTAS,
+        "VIRTUAIS_ROTAS": M.VIRTUAIS_ROTAS,
+        "OCULTAS": M.OCULTAS,
+        "GC_SEM_OCULTAS": M.GC_SEM_OCULTAS,
+        "VOLUME_EXTRA": M.VOLUME_EXTRA,
+        "COMODATO_CLIENTE": por_ordem(comodato_cliente),
     }
