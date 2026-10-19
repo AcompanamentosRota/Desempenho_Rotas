@@ -36,6 +36,17 @@ before(async () => {
     execFileSync('python3', [path.join(FRONT, 'tests', 'sintetico.py'), dir, ...args], {cwd: RAIZ});
     DADOS[nome] = dir;
   }
+  // payload antigo (antes de GC_NOMES): com REGIOES, sem GC_NOMES e GC_ATIVAS na ordem antiga
+  const antigo = path.join(tmp, 'antigo');
+  fs.mkdirSync(antigo);
+  const p = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  delete p.GC_NOMES;
+  p.REGIOES = {Matriz: ['G1', 'G2', 'G3', 'AT', 'AP'], Sul: ['AN', 'SL', 'RV', 'MO', 'IT'],
+               Norte: ['RI', 'UR', 'GU', 'PO', 'PA', 'DI']};
+  p.GC_ATIVAS = ['G1', 'G2', 'G3', 'AP', 'IT', 'MO', 'AT', 'AN', 'SL', 'RV', 'RI', 'UR', 'GU', 'PO', 'PA'];
+  fs.writeFileSync(path.join(antigo, 'payload.json'), JSON.stringify(p));
+  fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(antigo, 'online.json'));
+  DADOS.antigo = antigo;
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -46,8 +57,9 @@ after(async () => {
 const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json',
   '.png':'image/png', '.webmanifest':'application/manifest+json'};
 
-/* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv'); devolve {page, erros}. `armazenado` = localStorage inicial. */
-async function abre(nome, {armazenado = {}, largura = 1200, entrar = 'gc'} = {}){
+/* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo'); devolve {page, erros}.
+   `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo). */
+async function abre(nome, {armazenado = {}, largura = 1200, entrar = 'gc', busca = ''} = {}){
   const ctx = await browser.newContext({viewport: {width: largura, height: 1000}});
   const page = await ctx.newPage();
   const erros = [];
@@ -65,7 +77,7 @@ async function abre(nome, {armazenado = {}, largura = 1200, entrar = 'gc'} = {})
   await page.route(/cdnjs\.cloudflare\.com/, r => r.abort());
   await page.addInitScript(itens => { try { for(const k in itens) localStorage.setItem(k, itens[k]); } catch(e){} },
                            armazenado);
-  await page.goto('http://painel.test/index.html');
+  await page.goto('http://painel.test/index.html' + busca);
   // P é 'let' de script clássico: existe no escopo global, mas não em window
   await page.waitForFunction(() => typeof P !== 'undefined' && P && document.querySelector('#lista').innerHTML !== '');
   // a página abre na entrada; entrar = 'gc' | 'dir' escolhe o modo, null fica na entrada
@@ -204,7 +216,7 @@ describe('Parte B — Neutraliza e virtuais por rota, ocultas, AT e Del Valle Fr
     await filtra(page, {gc: 'AN', sv: 'Neutraliza'});
     await page.click('#btnResumo');
     cols = await cabecalhos();
-    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · Sul GC.AN');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.AN · Anápolis');
     assert.ok(cols.includes('SV.AN.1') && !cols.some(c => /SV\.AN\.4|A4\d|Neutraliza/.test(c)), cols.join('|'));
     await page.click('#rsVoltar');
     // supervisão mista: colunas só com as rotas normais
@@ -499,7 +511,7 @@ describe('Parte D — cascata', {skip: pular}, () => {
     // modo Diretoria: AN tem a Neutraliza A41 e as virtuais A42-A44 (sem linha): linhas + virtuais = card
     ({page, ctx, erros} = await abre('normal', {entrar: 'dir'}));
     g = await cascata(page, k, 'VOLUME');
-    await page.click(`#dCorpo .cLin[data-i="${g.linhas.findIndex(l => l.nome === 'Gerência AN')}"]`);
+    await page.click(`#dCorpo .cLin[data-i="${g.linhas.findIndex(l => l.nome === 'GC.AN · Anápolis')}"]`);
     g = await lerGaveta(page);
     const an = await page.evaluate(k => ({card: agrega(rotasDe('AN', '')).ind[k].meta,
       virt: ['A42', 'A43', 'A44'].reduce((a, r) => a + nodo('AN', r).indicators[k].meta, 0),
@@ -549,7 +561,7 @@ describe('Parte D — cascata', {skip: pular}, () => {
     await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
     let g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
     assert.deepEqual(g.nota, []);
-    await page.click(`#dCorpo .cLin[data-i="${g.linhas.findIndex(l => l.nome === 'Gerência AN')}"]`);
+    await page.click(`#dCorpo .cLin[data-i="${g.linhas.findIndex(l => l.nome === 'GC.AN · Anápolis')}"]`);
     g = await lerGaveta(page);
     assert.equal(g.nota.length, 1);
     assert.deepEqual(erros, []);
@@ -586,10 +598,10 @@ describe('Parte D — cascata', {skip: pular}, () => {
     assert.deepEqual(r.selects, [true, true]);
     let g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
     assert.equal(g.linhas.length, 16);
-    assert.deepEqual(g.linhas.filter(l => l.off).map(l => l.nome), ['Gerência DI']);
+    assert.deepEqual(g.linhas.filter(l => l.off).map(l => l.nome), ['GC.DI · Dianópolis']);
     assert.equal(somaMeta(g.linhas), r.total);
     assert.ok(decrescente(g.linhas.filter(l => !l.off).map(l => l.dir)));
-    const iG1 = g.linhas.findIndex(l => l.nome === 'Gerência G1');
+    const iG1 = g.linhas.findIndex(l => l.nome === 'GC.G1 · Goiânia 01');
     await page.click(`#dCorpo .cLin[data-i="${iG1}"]`);
     g = await lerGaveta(page);
     assert.equal(g.volta, '← Gerências');
@@ -637,19 +649,19 @@ describe('Parte D — cascata', {skip: pular}, () => {
 });
 
 describe('Parte D — Resumo de vendas', {skip: pular}, () => {
-  test('Diretoria em faixas de 8, seletor de uma gerência e volta para "Todas"', async () => {
+  test('Diretoria em faixas de 8; com uma gerência no filtro, o Resumo é o dela; reabrir volta para "Todas"', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: 'dir'});
     await page.click('#btnResumo');
     let r = await page.evaluate(() => ({
       faixas: [...document.querySelectorAll('#rsFolha .rs-bloco')][0].querySelectorAll('.rs-faixa').length,
       cab: [...document.querySelectorAll('#rsFolha .rs-bloco')][0].querySelectorAll('.rs-faixa .rs-tab thead th').length,
-      sel: [...document.querySelectorAll('#rsGc option')].map(o => o.value),
+      seletor: !!document.getElementById('rsGc'),
       titulo: document.querySelector('#rsFolha h2').textContent,
       placa: !!document.querySelector('#rsFolha .rs-atencao'),
     }));
     assert.equal(r.faixas, 2, '15 gerências com dados: 8 + 7');
     assert.equal(r.cab, (1 + 1 + 8) * 2, 'faixa 1: nome + total + 8; faixa 2: nome + 7 + 2 em branco (alinhadas)');
-    assert.equal(r.sel.length, 16);
+    assert.equal(r.seletor, false, 'o Resumo segue o filtro da Diretoria (sem seletor próprio)');
     assert.equal(r.titulo, 'Resumo de vendas · Diretoria');
     const alinhadas = await page.evaluate(() => {
       const fx = [...document.querySelectorAll('#rsFolha .rs-bloco')][0].querySelectorAll('.rs-faixa .rs-tab thead');
@@ -658,18 +670,24 @@ describe('Parte D — Resumo de vendas', {skip: pular}, () => {
     });
     assert.ok(alinhadas, 'colunas das faixas alinhadas');
     assert.equal(r.placa, false, 'placa ATENÇÃO desligada');
-    await page.selectOption('#rsGc', 'IT');
+    await page.click('#rsVoltar');
+    const gcAntes = await page.evaluate(() => sel.gc);
+    await page.selectOption('#fgc', 'IT');
+    await page.click('#btnResumo');
     r = await page.evaluate(() => ({
       titulo: document.querySelector('#rsFolha h2').textContent,
       cols: [...document.querySelector('#rsFolha .rs-tab thead').querySelectorAll('th')].map(t => t.firstChild.textContent),
-      sel: sel.modo,
+      sel: [sel.modo, sel.dgc, sel.gc],
     }));
-    assert.equal(r.titulo, 'Resumo de vendas · Sul GC.IT · Itumbiara');
-    assert.ok(!r.cols.includes('SV.IT.3'), 'Neutraliza sem coluna');
-    assert.equal(r.sel, 'dir', 'o painel não muda');
+    assert.equal(r.titulo, 'Resumo de vendas · GC.IT · Itumbiara');
+    assert.deepEqual(r.cols, ['Agrupador', 'GC.IT', 'SV.IT.1', 'SV.IT.2'], 'gerência + supervisões; Neutraliza sem coluna');
+    assert.deepEqual(r.sel, ['dir', 'IT', gcAntes], 'o filtro da Gerência não muda');
+    // reabrir a Diretoria volta para "Todas as gerências" (e o Resumo das 16)
     await page.click('#rsVoltar');
+    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    assert.equal(await page.inputValue('#fgc'), '');
     await page.click('#btnResumo');
-    assert.equal(await page.inputValue('#rsGc'), '');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · Diretoria');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -686,6 +704,210 @@ describe('Parte D — Resumo de vendas', {skip: pular}, () => {
     });
     assert.deepEqual(r.faltam, ['rgb(253, 231, 231)', 'rgb(198, 40, 40)']);
     assert.ok(r.larguras.every(w => Math.abs(w - r.larguras[0]) < 1), 'coluna de nomes igual em todos os blocos');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});
+
+/* ---------- Parte G: sem regiões, nomes e ordem das gerências, filtro por gerência na Diretoria ---------- */
+const ORDEM = ['AN', 'AP', 'AT', 'G1', 'G2', 'G3', 'PA', 'DI', 'RV', 'SL', 'GU', 'PO', 'IT', 'MO', 'UR', 'RI'];
+const NOMES = {AN: 'Anápolis', AP: 'Aparecida', AT: 'Atacados', G1: 'Goiânia 01', G2: 'Goiânia 02', G3: 'Goiânia 03',
+  PA: 'Palmas', DI: 'Dianópolis', RV: 'Rio Verde', SL: 'São Luís', GU: 'Gurupi', PO: 'Porangatu', IT: 'Itumbiara',
+  MO: 'Morrinhos', UR: 'Uruaçu', RI: 'Rialma'};
+const ROTULO = g => `GC.${g} · ${NOMES[g]}`;
+const REGIAO = /Regi[aã]o|Matriz|\bSul\b|\bNorte\b/;
+/* todo o texto da página (inclusive o escondido, opções e grupos de <select>) */
+const textos = page => page.evaluate(() => [document.title, document.body.textContent,
+  ...[...document.querySelectorAll('optgroup')].map(o => o.label)].join('\n'));
+const opcoesGc = page => page.$$eval('#fgc option', os => os.map(o => [o.value, o.textContent, o.disabled]));
+/* cabeçalhos do 1º bloco do Resumo (todas as faixas): [código, nome embaixo] */
+const colunasRs = page => page.$eval('#rsFolha .rs-bloco', bl => [...bl.querySelectorAll('.rs-tab thead th')].map(t =>
+  [t.firstChild ? t.firstChild.textContent : '', (t.querySelector('small') || {}).textContent || '']));
+
+describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Diretoria', {skip: pular}, () => {
+  test('nenhum texto de região: Gerência, Diretoria, cascata e Resumo (tela e título do PDF)', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const confere = async onde => assert.doesNotMatch(await textos(page), REGIAO, onde);
+    await confere('Gerência');
+    assert.equal(await page.$$eval('#fgc optgroup', g => g.length), 0, 'seletor sem grupos por região');
+    await filtra(page, {gc: 'IT'});
+    await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
+    await confere('cascata da Gerência');
+    await page.keyboard.press('Escape');
+    await page.click('#btnResumo');
+    await confere('Resumo da Gerência');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.IT · Itumbiara');
+    await page.click('#rsVoltar');
+    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    await confere('Diretoria');
+    await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    await confere('cascata da Diretoria');
+    await page.keyboard.press('Escape');
+    await page.click('#btnResumo');
+    await confere('Resumo da Diretoria');
+    await page.click('#rsVoltar');
+    await page.selectOption('#fgc', 'MO');
+    await page.click('#btnResumo');
+    await confere('Resumo de uma gerência na Diretoria');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.MO · Morrinhos');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('ordem e rótulos "GC.G1 · Goiânia 01" das 16: seletores, cabeçalho, cascata, Resumo e "puxa a média"', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const p = await page.evaluate(() => ({nomes: P.GC_NOMES, ativas: P.GC_ATIVAS, data: Object.keys(DATA), gc: sel.gc}));
+    assert.deepEqual(Object.keys(p.nomes), ORDEM);
+    assert.deepEqual(p.nomes, NOMES);
+    assert.deepEqual(p.ativas, ORDEM.filter(g => g !== 'DI'), 'GC_ATIVAS: as com dados, na mesma ordem');
+    assert.deepEqual(p.data, p.ativas);
+    assert.equal(p.gc, 'AN', 'a Gerência abre na primeira da lista com dados');
+    // seletor da Gerência: lista simples na ordem, DI sem dados desabilitada
+    const lista = ORDEM.map(g => g === 'DI' ? [g, ROTULO(g) + ' · sem dados', true] : [g, ROTULO(g), false]);
+    assert.deepEqual(await opcoesGc(page), lista);
+    await filtra(page, {gc: 'G1'});
+    assert.match(await page.textContent('#sub'), /· GC\.G1 · Goiânia 01$/);
+    // Resumo da gerência: título com o rótulo; a 1ª coluna traz o nome da praça
+    await page.click('#btnResumo');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.G1 · Goiânia 01');
+    assert.deepEqual((await colunasRs(page))[1], ['GC.G1', 'Goiânia 01']);
+    await page.click('#rsVoltar');
+    // Diretoria: seletor "Todas" + as 16; cascata com as 16 gerências; Resumo com as colunas na ordem
+    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    assert.deepEqual(await opcoesGc(page), [['', 'Todas as gerências', false], ...lista]);
+    assert.match(await page.textContent('#sub'), /· Diretoria$/);
+    const g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
+    assert.deepEqual(g.linhas.map(l => l.nome).sort(), ORDEM.map(ROTULO).sort());
+    assert.deepEqual(g.linhas.filter(l => l.off).map(l => l.nome), ['GC.DI · Dianópolis']);
+    await page.click(`#dCorpo .cLin[data-i="${g.linhas.findIndex(l => l.nome === 'GC.G2 · Goiânia 02')}"]`);
+    assert.equal(await page.textContent('#dTit'), 'Refrigerantes · GC.G2 · Goiânia 02');
+    await page.keyboard.press('Escape');
+    await page.click('#btnResumo');
+    const gcs = (await colunasRs(page)).filter(([c]) => c.startsWith('GC.'));
+    assert.deepEqual(gcs.map(([c]) => c.slice(3)), ORDEM.filter(x => x !== 'DI'), 'colunas na ordem (faixas de 8 + 7)');
+    assert.ok(gcs.every(([c, nm]) => nm === NOMES[c.slice(3)]), 'nome da praça embaixo do código');
+    await page.click('#rsVoltar');
+    // "gerência que mais puxa a média" com o rótulo: todas no ritmo, a MO zerada
+    await filtra(page, {aba: 'ICS_GC'});
+    for(const gc of ORDEM.filter(x => x !== 'DI')){
+      const rotas = await page.evaluate(gc => rotasDe(gc, ''), gc);
+      await ritmo(page, gc, rotas, gc === 'MO' ? 0 : 1);
+    }
+    await filtra(page, {});
+    assert.match(await page.textContent('#puxa'), /Gerência que mais puxa a média para baixo: GC\.MO · Morrinhos/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Diretoria com uma gerência: cards, cascata (supervisões, Neutraliza, nota das virtuais) e Resumo dela', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const gcGerencia = await page.evaluate(() => sel.gc);
+    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    const k = 'VOL REFRIGERANTES';
+    const todas = await page.evaluate(k => agrega(rotasAtuais()).ind[k].meta, k);
+    await page.selectOption('#fgc', 'G2');
+    await filtra(page, {aba: 'VOLUME'});
+    const r = await page.evaluate(k => ({rotas: rotasAtuais(), g2: rotasDe('G2', ''), meta: agrega(rotasAtuais()).ind[k].meta,
+      metaG2: agrega(rotasDe('G2', '')).ind[k].meta, base: document.getElementById('nBase').textContent,
+      baseG2: agrega(rotasDe('G2', '')).tot.baseTotal.toLocaleString('pt-BR'), sub: document.getElementById('sub').textContent,
+      tits: [...document.querySelectorAll('#lista .ind .tit')].map(t => t.textContent),
+      sv: [document.getElementById('fsv').hidden, document.getElementById('frota').hidden]}), k);
+    assert.deepEqual(r.rotas, r.g2, 'cards só da G2');
+    assert.ok(r.meta === r.metaG2 && r.meta < todas);
+    assert.equal(r.base, r.baseG2);
+    assert.match(r.sub, /· Diretoria · GC\.G2 · Goiânia 02$/);
+    assert.ok(!r.tits.includes('Del Valle Frut'), 'Del Valle Frut continua fora da Diretoria');
+    assert.deepEqual(r.sv, [true, true], 'na Diretoria só o filtro de gerência');
+    // cascata: card -> supervisões (com a linha Neutraliza) -> rotas -> clientes
+    let g = await cascata(page, k, 'VOLUME');
+    assert.equal(g.tit, 'Refrigerantes · GC.G2 · Goiânia 02');
+    assert.equal(g.volta, '');
+    assert.deepEqual(g.linhas.map(l => l.nome).sort(), ['Neutraliza', 'SV.G2.1 · Supervisor', 'SV.G2.2 · Supervisor']);
+    assert.ok(Math.abs(somaMeta(g.linhas) - r.metaG2) < 1e-6, 'linhas = card');
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    g = await lerGaveta(page);
+    assert.equal(g.volta, '← Supervisões');
+    assert.ok(g.linhas.length && g.linhas.every(l => /^Rota /.test(l.nome)));
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    g = await lerGaveta(page);
+    assert.ok(g.clientes.length > 0);
+    await page.keyboard.press('Escape');
+    // AN: a nota das virtuais, como na Gerência
+    await page.selectOption('#fgc', 'AN');
+    g = await cascata(page, k, 'VOLUME');
+    assert.equal(g.nota.length, 1);
+    assert.match(g.nota[0].texto, /^Inclui rotas virtuais: Meta /);
+    await page.keyboard.press('Escape');
+    // "puxa a média": as supervisões da gerência escolhida
+    await page.selectOption('#fgc', 'G2');
+    await filtra(page, {aba: 'ICS_GC'});
+    await ritmo(page, 'G2', await page.evaluate(() => rotasDe('G2', '')), 1);
+    await ritmo(page, 'G2', ['G211', 'G212'], 0);
+    await filtra(page, {});
+    assert.match(await page.textContent('#puxa'), /Supervisão que mais puxa a média para baixo: SV\.G2\.1/);
+    // Resumo: o da G2 (gerência + supervisões)
+    await page.click('#btnResumo');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.G2 · Goiânia 02');
+    assert.deepEqual((await colunasRs(page)).map(c => c[0]), ['Agrupador', 'GC.G2', 'SV.G2.1', 'SV.G2.2']);
+    await page.click('#rsVoltar');
+    // a escolha não muda a Gerência e volta para "Todas" ao reabrir a Diretoria
+    await page.click('#btnCasa'); await page.click('#entrada [data-modo="gc"]');
+    assert.deepEqual(await page.evaluate(() => [sel.modo, sel.gc, document.getElementById('fgc').value]),
+                     ['gc', gcGerencia, gcGerencia]);
+    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    assert.deepEqual(await page.evaluate(() => [sel.dgc, document.getElementById('fgc').value]), ['', '']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('link do Resumo da Diretoria: com gerência abre o dela; link antigo com região abre o de todas', async () => {
+    let {page, ctx, erros} = await abre('normal', {entrar: null, busca: '?resumo=vol,ics&modo=dir&gc=IT'});
+    assert.deepEqual(await page.evaluate(() => [sel.modo, sel.dgc, document.getElementById('fgc').value]), ['dir', 'IT', 'IT']);
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.IT · Itumbiara');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    ({page, ctx, erros} = await abre('normal', {entrar: null, busca: '?resumo=vol&modo=dir&reg=Sul'}));
+    assert.deepEqual(await page.evaluate(() => [sel.modo, sel.dgc]), ['dir', '']);
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · Diretoria');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('payload antigo com REGIOES (sem GC_NOMES): ignora a chave e não quebra', async () => {
+    const {page, ctx, erros} = await abre('antigo');
+    assert.doesNotMatch(await textos(page), REGIAO);
+    const op = await opcoesGc(page);
+    assert.deepEqual(op.map(o => o[0]), ['G1', 'G2', 'G3', 'AP', 'IT', 'MO', 'AT', 'AN', 'SL', 'RV', 'RI', 'UR', 'GU', 'PO', 'PA'],
+                     'ordem do GC_ATIVAS do payload');
+    assert.deepEqual(op.slice(0, 2).map(o => o[1]), ['GC.G1', 'GC.G2'], 'sem GC_NOMES: só o código');
+    await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
+    await page.keyboard.press('Escape');
+    await page.click('#btnResumo');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.G1');
+    await page.click('#rsVoltar');
+    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    await page.selectOption('#fgc', 'IT');
+    await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    await page.keyboard.press('Escape');
+    await page.click('#btnResumo');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.IT');
+    assert.doesNotMatch(await textos(page), REGIAO);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Gerência inalterada: filtros de supervisão e rota, cascata a partir das supervisões', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    await page.selectOption('#fgc', 'G3');
+    const r = await page.evaluate(() => ({sel: [sel.modo, sel.gc, sel.sv, sel.rota],
+      vis: [document.getElementById('fsv').hidden, document.getElementById('frota').hidden],
+      svs: [...document.querySelectorAll('#fsv option')].map(o => o.value).filter(Boolean)}));
+    assert.deepEqual(r.sel, ['gc', 'G3', '', '']);
+    assert.deepEqual(r.vis, [false, false]);
+    assert.deepEqual(r.svs, ['SV.G3.1', 'SV.G3.2', 'SV.G3.3']);
+    const g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    assert.equal(g.tit, 'CCTM 2L Pet · GC.G3 · Goiânia 03');
+    assert.ok(g.linhas.length && g.linhas.every(l => /^SV\.G3\./.test(l.nome)));
     assert.deepEqual(erros, []);
     await ctx.close();
   });

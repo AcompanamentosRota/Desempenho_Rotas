@@ -33,6 +33,9 @@ from gerador.saida import serializar  # noqa: E402
 from tests.test_fontes import CB, CC, CM, CO, ConsultaFalsa  # noqa: E402
 
 SEM_DADOS = {"DI"}
+# ordem em que o cenário é montado (PVs e valores dependem dela); fixa, independente da ordem de exibição (M.GC_NOMES)
+GERENCIAS = ["G1", "G2", "G3", "AP", "IT", "MO", "AT", "AN", "SL", "RV", "RI", "UR", "GU", "PO", "PA", "DI"]
+assert sorted(GERENCIAS) == sorted(M.GC_ATIVAS)
 GIROS = ["Giro Zero", "Baixo Giro", "Giro Ok", "< 30 Dias", "Giro Ok", "--"]
 SEGMENTOS = ["Boteco", "Mercearia", "Lanchonete", "Super", "Padarias", "Restaurante"]
 
@@ -68,7 +71,7 @@ def _rotas(sigla: str, i: int) -> list[str]:
 def dados(fechamento: bool, sem_meta_dv: bool = False) -> dict:
     base, vendas, vol_real, metas, meta_neg, meta_dia, comodato, meta_vz = [], [], [], [], [], [], [], []
     pv = 10000
-    for gi, sigla in enumerate(M.GC_ATIVAS):
+    for gi, sigla in enumerate(GERENCIAS):
         if sigla in SEM_DADOS:
             continue
         origem = _origem(sigla)

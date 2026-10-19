@@ -8,7 +8,7 @@ desempenho/
 ├── frontend/                 site estático (GitHub Pages)
 │   ├── index.html
 │   ├── css/app.css
-│   ├── js/config.js          URLs dos dados, intervalos, regiões, placa ATENÇÃO, CDN (com SRI)
+│   ├── js/config.js          URLs dos dados, intervalos, placa ATENÇÃO, CDN (com SRI)
 │   ├── js/app.js             painel (entrada, filtros, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/main.js            carga e atualização periódica dos JSONs
@@ -115,15 +115,19 @@ fechamento do mês; o cron não usa), `--fechamento "Setembro/26"` (só sobrepõ
 - **Venda Zero**: geladeiras `Total Ko` / Fountain em `Concluído(Contrato)` com `Giro Zero`
   (rota 111: os mesmos 67 equipamentos do painel antigo).
 
-## Gerências, regiões e telas
+## Gerências e telas
 
-16 gerências em 3 regiões: **Matriz** G1, G2, G3, AT, AP · **Sul** AN, SL, RV, MO, IT · **Norte** RI, UR, GU,
-PO, PA, DI (lista em `backend/gerador/mapeamento.py`, enviada no payload). O painel abre na **entrada**
+16 gerências, nesta ordem em todo o painel: GC.AN · Anápolis, GC.AP · Aparecida, GC.AT · Atacados, GC.G1 · Goiânia 01,
+GC.G2 · Goiânia 02, GC.G3 · Goiânia 03, GC.PA · Palmas, GC.DI · Dianópolis, GC.RV · Rio Verde, GC.SL · São Luís,
+GC.GU · Gurupi, GC.PO · Porangatu, GC.IT · Itumbiara, GC.MO · Morrinhos, GC.UR · Uruaçu e GC.RI · Rialma (lista e
+nomes em `backend/gerador/mapeamento.py`, `GC_NOMES`, enviados no payload). Não há visão por região. O painel abre na **entrada**
 (DIRETORIA ou GERÊNCIA; o botão sol/lua troca só o fundo da entrada, preto ou branco, e o aparelho guarda a
 escolha). A casa vermelha do topo volta para a entrada.
 
-- **Gerência**: filtros de gerência (as sem dados aparecem desabilitadas), supervisão e rota.
-- **Diretoria**: total das 16 gerências (ou de uma região) nos cards.
+- **Gerência**: filtros de gerência (as 16 em lista, as sem dados desabilitadas), supervisão e rota.
+- **Diretoria**: filtro "Todas as gerências" (cards com o total das 16) ou uma gerência (cards só dela; a cascata
+  começa nas supervisões, com a linha "Neutraliza" e a nota das virtuais). A escolha não muda a Gerência e volta
+  para "Todas" ao reabrir a Diretoria.
 - **Cascata**: clicar num card abre gerências → supervisões → rotas → clientes, a partir do nível do filtro,
   com botões para subir um nível. Cada linha mostra Meta e Real, Online e meta do dia (verde quando o online
   bate a meta do dia) e a tendência, da maior para a menor (no fechamento do mês, o % realizado). Na lista de
@@ -151,8 +155,8 @@ escolha). A casa vermelha do topo volta para a entrada.
   Água Mineral, Sucos, Ades e Powerade; Meta = META_EQPTO das geladeiras Total Ko. Tag e cor pela situação da
   geladeira (GIRO_STATUS_MES_ATUAL): Giro Zero = vermelho "Venda Zero · x geladeira(s)"; Baixo Giro = amarelo;
   Giro Ok = preto/verde; < 30 dias = cinza, quadrinho pela venda do mês. Rede soma as lojas com geladeira.
-- **Resumo de vendas**: segue o filtro; na Diretoria, gerências lado a lado em faixas de 8 e seletor para gerar o
-  resumo de uma gerência sem mudar o painel. A placa ATENÇÃO existe, mas está desligada
+- **Resumo de vendas**: segue o filtro; na Diretoria com "Todas as gerências", as 16 lado a lado em faixas de 8;
+  com uma gerência no filtro, o resumo dela (gerência + supervisões). A placa ATENÇÃO existe, mas está desligada
   (`CONFIG.LIMIAR_ATENCAO = null`).
 - Rodapé: "Karen Oliveira - Inteligência de Mercado".
 

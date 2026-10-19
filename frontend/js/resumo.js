@@ -18,7 +18,6 @@ const RS = (()=>{
   const CURTO_X = {'REFRI SABORES ZERO':'Refri Sab. Zero','CERVEJAS 600ML RETORNAVEL':'Cerv. 600ml Ret.'};
   const blocos = {vol:true, ics:true, nov:false};
   let aberto = false, COMPACTO = false, LARG_MIN = 380;
-  let rsGc = '';    // Diretoria: gerência escolhida só para o resumo ('' = todas); não muda o painel
   const n = v => { const r = Math.round(v); return (r===0?0:r).toLocaleString('pt-BR'); };
   const nome = k => CURTO_X[k] || (P.LABELS_CURTO||{})[k] || LABELS[k] || k;
 
@@ -76,22 +75,20 @@ const RS = (()=>{
   }
 
   /* ---- colunas conforme o filtro atual (ou a gerência escolhida no seletor da Diretoria) ---- */
-  // título com a região e o nome da praça quando conhecido: "Sul GC.IT · Itumbiara"
-  const tituloGc = gc => `${regiaoDe(gc) ? regiaoDe(gc)+' ' : ''}GC.${gc}${(CONFIG.NOMES_GC||{})[gc] ? ' · '+CONFIG.NOMES_GC[gc] : ''}`;
   // filtro do Resumo: a Neutraliza não tem coluna, então o filtro "Neutraliza" (ou uma rota dela) vira a gerência
   const filtroRs = () => (sel.sv===SV_NEUTRA || (sel.rota && ehNeutraliza(sel.rota))) ? {sv:'', rota:''}
     : {sv:sel.sv, rota:sel.rota};
   function colunas(){
-    if(sel.modo==='dir' && !rsGc){
+    if(sel.modo==='dir' && !sel.dgc){
       // Diretoria: total + uma coluna por gerência com dados (Neutraliza no total de cada uma)
-      const gcs = gcsComDados(sel.reg);
-      const nome = sel.reg ? 'Região '+sel.reg : 'Diretoria';
-      return {titulo: sel.reg ? `Diretoria · ${sel.reg}` : 'Diretoria', sub: `${nome} → gerências`,
-              cols:[[sel.reg || 'Diretoria', gcs.flatMap(g=>rotasDe(g,''))], ...gcs.map(g=>['GC.'+g, rotasDe(g,'')])]};
+      const gcs = gcsComDados();
+      return {titulo: 'Diretoria', sub: 'Diretoria → gerências',
+              cols:[['Diretoria', gcs.flatMap(g=>rotasDe(g,''))], ...gcs.map(g=>['GC.'+g, rotasDe(g,'')])]};
     }
-    const gc = (sel.modo==='dir') ? rsGc : sel.gc;
+    // Diretoria com uma gerência no filtro: o resumo dela (gerência + supervisões), como na Gerência
+    const gc = (sel.modo==='dir') ? sel.dgc : sel.gc;
     // Neutraliza e virtuais sem coluna; o total da gerência (1ª coluna) inclui as rotas delas
-    const porSv = () => ({titulo:tituloGc(gc), sub:'Gerência → supervisores',
+    const porSv = () => ({titulo:rotuloGc(gc), sub:'Gerência → supervisores',
       cols:[['GC.'+gc, rotasDe(gc,'')], ...svsVisiveis(gc).map(s=>[s, rotasNormais(gc, s)])]});
     if(sel.modo==='dir') return porSv();
     const {sv, rota} = filtroRs();
@@ -105,8 +102,9 @@ const RS = (()=>{
     }
     return porSv();
   }
-  // cabeçalho da coluna: código (SV.G1.1 / rota) + primeiro nome do supervisor quando houver
-  const cab = c => { if(c.vazio) return ''; const nm = nomeSv(c[0]); return esc(c[0]) + (nm ? `<small class="rs-svnome">${esc(nm)}</small>` : ''); };
+  // cabeçalho da coluna: código (GC.G1 / SV.G1.1 / rota) + nome da praça (GC_NOMES) ou primeiro nome do supervisor
+  const cab = c => { if(c.vazio) return ''; const nm = /^GC\./.test(c[0]) ? nomesGc()[c[0].slice(3)] : nomeSv(c[0]);
+    return esc(c[0]) + (nm ? `<small class="rs-svnome">${esc(nm)}</small>` : ''); };
   // coluna em branco: completa as faixas da Diretoria para as colunas ficarem alinhadas entre as faixas
   const colVazia = () => Object.assign(['', [], {c:{}, v:{}, vz:{n:0}}], {vazio:true});
   // foco0: a 1ª coluna é o total (destacada); nas faixas seguintes da Diretoria não é
@@ -132,7 +130,7 @@ const RS = (()=>{
      o total fica no começo da 1ª faixa ---- */
   function faixas(cols){
     const N = CONFIG.RS_COLUNAS_FAIXA || 8;
-    if(!(sel.modo==='dir' && !rsGc) || cols.length-1 <= N) return [cols];
+    if(!(sel.modo==='dir' && !sel.dgc) || cols.length-1 <= N) return [cols];
     const out = [];
     for(let i=1; i<cols.length; i+=N) out.push(cols.slice(i, i+N));
     out[0] = [cols[0], ...out[0]];
@@ -154,20 +152,9 @@ const RS = (()=>{
     if(!cand.length) return '';
     return `<div class="rs-atencao">ATENÇÃO: ${cand.map(([c,ct])=>`${esc(rotuloSv(c))} (${ct[0]}/${ct[1]} no ritmo)`).join(' · ')}</div>`;
   }
-  // seletor da Diretoria: resumo de uma gerência só (gerência + supervisões), sem mudar o painel
-  function pintaSeletor(){
-    const el = document.getElementById('rsGc');
-    el.hidden = sel.modo!=='dir';
-    if(el.hidden) return;
-    el.innerHTML = `<option value="">Todas as gerências</option>` +
-      gcsComDados(sel.reg).map(g=>`<option value="${esc(g)}">Gerência ${esc(g)}</option>`).join('');
-    el.value = rsGc;
-  }
-
   /* ---- monta a folha ---- */
   function pinta(){
     if(!aberto || !P) return;
-    pintaSeletor();
     const {titulo:tit, sub, cols} = colunas();
     cols.forEach(c=>c[2] = soma(sel.gc, c[1]));
     const fx = faixas(cols);
@@ -207,7 +194,7 @@ const RS = (()=>{
   function linkAtual(){
     const q = new URLSearchParams();
     q.set('resumo', Object.keys(blocos).filter(k=>blocos[k]).join(','));
-    if(sel.modo==='dir'){ q.set('modo', 'dir'); if(sel.reg) q.set('reg', sel.reg); if(rsGc) q.set('gc', rsGc); }
+    if(sel.modo==='dir'){ q.set('modo', 'dir'); if(sel.dgc) q.set('gc', sel.dgc); }
     else { const f = filtroRs(); q.set('gc', sel.gc); if(f.sv) q.set('sv', f.sv); if(f.rota) q.set('rota', f.rota); }
     return location.origin + location.pathname + '?' + q.toString().replace(/%2C/g, ',');
   }
@@ -293,7 +280,6 @@ const RS = (()=>{
   }
 
   function abre(){
-    rsGc = '';      // ao reabrir, a Diretoria volta para "Todas"
     aberto = true; document.getElementById('rsOverlay').hidden = false;
     document.body.classList.add('rs-travado'); pinta();
     document.getElementById('rsOverlay').scrollTop = 0;
@@ -321,10 +307,9 @@ const RS = (()=>{
     document.body.classList.remove('na-entrada');
     const gc = q.get('gc');
     if(q.get('modo')==='dir'){
-      const reg = q.get('reg');
-      sel = {...sel, modo:'dir', reg: reg && regioes()[reg] ? reg : '', sv:'', rota:''};
+      // gc = filtro da Diretoria (sem ele, todas); link antigo com reg= (região) abre a Diretoria inteira
+      sel = {...sel, modo:'dir', dgc: gc && DATA[gc] ? gc : '', sv:'', rota:''};
       render(); abre();
-      if(gc && DATA[gc]){ rsGc = gc; pinta(); }
       return;
     }
     if(gc && DATA[gc]) sel = {...sel, modo:'gc', gc, sv:'', rota:''};
@@ -339,7 +324,6 @@ const RS = (()=>{
     document.getElementById('rsVoltar').onclick = fecha;
     document.getElementById('rsLink').onclick = compartilhar;
     document.getElementById('rsImg').onclick = baixarPdf;
-    document.getElementById('rsGc').onchange = e => { rsGc = e.target.value; pinta(); };
     document.addEventListener('keydown', e=>{ if(e.key==='Escape' && aberto) fecha(); });
     let t; addEventListener('resize', ()=>{ clearTimeout(t); t = setTimeout(pinta, 150); });
   }

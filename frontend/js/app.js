@@ -127,17 +127,19 @@ function atualizarStatusTag(){
 }
 setInterval(atualizarStatusTag, CONFIG.STATUS_TICK_MS);
 
-/* Filtro: modo 'gc' (Gerência: gc > sv > rota) ou 'dir' (Diretoria: todas as gerências, ou as de uma região). */
-let sel = {modo:'gc', reg:'', gc:'', sv:'', rota:''};
+/* Filtro: modo 'gc' (Gerência: gc > sv > rota) ou 'dir' (Diretoria: todas as gerências ou a do filtro, dgc).
+   O filtro da Diretoria (dgc) não mexe no da Gerência (gc) e volta para "Todas" ao reabrir a Diretoria. */
+let sel = {modo:'gc', dgc:'', gc:'', sv:'', rota:''};
 let ROTA_IDX = {};   // rota -> [gc, sv] (montado em aplicaPayload; a Diretoria junta rotas de várias gerências)
 
-// regiões e as 16 gerências: vêm do payload (REGIOES, mesma lista do back-end); CONFIG só para payload antigo
-const regioes = () => (P && P.REGIOES) || CONFIG.REGIOES;
-const todasGcs = () => [...new Set([...Object.values(regioes()).flat(), ...((P && P.GC_ATIVAS) || [])])];
-const regiaoDe = gc => Object.keys(regioes()).find(rg=>regioes()[rg].includes(gc)) || '';
-const gcsDaRegiao = reg => reg ? (regioes()[reg] || []) : todasGcs();
-const gcsComDados = reg => gcsDaRegiao(reg).filter(g=>DATA[g]);
-const primeiraGc = () => todasGcs().find(g=>DATA[g]) || Object.keys(DATA)[0];
+/* As 16 gerências, na ordem e com o nome da praça: payload GC_NOMES (lista única do back-end; GC_ATIVAS na mesma
+   ordem, só as que têm dados). Payload antigo sem GC_NOMES: ordem de GC_ATIVAS e rótulo só com o código; a chave
+   REGIOES de payload antigo é ignorada. */
+const nomesGc = () => (P && P.GC_NOMES) || {};
+const todasGcs = () => [...new Set([...Object.keys(nomesGc()), ...((P && P.GC_ATIVAS) || []), ...Object.keys(DATA || {})])];
+const rotuloGc = gc => `GC.${gc}${nomesGc()[gc] ? ' · '+nomesGc()[gc] : ''}`;   // "GC.G1 · Goiânia 01"
+const gcsComDados = () => todasGcs().filter(g=>DATA[g]);
+const primeiraGc = () => gcsComDados()[0] || Object.keys(DATA)[0];
 
 const svsDe = gc => Object.keys(DATA[gc]||{});
 const rotasDe = (gc,sv) => !DATA[gc] ? [] : sv ? Object.keys(DATA[gc][sv]||{}) : svsDe(gc).flatMap(s=>Object.keys(DATA[gc][s]));
@@ -153,7 +155,7 @@ const svsVisiveis = gc => svsDe(gc).filter(s=>rotasNormais(gc, s).length);
 const svDaRota = r => ehNeutraliza(r) ? SV_NEUTRA : rotaSv(sel.gc, r);
 // rotas do filtro para os indicadores: o total da gerência (e da Diretoria) inclui Neutraliza e virtuais;
 // uma supervisão soma só as rotas normais dela e "Neutraliza", só as Neutraliza da gerência
-const rotasAtuais = () => sel.modo==='dir' ? gcsComDados(sel.reg).flatMap(g=>rotasDe(g,''))
+const rotasAtuais = () => sel.modo==='dir' ? (sel.dgc ? rotasDe(sel.dgc,'') : gcsComDados().flatMap(g=>rotasDe(g,'')))
   : sel.rota ? [sel.rota] : sel.sv===SV_NEUTRA ? rotasNeutraliza(sel.gc)
   : sel.sv ? rotasNormais(sel.gc, sel.sv) : rotasDe(sel.gc, '');
 // o que aparece (clientes, visitas, rotas, busca): sem as virtuais
@@ -221,24 +223,21 @@ function agrega(rotas){
 let _chaveFiltros = '';
 function montaFiltros(){
   // só reconstrói os <select> quando o filtro (ou o payload) muda -- o polling do online não mexe neles
-  const chave = `${sel.modo}|${sel.reg}|${sel.gc}|${sel.sv}|${sel.rota}|${P._versao||''}`;
+  const chave = `${sel.modo}|${sel.dgc}|${sel.gc}|${sel.sv}|${sel.rota}|${P._versao||''}`;
   if(chave===_chaveFiltros) return;
   _chaveFiltros = chave;
   const dir = sel.modo==='dir';
   $('fsv').hidden = dir; $('frota').hidden = dir;
   $('fgc').classList.toggle('largo', dir);
   $('qSugestoes').classList.remove('on');
-  if(dir){        // Diretoria: só a região (as gerências aparecem na cascata dos cards)
-    $('fgc').innerHTML = `<option value="">Todas as regiões</option>` +
-      Object.keys(regioes()).map(rg=>`<option value="${esc(rg)}">Região ${esc(rg)}</option>`).join('');
-    $('fgc').value = sel.reg;
+  // as 16 na ordem de GC_NOMES, com o rótulo "GC.G1 · Goiânia 01"; sem dados aparece desabilitada
+  const opc = g => `<option value="${esc(g)}"${DATA[g]?'':' disabled'}>${esc(rotuloGc(g))}${DATA[g]?'':' · sem dados'}</option>`;
+  if(dir){        // Diretoria: todas as gerências (somadas) ou uma delas
+    $('fgc').innerHTML = `<option value="">Todas as gerências</option>` + todasGcs().map(opc).join('');
+    $('fgc').value = sel.dgc;
     return;
   }
-  // Gerência: as 16 por região; gerência sem dados aparece desabilitada
-  const fora = Object.keys(DATA).filter(g=>!Object.values(regioes()).flat().includes(g));
-  const opc = g => `<option value="${esc(g)}"${DATA[g]?'':' disabled'}>Gerência ${esc(g)}${DATA[g]?'':' · sem dados'}</option>`;
-  $('fgc').innerHTML = Object.entries(regioes()).map(([rg, gcs])=>
-    `<optgroup label="${esc(rg)}">${gcs.map(opc).join('')}</optgroup>`).join('') + fora.map(opc).join('');
+  $('fgc').innerHTML = todasGcs().map(opc).join('');
   $('fgc').value = sel.gc;
   const neutra = rotasNeutraliza(sel.gc);
   $('fsv').innerHTML = `<option value="">Todos os SVs</option>`+
@@ -252,7 +251,7 @@ function montaFiltros(){
   $('qSugestoes').classList.remove('on');
 }
 $('fgc').onchange = e => {
-  if(sel.modo==='dir') sel.reg = e.target.value;
+  if(sel.modo==='dir') sel.dgc = e.target.value;
   else sel = {...sel, gc:e.target.value, sv:'', rota:''};
   render();
 };
@@ -278,8 +277,7 @@ function render(){
   const rotas = rotasAtuais();
   const {ind, tot} = agrega(rotas);
 
-  const onde = sel.modo==='dir' ? `Diretoria${sel.reg?' · '+esc(sel.reg):''}`
-    : `${regiaoDe(sel.gc)?esc(regiaoDe(sel.gc))+' · ':''}${esc(sel.gc)}`;
+  const onde = sel.modo==='dir' ? `Diretoria${sel.dgc ? ' · '+esc(rotuloGc(sel.dgc)) : ''}` : esc(rotuloGc(sel.gc));
   $('sub').innerHTML = `${esc(P.MES_LABEL)}${tagAtualizado()} · ${onde}` +
     (sel.sv?` · ${esc(rotuloSv(sel.sv))}`:'') +
     (sel.rota?` · Rota ${esc(sel.rota)} — ${esc(titulo(nodo(sel.gc,sel.rota).consultor))}`:'');
@@ -334,9 +332,9 @@ function render(){
 function piorSv(){
   if(sel.rota) return '';
   const grupo = P.COV_GRUPO[aba];
-  if(sel.modo==='dir'){
-    // Diretoria: compara as gerências do filtro
-    const gcs = gcsComDados(sel.reg);
+  if(sel.modo==='dir' && !sel.dgc){
+    // Diretoria com todas as gerências: compara as gerências
+    const gcs = gcsComDados();
     if(gcs.length < 2) return '';
     let pior=null;
     gcs.forEach(g=>{
@@ -344,32 +342,34 @@ function piorSv(){
       const disp = grupo.filter(k=>a[k] && !a[k].unavailable);
       if(!disp.length) return;
       const ok = disp.filter(k=>a[k].onPace).length;
-      if(!pior || ok/disp.length < pior.razao) pior={rotulo:'Gerência '+g,ok,tot:disp.length,razao:ok/disp.length};
+      if(!pior || ok/disp.length < pior.razao) pior={rotulo:rotuloGc(g),ok,tot:disp.length,razao:ok/disp.length};
     });
     if(!pior || pior.ok===pior.tot) return '';
     return `<div class="puxa"><div class="t">Gerência que mais puxa a média para baixo: <b>${esc(pior.rotulo)}</b></div>
       <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
   }
-  if(!sel.sv){
+  // Gerência (ou a gerência escolhida no filtro da Diretoria, sem supervisão)
+  const gc = sel.modo==='dir' ? sel.dgc : sel.gc, sv = sel.modo==='dir' ? '' : sel.sv;
+  if(!sv){
     // sem SV selecionado: compara as supervisões da gerência (só as rotas normais de cada uma; a Neutraliza fica fora)
-    const svs = svsVisiveis(sel.gc);
+    const svs = svsVisiveis(gc);
     if(svs.length < 2) return '';
     let pior=null;
-    svs.forEach(sv=>{
-      if(svExcluido(sv)) return;
-      const a = agrega(rotasNormais(sel.gc, sv)).ind;
+    svs.forEach(s=>{
+      if(svExcluido(s)) return;
+      const a = agrega(rotasNormais(gc, s)).ind;
       const disp = grupo.filter(k=>a[k] && !a[k].unavailable);
       if(!disp.length) return;
       const ok = disp.filter(k=>a[k].onPace).length;
-      if(!pior || ok/disp.length < pior.razao) pior={rotulo:rotuloSv(sv),ok,tot:disp.length,razao:ok/disp.length};
+      if(!pior || ok/disp.length < pior.razao) pior={rotulo:rotuloSv(s),ok,tot:disp.length,razao:ok/disp.length};
     });
     if(!pior || pior.ok===pior.tot) return '';
     return `<div class="puxa"><div class="t">Supervisão que mais puxa a média para baixo: <b>${esc(pior.rotulo)}</b></div>
       <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
   }
   // SV selecionado, sem rota: compara as rotas dentro do SV (a Neutraliza não entra na comparação)
-  if(sel.sv===SV_NEUTRA) return '';
-  const rotas = rotasNormais(sel.gc, sel.sv);
+  if(sv===SV_NEUTRA) return '';
+  const rotas = rotasNormais(gc, sv);
   if(rotas.length < 2) return '';
   let pior=null;
   rotas.forEach(r=>{
@@ -556,27 +556,30 @@ function abreIndicador(k){
   const b = agrega(rotasAtuais()).ind[k];
   if(!b || b.unavailable) return;
   let ctx;
-  if(sel.modo==='dir') ctx = {nivel:'gc', chave:sel.reg, rotas:rotasAtuais(), nome:sel.reg ? 'Região '+sel.reg : 'Diretoria'};
+  if(sel.modo==='dir' && !sel.dgc) ctx = {nivel:'gc', chave:'', rotas:rotasAtuais(), nome:'Diretoria'};
+  else if(sel.modo==='dir') ctx = ctxGerencia(sel.dgc);     // uma gerência no filtro: como na Gerência
   else if(sel.rota) ctx = {nivel:'cli', chave:sel.rota, gc:sel.gc, rotas:[sel.rota], nome:'Rota '+sel.rota};
   else if(sel.sv===SV_NEUTRA) ctx = ctxNeutraliza(sel.gc);
   else if(sel.sv) ctx = {nivel:'rota', chave:sel.sv, gc:sel.gc, rotas:rotasNormais(sel.gc, sel.sv), nome:rotuloSv(sel.sv)};
-  else ctx = {nivel:'sv', chave:sel.gc, gc:sel.gc, rotas:rotasDe(sel.gc,''), nome:'Gerência '+sel.gc};
+  else ctx = ctxGerencia(sel.gc);
   CASC = {k, pilha:[ctx]};
   abre('', '', '');
   pintaCascata();
 }
 
 const nRotas = rs => `${rs.length} rota${rs.length>1?'s':''}`;
+// nível das supervisões de uma gerência (cards da Gerência ou linha de gerência da Diretoria)
+const ctxGerencia = gc => ({nivel:'sv', chave:gc, gc, rotas:rotasDe(gc,''), nome:rotuloGc(gc)});
 // nível das rotas Neutraliza de uma gerência (linha "Neutraliza" da cascata ou filtro de supervisão "Neutraliza")
 const ctxNeutraliza = gc => ({nivel:'rota', chave:SV_NEUTRA, gc, rotas:rotasNeutraliza(gc), nome:`${SV_NEUTRA} · ${gc}`});
 
 // grupos do nível (cada um com as rotas que somam e o contexto do nível de baixo)
 function gruposDo(ctx, k){
-  if(ctx.nivel==='gc') return gcsDaRegiao(ctx.chave).map(g=>{
+  if(ctx.nivel==='gc') return todasGcs().map(g=>{
     const rs = rotasDe(g,'');
-    return {nome:'Gerência '+g, rotas:rs, off:!DATA[g],
+    return {nome:rotuloGc(g), rotas:rs, off:!DATA[g],
       info: DATA[g] ? `${svsVisiveis(g).length} supervisões · ${rs.filter(r=>!ehVirtual(r)).length} rotas` : 'sem dados',
-      filho:{nivel:'sv', chave:g, gc:g, rotas:rs, nome:'Gerência '+g}};
+      filho:ctxGerencia(g)};
   });
   if(ctx.nivel==='sv'){
     const grupos = svsVisiveis(ctx.gc).map(s=>{
@@ -764,7 +767,7 @@ function mostraEntrada(){
   document.body.classList.add('na-entrada');
 }
 function entra(modo){
-  sel = modo==='dir' ? {...sel, modo:'dir', sv:'', rota:''} : {...sel, modo:'gc'};
+  sel = modo==='dir' ? {...sel, modo:'dir', dgc:'', sv:'', rota:''} : {...sel, modo:'gc'};
   $('entrada').hidden = true;
   document.body.classList.remove('na-entrada');
   if(!P) return;

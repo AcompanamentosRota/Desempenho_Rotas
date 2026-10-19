@@ -150,16 +150,15 @@ META_NOVOS_NEG_DE_META_NEG = False
 # ---------------------------------------------------------------------------
 # Estrutura do painel (copiada do payload.json que já estava publicado)
 # ---------------------------------------------------------------------------
-# Regiões e ordem das 16 gerências no painel (GC_ATIVAS e REGIOES vão para o payload)
-REGIOES = {
-    "Matriz": ["G1", "G2", "G3", "AT", "AP"],
-    "Sul": ["AN", "SL", "RV", "MO", "IT"],
-    "Norte": ["RI", "UR", "GU", "PO", "PA", "DI"],
+# As 16 gerências na ordem do painel (seletores, Diretoria, cascata, Resumo), com o nome da praça.
+# ÚNICA fonte: vão para o payload em GC_NOMES (todas, nesta ordem: o front lista as 16, mesmo as sem dados) e
+# GC_ATIVAS (as que têm dados, nesta ordem; é também a ordem de DATA). Rótulo no front: "GC.G1 · Goiânia 01".
+GC_NOMES = {
+    "AN": "Anápolis", "AP": "Aparecida", "AT": "Atacados", "G1": "Goiânia 01", "G2": "Goiânia 02",
+    "G3": "Goiânia 03", "PA": "Palmas", "DI": "Dianópolis", "RV": "Rio Verde", "SL": "São Luís",
+    "GU": "Gurupi", "PO": "Porangatu", "IT": "Itumbiara", "MO": "Morrinhos", "UR": "Uruaçu", "RI": "Rialma",
 }
-# ordem das chaves no payload (DATA, GC_ATIVAS): as 6 de antes primeiro, para não mudar o que já era publicado;
-# a ordem de exibição por região é a de REGIOES (o front ordena por ela)
-GC_ATIVAS = ["G1", "G2", "G3", "AP", "IT", "MO"]
-GC_ATIVAS += [g for siglas in REGIOES.values() for g in siglas if g not in GC_ATIVAS]
+GC_ATIVAS = list(GC_NOMES)
 
 LABELS = {
     "CCTM 2L PET": "CCTM 2L Pet",

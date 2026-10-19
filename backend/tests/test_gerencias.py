@@ -19,13 +19,15 @@ def _cli(pv, rota, gc, sv, hoje=False):
 
 
 class TestSiglas(unittest.TestCase):
-    def test_16_siglas_em_3_regioes(self):
-        todas = [g for gs in M.REGIOES.values() for g in gs]
-        self.assertEqual(len(todas), 16)
-        self.assertEqual(len(set(todas)), 16)
-        self.assertEqual(set(M.GC_ATIVAS), set(todas))
-        self.assertEqual(M.GC_ATIVAS[:6], ["G1", "G2", "G3", "AP", "IT", "MO"])     # ordem antiga mantida no payload
-        self.assertEqual(M.REGIOES["Sul"], ["AN", "SL", "RV", "MO", "IT"])
+    def test_16_gerencias_na_ordem_com_nomes(self):
+        self.assertEqual(M.GC_NOMES, {
+            "AN": "Anápolis", "AP": "Aparecida", "AT": "Atacados", "G1": "Goiânia 01", "G2": "Goiânia 02",
+            "G3": "Goiânia 03", "PA": "Palmas", "DI": "Dianópolis", "RV": "Rio Verde", "SL": "São Luís",
+            "GU": "Gurupi", "PO": "Porangatu", "IT": "Itumbiara", "MO": "Morrinhos", "UR": "Uruaçu", "RI": "Rialma"})
+        self.assertEqual(M.GC_ATIVAS, ["AN", "AP", "AT", "G1", "G2", "G3", "PA", "DI", "RV", "SL", "GU", "PO", "IT",
+                                       "MO", "UR", "RI"])
+        self.assertEqual(list(M.GC_NOMES), M.GC_ATIVAS)          # a ordem das chaves é a ordem do painel
+        self.assertFalse(hasattr(M, "REGIOES"))
 
     def test_origens_e_siglas(self):
         self.assertEqual(len(M.GC_ORIGEM), 12)
@@ -85,6 +87,17 @@ class TestValidacaoPorGerencia(unittest.TestCase):
         d = copy.deepcopy(DADOS)
         d[M.OBJ_BASE_CLIENTE] = DADOS[M.OBJ_BASE_CLIENTE] + [_cli(2, "P31", "Gc. Pa_Di", "Sv. Pa. 3")]
         cls.p = montar_payload(fontes.carregar(ConsultaFalsa(d), datetime(2026, 10, 13, 9, 0)))
+
+    def test_gc_nomes_e_ordem_no_payload_sem_regioes(self):
+        self.assertEqual(self.p["GC_NOMES"], M.GC_NOMES)
+        self.assertEqual(list(self.p["GC_NOMES"]), M.GC_ATIVAS)
+        self.assertNotIn("REGIOES", self.p)
+        self.assertEqual(self.p["GC_ATIVAS"], ["G1", "PA"])            # só as com dados, na ordem de GC_NOMES
+        self.assertEqual(list(self.p["DATA"]), ["G1", "PA"])
+        sem = {k: v for k, v in self.p.items() if k != "GC_NOMES"}
+        self.assertEqual(validar_payload(sem)[0], ["payload sem as chaves: GC_NOMES"])
+        antigo = dict(self.p, REGIOES={"Matriz": ["G1"]})               # chave de payload antigo: só ignorada
+        self.assertEqual(validar_payload(antigo)[0], [])
 
     def test_gerencia_nova_sem_metas_e_sem_real_so_avisa(self):
         erros, avisos = validar_payload(self.p)
