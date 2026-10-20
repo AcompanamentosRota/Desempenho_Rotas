@@ -190,11 +190,16 @@ seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa;
   gerência e depois as da outra (SV.UR.1, SV.UR.2, SV.RI.1...). Rotas virtuais e '-EV' nunca aparecem em lista.
   Na lista de clientes de volume: Meta, Real (faturado + online de hoje), diferença e %, do mais negativo para o
   mais positivo; listas de cobertura e de Venda Zero como antes.
-- **"Meta batida!"** (só volume: os 5 agrupadores e Del Valle Frut): no card e nas linhas da cascata (gerência,
-  supervisão, rota e "Neutraliza"), quando a meta do dia do nível, já somada, é zero ou negativa, o rótulo "meta do
-  dia X" vira "Meta batida!" e a caixa do Online fica verde. O número do online continua aparecendo e somando
-  (volume de hoje); nenhum valor muda (meta do dia e totais iguais aos do SAC). Meta do dia positiva: como antes
-  (verde se o online alcança, vermelho se não); sem meta do dia ou no fechamento: como antes. Coberturas não mudam.
+- **"Meta batida!"**: no card e nas linhas da cascata (gerência, supervisão, rota e "Neutraliza"), o rótulo da caixa
+  do Online vira "Meta batida!" e a caixa fica verde quando, no nível (números já somados):
+  - **volume** (os 5 agrupadores e Del Valle Frut): a meta do dia é zero ou negativa;
+  - **coberturas** (ICS GC e Novos Negócios): o Real do mês já alcançou a Meta do mês (Real >= Meta, com meta).
+    A "meta do dia" da cobertura (o que falta hoje ou a fatia do mês) nunca fica abaixo de 1 quando há meta, por
+    isso a regra é pela meta do mês.
+
+  O número do online continua aparecendo e somando; nenhum valor muda (meta do dia, metas e totais iguais aos do
+  SAC). Fora disso, como antes (volume: verde se o online alcança a meta do dia; cobertura: "no ritmo" ou "meta do
+  dia X"); sem meta do dia, meta 0, Venda Zero e fechamento do mês: como antes. O Resumo de vendas não muda.
 - **Rotas Neutraliza** (por rota, em qualquer gerência: A41, 431, 251, I31, M31, C31, R31, S31, U31, 151, O21 e
   551): Meta e Real de Volume, ICS GC e Novos Negócios entram no total da gerência (e da Diretoria). Na cascata,
   ao abrir as supervisões de uma gerência, a última linha é **"Neutraliza"** (todas as rotas Neutraliza da

@@ -512,6 +512,10 @@ const numObox = txt => `<b data-fit="23" data-fit-min="10">${txt}</b>`;
    número do online e todos os valores seguem iguais. Resíduo de soma de decimais (ex.: 1e-14) conta como zero. */
 const META_BATIDA = 'Meta batida!';
 const metaBatida = md => md!=null && md <= 1e-9;
+/* Coberturas (ICS GC e Novos Negócios; a Venda Zero não): "Meta batida!" e caixa do Online verde quando a meta do mês
+   do nível (já somada) foi alcançada, Real >= Meta com Meta > 0 (daí em diante não falta nada no dia). Só o rótulo e a
+   cor; fora do fechamento (como no volume, o fechamento fica como antes). */
+const coberturaBatida = b => !P.FECHAMENTO && b.meta > 0 && b.real >= b.meta;
 
 function caixaOnline(k, rotas, b){
   if(k==='VENDAZERO'){
@@ -532,12 +536,13 @@ function caixaOnline(k, rotas, b){
   // Meta do dia: fora do ritmo é o próprio "faltam X"; no ritmo é teto(Meta / dias úteis).
   const fatia = b.meta ? Math.ceil(b.meta/P.TOTAL_DIAS_UTEIS) : 0;
   const metaDia = b.gap > 0 ? b.gap : fatia;
+  const batida = coberturaBatida(b);
   if(!ONLINE)
-    return `<div class="obox nd"><b>—</b><span>meta do dia ${metaDia}</span></div>`;
+    return `<div class="obox ${batida?'ok':'nd'}"><b>—</b><span>${batida ? META_BATIDA : `meta do dia ${metaDia}`}</span></div>`;
   const soma = rotas.reduce((a,r)=>a+(((ONLINE.rotas||{})[r]||{})[k]||0),0);
-  const ok = soma>=metaDia;
+  const ok = batida || soma>=metaDia;
   return `<div class="obox ${ok?'ok':''}">${numObox(soma)}
-    <span>${ok?'no ritmo':`meta do dia ${metaDia}`}</span></div>`;
+    <span>${batida ? META_BATIDA : ok?'no ritmo':`meta do dia ${metaDia}`}</span></div>`;
 }
 
 /* ---------- drawer ---------- */
@@ -689,7 +694,8 @@ function linhaGrupo(g, m, k, i){
   if(!m) return `<div class="cLin off"><div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
     <div class="cInd">${g.off ? 'sem dados' : 'indisponível'}</div></div>`;
   const {b, onl, md, dir} = m, vz = k==='VENDAZERO', f = ehVolume(k) ? fmt0 : fmtN;
-  const batida = ehVolume(k) && metaBatida(md);      // volume com a meta do dia da linha <= 0 (coberturas não mudam)
+  // volume: meta do dia da linha <= 0; cobertura: Real >= Meta do mês (fora do fechamento); Venda Zero não
+  const batida = !vz && (ehVolume(k) ? metaBatida(md) : md!=null && coberturaBatida(b));
   const cor = vz ? 'ok' : (md==null ? 'nd' : (batida || onl>=md ? 'ok' : 'no'));
   const meio = vz ? `<span class="cOn ok">${fmtN(onl)}</span><small>revertidos hoje</small>`
     : `<span class="cOn ${cor}">${f(onl)}</span><small>${md==null ? (P.FECHAMENTO ? 'online hoje' : 'meta do dia —')

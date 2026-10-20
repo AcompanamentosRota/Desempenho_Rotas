@@ -192,9 +192,11 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   código** (`gruposDo`; também no fechamento): gerências na ordem de `GC_NOMES`/`GC_ATIVAS`, supervisões e rotas em
   ordem natural (`ordemNatural`: SV.G1.2 antes de SV.G1.10; `svsEmOrdem`: num grupo, gerência -> número),
   "Neutraliza" por último; virtuais e '-EV' nunca em lista (`ehVirtual` inclui `EVENTUAIS_ROTAS`); clientes de
-  volume pela Dif. Abs. **"Meta batida!"** (`metaBatida`, só volume, em `caixaOnline` e `linhaGrupo`): meta do dia
-  do nível, já somada, <= 0 (resíduo de decimais conta como 0) troca o rótulo "meta do dia X" e deixa o Online verde;
-  o número do online e todos os valores seguem iguais; metaDia > 0, null e fechamento como antes; coberturas não.
+  volume pela Dif. Abs. **"Meta batida!"** (em `caixaOnline` e `linhaGrupo`) troca o rótulo da caixa do Online e a
+  deixa verde: volume (`metaBatida`) com a meta do dia do nível, já somada, <= 0 (resíduo de decimais conta como 0);
+  coberturas ICS GC/Novos Negócios (`coberturaBatida`, pedido da Karen em 20/10/2026) com Real >= Meta do mês do nível
+  (Meta > 0; a "meta do dia" da cobertura, gap ou fatia, nunca chega a 0 com meta). O número do online e todos os
+  valores seguem iguais; metaDia > 0/null, meta 0, Venda Zero, fechamento e o Resumo de vendas como antes.
   Resumo segue o filtro (Diretoria "Todas": as 16 em faixas de 8; uma gerência: gerência + supervisões; grupo no
   Total: total + as duas; sem seletor próprio); placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada). Del Valle Frut continua fora
   da Diretoria, mesmo com uma gerência. Rodapé: "Karen Oliveira - Inteligência de Mercado".
