@@ -21,7 +21,7 @@
 <!-- carregando: tela neutra até o payload chegar (ao reabrir um acesso guardado, a entrada não pisca) -->
 <div id="carga" class="carga" role="status"><span id="cargaTxt">Carregando…</span></div>
 
-<!-- entrada: Diretoria / Gerência / Supervisão / Rota (o sol/lua troca só o fundo desta tela) -->
+<!-- entrada: Diretoria / Gerência / Supervisão / Rota, por seleção (o sol/lua troca só o fundo desta tela) -->
 <div id="entrada" class="entrada" role="dialog" aria-modal="true" aria-labelledby="entTit" hidden>
   <button id="btnTema" class="entTema" type="button" aria-label="Entrada com fundo branco">☀</button>
   <div class="entMeio">
@@ -30,27 +30,25 @@
     <div class="entMsg" id="entMsg" role="alert"></div>
     <div class="entBotoes" id="entBotoes">
       <button type="button" data-perfil="dir">DIRETORIA</button>
-      <button type="button" data-perfil="gc">GERÊNCIA</button>
-      <button type="button" data-perfil="sv">SUPERVISÃO</button>
-      <button type="button" data-perfil="rota">ROTA</button>
+      <button type="button" data-perfil="gc" aria-haspopup="dialog">GERÊNCIA</button>
+      <button type="button" data-perfil="sv" aria-haspopup="dialog">SUPERVISÃO</button>
+      <button type="button" data-perfil="rota" aria-haspopup="dialog">ROTA</button>
     </div>
-    <form id="entForm" class="entForm" hidden novalidate autocomplete="off">
-      <div class="entPerfil" id="entPerfil"></div>
-      <label class="entCampo" data-campo="usuario"><span>Usuário</span>
-        <input id="entUsuario" type="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go"></label>
-      <label class="entCampo" data-campo="gc"><span>Gerência</span>
-        <input id="entGc" type="text" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="next"
-               placeholder="Sigla ou nome da filial (ex.: G2 ou Goiânia 02)"></label>
-      <label class="entCampo" data-campo="sv"><span>Supervisão</span>
-        <input id="entSv" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="go" placeholder="Número (ex.: 1)"></label>
-      <label class="entCampo" data-campo="rota"><span>Rota</span>
-        <input id="entRota" type="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false"
-               enterkeyhint="go" placeholder="Código (ex.: 211)"></label>
-      <button id="entEntrar" class="entEntrar" type="submit">ENTRAR</button>
-      <button id="entOutro" class="entOutro" type="button">← Outro perfil</button>
-    </form>
   </div>
   <div class="entRod" id="entRod">Karen Oliveira - Inteligência de Mercado</div>
+  <!-- caixa de seleção: a gerência (ou o grupo); na Supervisão e na Rota, depois a lista da gerência escolhida -->
+  <div id="entCaixa" class="entCaixa" role="dialog" aria-modal="true" aria-labelledby="entCaixaTit"
+       aria-describedby="entCaixaSub" hidden>
+    <div class="entPainel">
+      <div class="entCab">
+        <h2 id="entCaixaTit"></h2>
+        <button id="entFechar" class="entFechar" type="button" aria-label="Fechar">×</button>
+      </div>
+      <div class="entSub" id="entCaixaSub"></div>
+      <button id="entVoltar" class="entVoltar" type="button" hidden>← Gerências</button>
+      <div class="entOpcoes" id="entOpcoes" role="group" aria-labelledby="entCaixaSub"></div>
+    </div>
+  </div>
 </div>
 
 <header class="topo">

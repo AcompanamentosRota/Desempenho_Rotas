@@ -55,6 +55,37 @@ before(async () => {
   fs.writeFileSync(path.join(semsv, 'payload.json'), JSON.stringify(q));
   fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(semsv, 'online.json'));
   DADOS.semsv = semsv;
+  // grupo IT+MO com uma rota virtual na IT (I32, na SV.IT.3 junto com a Neutraliza I31) e clientes de rota eventual
+  // na MO (rota oculta MO-EV, só com o Real de volume, como a SL-EV)
+  const grupo = path.join(tmp, 'grupo');
+  fs.mkdirSync(grupo);
+  const g = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  const i32 = JSON.parse(JSON.stringify(g.DATA.IT['SV.IT.3'].I31));
+  for(const b of Object.values(i32.indicators)){
+    if(b.unavailable || b.meta == null) continue;
+    b.meta *= 2;
+    for(const c of ['real', 'tendencia', 'metaDia']) if(b[c] != null) b[c] *= 3;
+  }
+  i32.consultor = 'CONSULTOR I32';
+  g.DATA.IT['SV.IT.3'].I32 = i32;
+  const mev = JSON.parse(JSON.stringify(g.DATA.SL['SV.SL.EV']['SL-EV']));
+  Object.assign(mev.indicators['VOL REFRIGERANTES'], {real: 77, tendencia: 77});
+  g.DATA.MO['SV.MO.EV'] = {'MO-EV': mev};
+  g.VIRTUAIS_ROTAS.push('I32', 'MO-EV');
+  g.EVENTUAIS_ROTAS.push('MO-EV');
+  fs.writeFileSync(path.join(grupo, 'payload.json'), JSON.stringify(g));
+  fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(grupo, 'online.json'));
+  DADOS.grupo = grupo;
+  // G3 e PA sem dados: a G3 aparece desabilitada e o grupo PA+DI também (a DI já não tem dados)
+  const semdados = path.join(tmp, 'semdados');
+  fs.mkdirSync(semdados);
+  const s = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  delete s.DATA.G3;
+  delete s.DATA.PA;
+  s.GC_ATIVAS = s.GC_ATIVAS.filter(x => x !== 'G3' && x !== 'PA');
+  fs.writeFileSync(path.join(semdados, 'payload.json'), JSON.stringify(s));
+  fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(semdados, 'online.json'));
+  DADOS.semdados = semdados;
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -65,7 +96,8 @@ after(async () => {
 const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json',
   '.png':'image/png', '.webmanifest':'application/manifest+json'};
 
-/* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo'); devolve {page, erros}.
+/* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados');
+   devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()). */
 async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entrar = 'gc', busca = '', fuso, antes} = {}){
@@ -100,19 +132,22 @@ module.exports = {abre};
    P é 'let' de script clássico: existe no escopo global, mas não em window. */
 const esperaCarga = page => page.waitForFunction(() => typeof P !== 'undefined' && P &&
   document.querySelector('#lista').innerHTML !== '' && document.getElementById('carga').hidden);
-/* Entra pela tela de entrada: {perfil: 'dir', usuario} | {perfil: 'gc', gc} | {perfil: 'sv', gc, sv} | {perfil: 'rota', gc, rota};
-   'dir' = Diretoria com DICOM; 'gc' = Gerência na primeira gerência com dados (onde a Gerência abria antes dos perfis). */
+/* Entra pela tela de entrada, por seleção: {perfil: 'dir'} | {perfil: 'gc', gc} | {perfil: 'sv', gc, sv} |
+   {perfil: 'rota', gc, rota}, com gc = sigla ou chave de grupo ('IT+MO'; a sigla de uma gerência agrupada escolhe o
+   grupo dela, como faria o usuário), sv = código (SV.G2.1) ou só o número ('1') e rota = código; 'dir' = Diretoria;
+   'gc' = Gerência na primeira gerência com dados (onde a Gerência abria antes). */
 async function entra(page, entrar){
-  if(entrar === 'dir') entrar = {perfil: 'dir', usuario: 'DICOM'};
+  if(entrar === 'dir') entrar = {perfil: 'dir'};
   if(entrar === 'gc') entrar = {perfil: 'gc', gc: await page.evaluate(() => primeiraGc())};
-  const {perfil, usuario = '', gc = '', sv = '', rota = ''} = entrar;
-  if(await page.isVisible('#entForm')) await page.click('#entOutro');     // de volta aos quatro botões
+  const {perfil, gc = '', sv = '', rota = ''} = entrar;
+  if(await page.isVisible('#entCaixa')) await page.click('#entFechar');     // de volta aos quatro botões
   await page.click(`#entrada [data-perfil="${perfil}"]`);
-  if(perfil === 'dir') await page.fill('#entUsuario', usuario);
-  else await page.fill('#entGc', gc);
-  if(perfil === 'sv') await page.fill('#entSv', sv);
-  if(perfil === 'rota') await page.fill('#entRota', rota);
-  await page.click('#entEntrar');
+  if(perfil === 'dir') return;
+  const opcao = await page.$$eval('#entOpcoes [data-gc]', (bs, gc) => ((bs.find(b => b.dataset.gc === gc)
+    || bs.find(b => b.dataset.gc.split('+').includes(gc))) || {dataset: {gc}}).dataset.gc, gc);
+  await page.click(`#entOpcoes [data-gc="${opcao}"]`);
+  if(perfil === 'sv') await page.click(`#entOpcoes [data-sv="${/^\d+$/.test(sv) ? `SV.${gc}.${Number(sv)}` : sv}"]`);
+  if(perfil === 'rota') await page.click(`#entOpcoes [data-rota="${rota}"]`);
 }
 /* volta para a entrada pela casa e entra de novo */
 async function vaiPara(page, entrar){
@@ -1070,11 +1105,27 @@ describe('Parte H — ordem das listas da cascata', {skip: pular}, () => {
       await ctx.close();
     });
   }
+
+  test('rota oculta das eventuais (-EV) nunca aparece em lista, mesmo fora de VIRTUAIS_ROTAS; o Real fica no total', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const k = 'VOL REFRIGERANTES';
+    await page.evaluate(() => { P.VIRTUAIS_ROTAS = P.VIRTUAIS_ROTAS.filter(r => r !== 'SL-EV'); });
+    await filtra(page, {gc: 'SL', aba: 'VOLUME'});
+    const op = await opcoes(page);
+    assert.deepEqual(op.sv, ['SV.SL.1', 'SV.SL.2']);
+    assert.ok(!op.rota.includes('SL-EV'), op.rota.join('|'));
+    const r = await page.evaluate(k => ({card: agrega(rotasAtuais()).ind[k].real,
+      soma: rotasDe('SL', '').reduce((a, x) => a + nodo('SL', x).indicators[k].real, 0)}), k);
+    assert.equal(r.card, r.soma, 'o Real da rota oculta continua no total');
+    const g = await cascata(page, k, 'VOLUME');
+    assert.ok(!g.linhas.some(l => /EV/.test(l.nome)), g.linhas.map(l => l.nome).join('|'));
+    assert.deepEqual(g.nota.map(n => n.texto), ['Inclui clientes de rotas eventuais (EV*): Real 120']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
 });
 
-/* ---------- Parte I: entrada com perfis, acesso guardado e virada diária ---------- */
-const MSG_GC = 'Gerência não reconhecida. Informe a sigla (ex.: G2) ou o nome completo (ex.: Goiânia 02).';
-const SEM_DADOS_GC = 'Gerência sem dados no painel.';
+/* ---------- Parte I: entrada com perfis (por seleção), acesso guardado e virada diária ---------- */
 const REINICIADO = 'Acesso reiniciado, entre novamente', INDISPONIVEL = 'O acesso anterior não está mais disponível';
 // relógio fixo: 13/10/2026 10:00 de Brasília (dia de trabalho 2026-10-13)
 const HOJE = new Date('2026-10-13T13:00:00Z'), DIA = '2026-10-13';
@@ -1094,63 +1145,113 @@ const estado = page => page.evaluate(() => ({
 }));
 const guardadoTxt = page => page.evaluate(() => localStorage.getItem('drotas_sessao'));
 
-describe('Parte I — entrada com perfis', {skip: pular}, () => {
-  test('quatro perfis; Diretoria com DICOM (maiúsculas, minúsculas e espaços); outro usuário fica na entrada', async () => {
+/* opções da caixa de seleção: 1ª etapa [chave, rótulo, desabilitada]; 2ª etapa [código, rótulo] e os nomes das seções */
+const caixa = page => page.evaluate(() => {
+  const c = document.getElementById('entCaixa'), a = document.activeElement || {};
+  return {vis: !c.hidden, tit: document.getElementById('entCaixaTit').textContent,
+    sub: document.getElementById('entCaixaSub').textContent, voltar: !document.getElementById('entVoltar').hidden,
+    gcs: [...c.querySelectorAll('#entOpcoes button[data-gc]')].map(b => [b.dataset.gc, b.textContent, b.disabled]),
+    itens: [...c.querySelectorAll('#entOpcoes button:not([data-gc])')].map(b => [b.dataset.sv || b.dataset.rota, b.textContent]),
+    secoes: [...c.querySelectorAll('#entOpcoes .entSecao')].map(s => s.textContent),
+    foco: a.dataset ? (a.dataset.gc || a.dataset.sv || a.dataset.rota || a.id || a.textContent) : '',
+    campos: document.querySelectorAll('#entrada input, #entrada textarea, #entrada select, #entrada form').length};
+});
+// as 12 opções da 1ª etapa, na ordem de GC_ATIVAS com cada grupo na posição do 1º membro
+const OPCOES_GC = [...['AN', 'AP', 'AT', 'G1', 'G2', 'G3'].map(g => [g, ROTULO(g), false]),
+  ['PA+DI', 'GC.PA + GC.DI · Palmas + Dianópolis', false], ['RV', ROTULO('RV'), false], ['SL', ROTULO('SL'), false],
+  ['GU+PO', 'GC.GU + GC.PO · Gurupi + Porangatu', false], ['IT+MO', 'GC.IT + GC.MO · Itumbiara + Morrinhos', false],
+  ['UR+RI', 'GC.UR + GC.RI · Uruaçu + Rialma', false]];
+const GRUPO_IT_MO = 'GC.IT + GC.MO · Itumbiara + Morrinhos';
+
+describe('Parte I — entrada por seleção', {skip: pular}, () => {
+  test('quatro botões; Diretoria entra direto, sem usuário, senha nem campo de texto', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
     assert.deepEqual(await page.$$eval('#entBotoes button', bs => bs.map(b => b.textContent)),
                      ['DIRETORIA', 'GERÊNCIA', 'SUPERVISÃO', 'ROTA']);
     let e = await estado(page);
     assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, '', null, null]);
-    for(const usuario of ['DIRETOR', 'DICOMX', '']){
-      await entra(page, {perfil: 'dir', usuario});
-      e = await estado(page);
-      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, 'Usuário não reconhecido', null, null], usuario);
-    }
-    for(const usuario of ['DICOM', 'dicom', ' Di Com ']){
-      await entra(page, {perfil: 'dir', usuario});
-      e = await estado(page);
-      assert.ok(!e.entrada, usuario);
-      assert.deepEqual([e.sel, e.filtros, e.resumo], [['dir', '', '', ''], ['fgc'], true]);
-      assert.match(e.sub, /· Diretoria$/);
-      assert.deepEqual(e.guardado, {perfil: 'dir', gc: '', sv: '', rota: '', dia: DIA});
-      await page.click('#btnCasa');
+    assert.equal((await caixa(page)).campos, 0, 'sem campo de texto');
+    assert.doesNotMatch(await page.textContent('#entrada'), /usu[aá]rio|senha|DICOM/i);
+    await page.click('#entrada [data-perfil="dir"]');
+    e = await estado(page);
+    assert.ok(!e.entrada);
+    assert.deepEqual([e.sel, e.filtros, e.resumo], [['dir', '', '', ''], ['fgc'], true]);
+    assert.equal(await page.inputValue('#fgc'), '', '"Todas as gerências"');
+    assert.match(e.sub, /· Diretoria$/);
+    assert.deepEqual(e.guardado, {perfil: 'dir', gc: '', sv: '', rota: '', dia: DIA});
+    assert.equal((await caixa(page)).vis, false);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Gerência: caixa sem campo de texto, 12 opções (grupos na posição do 1º membro); foco, setas, Tab, ESC, × e clique fora', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    await page.click('#entrada [data-perfil="gc"]');
+    let c = await caixa(page);
+    assert.deepEqual([c.vis, c.tit, c.sub, c.voltar, c.campos], [true, 'GERÊNCIA', 'Escolha a gerência', false, 0]);
+    assert.deepEqual(await page.$eval('#entCaixa', el => [el.getAttribute('role'), el.getAttribute('aria-modal')]),
+                     ['dialog', 'true']);
+    assert.deepEqual(c.gcs, OPCOES_GC, 'PA+DI habilitado: o PA tem dados');
+    assert.equal(c.foco, 'AN', 'foco na primeira opção');
+    await page.keyboard.press('ArrowDown');
+    assert.equal((await caixa(page)).foco, 'AP');
+    await page.keyboard.press('ArrowUp');
+    assert.equal((await caixa(page)).foco, 'AN');
+    // Tab fica preso na caixa: da última opção volta para o ×; Shift+Tab no × vai para a última opção
+    await page.focus('#entOpcoes [data-gc="UR+RI"]');
+    await page.keyboard.press('Tab');
+    assert.equal((await caixa(page)).foco, 'entFechar');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal((await caixa(page)).foco, 'UR+RI');
+    // a lista rola dentro da caixa
+    assert.equal(await page.$eval('#entOpcoes', el => getComputedStyle(el).overflowY), 'auto');
+    // ESC, × e clique fora fecham sem entrar; o foco volta ao botão do perfil
+    await page.keyboard.press('Escape');
+    c = await caixa(page);
+    let e = await estado(page);
+    assert.deepEqual([c.vis, c.foco, e.entrada, e.guardado], [false, 'GERÊNCIA', true, null]);
+    await page.click('#entrada [data-perfil="gc"]');
+    await page.click('#entFechar');
+    assert.deepEqual([(await caixa(page)).vis, (await estado(page)).entrada], [false, true]);
+    await page.click('#entrada [data-perfil="gc"]');
+    await page.mouse.click(3, 3);
+    assert.deepEqual([(await caixa(page)).vis, (await estado(page)).entrada], [false, true]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('gerência e grupo sem dados aparecem desabilitados e não entram', async () => {
+    const {page, ctx, erros} = await abre('semdados', {entrar: null, antes: fixo()});
+    for(const perfil of ['gc', 'sv', 'rota']){
+      await page.click(`#entrada [data-perfil="${perfil}"]`);
+      const c = await caixa(page);
+      assert.deepEqual(c.gcs.filter(o => o[2]), [['G3', ROTULO('G3') + ' · sem dados', true],
+        ['PA+DI', 'GC.PA + GC.DI · Palmas + Dianópolis · sem dados', true]], perfil);
+      assert.equal(c.gcs.length, 12);
+      await page.$eval('#entOpcoes [data-gc="G3"]', b => b.click());
+      await page.$eval('#entOpcoes [data-gc="PA+DI"]', b => b.click());
+      const d = await caixa(page);
+      assert.deepEqual([d.vis, d.sub, (await estado(page)).acesso], [true, 'Escolha a gerência', null], perfil);
+      await page.click('#entFechar');
     }
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
-  test('Gerência pela sigla ou pelo nome da filial (igualdade exata), travada; campo sem lista nem autocompletar', async () => {
+  test('Gerência individual: gerência travada, supervisão e rota livres; cascata a partir das supervisões', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
-    assert.deepEqual(await page.$eval('#entGc', i => ({tipo: i.type, lista: i.getAttribute('list'),
-      auto: i.getAttribute('autocomplete'), datalists: document.querySelectorAll('datalist').length})),
-      {tipo: 'text', lista: null, auto: 'off', datalists: 0});
-    for(const [txt, gc] of [['G2', 'G2'], ['g2', 'G2'], [' GC.G2 ', 'G2'], ['Gc. G2', 'G2'], ['gc g2', 'G2'],
-      ['Goiânia 02', 'G2'], ['goiania 2', 'G2'], ['GOIANIA02', 'G2'], ['itumbiara', 'IT'], ['IT', 'IT'], ['SAO LUIS', 'SL'],
-      ['São Luís', 'SL'], ['Goiânia 1', 'G1'], ['G01', 'G1'], ['uruacu', 'UR']]){
-      await entra(page, {perfil: 'gc', gc: txt});
-      const e = await estado(page);
-      assert.ok(!e.entrada, `${txt}: ${e.msg}`);
-      assert.deepEqual([e.sel, e.filtros, e.resumo], [['gc', gc, '', ''], ['fsv', 'frota'], true], txt);
-      assert.ok(e.sub.endsWith(`· Gerência · ${ROTULO(gc)}`), e.sub);
-      assert.deepEqual(e.guardado, {perfil: 'gc', gc, sv: '', rota: '', dia: DIA});
-      await page.click('#btnCasa');
-    }
-    for(const [txt, msg] of [['goiania', MSG_GC], ['ita', MSG_GC], ['xyz', MSG_GC], ['', MSG_GC], ['   ', MSG_GC], ['G', MSG_GC],
-      ['Goiânia 0', MSG_GC], ['GC', MSG_GC], ['DI', SEM_DADOS_GC], ['Dianópolis', SEM_DADOS_GC]]){
-      await entra(page, {perfil: 'gc', gc: txt});
-      const e = await estado(page);
-      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, msg, null, null], `"${txt}"`);
-    }
-    // travada: supervisão e rota livres como hoje
     await entra(page, {perfil: 'gc', gc: 'G2'});
+    let e = await estado(page);
+    assert.deepEqual([e.entrada, e.sel, e.filtros, e.resumo], [false, ['gc', 'G2', '', ''], ['fsv', 'frota'], true]);
+    assert.ok(e.sub.endsWith('· Gerência · GC.G2 · Goiânia 02'), e.sub);
+    assert.deepEqual(e.guardado, {perfil: 'gc', gc: 'G2', sv: '', rota: '', dia: DIA});
     await page.selectOption('#fsv', 'SV.G2.1');
     await page.selectOption('#frota', 'G212');
-    let e = await estado(page);
+    e = await estado(page);
     assert.deepEqual([e.sel, e.filtros], [['gc', 'G2', 'SV.G2.1', 'G212'], ['fsv', 'frota']]);
     assert.ok(e.sub.endsWith('· Gerência · GC.G2 · Goiânia 02 · SV.G2.1 · Supervisor · Rota G212 — Consultor G212'), e.sub);
     await page.selectOption('#fsv', 'Neutraliza');
     assert.deepEqual((await estado(page)).sel, ['gc', 'G2', 'Neutraliza', '']);
-    // cascata como hoje: card -> supervisões (com a Neutraliza)
     await page.selectOption('#fsv', '');
     const g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
     assert.deepEqual(g.linhas.map(l => l.nome), ['SV.G2.1 · Supervisor', 'SV.G2.2 · Supervisor', 'Neutraliza']);
@@ -1158,30 +1259,154 @@ describe('Parte I — entrada com perfis', {skip: pular}, () => {
     await ctx.close();
   });
 
-  test('Supervisão: mesmo reconhecimento da gerência + número; SV.G3.3, Neutraliza e inexistente recusadas; travada', async () => {
-    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
-    for(const [g, s, msg] of [
-      ['G3', '3', 'Supervisão SV.G3.3 não está no painel da GC.G3 · Goiânia 03.'],     // oculta
-      ['G2', 'Neutraliza', 'Informe o número da supervisão (ex.: 1 para SV.G2.1).'],
-      ['G2', '5', 'Supervisão SV.G2.5 não está no painel da GC.G2 · Goiânia 02.'],      // só a 251 (Neutraliza)
-      ['G2', '9', 'Supervisão SV.G2.9 não está no painel da GC.G2 · Goiânia 02.'],
-      ['G2', '', 'Informe o número da supervisão (ex.: 1 para SV.G2.1).'],
-      ['goiania', '1', MSG_GC], ['DI', '1', SEM_DADOS_GC]]){
-      await entra(page, {perfil: 'sv', gc: g, sv: s});
-      const e = await estado(page);
-      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, msg, null, null], `${g} ${s}`);
-    }
-    for(const [g, s, gc, sv] of [['goiania 2', '1', 'G2', 'SV.G2.1'], ['GC.IT', '02', 'IT', 'SV.IT.2'],
-      ['Itumbiara', 'SV.IT.1', 'IT', 'SV.IT.1'], ['atacados', '3', 'AT', 'SV.AT.3']]){
-      await entra(page, {perfil: 'sv', gc: g, sv: s});
-      const e = await estado(page);
-      assert.ok(!e.entrada, `${g} ${s}: ${e.msg}`);
-      assert.deepEqual([e.sel, e.filtros, e.guardado], [['gc', gc, sv, ''], ['frota'], {perfil: 'sv', gc, sv, rota: '', dia: DIA}]);
-      await page.click('#btnCasa');
-    }
-    // SV.G2.1: só o filtro das rotas dela; cascata card -> rotas -> clientes; "puxa a média" das rotas; Resumo dela
-    await entra(page, {perfil: 'sv', gc: 'G2', sv: '1'});
+  test('grupo IT+MO: total das duas (cards, uma linha "Neutraliza", notas, "puxa a média"); seletor Total / IT / MO filtra tudo', async () => {
+    const {page, ctx, erros} = await abre('grupo', {entrar: null, antes: fixo()});
+    await entra(page, {perfil: 'gc', gc: 'IT+MO'});
     let e = await estado(page);
+    assert.deepEqual([e.entrada, e.sel, e.filtros, e.resumo], [false, ['gc', 'IT+MO', '', ''], ['fgc', 'fsv', 'frota'], true]);
+    assert.ok(e.sub.endsWith(`· Gerência · ${GRUPO_IT_MO}`), e.sub);
+    assert.deepEqual(e.guardado, {perfil: 'gc', gc: 'IT+MO', sv: '', rota: '', dia: DIA});
+    assert.deepEqual(await opcoesGc(page), [['IT+MO', 'Total (GC.IT + GC.MO)', false], ['IT', ROTULO('IT'), false],
+                                            ['MO', ROTULO('MO'), false]]);
+    // cards = soma das duas gerências inteiras (normais, Neutraliza, a virtual I32 e a eventual MO-EV)
+    const confereCards = async gcs => {
+      const r = await page.evaluate(gcs => {
+        const todas = gcs.flatMap(g => Object.values(DATA[g]).flatMap(s => Object.keys(s)));
+        const soma = (k, c) => todas.reduce((a, x) => { const b = nodo('', x).indicators[k]; return a + (b.unavailable ? 0 : b[c] || 0); }, 0);
+        const card = agrega(rotasAtuais()).ind;
+        return {rotas: [...rotasAtuais()].sort(), todas: [...todas].sort(),
+          cards: ['VOL REFRIGERANTES', 'CCTM 2L PET'].map(k => [card[k].meta, card[k].real]),
+          somas: ['VOL REFRIGERANTES', 'CCTM 2L PET'].map(k => [soma(k, 'meta'), soma(k, 'real')]),
+          base: document.getElementById('nBase').textContent,
+          baseVis: todas.filter(x => !ehVirtual(x)).reduce((a, x) => a + nodo('', x).baseTotal, 0).toLocaleString('pt-BR')};
+      }, gcs);
+      assert.deepEqual(r.rotas, r.todas, gcs.join('+'));
+      assert.deepEqual(r.cards, r.somas, gcs.join('+'));
+      assert.equal(r.base, r.baseVis, gcs.join('+'));
+      return r;
+    };
+    const total = await confereCards(['IT', 'MO']);
+    assert.ok(total.rotas.includes('I32') && total.rotas.includes('MO-EV') && total.rotas.includes('I31'));
+    let op = await opcoes(page);
+    assert.deepEqual(op.sv, ['SV.IT.1', 'SV.IT.2', 'SV.MO.1', 'SV.MO.2', 'Neutraliza'], 'supervisões das duas; uma "Neutraliza"');
+    assert.ok(!op.rota.some(r => ['I32', 'MO-EV'].includes(r)) && op.rota.includes('I31') && op.rota.includes('M31'), op.rota.join('|'));
+    // cascata: supervisões das duas (gerência -> número), UMA linha "Neutraliza", notas das virtuais e das eventuais
+    const k = 'VOL REFRIGERANTES';
+    let g = await cascata(page, k, 'VOLUME');
+    assert.equal(g.tit, `Refrigerantes · ${GRUPO_IT_MO}`);
+    assert.deepEqual(g.linhas.map(l => l.nome), ['SV.IT.1 · Supervisor', 'SV.IT.2 · Supervisor', 'SV.MO.1 · Supervisor',
+                                                 'SV.MO.2 · Supervisor', 'Neutraliza']);
+    assert.equal(await page.textContent('#dCorpo .cLin[data-i="4"] .cNome small'), '2 rotas');
+    assert.deepEqual(g.nota.map(n => n.texto.split(':')[0]), ['Inclui rotas virtuais', 'Inclui clientes de rotas eventuais (EV*)']);
+    assert.equal(g.nota[1].real, 77);
+    const card = await page.evaluate(k => agrega(rotasAtuais()).ind[k], k);
+    const somaReal = g.linhas.reduce((a, l) => a + l.real, 0) + g.nota.reduce((a, n) => a + n.real, 0);
+    assert.ok(Math.abs(somaMeta(g.linhas) + g.nota[0].meta - card.meta) < 1e-6, 'linhas + nota = card (Meta)');
+    assert.ok(Math.abs(somaReal - card.real) < 1e-6, 'linhas + notas = card (Real)');
+    await page.click('#dCorpo .cLin[data-i="4"]');
+    g = await lerGaveta(page);
+    assert.deepEqual([g.tit, g.linhas.map(l => l.nome)], ['Refrigerantes · Neutraliza · IT + MO', ['Rota I31', 'Rota M31']]);
+    await page.keyboard.press('Escape');
+    // "puxa a média" entre as supervisões das duas
+    await filtra(page, {aba: 'ICS_GC'});
+    await ritmo(page, 'IT', await page.evaluate(() => rotasDe('IT+MO', '')), 1);
+    await ritmo(page, 'MO', ['MO21', 'MO22'], 0);
+    await filtra(page, {});
+    assert.match(await page.textContent('#puxa'), /Supervisão que mais puxa a média para baixo: SV\.MO\.2/);
+    // uma das duas no seletor: tudo filtrado para ela (cards, filtros, cascata, cabeçalho)
+    for(const [gc, svs, linhas, notas] of [
+      ['MO', ['SV.MO.1', 'SV.MO.2', 'Neutraliza'], ['SV.MO.1 · Supervisor', 'SV.MO.2 · Supervisor', 'Neutraliza'],
+       ['Inclui clientes de rotas eventuais (EV*)']],
+      ['IT', ['SV.IT.1', 'SV.IT.2', 'Neutraliza'], ['SV.IT.1 · Supervisor', 'SV.IT.2 · Supervisor', 'Neutraliza'],
+       ['Inclui rotas virtuais']]]){
+      await page.selectOption('#fgc', gc);
+      e = await estado(page);
+      assert.deepEqual([e.sel, e.filtros], [['gc', gc, '', ''], ['fgc', 'fsv', 'frota']]);
+      assert.ok(e.sub.endsWith(`· Gerência · ${ROTULO(gc)}`), e.sub);
+      assert.equal((await opcoesGc(page)).length, 3, 'o seletor continua com Total e as duas');
+      await confereCards([gc]);
+      op = await opcoes(page);
+      assert.deepEqual(op.sv, svs);
+      assert.ok(op.rota.every(r => r.startsWith(gc[0])), op.rota.join('|'));
+      g = await cascata(page, k, 'VOLUME');
+      assert.deepEqual(g.linhas.map(l => l.nome), linhas);
+      assert.deepEqual(g.nota.map(n => n.texto.split(':')[0]), notas);
+      await page.keyboard.press('Escape');
+      assert.deepEqual((await estado(page)).guardado, {perfil: 'gc', gc: 'IT+MO', sv: '', rota: '', dia: DIA});
+    }
+    // supervisão e rota dentro da escolha
+    await page.selectOption('#fsv', 'SV.IT.1');
+    assert.deepEqual((await opcoes(page)).rota, ['IT11', 'IT12']);
+    // de volta ao Total: as duas de novo, filtros zerados
+    await page.selectOption('#fgc', 'IT+MO');
+    assert.deepEqual((await estado(page)).sel, ['gc', 'IT+MO', '', '']);
+    await confereCards(['IT', 'MO']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Resumo do grupo: Total = as duas lado a lado (como na Diretoria); uma gerência = o Resumo dela', async () => {
+    const {page, ctx, erros} = await abre('grupo', {entrar: {perfil: 'gc', gc: 'IT+MO'}, antes: fixo()});
+    await page.click('#btnResumo');
+    assert.equal(await page.textContent('#rsFolha h2'), `Resumo de vendas · ${GRUPO_IT_MO}`);
+    assert.deepEqual(await colunasRs(page), [['Agrupador', ''], ['GC.IT + GC.MO', 'Itumbiara + Morrinhos'],
+                                              ['GC.IT', 'Itumbiara'], ['GC.MO', 'Morrinhos']]);
+    // Online de Refrigerantes: total = IT + MO
+    const onl = await page.$eval('#rsFolha .rs-bloco', bl => [...bl.querySelectorAll('.rs-tab tbody tr:first-child td:not(.rs-nome)')]
+      .map(td => Number(([...td.querySelectorAll('.rs-k')].find(k => k.querySelector('small').textContent === 'Online')
+        .querySelector('strong').textContent).replace(/\./g, ''))));
+    assert.equal(onl.length, 3);
+    assert.ok(onl[1] > 0 && onl[2] > 0 && onl[0] === onl[1] + onl[2], onl.join('|'));
+    assert.doesNotMatch(await page.textContent('#rsFolha'), /Neutraliza|I31|M31|I32|MO-EV/);
+    await page.click('#rsVoltar');
+    await page.selectOption('#fgc', 'IT');
+    await page.click('#btnResumo');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.IT · Itumbiara');
+    assert.deepEqual((await colunasRs(page)).map(c => c[0]), ['Agrupador', 'GC.IT', 'SV.IT.1', 'SV.IT.2']);
+    await page.click('#rsVoltar');
+    await page.selectOption('#fgc', 'MO');
+    await page.click('#btnResumo');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.MO · Morrinhos');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Supervisão em duas etapas: gerência, depois as supervisões dela (no grupo, as das duas); travada', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    await page.click('#entrada [data-perfil="sv"]');
+    let c = await caixa(page);
+    assert.deepEqual([c.tit, c.sub, c.gcs, c.campos], ['SUPERVISÃO', 'Escolha a gerência', OPCOES_GC, 0]);
+    const lista = async gc => {
+      await page.click(`#entOpcoes [data-gc="${gc}"]`);
+      const x = await caixa(page);
+      assert.ok(x.voltar && x.sub === `${gc.includes('+') ? OPCOES_GC.find(o => o[0] === gc)[1] : ROTULO(gc)} · escolha a supervisão`, x.sub);
+      assert.equal(x.foco, x.itens[0][0], 'foco na primeira supervisão');
+      await page.click('#entVoltar');
+      assert.deepEqual([(await caixa(page)).sub, (await caixa(page)).voltar], ['Escolha a gerência', false]);
+      return x;
+    };
+    const casos = {G2: ['SV.G2.1', 'SV.G2.2'], G3: ['SV.G3.1', 'SV.G3.2'], AT: ['SV.AT.1', 'SV.AT.2', 'SV.AT.3'],
+      AN: ['SV.AN.1', 'SV.AN.2'], SL: ['SV.SL.1', 'SV.SL.2'], 'IT+MO': ['SV.IT.1', 'SV.IT.2', 'SV.MO.1', 'SV.MO.2'],
+      'UR+RI': ['SV.UR.1', 'SV.UR.2', 'SV.RI.1', 'SV.RI.2']};
+    for(const [gc, svs] of Object.entries(casos)){
+      const x = await lista(gc);
+      assert.deepEqual(x.itens.map(i => i[0]), svs, `${gc}: sem SV.G3.3, "Neutraliza", só-Neutraliza/virtual nem a das EV`);
+      assert.deepEqual(x.secoes, gc.includes('+') ? gc.split('+').map(ROTULO) : [], gc);
+    }
+    assert.deepEqual((await lista('AT')).itens[2], ['SV.AT.3', 'SV.AT.3 · sem vendedor']);
+    assert.deepEqual((await lista('G2')).itens[0], ['SV.G2.1', 'SV.G2.1 · Supervisor']);
+    // escolhida no grupo: entra na gerência dela, com gerência e supervisão travadas
+    await page.click('#entOpcoes [data-gc="IT+MO"]');
+    await page.click('#entOpcoes [data-sv="SV.MO.1"]');
+    let e = await estado(page);
+    assert.deepEqual([e.entrada, e.sel, e.filtros, e.guardado],
+                     [false, ['gc', 'MO', 'SV.MO.1', ''], ['frota'], {perfil: 'sv', gc: 'MO', sv: 'SV.MO.1', rota: '', dia: DIA}]);
+    assert.ok(e.sub.endsWith('· Supervisão · GC.MO · Morrinhos · SV.MO.1 · Supervisor'), e.sub);
+    await page.click('#btnCasa');
+    // SV.G2.1: só o filtro das rotas dela; cascata card -> rotas -> clientes; "puxa a média" das rotas; Resumo dela
+    await entra(page, {perfil: 'sv', gc: 'G2', sv: 'SV.G2.1'});
+    e = await estado(page);
+    assert.deepEqual([e.sel, e.filtros, e.resumo], [['gc', 'G2', 'SV.G2.1', ''], ['frota'], true]);
     assert.ok(e.sub.endsWith('· Supervisão · GC.G2 · Goiânia 02 · SV.G2.1 · Supervisor'), e.sub);
     assert.deepEqual(await page.$$eval('#frota option', os => os.map(o => o.value)), ['', 'G211', 'G212']);
     let g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
@@ -1195,12 +1420,10 @@ describe('Parte I — entrada com perfis', {skip: pular}, () => {
     await ritmo(page, 'G2', ['G211'], 0);
     await filtra(page, {});
     assert.match(await page.textContent('#puxa'), /Rota que mais puxa a média para baixo: Rota G211/);
-    assert.ok(e.resumo);
     await page.click('#btnResumo');
     assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · SV.G2.1');
     assert.deepEqual((await colunasRs(page)).map(c => c[0]), ['Agrupador', 'SV.G2.1', 'G211', 'G212']);
     await page.click('#rsVoltar');
-    // rota escolhida no filtro: a supervisão continua travada; sem "puxa a média"
     await page.selectOption('#frota', 'G212');
     e = await estado(page);
     assert.deepEqual([e.sel, e.filtros], [['gc', 'G2', 'SV.G2.1', 'G212'], ['frota']]);
@@ -1209,31 +1432,29 @@ describe('Parte I — entrada com perfis', {skip: pular}, () => {
     await ctx.close();
   });
 
-  test('Rota: mesmo reconhecimento da gerência + código; Neutraliza vale; virtual e de outra gerência não; tudo travado', async () => {
+  test('Rota em duas etapas: rotas da gerência (no grupo, das duas), Neutraliza sim, virtual e -EV não; tudo travado', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
-    for(const [g, r, msg] of [
-      ['AN', 'A42', 'Rota A42 não está no painel da GC.AN · Anápolis.'],          // virtual
-      ['rio verde', 'r32', 'Rota R32 não está no painel da GC.RV · Rio Verde.'],   // virtual
-      ['G2', 'G111', 'Rota G111 não está no painel da GC.G2 · Goiânia 02.'],       // de outra gerência
-      ['G2', '999', 'Rota 999 não está no painel da GC.G2 · Goiânia 02.'],
-      ['G2', ' ', 'Informe o código da rota (ex.: 211).'],
-      ['xyz', 'G211', MSG_GC], ['Dianópolis', 'D11', SEM_DADOS_GC]]){
-      await entra(page, {perfil: 'rota', gc: g, rota: r});
-      const e = await estado(page);
-      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, msg, null, null], `${g} ${r}`);
+    await page.click('#entrada [data-perfil="rota"]');
+    assert.deepEqual([(await caixa(page)).tit, (await caixa(page)).gcs], ['ROTA', OPCOES_GC]);
+    const casos = {AN: ['A41', 'AN11', 'AN12', 'AN21', 'AN22'], SL: ['SL11', 'SL12', 'SL21', 'SL22'],
+      G2: ['251', 'G211', 'G212', 'G221', 'G222'],
+      RV: ['R31', 'RV11', 'RV12', 'RV21', 'RV22'], AT: ['411', '431', 'AT12', 'AT21', 'AT22', 'AT31', 'AT32'],
+      G3: ['331', 'G311', 'G312', 'G321', 'G322'],
+      'IT+MO': ['I31', 'IT11', 'IT12', 'IT21', 'IT22', 'M31', 'MO11', 'MO12', 'MO21', 'MO22']};
+    for(const [gc, rotas] of Object.entries(casos)){
+      await page.click(`#entOpcoes [data-gc="${gc}"]`);
+      const x = await caixa(page);
+      assert.ok(x.sub.endsWith('· escolha a rota'), x.sub);
+      assert.deepEqual(x.itens.map(i => i[0]), rotas, gc);
+      assert.deepEqual(x.secoes, gc.includes('+') ? gc.split('+').map(ROTULO) : [], gc);
+      await page.click('#entVoltar');
     }
-    for(const [g, r, gc, sv, rota] of [['g2', 'g2 11', 'G2', 'SV.G2.1', 'G211'], ['Itumbiara', 'it11', 'IT', 'SV.IT.1', 'IT11'],
-      ['AT', '431', 'AT', 'Neutraliza', '431'], ['goiania 1', '151', 'G1', 'Neutraliza', '151'], ['G3', '331', 'G3', 'SV.G3.3', '331']]){
-      await entra(page, {perfil: 'rota', gc: g, rota: r});
-      const e = await estado(page);
-      assert.ok(!e.entrada, `${g} ${r}: ${e.msg}`);
-      assert.deepEqual([e.sel, e.filtros, e.resumo, e.guardado],
-                       [['gc', gc, sv, rota], [], false, {perfil: 'rota', gc, sv, rota, dia: DIA}], `${g} ${r}`);
-      await page.click('#btnCasa');
-    }
-    // G211: sem filtros nem Resumo; sem "puxa a média"; cascata card -> clientes
-    await entra(page, {perfil: 'rota', gc: 'G2', rota: 'G211'});
+    await page.click('#entOpcoes [data-gc="G2"]');
+    assert.deepEqual((await caixa(page)).itens.find(i => i[0] === 'G211'), ['G211', 'Rota G211 · Consultor G211']);
+    await page.click('#entOpcoes [data-rota="G211"]');
     let e = await estado(page);
+    assert.deepEqual([e.entrada, e.sel, e.filtros, e.resumo, e.guardado],
+      [false, ['gc', 'G2', 'SV.G2.1', 'G211'], [], false, {perfil: 'rota', gc: 'G2', sv: 'SV.G2.1', rota: 'G211', dia: DIA}]);
     assert.ok(e.sub.endsWith('· Rota · GC.G2 · Goiânia 02 · SV.G2.1 · Supervisor · Rota G211 — Consultor G211'), e.sub);
     assert.equal(await page.innerHTML('#puxa'), '');
     let g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
@@ -1243,9 +1464,16 @@ describe('Parte I — entrada com perfis', {skip: pular}, () => {
     g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
     assert.ok(g.clientes.length > 0);
     await page.keyboard.press('Escape');
+    // escolhida no grupo: entra na gerência dela
+    await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'MO21'});
+    e = await estado(page);
+    assert.deepEqual([e.sel, e.filtros, e.guardado], [['gc', 'MO', 'SV.MO.2', 'MO21'], [],
+                                                       {perfil: 'rota', gc: 'MO', sv: 'SV.MO.2', rota: 'MO21', dia: DIA}]);
+    assert.ok(e.sub.endsWith('· Rota · GC.MO · Morrinhos · SV.MO.2 · Supervisor · Rota MO21 — Consultor Mo21'), e.sub);
     // rota Neutraliza: clientes dentro, sem Venda Zero
     await vaiPara(page, {perfil: 'rota', gc: 'AT', rota: '431'});
     e = await estado(page);
+    assert.deepEqual([e.sel, e.filtros, e.resumo], [['gc', 'AT', 'Neutraliza', '431'], [], false]);
     assert.ok(e.sub.endsWith('· Rota · GC.AT · Atacados · Neutraliza · Rota 431 — Consultor 431'), e.sub);
     g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
     assert.equal(g.clientes.length, 3);
@@ -1256,34 +1484,49 @@ describe('Parte I — entrada com perfis', {skip: pular}, () => {
     await ctx.close();
   });
 
-  test('entrada em 390 px: botões e formulários sem rolagem lateral, campos de 16 px, sem erro no console', async () => {
-    const {page, ctx, erros} = await abre('normal', {entrar: null, largura: 390, altura: 844});
-    const mede = () => page.evaluate(() => {
-      const caixa = el => { const b = el.getBoundingClientRect(); return [b.left, b.right, b.top, b.bottom].map(Math.round); };
-      const vis = [...document.querySelectorAll('#entrada button, #entrada input')].filter(el => el.offsetParent !== null);
-      return {largura: document.documentElement.clientWidth,
-              rolagem: [document.documentElement.scrollWidth, document.getElementById('entrada').scrollWidth],
-              caixas: vis.map(el => [el.id || el.textContent.trim(), ...caixa(el)]),
-              fontes: [...document.querySelectorAll('#entForm input')].filter(i => i.offsetParent !== null)
-                .map(i => parseFloat(getComputedStyle(i).fontSize))};
-    });
-    for(const tema of ['preta', 'branca']){
-      if(tema === 'branca') await page.click('#btnTema');
-      for(const p of ['', 'dir', 'gc', 'sv', 'rota']){
-        if(p) await page.click(`#entrada [data-perfil="${p}"]`);
-        if(p === 'rota'){ await page.fill('#entGc', 'goiania'); await page.click('#entEntrar'); }     // com o aviso
-        const m = await mede();
+  test('entrada e caixa de seleção em 390 px: sem rolagem lateral, tudo na tela, lista com rolagem própria', async () => {
+    for(const altura of [844, 560]){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, largura: 390, altura});
+      const mede = () => page.evaluate(() => {
+        const caixa = el => { const b = el.getBoundingClientRect(); return [b.left, b.right, b.top, b.bottom].map(Math.round); };
+        const lista = document.getElementById('entOpcoes');
+        const vis = [...document.querySelectorAll('#entrada button, #entrada .entPainel')].filter(el => el.offsetParent !== null)
+          .filter(el => !lista.contains(el));
+        return {largura: document.documentElement.clientWidth,
+                rolagem: [document.documentElement.scrollWidth, document.getElementById('entrada').scrollWidth, lista.scrollWidth],
+                listaW: lista.clientWidth, caixas: vis.map(el => [el.id || el.className || el.textContent.trim(), ...caixa(el)]),
+                lista: caixa(lista), rolaLista: lista.scrollHeight > lista.clientHeight,
+                opcoes: [...lista.querySelectorAll('button')].filter(b => b.offsetParent !== null)
+                  .map(b => [b.textContent, ...caixa(b), b.offsetHeight])};
+      });
+      const confere = (m, onde) => {
         assert.equal(m.largura, 390);
-        assert.ok(m.rolagem.every(w => w <= 390), `${tema} ${p}: rolagem lateral ${m.rolagem}`);
-        assert.ok(m.caixas.length >= (p ? 4 : 5), `${tema} ${p}`);
+        assert.ok(m.rolagem.slice(0, 2).every(w => w <= 390) && m.rolagem[2] <= m.listaW, `${onde}: rolagem lateral ${m.rolagem}`);
         for(const [nome, esq, dir, topo, base] of m.caixas)
-          assert.ok(esq >= 0 && dir <= 390 && topo >= 0 && base <= 844, `${tema} ${p} ${nome}: ${[esq, dir, topo, base]}`);
-        assert.ok(m.fontes.every(f => f >= 16), `${tema} ${p}: campos com 16 px (o celular não amplia ao tocar)`);
-        if(p) await page.click('#entOutro');
+          assert.ok(esq >= 0 && dir <= 390 && topo >= 0 && base <= altura, `${onde} ${nome}: ${[esq, dir, topo, base]}`);
+        for(const [nome, esq, dir, , , h] of m.opcoes)
+          assert.ok(esq >= 0 && dir <= 390 && h >= 44, `${onde} ${nome}: ${[esq, dir, h]}`);
+      };
+      for(const tema of ['preta', 'branca']){
+        if(tema === 'branca') await page.click('#btnTema');
+        confere(await mede(), `${altura} ${tema} botões`);
+        for(const [perfil, gc] of [['gc', ''], ['sv', 'IT+MO'], ['rota', 'IT+MO'], ['rota', 'G2']]){
+          await page.click(`#entrada [data-perfil="${perfil}"]`);
+          if(gc) await page.click(`#entOpcoes [data-gc="${gc}"]`);
+          const m = await mede();
+          confere(m, `${altura} ${tema} ${perfil} ${gc}`);
+          assert.ok(m.lista[3] <= altura, `${altura} ${tema} ${perfil}: a caixa cabe na tela`);
+          if(altura === 560 && perfil === 'gc') assert.ok(m.rolaLista, 'com pouca altura, a lista rola dentro da caixa');
+          // a última opção é alcançável rolando a lista
+          const ultima = await page.$('#entOpcoes button:last-of-type');
+          await ultima.scrollIntoViewIfNeeded();
+          assert.ok(await ultima.isVisible());
+          await page.click('#entFechar');
+        }
       }
+      assert.deepEqual(erros, []);
+      await ctx.close();
     }
-    assert.deepEqual(erros, []);
-    await ctx.close();
   });
 });
 
@@ -1291,10 +1534,10 @@ describe('Parte I — acesso guardado e virada diária', {skip: pular}, () => {
   test('casa apaga o acesso; recarregar reabre os quatro perfis no mesmo contexto (demais filtros no padrão)', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
     for(const [login, guardado, ctxSel, filtros] of [
-      [{perfil: 'dir', usuario: 'dicom'}, {perfil: 'dir', gc: '', sv: '', rota: ''}, ['dir', '', '', ''], ['fgc']],
-      [{perfil: 'gc', gc: 'Goiânia 02'}, {perfil: 'gc', gc: 'G2', sv: '', rota: ''}, ['gc', 'G2', '', ''], ['fsv', 'frota']],
-      [{perfil: 'sv', gc: 'it', sv: '2'}, {perfil: 'sv', gc: 'IT', sv: 'SV.IT.2', rota: ''}, ['gc', 'IT', 'SV.IT.2', ''], ['frota']],
-      [{perfil: 'rota', gc: 'at', rota: '431'}, {perfil: 'rota', gc: 'AT', sv: 'Neutraliza', rota: '431'},
+      [{perfil: 'dir'}, {perfil: 'dir', gc: '', sv: '', rota: ''}, ['dir', '', '', ''], ['fgc']],
+      [{perfil: 'gc', gc: 'G2'}, {perfil: 'gc', gc: 'G2', sv: '', rota: ''}, ['gc', 'G2', '', ''], ['fsv', 'frota']],
+      [{perfil: 'sv', gc: 'IT', sv: '2'}, {perfil: 'sv', gc: 'IT', sv: 'SV.IT.2', rota: ''}, ['gc', 'IT', 'SV.IT.2', ''], ['frota']],
+      [{perfil: 'rota', gc: 'AT', rota: '431'}, {perfil: 'rota', gc: 'AT', sv: 'Neutraliza', rota: '431'},
        ['gc', 'AT', 'Neutraliza', '431'], []]]){
       await entra(page, login);
       assert.deepEqual(JSON.parse(await guardadoTxt(page)), {...guardado, dia: DIA});
@@ -1474,6 +1717,369 @@ describe('Parte I — acesso guardado e virada diária', {skip: pular}, () => {
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     e = await estado(page);
     assert.deepEqual([e.entrada, e.msg, e.guardado], [true, REINICIADO, null]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});
+
+describe('Parte I — grupos: acesso guardado, virada diária e link do Resumo', {skip: pular}, () => {
+  test('grupo: recarregar reabre no Total (mesmo com uma das duas no seletor); payload novo mantém a escolha; casa', async () => {
+    const {page, ctx, erros} = await abre('grupo', {entrar: {perfil: 'gc', gc: 'IT+MO'}, antes: fixo()});
+    const guardado = {perfil: 'gc', gc: 'IT+MO', sv: '', rota: '', dia: DIA};
+    await page.selectOption('#fgc', 'MO');
+    await page.selectOption('#fsv', 'SV.MO.1');
+    let e = await estado(page);
+    assert.deepEqual([e.sel, e.guardado], [['gc', 'MO', 'SV.MO.1', ''], guardado]);
+    // payload novo: a escolha do seletor fica (a MO continua com dados)
+    await page.evaluate(() => recarregaPayload());
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.sel, e.filtros], [false, ['gc', 'MO', 'SV.MO.1', ''], ['fgc', 'fsv', 'frota']]);
+    await page.reload();
+    await esperaCarga(page);
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.sel, e.filtros, e.guardado], [false, ['gc', 'IT+MO', '', ''], ['fgc', 'fsv', 'frota'], guardado]);
+    assert.ok(e.sub.endsWith(`· Gerência · ${GRUPO_IT_MO}`), e.sub);
+    await page.click('#btnCasa');
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, '', null, null]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('acesso guardado: grupo e supervisão/rota de grupo valem; chave fora de GC_GRUPOS, grupo sem dados, virtual e -EV não', async () => {
+    for(const [nome, a, sel] of [['grupo', {perfil: 'gc', gc: 'IT+MO'}, ['gc', 'IT+MO', '', '']],
+      ['grupo', {perfil: 'sv', gc: 'IT+MO', sv: 'SV.MO.1'}, ['gc', 'MO', 'SV.MO.1', '']],
+      ['grupo', {perfil: 'rota', gc: 'IT+MO', rota: 'I31'}, ['gc', 'IT', 'Neutraliza', 'I31']],
+      ['normal', {perfil: 'gc', gc: 'PA+DI'}, ['gc', 'PA+DI', '', '']]]){
+      const {page, ctx, erros} = await abre(nome, {entrar: null, antes: fixo(), armazenado: {drotas_sessao: sessao(a)}});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.sel], [false, sel], JSON.stringify(a));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+    for(const [nome, a] of [['grupo', {perfil: 'gc', gc: 'MO+IT'}], ['grupo', {perfil: 'gc', gc: 'IT+XX'}],
+      ['grupo', {perfil: 'gc', gc: 'IT+MO+G1'}], ['semdados', {perfil: 'gc', gc: 'PA+DI'}], ['semdados', {perfil: 'gc', gc: 'G3'}],
+      ['grupo', {perfil: 'gc', gc: 'MO'}],      // gerência de grupo sozinha não é opção da entrada (só no seletor do grupo)
+      ['grupo', {perfil: 'sv', gc: 'IT+MO', sv: 'SV.G2.1'}], ['grupo', {perfil: 'sv', gc: 'IT+MO', sv: 'Neutraliza'}],
+      ['grupo', {perfil: 'rota', gc: 'IT+MO', rota: 'I32'}], ['grupo', {perfil: 'rota', gc: 'IT+MO', rota: 'MO-EV'}],
+      ['normal', {perfil: 'rota', gc: 'SL', rota: 'SL-EV'}], ['normal', {perfil: 'gc', gc: {g: 'G2'}}]]){
+      const {page, ctx, erros} = await abre(nome, {entrar: null, antes: fixo(), armazenado: {drotas_sessao: sessao(a)}});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, INDISPONIVEL, null, null], JSON.stringify(a));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  test('virada às 05:00 de Brasília nos acessos de grupo, com o navegador em UTC e em America/Sao_Paulo', async () => {
+    const ACESSOS = [[{perfil: 'gc', gc: 'IT+MO'}, 'IT+MO'], [{perfil: 'sv', gc: 'UR+RI', sv: 'SV.RI.2'}, 'RI'],
+                     [{perfil: 'rota', gc: 'UR+RI', rota: 'UR11'}, 'UR']];
+    for(const fuso of ['UTC', 'America/Sao_Paulo']){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, fuso, antes: fixo(new Date('2026-10-14T07:59:00Z'))});
+      const linhas = [];
+      for(const [a] of ACESSOS){
+        // acesso do dia 13 às 04:59 e às 05:00 de Brasília do dia 14
+        for(const hora of ['2026-10-14T07:59:00Z', '2026-10-14T08:00:00Z']){
+          await page.clock.setFixedTime(new Date(hora));
+          await page.evaluate(s => localStorage.setItem('drotas_sessao', s), sessao(a, '2026-10-13'));
+          await page.reload();
+          await esperaCarga(page);
+          const e = await estado(page);
+          linhas.push([a.perfil, hora.slice(11, 16), e.entrada, e.msg, e.acesso ? e.sel[1] : null]);
+        }
+      }
+      assert.deepEqual(linhas, ACESSOS.flatMap(([a, gc]) => [[a.perfil, '07:59', false, '', gc],
+                                                             [a.perfil, '08:00', true, REINICIADO, null]]), fuso);
+      await entra(page, {perfil: 'gc', gc: 'UR+RI'});
+      assert.deepEqual((await estado(page)).guardado, {perfil: 'gc', gc: 'UR+RI', sv: '', rota: '', dia: '2026-10-14'});
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  test('?resumo= do grupo abre o Total das duas sem mexer no acesso guardado; o link do Total leva o grupo', async () => {
+    const guardada = sessao({perfil: 'rota', gc: 'G2', rota: 'G211'});
+    for(const busca of ['?resumo=vol,ics&gc=IT%2BMO', '?resumo=vol&gc=IT+MO']){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), armazenado: {drotas_sessao: guardada}, busca});
+      assert.equal(await page.textContent('#rsFolha h2'), `Resumo de vendas · ${GRUPO_IT_MO}`, busca);
+      assert.deepEqual((await colunasRs(page)).map(c => c[0]), ['Agrupador', 'GC.IT + GC.MO', 'GC.IT', 'GC.MO']);
+      assert.equal(await guardadoTxt(page), guardada);
+      await page.click('#rsVoltar');
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.sel, e.filtros], [false, ['gc', 'G2', 'SV.G2.1', 'G211'], []]);
+      assert.equal(await guardadoTxt(page), guardada);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+    // o link gerado no Total do grupo leva a chave do grupo
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'IT+MO'}, antes: fixo()});
+    const link = await page.evaluate(() => new Promise(ok => {
+      navigator.share = async d => ok(d.url);
+      document.getElementById('btnResumo').click();
+      document.getElementById('rsLink').click();
+    }));
+    assert.match(link, /\?resumo=vol,ics&gc=IT%2BMO$/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});
+
+describe('Parte H — ordem dentro de um grupo de gerências', {skip: pular}, () => {
+  for(const nome of ['normal', 'fech']){
+    test(`supervisões por gerência -> número, "Neutraliza" por último, rotas e clientes pelo código (${nome})`, async () => {
+      const {page, ctx, erros} = await abre(nome, {entrar: {perfil: 'gc', gc: 'UR+RI'}});
+      const k = 'VOL REFRIGERANTES';
+      // DATA da UR e da RI com supervisões e rotas fora de ordem, e números que dariam outra ordem pela tendência
+      await page.evaluate(() => {
+        for(const gc of ['UR', 'RI'])
+          DATA[gc] = Object.fromEntries(Object.entries(DATA[gc]).reverse().map(([s, rs]) =>
+            [s, Object.fromEntries(Object.entries(rs).reverse())]));
+        DATA = Object.fromEntries(Object.entries(DATA).reverse());
+        ROTA_IDX = {};
+        for(const gc in DATA) for(const sv in DATA[gc]) for(const r in DATA[gc][sv]) ROTA_IDX[r] = [gc, sv];
+      });
+      for(const [rs, f] of [[['UR11', 'UR12'], 0.2], [['UR21', 'UR22'], 0.5], [['RI11', 'RI12'], 1.4], [['RI21', 'RI22'], 0.9]])
+        await ritmo(page, 'UR', rs, f);
+      await filtra(page, {});
+      let g = await cascata(page, k, 'VOLUME');
+      assert.deepEqual(g.linhas.map(l => l.nome), ['SV.UR.1 · Supervisor', 'SV.UR.2 · Supervisor', 'SV.RI.1 · Supervisor',
+                                                   'SV.RI.2 · Supervisor']);
+      const esperado = await page.evaluate(k => [['UR11', 'UR12'], ['UR21', 'UR22'], ['RI11', 'RI12'], ['RI21', 'RI22']]
+        .map(rs => { const b = agrega(rs).ind[k]; return [b.meta, P.FECHAMENTO ? b.pctReal : b.pctTendencia, b.onPace ? 'ok' : 'no']; }), k);
+      assert.deepEqual((await linhasCor(page)).map(l => l.slice(1)), esperado, 'números e cor de agrega(), só a ordem muda');
+      await page.click('#dCorpo .cLin[data-i="2"]');
+      g = await lerGaveta(page);
+      assert.deepEqual(g.linhas.map(l => l.nome), ['Rota RI11', 'Rota RI12']);
+      await page.click('#dCorpo .cLin[data-i="0"]');
+      g = await lerGaveta(page);
+      assert.ok(g.clientes.length > 1 && g.clientes.every((d, i) => i === 0 || g.clientes[i - 1] <= d), 'Dif. Abs crescente');
+      await page.keyboard.press('Escape');
+      // IT+MO: a linha "Neutraliza" (I31 e M31 juntas) por último; dentro, as rotas em ordem natural
+      await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
+      g = await cascata(page, k, 'VOLUME');
+      assert.deepEqual(g.linhas.map(l => l.nome), ['SV.IT.1 · Supervisor', 'SV.IT.2 · Supervisor', 'SV.MO.1 · Supervisor',
+                                                   'SV.MO.2 · Supervisor', 'Neutraliza']);
+      await page.click('#dCorpo .cLin[data-i="4"]');
+      g = await lerGaveta(page);
+      assert.deepEqual(g.linhas.map(l => l.nome), ['Rota I31', 'Rota M31']);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+});
+
+/* ---------- Parte K: "Meta batida!" (volume: meta do dia do nível <= 0; coberturas: Real >= Meta do mês; só rótulo e cor) ---------- */
+// põe a meta do dia (metaDia) do indicador `k` nas rotas: {rota: valor}
+const poeMetaDia = (page, k, valores) => page.evaluate(([k, v]) => {
+  for(const r in v) nodo('', r).indicators[k].metaDia = v[r];
+}, [k, valores]);
+// caixa Online do card: classe, número e rótulo
+const caixaCard = (page, k) => page.$eval(`.ind[data-k="${k}"] .obox`, el => ({
+  cls: el.className, num: el.querySelector('b').textContent, rot: el.querySelector('span').textContent.trim()}));
+// meio das linhas da gaveta: [nome, classe da caixa do online, número, rótulo de baixo, data-meta, data-real]
+// (sem as linhas "sem dados", que não têm números)
+const meioLinhas = page => page.$$eval('#dCorpo .cLin:not(.off)', ls => ls.map(l => [l.querySelector('.cNome b').textContent,
+  l.querySelector('.cOn').className, l.querySelector('.cOn').textContent, l.querySelector('.cMeio small').textContent,
+  Number(l.dataset.meta), Number(l.dataset.real)]));
+const fmtPt = n => Math.round(n).toLocaleString('pt-BR');
+const onlineDe = (page, k, rs) => page.evaluate(([k, rs]) => rs.reduce((a, r) => a + ((ONLINE.volume[r] || {})[k] || 0), 0), [k, rs]);
+const mdCard = (page, k) => page.evaluate(k => agrega(rotasAtuais()).ind[k].metaDia, k);
+
+describe('Parte K — "Meta batida!"', {skip: pular}, () => {
+  test('card, linhas de supervisão e rota, "Neutraliza", total somado e Diretoria; online mostrado e somado; valores iguais', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}, antes: fixo()});
+    const k = 'VOL REFRIGERANTES', online = rs => onlineDe(page, k, rs);
+    await filtra(page, {aba: 'VOLUME'});
+    // como hoje: meta do dia > 0 e online abaixo dela = vermelho com "meta do dia X"
+    let c = await caixaCard(page, k), md = await mdCard(page, k);
+    const onl = await online(['G111', 'G112', 'G121', 'G122', '151']);
+    assert.ok(md > onl && onl > 0, `${md} ${onl}`);
+    assert.deepEqual([c.cls, c.num, c.rot], ['obox no', fmtPt(onl), `meta do dia ${fmtPt(md)}`]);
+    // SV.G1.1 (0 e -5) e a Neutraliza 151 (-1) batidas; SV.G1.2 não; o total da G1 continua > 0
+    await poeMetaDia(page, k, {G111: 0, G112: -5, 151: -1});
+    await filtra(page, {});
+    md = await mdCard(page, k);
+    assert.ok(md > 0);
+    c = await caixaCard(page, k);
+    assert.deepEqual([c.cls, c.num, c.rot], [onl >= md ? 'obox ok' : 'obox no', fmtPt(onl), `meta do dia ${fmtPt(md)}`],
+                     'total > 0: como antes (verde só se o online bate)');
+    let g = await cascata(page, k, 'VOLUME');
+    const sv2 = await page.evaluate(k => agrega(['G121', 'G122']).ind[k], k);
+    assert.deepEqual(await meioLinhas(page), [
+      ['SV.G1.1 · Supervisor', 'cOn ok', fmtPt(await online(['G111', 'G112'])), 'Meta batida!', g.linhas[0].meta, g.linhas[0].real],
+      ['SV.G1.2 · Supervisor', 'cOn no', fmtPt(await online(['G121', 'G122'])), `meta do dia ${fmtPt(sv2.metaDia)}`,
+       sv2.meta, sv2.real],
+      ['Neutraliza', 'cOn ok', fmtPt(await online(['151'])), 'Meta batida!', g.linhas[2].meta, g.linhas[2].real]]);
+    // rotas da SV.G1.1: a G111 (0) e a G112 (-5) batidas, cada uma com o seu online
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    assert.deepEqual((await meioLinhas(page)).map(l => l.slice(0, 4)),
+      [['Rota G111', 'cOn ok', fmtPt(await online(['G111'])), 'Meta batida!'],
+       ['Rota G112', 'cOn ok', fmtPt(await online(['G112'])), 'Meta batida!']]);
+    await page.keyboard.press('Escape');
+    // total somado <= 0 com resíduo de decimais (0,1 + 0,2 - 0,3): card verde, "Meta batida!" e o online de todas as rotas
+    await poeMetaDia(page, k, {G111: 0.1, G112: 0.2, G121: -0.3, G122: 0, 151: 0});
+    await filtra(page, {});
+    md = await mdCard(page, k);
+    assert.ok(md !== 0 && Math.abs(md) < 1e-9, `soma com resíduo: ${md}`);
+    c = await caixaCard(page, k);
+    assert.deepEqual([c.cls, c.num, c.rot], ['obox ok', fmtPt(onl), 'Meta batida!']);
+    // os números não mudam: metaDia somada como sempre (sem virar 0), Meta, Real, Diferença e % do card
+    await poeMetaDia(page, k, {G111: 0, G112: -5, G121: -40, G122: -60, 151: -1});
+    const antes = await page.evaluate(() => JSON.stringify([P, ONLINE]));
+    await filtra(page, {});
+    const card = await page.evaluate(k => ({b: agrega(rotasAtuais()).ind[k],
+      cl: document.querySelector(`.ind[data-k="${k}"] .cl`).textContent.replace(/\s+/g, ' ').trim(),
+      big: document.querySelector(`.ind[data-k="${k}"] .big`).textContent}), k);
+    assert.equal(card.b.metaDia, -106);
+    assert.equal(card.cl, `Meta ${fmtPt(card.b.meta)} Real ${fmtPt(card.b.real)} Diferença ${fmtPt(card.b.real - card.b.meta)}`);
+    assert.equal(card.big, `${card.b.onPace ? '▲' : '▼'}${card.b.pctTendencia}%`);
+    assert.deepEqual(await caixaCard(page, k), {cls: 'obox ok', num: fmtPt(onl), rot: 'Meta batida!'});
+    // Diretoria: só a linha da G1 (meta do dia somada <= 0) muda
+    await vaiPara(page, 'dir');
+    g = await cascata(page, k, 'VOLUME');
+    const linhas = await meioLinhas(page);
+    assert.deepEqual(linhas.find(l => l[0] === 'GC.G1 · Goiânia 01').slice(1, 4), ['cOn ok', fmtPt(onl), 'Meta batida!']);
+    assert.ok(linhas.filter(l => l[0] !== 'GC.G1 · Goiânia 01').every(l => /^meta do dia /.test(l[3])), 'as outras como antes');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => JSON.stringify([P, ONLINE])), antes, 'o front não altera nenhum valor do payload');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Del Valle Frut e grupo; meta do dia > 0 (verde ao bater) e sem meta do dia como antes', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G2'}, antes: fixo()});
+    await filtra(page, {aba: 'VOLUME'});
+    const dv = 'VOL DEL VALLE FRUT', k = 'VOL REFRIGERANTES';
+    const rotas = await page.evaluate(dv => rotasAtuais().filter(r => nodo('', r).indicators[dv]), dv);
+    assert.ok(rotas.length >= 4);
+    await poeMetaDia(page, dv, Object.fromEntries(rotas.map(r => [r, 0])));
+    await filtra(page, {});
+    const onlDv = await onlineDe(page, dv, rotas);
+    assert.ok(onlDv > 0);
+    assert.deepEqual(await caixaCard(page, dv), {cls: 'obox ok', num: fmtPt(onlDv), rot: 'Meta batida!'});
+    let g = await cascata(page, dv, 'VOLUME');
+    assert.ok((await meioLinhas(page)).every(l => l[1] === 'cOn ok' && l[3] === 'Meta batida!'));
+    await page.keyboard.press('Escape');
+    // meta do dia > 0 e online acima dela: verde com "meta do dia X" (como hoje)
+    const todas = await page.evaluate(() => rotasAtuais());
+    await poeMetaDia(page, k, Object.fromEntries(todas.map(r => [r, 1])));
+    await filtra(page, {});
+    const onl = await onlineDe(page, k, todas);
+    assert.ok(onl >= todas.length);
+    assert.deepEqual(await caixaCard(page, k), {cls: 'obox ok', num: fmtPt(onl), rot: `meta do dia ${todas.length}`});
+    // sem meta do dia (META_RECUPERAVEL_ROTA ausente): "meta do dia —", cinza (como hoje)
+    await poeMetaDia(page, k, Object.fromEntries(todas.map(r => [r, null])));
+    await filtra(page, {});
+    assert.deepEqual(await caixaCard(page, k), {cls: 'obox nd', num: fmtPt(onl), rot: 'meta do dia —'});
+    g = await cascata(page, k, 'VOLUME');
+    assert.ok((await meioLinhas(page)).every(l => l[1] === 'cOn nd' && l[3] === 'meta do dia —'));
+    await page.keyboard.press('Escape');
+    // grupo IT+MO: a IT batida (total da IT <= 0), a MO não; o total do grupo segue a soma das duas
+    await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
+    await filtra(page, {aba: 'VOLUME'});
+    const it = await page.evaluate(() => rotasDe('IT', ''));
+    await poeMetaDia(page, k, Object.fromEntries(it.map(r => [r, -1000])));
+    await filtra(page, {});
+    assert.ok(await mdCard(page, k) <= 0);
+    assert.equal((await caixaCard(page, k)).rot, 'Meta batida!');
+    await cascata(page, k, 'VOLUME');
+    assert.deepEqual((await meioLinhas(page)).map(l => [l[0].split(' ·')[0], l[3] === 'Meta batida!']),
+      [['SV.IT.1', true], ['SV.IT.2', true], ['SV.MO.1', false], ['SV.MO.2', false], ['Neutraliza', true]]);
+    await page.keyboard.press('Escape');
+    await page.selectOption('#fgc', 'MO');
+    assert.match((await caixaCard(page, k)).rot, /^meta do dia \d/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('coberturas: "Meta batida!" com Real >= Meta do mês (card, linhas, "Neutraliza", total somado, Diretoria, Novos Negócios)', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}, antes: fixo()});
+    const k = 'CCTM 2L PET';
+    // põe Meta e Real de cobertura nas rotas: {rota: [meta, real]}
+    const poeCob = (k, v) => page.evaluate(([k, v]) => { for(const r in v) Object.assign(nodo('', r).indicators[k], {meta: v[r][0], real: v[r][1]}); }, [k, v]);
+    const onlCob = (k, rs) => page.evaluate(([k, rs]) => rs.reduce((a, r) => a + (((ONLINE.rotas || {})[r] || {})[k] || 0), 0), [k, rs]);
+    // como era antes: "meta do dia" = faltam hoje (ou a fatia do mês); verde e "no ritmo" se o online alcança
+    const comoAntes = (k, rs) => page.evaluate(([k, rs]) => {
+      const b = agrega(rs).ind[k], fatia = b.meta ? Math.ceil(b.meta / P.TOTAL_DIAS_UTEIS) : 0, md = b.gap > 0 ? b.gap : fatia;
+      const onl = rs.reduce((a, r) => a + (((ONLINE.rotas || {})[r] || {})[k] || 0), 0);
+      return {md, onl, ok: onl >= md};
+    }, [k, rs]);
+    // SV.G1.1 (2/2 e 3/2) e a Neutraliza 151 (2/2) alcançaram a meta; SV.G1.2 (1/4 e 1/4) não; a G1 (10/14) também não
+    await poeCob(k, {G111: [2, 2], G112: [2, 3], G121: [4, 1], G122: [4, 1], 151: [2, 2]});
+    await filtra(page, {aba: 'ICS_GC'});
+    const todas = ['G111', 'G112', 'G121', 'G122', '151'];
+    let antes = await comoAntes(k, todas), c = await caixaCard(page, k);
+    assert.deepEqual([/\bok\b/.test(c.cls), c.num, c.rot], [antes.ok, String(antes.onl), antes.ok ? 'no ritmo' : `meta do dia ${antes.md}`],
+                     'total abaixo da meta: como antes');
+    await cascata(page, k, 'ICS_GC');
+    const sv2 = await comoAntes(k, ['G121', 'G122']);
+    assert.deepEqual((await meioLinhas(page)).map(l => l.slice(0, 4)), [
+      ['SV.G1.1 · Supervisor', 'cOn ok', String(await onlCob(k, ['G111', 'G112'])), 'Meta batida!'],
+      ['SV.G1.2 · Supervisor', sv2.ok ? 'cOn ok' : 'cOn no', String(sv2.onl), `meta do dia ${sv2.md}`],
+      ['Neutraliza', 'cOn ok', String(await onlCob(k, ['151'])), 'Meta batida!']]);
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    assert.deepEqual((await meioLinhas(page)).map(l => [l[0], l[1], l[3]]),
+                     [['Rota G111', 'cOn ok', 'Meta batida!'], ['Rota G112', 'cOn ok', 'Meta batida!']]);
+    await page.keyboard.press('Escape');
+    // total somado alcança a meta (16/14): card verde com "Meta batida!" e o online de todas as rotas; números iguais
+    await poeCob(k, {G121: [4, 4], G122: [4, 5]});
+    const snap = await page.evaluate(() => JSON.stringify([P, ONLINE]));
+    await filtra(page, {});
+    await cascata(page, k, 'ICS_GC');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => JSON.stringify([P, ONLINE])), snap, 'o front não altera nenhum valor do payload');
+    c = await caixaCard(page, k);
+    assert.deepEqual([c.cls, c.num, c.rot], ['obox ok', String(await onlCob(k, todas)), 'Meta batida!']);
+    const card = await page.evaluate(k => ({b: agrega(rotasAtuais()).ind[k],
+      cl: document.querySelector(`.ind[data-k="${k}"] .cl`).textContent.replace(/\s+/g, ' ').trim()}), k);
+    assert.deepEqual([card.b.meta, card.b.real, card.b.pct], [14, 16, 114]);
+    assert.equal(card.cl, 'Meta 14 Real 16 Diferença +2');
+    // abaixo da meta (KS TT sem cobertura) e meta 0: como antes; Venda Zero: como antes (revertidos)
+    const ks = await comoAntes('KS TT', todas);
+    c = await caixaCard(page, 'KS TT');
+    assert.deepEqual([/\bok\b/.test(c.cls), c.rot], [ks.ok, ks.ok ? 'no ritmo' : `meta do dia ${ks.md}`]);
+    await poeCob('KAPO', Object.fromEntries(todas.map(r => [r, [0, 0]])));
+    await filtra(page, {});
+    assert.equal((await caixaCard(page, 'KAPO')).rot, 'no ritmo', 'meta 0: como antes');
+    c = await caixaCard(page, 'VENDAZERO');
+    assert.deepEqual([c.cls, c.rot], ['obox ok', 'revertidos']);
+    await cascata(page, 'VENDAZERO', 'ICS_GC');
+    assert.ok((await meioLinhas(page)).every(l => l[3] === 'revertidos hoje'));
+    await page.keyboard.press('Escape');
+    // Novos Negócios também
+    const nn = await page.evaluate(() => GROUPS.NOVOS_NEG.find(x => !['VENDAZERO', 'IMPERDOAVEIS'].includes(x)));
+    await poeCob(nn, Object.fromEntries(todas.map(r => [r, [3, 3]])));
+    await filtra(page, {aba: 'NOVOS_NEG'});
+    assert.deepEqual([(await caixaCard(page, nn)).cls, (await caixaCard(page, nn)).rot], ['obox ok', 'Meta batida!']);
+    await filtra(page, {aba: 'ICS_GC'});
+    // Diretoria: a linha da G1 (16/14)
+    await vaiPara(page, 'dir');
+    await cascata(page, k, 'ICS_GC');
+    const lg1 = (await meioLinhas(page)).find(l => l[0] === 'GC.G1 · Goiânia 01');
+    assert.deepEqual([lg1[1], lg1[3]], ['cOn ok', 'Meta batida!']);
+    await page.keyboard.press('Escape');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('fechamento sem "Meta batida!" (volume e coberturas como antes)', async () => {
+    const {page, ctx, erros} = await abre('fech', {entrar: {perfil: 'gc', gc: 'G1'}});
+    const k = 'VOL REFRIGERANTES';
+    // volume: metaDia null no fechamento (mesmo com valores <= 0 nas rotas) -> "online hoje"
+    await poeMetaDia(page, k, Object.fromEntries((await page.evaluate(() => rotasAtuais())).map(r => [r, -5])));
+    await filtra(page, {aba: 'VOLUME'});
+    assert.deepEqual([(await caixaCard(page, k)).cls, (await caixaCard(page, k)).rot], ['obox nd', 'online hoje']);
+    await cascata(page, k, 'VOLUME');
+    assert.ok((await meioLinhas(page)).every(l => l[1] === 'cOn nd' && l[3] === 'online hoje'));
+    await page.keyboard.press('Escape');
+    // coberturas: mesmo com Real >= Meta, o rótulo de antes
+    await page.evaluate(() => { for(const r of rotasAtuais()) Object.assign(nodo('', r).indicators['CCTM 2L PET'], {meta: 2, real: 3}); });
+    await filtra(page, {aba: 'ICS_GC'});
+    assert.match((await caixaCard(page, 'CCTM 2L PET')).rot, /^(no ritmo|meta do dia \d+)$/);
+    await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    assert.ok((await meioLinhas(page)).every(l => l[1] === 'cOn nd' && l[3] === 'online hoje'));
+    await page.keyboard.press('Escape');
+    assert.doesNotMatch(await page.textContent('body'), /Meta batida/);
     assert.deepEqual(erros, []);
     await ctx.close();
   });

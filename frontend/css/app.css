@@ -52,26 +52,41 @@ body.na-entrada{overflow:hidden}
 .entBotoes button:first-child{background:var(--vermelho);border-color:var(--vermelho)}
 .entrada.branca .entBotoes button{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
 .entrada.branca .entBotoes button:first-child{background:var(--vermelho);color:#fff;border-color:var(--vermelho)}
-.entBotoes[hidden],.entForm[hidden],.entCampo[hidden]{display:none}
-/* formulário do perfil escolhido e aviso (usuário/gerência não reconhecidos, acesso reiniciado) */
+.entBotoes[hidden]{display:none}
+/* aviso (acesso reiniciado, acesso que não vale mais) */
 .entMsg{width:100%;margin:0 0 14px;padding:10px 12px;border-radius:10px;font-size:13.5px;text-align:center;
   background:rgba(228,0,43,.16);border:1px solid rgba(255,122,140,.4);color:#ffb3bf}
 .entMsg:empty{display:none}
 .entrada.branca .entMsg{background:var(--rosa);border-color:#f0c4c4;color:var(--vermelho2)}
-.entForm{display:flex;flex-direction:column;gap:12px;width:100%}
-.entPerfil{font-size:13px;font-weight:800;letter-spacing:.12em;text-align:center;color:var(--topo-txt)}
-.entCampo{display:flex;flex-direction:column;gap:6px;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--topo-txt)}
-.entCampo input{font:inherit;font-size:16px;letter-spacing:0;text-transform:none;width:100%;padding:14px;border-radius:12px;
-  border:1px solid var(--escuro-borda2);background:var(--escuro-1);color:#fff}
-.entCampo input::placeholder{color:#77777d}
-.entCampo input:focus{outline:2px solid var(--vermelho);outline-offset:1px}
-.entEntrar{font:inherit;font-size:17px;font-weight:800;letter-spacing:.08em;padding:16px;border-radius:14px;cursor:pointer;
-  border:1px solid var(--vermelho);background:var(--vermelho);color:#fff;margin-top:4px}
-.entOutro{font:inherit;font-size:13px;background:none;border:0;color:var(--topo-txt);cursor:pointer;padding:8px}
-.entrada.branca .entPerfil,.entrada.branca .entCampo,.entrada.branca .entOutro{color:var(--cinza-escuro)}
-.entrada.branca .entCampo input{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
 .entRod{font-size:11px;color:var(--topo-txt);text-align:center}
 .entrada.branca .entRod{color:var(--cinza)}
+/* caixa de seleção (Gerência, Supervisão, Rota): por cima da entrada, lista com rolagem própria */
+.entCaixa{position:fixed;inset:0;z-index:2;background:rgba(0,0,0,.66);display:flex;align-items:center;justify-content:center;
+  padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + var(--seguro-b))}
+.entCaixa[hidden]{display:none}
+.entPainel{width:100%;max-width:420px;max-height:100%;display:flex;flex-direction:column;gap:8px;padding:14px 14px 12px;
+  border-radius:16px;background:var(--carvao);border:1px solid var(--escuro-borda2);color:#fff;min-height:0}
+.entCab{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.entCab h2{margin:0;font-size:15px;font-weight:800;letter-spacing:.12em}
+.entFechar{width:36px;height:36px;flex:none;border-radius:50%;border:1px solid var(--escuro-borda2);background:var(--escuro-2);
+  color:#fff;font:inherit;font-size:22px;line-height:1;cursor:pointer;padding:0}
+.entSub{font-size:13px;color:var(--topo-sub)}
+.entVoltar{align-self:flex-start;font:inherit;font-size:13.5px;background:none;border:0;color:var(--topo-sub);cursor:pointer;padding:4px 0}
+.entVoltar[hidden]{display:none}
+.entOpcoes{display:flex;flex-direction:column;gap:8px;overflow-y:auto;overscroll-behavior:contain;min-height:0;
+  margin:0 -4px;padding:2px 4px 4px}
+.entOpcoes button{font:inherit;font-size:15.5px;font-weight:700;text-align:left;padding:13px 14px;border-radius:12px;cursor:pointer;
+  border:1px solid var(--escuro-borda2);background:var(--escuro-2);color:#fff;line-height:1.25;flex:none}
+.entOpcoes button:disabled{opacity:.42;cursor:not-allowed}
+.entOpcoes button:focus-visible,.entFechar:focus-visible,.entVoltar:focus-visible{outline:2px solid var(--vermelho);outline-offset:1px}
+.entSecao{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--topo-txt);margin:6px 2px 0}
+.entVazio{font-size:13.5px;color:var(--topo-sub);padding:14px 4px}
+.entrada.branca .entCaixa{background:rgba(20,20,22,.38)}
+.entrada.branca .entPainel{background:#fff;border-color:var(--linha-forte);color:var(--preto)}
+.entrada.branca .entFechar{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
+.entrada.branca .entSub,.entrada.branca .entVoltar,.entrada.branca .entVazio{color:var(--cinza-escuro)}
+.entrada.branca .entSecao{color:var(--cinza)}
+.entrada.branca .entOpcoes button{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
 /* casa: volta para a entrada */
 .topo{position:relative}
 .casa{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:max(12px,env(safe-area-inset-right));
