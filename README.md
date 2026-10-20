@@ -21,6 +21,7 @@ desempenho/
 │   ├── scripts/gerar.py      gera os JSONs
 │   ├── scripts/descobrir.py  confere o mapeamento contra os dados reais
 │   ├── scripts/conferir_tendencia.py  confere tendência do SAC e fechamento com os dados reais
+│   ├── conferencia/sac/      tela do SAC de cada dia (refri_AAAA-MM-DD.csv) para o aceite e a seção E7
 │   └── tests/                testes sem rede (unittest)
 ├── .github/workflows/
 │   ├── atualizar-dados.yml   cron 15 min, seg-sex, 07h-18h45 (Brasília)
@@ -244,8 +245,57 @@ hoje. O 1º/2º dia útil vem do calendário do Datasphere (ou do cálculo local
 `fechamento` do workflow só troca o rótulo da tag e não é necessário no dia a dia.
 
 Para conferir com os dados reais (sem publicar nada): **Actions → Conferir tendência → Run workflow**
-(opcional: `hoje` = 2026-11-01, 2026-11-03...). O artifact traz `relatorio_tendencia.md` (só totais) e o
-`payload.json`/`online.json` que o gerador publicaria naquela data.
+(opcional: `hoje` = 2026-11-01, 2026-11-03...). O artifact traz `relatorio_tendencia.md` (só totais e códigos de
+rota/supervisão) e o `payload.json`/`online.json` que o gerador publicaria naquela data.
+
+### Conferência contra a tela do SAC (seção 4 e E7)
+
+**Como adicionar a tela do dia.** Copie os números da tela do SAC "Acompanhamento de Vendas - Refrigerantes" para
+`backend/conferencia/sac/refri_AAAA-MM-DD.csv` (a data do relatório: a de hoje ou o input `hoje` do workflow) e
+faça commit no branch que vai rodar o workflow. Formato (separador `;`):
+
+```
+# Tela do SAC "Acompanhamento de Vendas - Refrigerantes", 20/10/2026 ~09h (sigla da gerência)
+GC;Real;Meta;Tendencia;MetaDia
+AN;141599;400000;366114;13647
+AP;157107;398000;367864;18505
+```
+
+- A primeira linha que começa com `#` diz a fonte e o horário (aparece no relatório); linhas vazias e outras com `#`
+  são ignoradas. O cabeçalho é exatamente `GC;Real;Meta;Tendencia;MetaDia` (acento e maiúsculas tanto faz).
+- `GC` = sigla do painel (AN, AP, ..., RI; "GC.AN" também vale). Números inteiros, com ou sem ponto de milhar
+  (`141.599`), vírgula decimal se houver. Coluna sem o dado na tela: deixe vazia (ex.: `G1;125590;490003;406863;`)
+  e essa célula não é comparada.
+- Arquivo fora do formato (cabeçalho, nº de colunas, sigla desconhecida ou repetida, texto no lugar de número) dá
+  um erro claro na seção 4 e a E7 não aparece. Sem o arquivo do dia, a seção 4 diz "sem tela do SAC para esta data".
+
+**Seção 4 (aceite).** Por gerência do CSV, na ordem do painel, e o total (**TOTAL BAND** com as 16): Real, Meta,
+Tendência, % e Meta do dia da API (as funções do gerador) contra o SAC, com OK/DIVERGE em cada comparação. Tolerâncias:
+Real ±0,1%; Meta exata (inteiros arredondados); Tendência ±0,2%; % ±0,1 p.p.; Meta do dia ±1%.
+
+**Seção E7 (diferenças contra o SAC, Refrigerantes; só com o CSV do dia).** Só relata, não muda o gerador:
+- Diferença = **painel − SAC** (negativa: o SAC soma mais). O modelo de vendas é lido **sem filtros de escopo** (sem
+  gerência, rota ou base de clientes): Real = `FX_VOL_PADRAO_FAT` do mês com os status do Vol Real; Meta do dia =
+  `META_RECUPERAVEL_ROTA` de hoje.
+- A primeira tabela testa qual coluna de gerência do modelo reproduz a tela (soma de |modelo − SAC| nas gerências do
+  CSV); a menor é usada no resto da seção. Depois vem um resumo das hipóteses: (a) rotas que o SAC soma e o painel
+  exclui, (b) rota atribuída a outra gerência, (c) Neutraliza, virtuais e supervisões ocultas (entram no total do
+  painel; se o SAC também as soma, o resíduo fica perto de zero), (d) rota da meta ≠ rota do cliente.
+- **E7a**: por gerência com diferença, painel, SAC, diferença, soma das contribuições e **resíduo** (diferença −
+  contribuições). Resíduo perto de 0 = explicado; resíduo grande = há outra causa (ou a tela foi copiada em outro
+  horário).
+- **E7b**: as 12 maiores contribuições por gerência (e o total das demais), por rota do cliente no Real e por rota
+  da meta na meta do dia, com a causa: `fora do painel: EV*`, `fora do painel: SV.BL.*`, `fora do painel: INVALIDO /
+  G*E / G*F / APE`, `sem cliente corrente e ativo`, `oculta: SV.G3.3`, `Neutraliza (entra no total)`, `virtual
+  (entra no total)`, `gerência do modelo ≠ gerência do painel (rota atribuída a outra gerência)`, `rota da meta ≠ rota
+  do cliente` ou `outra: ...`. Sinal: − = só o SAC conta naquela gerência; + = só o painel.
+- **E7c**: rotas do painel que o modelo põe em outra gerência e rotas fora do painel com clientes de outra gerência
+  (ex.: a EV1 é da G1 na base, mas o cliente é da G2 no modelo), com uma linha sobre o par G2/G3.
+- **E7d**: uma linha por gerência: "explicado por: <causa> (<valor> cx)" e o resíduo.
+- Só códigos de rota, supervisão e gerência: nunca nomes nem códigos de clientes.
+- Em 20/10/2026 a E7 explicou tudo (resíduo ≤ 1 cx): o SAC soma pela gerência comercial do cliente
+  (`DS_GERENCIA_COMERCIAL_AT_Clien`) e inclui os clientes que estão em rotas EV*; o painel não (Real −407 cx nas 16;
+  meta do dia −1.071 cx, que é de rotas do painel mas está em clientes das EV*). Nada mudou no painel por isso.
 
 Diferenças em relação ao arquivo que era montado à mão:
 - **Visitas de hoje**: vêm do campo `VISITA_HOJE` do SAP e incluem clientes com mais de um dia de

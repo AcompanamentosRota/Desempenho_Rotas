@@ -12,7 +12,8 @@ nomes ou códigos de clientes) com:
   2. META_RECUPERAVEL_ROTA de hoje: (a) por rota, como o gerador; (b) soma e (c) máximo por rota x cliente;
   3. por gerência e rotas de amostra, por macro: Meta (META_VOLUME), fração restante da META_NEG, Neg Restante,
      Tendência e % novos, ao lado da versão anterior (soma de META_NEG), da linear antiga e da META_DIA antiga;
-  4. aceite contra o SAC (Refrigerantes, 17/10/2026; só sem --hoje e nessa data);
+  4. aceite contra a tela do SAC (Refrigerantes) da data do relatório, lida de conferencia/sac/refri_AAAA-MM-DD.csv
+     (sem o arquivo do dia: "sem tela do SAC para esta data");
   5. investigação: META_VOLUME por DATA_MOVIMENTO tem curva diária?
   6. sobreposição online x faturado de hoje (clientes e volume em WF Online e em NF de hoje, por status);
   7. META_VOLUME e META_COBERTURA por gerência no mês atual e no próximo (critério de virada);
@@ -21,7 +22,9 @@ nomes ou códigos de clientes) com:
   E1-E6. 16 gerências, Gc. At, agrupadores novos (Del Valle Frut, Sucos, Ades, Powerade) e E3b Del Valle Frut na
      G2 (meta e real por rota), Desempenho GDM, E5 rotas Neutraliza e virtuais (por rota: gerência, supervisão,
      clientes, Meta e Real de Refrigerantes, aparece/oculta) e E5b rota 551, tamanho dos JSONs (este no workflow);
-     E7 = seção 4 (aceite), sem mudança.
+  E7. diferenças contra a tela do SAC por gerência (Refrigerantes; só com o CSV do dia): qual gerência do modelo de
+     vendas reproduz o SAC, reconciliação (painel x SAC x contribuições x resíduo), contribuições por rota com a
+     causa, deslocamentos entre gerências e uma linha de resumo por gerência. Só relata: nada muda no gerador.
 """
 from __future__ import annotations
 
@@ -34,7 +37,9 @@ import time
 import traceback
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -42,24 +47,41 @@ from gerador import calendario as calmod  # noqa: E402
 from gerador import fontes, modelo  # noqa: E402
 from gerador import mapeamento as M  # noqa: E402
 from gerador.consulta import Consulta, e, eq, ou  # noqa: E402
+from gerador.payload import _mais_comum  # noqa: E402
 from gerador.texto import data, inteiro, limpar, normalizar, numero  # noqa: E402
 from gerador.tipos import Online  # noqa: E402
 
-CM, CO = M.ColMeta, M.ColComodato
+CM, CO, CB = M.ColMeta, M.ColComodato, M.ColBase
 VOL = M.INDICADORES_VOLUME
 ROTAS_FIXAS = ["111", "211", "311"]
 # rotas da conferência de 18/10 (514, 535, M21 e M24 puxavam a diferença da tendência em AP e MO)
 AMOSTRA_ROTA_META = ["111", "211", "311", "511", "514", "535", "I11", "M11", "M21", "M22", "M24"]
-# Aceite (Refrigerantes) com os valores do SAC de 17/10/2026: gc -> (Real, Meta, Tendência, % Tendência)
-DATAS_ACEITE = (date(2026, 10, 17), date(2026, 10, 18))   # fim de semana: sem faturamento novo
-SAC_17_10 = {
-    "G1": (125590, 490003, 406863, 83.03),
-    "G2": (159417, 533000, 474058, 88.94),
-    "G3": (85913, 218997, 212972, 97.25),
-    "AP": (121040, 398000, 347170, 87.23),
-    "IT": (72513, 195619, 186159, 95.16),
-    "MO": (73578, 184381, 176522, 95.74),
-}
+# Tela do SAC (Refrigerantes) por dia: conferencia/sac/refri_AAAA-MM-DD.csv (README: como adicionar)
+PASTA_SAC = Path(__file__).resolve().parents[1] / "conferencia" / "sac"
+COLUNAS_SAC = ["GC", "Real", "Meta", "Tendencia", "MetaDia"]
+K_REFRI = "VOL REFRIGERANTES"
+# tolerâncias do aceite: Real ±0,1%; Meta exata (inteiros); Tendência ±0,2%; % ±0,1 p.p.; Meta do dia ±1%
+TOL_REAL, TOL_TEND, TOL_PCT, TOL_META_DIA = 0.001, 0.002, 0.1, 0.01
+# E7: colunas do modelo de vendas lidas só pela conferência (as regras do painel continuam em mapeamento.py).
+# Só códigos: gerência ('Gc. An'), supervisão ('Sv. G1. 1') e rota; nunca nomes nem clientes.
+COL_GC_COMERCIAL = "DS_GERENCIA_COMERCIAL_AT_Clien"    # gerência comercial atual do cliente (não agrupada)
+COL_SV_CLIENTE = "DS_SUPERVISOR_ATUAL_Clien"           # código da supervisão atual do cliente
+COL_GC_COMERCIAL_META = "DS_GERENCIA_COM_Chave_Meta_SAP"
+COL_GC_AGRUPADA_META = "DS_GC_AGRUPADA__Chave_Meta_SAP"
+COL_SV_META = "DS_SUPERVISAO_Chave_Meta_SAP"
+E7_MAX_LINHAS = 12   # contribuições por gerência e medida (as demais vão somadas numa linha)
+# causas das diferenças (E7b)
+CAUSA_EV = "fora do painel: EV*"
+CAUSA_BALCAO = "fora do painel: SV.BL.*"
+CAUSA_INVALIDA = "fora do painel: INVALIDO / G*E / G*F / APE"
+CAUSA_SEM_CLIENTE = "sem cliente corrente e ativo"
+CAUSA_NEUTRALIZA = "Neutraliza (entra no total)"
+CAUSA_VIRTUAL = "virtual (entra no total)"
+CAUSA_OUTRA_GC = "gerência do modelo ≠ gerência do painel (rota atribuída a outra gerência)"
+CAUSA_ROTA_META = "rota da meta ≠ rota do cliente"
+ROTA_INVALIDA = re.compile(r"^(INVALIDO|G[A-Z0-9]{1,2}[EF]|APE)$")
+_SV_SIGLA = re.compile(r"^SV\.(?:BL\.)?([A-Z0-9]+)(?:\.\d+)?$")
+_CODIGO = re.compile(r"^[A-Z0-9][A-Z0-9_.]{0,11}$")
 # colunas do comodato que não podem ir para o relatório (identificam cliente)
 COLUNAS_PROIBIDAS = re.compile(r"CLIENTE|(^|_)(NOME|NM|CD)(_|$)|FANTASIA|CNPJ|CPF|ENDERECO|EQUIPAMENTO|"
                                r"VENDEDOR|SUPERVISOR|CONSULTOR|GERENTE", re.I)
@@ -96,6 +118,10 @@ class Relatorio:
         self.linhas += ["", f"## {t}", ""]
         print(f"\n== {t}")
 
+    def h3(self, t: str):
+        self.linhas += ["", f"### {t}", ""]
+        print(f"\n-- {t}")
+
     def p(self, t: str = ""):
         self.linhas.append(t)
         print(t)
@@ -116,6 +142,11 @@ def _n(v: float | None, casas: int = 1) -> str | None:
     return f"{v:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _cx(v: float | None) -> str | None:
+    """Caixas inteiras (sem o '-0' de valores pequenos negativos)."""
+    return None if v is None else _n(_inteiro(v) or 0.0, 0)
+
+
 def _pct(v: float | None, meta: float | None) -> str | None:
     return None if v is None or not meta else f"{round(v / meta * 100)}%"
 
@@ -128,32 +159,591 @@ def _gc_painel(gc_da_rota: dict[str, str], rota: str) -> str | None:
     return gc_da_rota.get(rota)
 
 
-def aceite_sac(por_gc: dict[str, tuple[float, float, float]], vale: bool) -> tuple[list[list], bool]:
-    """Linhas da tabela de aceite (Refrigerantes) e se tudo bateu. por_gc: gc -> (real, meta, tendência)."""
-    linhas, tudo_ok = [], True
+def _sinal(v: float | None, casas: int = 2, sufixo: str = "") -> str | None:
+    """'+0,04%' / '-0,11' (zero arredondado sai '+0,00', nunca '-0,00')."""
+    return None if v is None else f"{round(v, casas) or 0.0:+.{casas}f}{sufixo}".replace(".", ",")
 
-    def marca(ok: bool) -> str:
-        return ("OK" if ok else "**DIVERGE**") if vale else ""
 
-    for gc, (s_real, s_meta, s_tend, s_pct) in SAC_17_10.items():
-        if gc not in por_gc:
-            linhas.append([gc, None, _n(s_real, 0), marca(False), None, _n(s_meta, 0), "", None, _n(s_tend, 0), "",
-                           None, f"{s_pct:.2f}%".replace(".", ","), ""])
-            tudo_ok = False
+def _inteiro(v: float) -> int:
+    """Inteiro arredondado (meio para cima), como as telas mostram: a Meta é comparada assim, nunca em float."""
+    return int(Decimal(repr(float(v))).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+# ------------------------------------------------------------------ tela do SAC (CSV por dia)
+class ErroTelaSac(ValueError):
+    """CSV da tela do SAC fora do formato (cabeçalho, nº de colunas, gerência ou número)."""
+
+
+def _numero_sac(txt: str, onde: str) -> float | None:
+    """'141599', '141.599' ou '13647,5' -> float; vazio -> None (sem o dado na tela)."""
+    t = txt.strip().replace(" ", "")
+    if not t:
+        return None
+    if re.fullmatch(r"-?\d{1,3}(\.\d{3})+(,\d+)?", t):   # separador de milhar
+        t = t.replace(".", "")
+    try:
+        return float(t.replace(",", "."))
+    except ValueError:
+        raise ErroTelaSac(f"{onde}: {txt.strip()!r} não é número") from None
+
+
+def ler_tela_sac(caminho: Path) -> tuple[str, dict[str, dict[str, float | None]]]:
+    """(comentário, {sigla: {Real, Meta, Tendencia, MetaDia}}) do CSV da tela do SAC.
+
+    Separador ';'; linhas vazias e as que começam com '#' são ignoradas (a 1ª de comentário diz a fonte e o
+    horário); o cabeçalho tem de ser GC;Real;Meta;Tendencia;MetaDia (sem diferença de acento ou maiúsculas).
+    Valor vazio = a tela não tem o dado (a célula não é comparada).
+    """
+    bruto = caminho.read_bytes()
+    try:
+        texto = bruto.decode("utf-8-sig")
+    except UnicodeDecodeError:   # salvo pelo Excel em ANSI
+        texto = bruto.decode("cp1252")
+    comentario, cabecalho, dados = "", False, {}
+    for n, linha in enumerate(texto.splitlines(), 1):
+        linha = linha.strip()
+        if not linha or linha.startswith("#"):
+            comentario = comentario or linha.lstrip("#").strip()
             continue
-        real, meta, tend = por_gc[gc]
-        pct = tend / meta * 100 if meta else 0.0
-        oks = [abs(real - s_real) <= 0.001 * s_real, abs(meta - s_meta) < 0.5,
-               abs(tend - s_tend) <= 0.002 * s_tend, abs(pct - s_pct) <= 0.1]
-        tudo_ok &= all(oks)
-        linhas.append([gc, _n(real, 0), _n(s_real, 0), marca(oks[0]), _n(meta, 0), _n(s_meta, 0), marca(oks[1]),
-                       _n(tend, 0), _n(s_tend, 0), marca(oks[2]), f"{pct:.2f}%".replace(".", ","),
-                       f"{s_pct:.2f}%".replace(".", ","), marca(oks[3])])
+        campos = [c.strip() for c in linha.split(";")]
+        onde = f"{caminho.name}, linha {n}"
+        if not cabecalho:
+            if [normalizar(c) for c in campos] != [normalizar(c) for c in COLUNAS_SAC]:
+                raise ErroTelaSac(f"{onde}: o cabeçalho tem de ser {';'.join(COLUNAS_SAC)} (veio: {linha})")
+            cabecalho = True
+            continue
+        if len(campos) != len(COLUNAS_SAC):
+            raise ErroTelaSac(f"{onde}: {len(campos)} colunas; o esperado são {len(COLUNAS_SAC)} "
+                              f"({';'.join(COLUNAS_SAC)})")
+        gc = M.codigo_gc(campos[0])
+        if gc not in M.GC_NOMES:
+            raise ErroTelaSac(f"{onde}: gerência {campos[0]!r} não é uma das siglas do painel ({' '.join(M.GC_NOMES)})")
+        if gc in dados:
+            raise ErroTelaSac(f"{onde}: gerência {gc} repetida")
+        dados[gc] = {c: _numero_sac(v, f"{onde}, {c}") for c, v in zip(COLUNAS_SAC[1:], campos[1:])}
+    if not cabecalho:
+        raise ErroTelaSac(f"{caminho.name}: sem o cabeçalho {';'.join(COLUNAS_SAC)}")
+    if not dados:
+        raise ErroTelaSac(f"{caminho.name}: nenhuma gerência")
+    return comentario, dados
+
+
+def arquivo_sac(hoje: date, pasta: Path = PASTA_SAC) -> Path:
+    return pasta / f"refri_{hoje:%Y-%m-%d}.csv"
+
+
+def comparar_sac(api: dict[str, tuple], sac: dict[str, dict]) -> tuple[list[list], bool]:
+    """Linhas da seção 4 (gerências do CSV, na ordem do painel, e o total) e se tudo bateu.
+
+    api: gc -> (Real, Meta, Tendência, Meta do dia | None). Cada comparação tem a sua coluna OK/DIVERGE;
+    sem o valor no CSV, a célula não é comparada (vazia).
+    """
+    linhas, tudo_ok = [], True
+    gcs = [g for g in M.GC_NOMES if g in sac]
+
+    def soma(valores):
+        return None if any(v is None for v in valores) else sum(valores)
+
+    def linha(rotulo, a, s):
+        real, meta, tend, dia = a if a else (None,) * 4
+        s_real, s_meta, s_tend, s_dia = (s[c] for c in COLUNAS_SAC[1:])
+        pct = tend / meta * 100 if tend is not None and meta else None
+        s_pct = s_tend / s_meta * 100 if s_tend is not None and s_meta else None
+
+        def marca(sv, av, ok):
+            nonlocal tudo_ok
+            if sv is None:
+                return ""
+            bate = av is not None and ok(av, sv)
+            tudo_ok &= bate
+            return "OK" if bate else "**DIVERGE**"
+
+        def rel(av, sv):
+            return None if av is None or sv is None or not sv else (av - sv) / sv * 100
+
+        return [rotulo, _n(real, 0), _n(s_real, 0), None if real is None or s_real is None else _cx(real - s_real),
+                marca(s_real, real, lambda x, y: abs(x - y) <= TOL_REAL * abs(y)),
+                _n(meta, 0), _n(s_meta, 0), marca(s_meta, meta, lambda x, y: _inteiro(x) == _inteiro(y)),
+                _n(tend, 0), _n(s_tend, 0), _sinal(rel(tend, s_tend), sufixo="%"),
+                marca(s_tend, tend, lambda x, y: abs(x - y) <= TOL_TEND * abs(y)),
+                _pct2(pct, 100), _pct2(s_pct, 100), _sinal(None if pct is None or s_pct is None else pct - s_pct),
+                marca(s_pct, pct, lambda x, y: abs(x - y) <= TOL_PCT),
+                _n(dia, 0), _n(s_dia, 0), _sinal(rel(dia, s_dia), sufixo="%"),
+                marca(s_dia, dia, lambda x, y: abs(x - y) <= TOL_META_DIA * abs(y))]
+
+    for gc in gcs:
+        linhas.append(linha(gc, api.get(gc), sac[gc]))
+    tot_api = None if any(g not in api for g in gcs) else tuple(soma([api[g][i] for g in gcs]) for i in range(4))
+    tot_sac = {c: soma([sac[g][c] for g in gcs]) for c in COLUNAS_SAC[1:]}
+    rotulo = "**TOTAL BAND**" if len(gcs) == len(M.GC_NOMES) else f"**TOTAL ({len(gcs)} gerências)**"
+    linhas.append(linha(rotulo, tot_api, tot_sac))
     return linhas, tudo_ok
 
 
+CAB_SAC = ["GC", "Real API", "Real SAC", "dif", "", "Meta API", "Meta SAC", "", "Tendência API", "SAC", "dif %", "",
+           "% API", "% SAC", "dif p.p.", "", "Meta dia API", "SAC", "dif %", ""]
+
+
+def rotas_do_painel(clientes) -> tuple[dict[str, str], dict[str, str]]:
+    """(rota -> gerência, rota -> supervisão) pela regra do payload (a mais comum entre os clientes da rota)."""
+    por_rota = defaultdict(dict)
+    for c in clientes:
+        por_rota[c.rota].setdefault(c.pv, c)
+    gc = {r: _mais_comum([c.gc for c in cs.values()]) for r, cs in por_rota.items()}
+    sv = {r: _mais_comum([c.sv for c in cs.values()]) for r, cs in por_rota.items()}
+    return gc, sv
+
+
+# ------------------------------------------------------------------ E7: diferenças contra o SAC, por rota
+def _codigo(valor: object) -> str | None:
+    """Código para o relatório (rota, gerência, supervisão): só letras, números, '.' e '_'; '--'/vazio -> None.
+    Qualquer outra coisa vira 'outro' (nunca imprime texto livre que possa ser nome)."""
+    t = normalizar(valor).replace(" ", "")
+    if t in ("", "--", "#"):
+        return None
+    return t if _CODIGO.match(t) else "outro"
+
+
+def _sigla_gc(valor: object) -> str | None:
+    """'Gc. An' -> 'AN'; só as 16 siglas do painel ('Gc. Me', '--' e as agrupadas -> None)."""
+    g = M.codigo_gc(valor)
+    return g if g in M.GC_NOMES else None
+
+
+def _sigla_agrupada(gc: object, sv: object) -> str | None:
+    """Gerência agrupada + prefixo da supervisão, como o painel separa ('Gc. Pa_Di' + 'Sv. Bl. Di' -> 'DI')."""
+    g = M.codigo_gc(gc)
+    if g in M.GC_NOMES:
+        return g
+    m = _SV_SIGLA.match(M.codigo_sv(sv))
+    return m.group(1) if m and m.group(1) in M.GC_SIGLAS_ORIGEM.get(g, []) else None
+
+
+# gerência do modelo de vendas: candidatas testadas contra a tela do SAC (a que reproduz melhor é usada na E7)
+CANDIDATAS_GC = [
+    (f"`{COL_GC_COMERCIAL}` (gerência comercial atual do cliente)", [COL_GC_COMERCIAL],
+     lambda l: _sigla_gc(l.get(COL_GC_COMERCIAL)), lambda l: l.get(COL_GC_COMERCIAL)),
+    (f"`{CM.GC}` + prefixo de `{COL_SV_CLIENTE}` (como o painel separa as agrupadas)", [CM.GC, COL_SV_CLIENTE],
+     lambda l: _sigla_agrupada(l.get(CM.GC), l.get(COL_SV_CLIENTE)), lambda l: l.get(CM.GC)),
+    (f"`{COL_GC_COMERCIAL_META}` (gerência da meta)", [COL_GC_COMERCIAL_META],
+     lambda l: _sigla_gc(l.get(COL_GC_COMERCIAL_META)), lambda l: l.get(COL_GC_COMERCIAL_META)),
+    (f"`{COL_GC_AGRUPADA_META}` + prefixo de `{COL_SV_META}` (gerência agrupada da meta)",
+     [COL_GC_AGRUPADA_META, COL_SV_META],
+     lambda l: _sigla_agrupada(l.get(COL_GC_AGRUPADA_META), l.get(COL_SV_META)), lambda l: l.get(COL_GC_AGRUPADA_META)),
+]
+
+
+class Linha(NamedTuple):
+    """Uma linha do modelo de vendas (Refrigerantes) já normalizada para a E7."""
+    rota: str               # rota do cliente (CD_ROTA_Clien)
+    rota_meta: str          # rota da meta (CD_ROTA_Chave_Meta_SAP); '' sem rota
+    gc_modelo: str | None   # gerência do modelo (uma das 16 siglas) ou None
+    cod_modelo: str | None  # a mesma gerência como código ('ME'), para a descrição
+    sv: str | None          # supervisão do cliente no modelo (código)
+    no_escopo: bool         # a consulta do painel pega a linha (gerência agrupada do cliente é do painel)
+    valor: float
+
+
+class Painel(NamedTuple):
+    """O que o painel publica, por rota, e a base de clientes sem os filtros do painel (para as causas)."""
+    gc_rota: dict           # rota do painel -> gerência (regra do payload)
+    sv_rota: dict           # rota do painel -> supervisão
+    base: dict              # rota da base (corrente e ativo, sem os filtros do painel) -> {supervisões}
+    gc_base: dict           # rota da base -> sigla da gerência na base (None se não for uma das 16)
+
+
+def tipo_rota(rota: str, p: Painel) -> str | None:
+    """Neutraliza, virtual ou supervisão oculta (as três entram no total da gerência do painel)."""
+    if rota in M.NEUTRALIZA_ROTAS:
+        return CAUSA_NEUTRALIZA
+    if rota in M.VIRTUAIS_ROTAS:
+        return CAUSA_VIRTUAL
+    sv = p.sv_rota.get(rota)
+    if sv in M.OCULTAS and p.gc_rota.get(rota) not in M.GC_SEM_OCULTAS:
+        return f"oculta: {sv}"
+    return None
+
+
+def causa_fora_do_painel(rota: str, p: Painel) -> str:
+    """Por que a rota do cliente não está no painel (a ordem decide quando há mais de um motivo)."""
+    if not rota:
+        return "outra: venda sem rota do cliente"
+    if not M.rota_do_painel(rota):
+        return CAUSA_EV
+    svs = p.base.get(rota, set())
+    if ROTA_INVALIDA.match(rota) or any("INVALIDO" in s for s in svs):
+        return CAUSA_INVALIDA
+    if rota not in p.base:
+        return CAUSA_SEM_CLIENTE
+    if any(s.startswith(M.SV_IGNORAR_PREFIXOS) for s in svs):
+        return CAUSA_BALCAO
+    if not any(M.sv_do_painel(s) for s in svs):
+        return ("outra: supervisão fora do padrão SV.<sigla>.<n> ("
+                + ", ".join(sorted(_codigo(s) or "—" for s in svs)) + ")")
+    return "outra: rota fora do painel"
+
+
+class Contribuicoes(NamedTuple):
+    por_gc: dict            # gc -> {(rota do cliente, rota da meta, causa, detalhe): cx}; cx = painel - SAC
+    deslocamentos: dict     # (rota, gc no painel, gc no modelo) -> cx (rota do painel em outra gerência no modelo)
+    fora_outra_gc: dict     # (rota fora do painel, gc da rota na base, gc no modelo) -> cx
+    dentro: list            # [cx, {(rota da meta, rota do cliente)}]: meta em outra rota da mesma gerência
+    hipoteses: dict         # cx: 'a' fora do painel e 'd' rota da meta no painel (painel - SAC); 'b' total deslocado
+
+
+def contribuicoes(linhas: list[Linha], p: Painel, por_rota_meta: bool) -> Contribuicoes:
+    """Linhas que o painel e o modelo do SAC contam em gerências diferentes, com a causa.
+
+    O painel conta a linha na gerência da rota do cliente (se a rota está no painel e a linha no escopo da
+    consulta); o SAC, na gerência do modelo. Linha contada só pelo SAC entra com sinal negativo na gerência do
+    modelo; só pelo painel, positivo na gerência do painel; assim, soma das contribuições = painel - modelo.
+    por_rota_meta (meta do dia): a rota de referência é a da meta; o painel agrupa pela do cliente.
+    """
+    def c(r):
+        return _codigo(r) or "—"
+
+    por_gc = defaultdict(lambda: defaultdict(float))
+    desloc, fora_gc, hip = defaultdict(float), defaultdict(float), defaultdict(float)
+    dentro = [0.0, set()]
+    for l in linhas:
+        if not l.valor:
+            continue
+        gp = p.gc_rota.get(l.rota) if l.no_escopo else None
+        gm = l.gc_modelo
+        rm = l.rota_meta if l.rota_meta != l.rota else ""
+        meta_no_painel = bool(rm) and gm is not None and p.gc_rota.get(rm) == gm
+        if gp is not None and gp == gm:
+            if por_rota_meta and meta_no_painel:
+                dentro[0] += l.valor
+                dentro[1].add((rm, l.rota))
+            continue
+        if gm:   # o SAC conta na gerência do modelo e o painel não
+            if gp:
+                causa, det = CAUSA_OUTRA_GC, f"rota {c(l.rota)} na {gp} no painel"
+            elif l.rota in p.gc_rota:
+                causa = "outra: gerência agrupada do cliente fora das do painel"
+                det = f"rota {c(l.rota)} da {p.gc_rota[l.rota]} no painel"
+            else:
+                fora = causa_fora_do_painel(l.rota, p)
+                hip["a"] -= l.valor
+                if meta_no_painel:
+                    hip["d"] -= l.valor
+                gb = p.gc_base.get(l.rota)
+                if gb and gb != gm:
+                    fora_gc[(l.rota, gb, gm)] -= l.valor
+                if por_rota_meta and meta_no_painel:
+                    causa, det = CAUSA_ROTA_META, f"cliente na rota {c(l.rota)} ({fora})"
+                else:
+                    causa = fora
+                    det = "; ".join(x for x in [
+                        f"supervisão no modelo {l.sv}" if l.sv else "",
+                        f"rota da {gb} na base" if gb and gb != gm else "",
+                        f"rota da meta {c(rm)}" + (" (no painel)" if meta_no_painel else "") if rm else ""] if x)
+            if por_rota_meta and meta_no_painel and causa == CAUSA_OUTRA_GC:
+                causa, det = CAUSA_ROTA_META, f"cliente na rota {c(l.rota)} da {gp} no painel"
+            por_gc[gm][(l.rota, l.rota_meta, causa, det)] -= l.valor
+        if gp:   # o painel conta na gerência dele e o SAC não
+            tipo = tipo_rota(l.rota, p)
+            if gm:
+                causa, det = CAUSA_OUTRA_GC, "; ".join(x for x in [f"gerência do modelo {gm}", tipo or ""] if x)
+                desloc[(l.rota, gp, gm)] += l.valor
+                hip["b"] += l.valor
+            else:
+                causa = tipo or f"outra: gerência do modelo fora das 16 ({l.cod_modelo or '—'})"
+                det = f"gerência do modelo {l.cod_modelo or '—'}"
+            por_gc[gp][(l.rota, l.rota_meta, causa, det)] += l.valor
+    return Contribuicoes({g: dict(v) for g, v in por_gc.items()}, dict(desloc), dict(fora_gc), dentro, dict(hip))
+
+
+def reconciliar(painel: float | None, sac: float | None, contrib: dict) -> tuple[float | None, float, float | None]:
+    """(diferença painel - SAC, soma das contribuições, resíduo = diferença - contribuições)."""
+    soma = sum(contrib.values())
+    if painel is None or sac is None:
+        return None, soma, None
+    dif = painel - sac
+    return dif, soma, dif - soma
+
+
+def resumo_causas(contrib: dict) -> list[tuple[str, float]]:
+    """Contribuições somadas por causa, da maior para a menor (valor absoluto)."""
+    por = defaultdict(float)
+    for (_, _, causa, _), v in contrib.items():
+        por[causa] += v
+    return sorted(((c, v) for c, v in por.items() if round(v) != 0 or abs(v) >= 0.5), key=lambda cv: -abs(cv[1]))
+
+
+def linha_modelo(l: dict, candidata, gcs_painel: set[str] | None, valor: float) -> Linha:
+    """Linha OData -> Linha (gcs_painel None: a coluna da gerência agrupada não existe; tudo no escopo)."""
+    _, _, sigla, bruto = candidata
+    rm = fontes._rota(l.get(CM.META_ROTA))
+    return Linha(rota=fontes._rota(l.get(CM.ROTA)), rota_meta="" if rm in ("--", "#") else rm,
+                 gc_modelo=sigla(l), cod_modelo=_codigo(M.codigo_gc(bruto(l))),
+                 sv=_codigo(M.codigo_sv(l.get(COL_SV_CLIENTE))),
+                 no_escopo=gcs_painel is None or limpar(l.get(CM.GC)) in gcs_painel, valor=valor)
+
+
+def painel_e7(clientes, linhas_base: list[dict]) -> Painel:
+    """Rotas do painel (regra do payload) e a base de clientes corrente e ativa sem os filtros do painel."""
+    gc_rota, sv_rota = rotas_do_painel(clientes)
+    base, gcs = defaultdict(set), defaultdict(list)
+    for l in linhas_base:
+        r = fontes._rota(l.get(CB.ROTA))
+        if not r:
+            continue
+        sv = M.codigo_sv(l.get(CB.SUPERVISOR))
+        base[r].add(sv)
+        m = _SV_SIGLA.match(sv)
+        gcs[r].append(m.group(1) if m and m.group(1) in M.GC_NOMES else _sigla_gc(l.get(CB.GC)))
+    gc_base = {r: _mais_comum([g for g in gs if g]) or None for r, gs in gcs.items()}
+    return Painel(gc_rota, sv_rota, dict(base), gc_base)
+
+
+def consultas_e7(cons: Consulta, anomes: str, anomes_hoje: str, hoje: date, com_dia: bool) -> tuple[dict, set]:
+    """Modelo de vendas SEM filtros de escopo (nenhuma gerência, rota ou base), só Refrigerantes, agregado no
+    servidor por gerência x supervisão x rota do cliente x rota da meta (+ NF_STATUS no Real), e a base de
+    clientes corrente e ativa sem os filtros do painel. Colunas que não existirem no $metadata ficam fora."""
+    existentes = set(cons.colunas(M.OBJ_META))
+    opcionais = [CM.GC, COL_SV_CLIENTE, CM.META_ROTA, COL_GC_COMERCIAL, COL_GC_COMERCIAL_META, COL_GC_AGRUPADA_META,
+                 COL_SV_META]
+    dims = [CM.ROTA, CM.AGRUPADOR] + [c for c in opcionais if c in existentes]
+    refri = eq(CM.AGRUPADOR, M.AGRUPADORES_VOLUME[K_REFRI])
+    tarefas = {
+        "real": (M.OBJ_META, dims + [CM.NF_STATUS, CM.VOL_MES], e(eq(CM.ANOMES, anomes), refri, M.FILTRO_PEDIDOS_ONLINE)),
+        "base": (M.OBJ_BASE_CLIENTE, [CB.ROTA, CB.GC, CB.SUPERVISOR, CB.QUANTIDADE], M.FILTRO_BASE_CLIENTE),
+    }
+    if com_dia:
+        tarefas["dia"] = (M.OBJ_META, dims + [CM.META_RECUPERAVEL],
+                          e(eq(CM.ANOMES, anomes_hoje), refri, fontes.filtro_hoje(cons, hoje)))
+    return cons.em_paralelo(tarefas), existentes
+
+
+def _tabela_contrib(rel: Relatorio, contrib: dict, por_rota_meta: bool):
+    """As E7_MAX_LINHAS maiores contribuições (valor absoluto) e o total das demais."""
+    itens = sorted(((k, v) for k, v in contrib.items() if abs(v) >= 0.05), key=lambda kv: (-abs(kv[1]), kv[0]))
+    if not itens:
+        rel.p("nenhuma contribuição encontrada")
+        return
+    linhas = []
+    for (rc, rm, causa, det), v in itens[:E7_MAX_LINHAS]:
+        rotas = [_codigo(rm) or "—", _codigo(rc) or "—"] if por_rota_meta else [_codigo(rc) or "—", _codigo(rm) or "—"]
+        linhas.append(rotas + [causa, det or None, _n(v, 1)])
+    resto = itens[E7_MAX_LINHAS:]
+    if resto:
+        linhas.append([f"demais ({len(resto)})", "", "", "", _n(sum(v for _, v in resto), 1)])
+    cab = ["rota da meta", "rota do cliente"] if por_rota_meta else ["rota do cliente", "rota da meta"]
+    rel.tabela(cab + ["causa", "detalhe", "cx (painel − SAC)"], linhas)
+
+
+def _explicado(dif: float | None, contrib: dict, residuo: float | None) -> str:
+    if dif is None:
+        return "sem o dado na tela do SAC"
+    causas = resumo_causas(contrib)
+    txt = (f"{_cx(dif)} cx: explicado por: " + "; ".join(f"{c} ({_cx(v)} cx)" for c, v in causas)
+           if causas else f"{_cx(dif)} cx: nenhuma contribuição encontrada")
+    if residuo is not None and abs(residuo) >= 1:
+        return txt + f" · **resíduo {_cx(residuo)} cx sem causa encontrada**"
+    return txt + f" · resíduo {_cx(residuo) if residuo is not None else '—'} cx"
+
+
+def diferencas_sac(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, anomes_hoje: str, hoje: date):
+    """Seção E7: explica, rota a rota, a diferença entre o painel e a tela do SAC (Real e Meta do dia)."""
+    nome, comentario, sac = estado["sac"]
+    dia_painel = estado.get("meta_dia") if anomes == anomes_hoje else None
+    tem_dia_sac = any(v["MetaDia"] is not None for v in sac.values())
+    com_dia = tem_dia_sac and dia_painel is not None
+    rel.p(f"Tela do SAC: `{nome}`" + (f" ({comentario})" if comentario else "") + ". Diferença = painel − SAC "
+          "(negativa: o SAC soma mais). Painel = o da seção 4 (as funções do gerador, por rota, na gerência da rota "
+          "no painel). Modelo de vendas consultado **sem filtros de escopo** (nenhuma gerência, rota ou base de "
+          "clientes), só Refrigerantes, agregado no servidor por gerência x supervisão x rota do cliente "
+          f"(`{CM.ROTA}`) x rota da meta (`{CM.META_ROTA}`): Real = `{CM.VOL_MES}` do mês com os NF_STATUS do Vol "
+          f"Real; Meta do dia = `{CM.META_RECUPERAVEL}` com DATA_MOVIMENTO = hoje. Contribuição = o que só o painel "
+          "conta na gerência (+) ou só o SAC (−); resíduo = diferença − contribuições (perto de 0 = explicado). "
+          "**Só relata: o gerador e as regras de escopo não mudam.**")
+    if not com_dia:
+        rel.p("Meta do dia fora desta seção: " + ("a tela do SAC não traz MetaDia." if not tem_dia_sac else
+                                                  "o painel não tem a meta do dia (fechamento ou consulta falhou)."))
+    linhas, existentes = consultas_e7(cons, anomes, anomes_hoje, hoje, com_dia)
+    candidatas = [c for c in CANDIDATAS_GC if all(col in existentes for col in c[1])]
+    if not candidatas:
+        rel.p("Nenhuma coluna de gerência do modelo de vendas no $metadata ("
+              + ", ".join(f"`{col}`" for c in CANDIDATAS_GC for col in c[1]) + "): a E7 não pode ser calculada.")
+        return
+    medidas = [("real", "Real", [(l, numero(l.get(CM.VOL_MES))) for l in linhas["real"]
+                                 if M.status_nf_real(l.get(CM.NF_STATUS)) and M.indicador_volume(l.get(CM.AGRUPADOR)) == K_REFRI],
+                False)]
+    if com_dia:
+        medidas.append(("dia", "MetaDia", [(l, numero(l.get(CM.META_RECUPERAVEL))) for l in linhas["dia"]
+                                           if M.indicador_volume(l.get(CM.AGRUPADOR)) == K_REFRI], True))
+    p = painel_e7(estado["clientes"], linhas["base"])
+    vm = estado.get("vm") or fontes.carregar_volume_real(cons, anomes, estado["gcs"], None)
+    painel = {"real": defaultdict(float), "dia": defaultdict(float)}
+    # Neutraliza, virtuais e ocultas no total do painel: por gerência (hipótese c) e por tipo
+    tipos = {"real": defaultdict(float), "dia": defaultdict(float)}
+    por_tipo = {"real": defaultdict(float), "dia": defaultdict(float)}
+    for r, g in p.gc_rota.items():
+        v_dia = (dia_painel or {}).get(r, {}).get(K_REFRI, 0.0)
+        tipo = tipo_rota(r, p)
+        for m, v in (("real", vm.real.get(r, {}).get(K_REFRI, 0.0)), ("dia", v_dia)):
+            painel[m][g] += v
+            if tipo:
+                tipos[m][g] += v
+                por_tipo[m][tipo] += v
+    gcs_painel = set(estado["gcs"]) if CM.GC in existentes else None
+
+    # qual gerência do modelo reproduz a tela do SAC (Σ |modelo − SAC| nas gerências do CSV)
+    pontos = {}
+    for m, campo, lin, _ in medidas:
+        for i, cand in enumerate(candidatas):
+            agg = defaultdict(float)
+            for l, v in lin:
+                g = cand[2](l)
+                if g:
+                    agg[g] += v
+            pontos[(m, i)] = sum(abs(agg.get(g, 0.0) - s[campo]) for g, s in sac.items() if s[campo] is not None)
+    escolhida = {m: min(range(len(candidatas)), key=lambda i: (pontos[(m, i)], i)) for m, *_ in medidas}
+    rel.p(f"\nGerência do modelo que reproduz a tela do SAC (Σ |modelo − SAC| nas {len(sac)} gerências do CSV; "
+          "a menor é usada abaixo):")
+    rel.tabela(["gerência do modelo de vendas", "Real", "Meta do dia"],
+               [[cand[0]] + [(f"**{_cx(pontos[(m, i)])} (usada)**" if escolhida[m] == i else _cx(pontos[(m, i)]))
+                             if (m, i) in pontos else None for m in ("real", "dia")]
+                for i, cand in enumerate(candidatas)])
+
+    # escopo do painel: o Real vem das consultas por gerência agrupada do cliente; a meta do dia, sem filtro de gerência
+    res = {m: contribuicoes([linha_modelo(l, candidatas[escolhida[m]], gcs_painel if m == "real" else None, v)
+                             for l, v in lin], p, rota_meta)
+           for m, _, lin, rota_meta in medidas}
+    rec = {}
+    for m, campo, *_ in medidas:
+        for g, s in sac.items():
+            rec[(m, g)] = reconciliar(painel[m][g] if g in set(p.gc_rota.values()) else None, s[campo],
+                                      res[m].por_gc.get(g, {}))
+    com_dif = [g for g in M.GC_NOMES if g in sac and any(
+        rec[(m, g)][0] is not None and (_inteiro(painel[m][g]) != _inteiro(sac[g][campo])) for m, campo, *_ in medidas)]
+
+    # hipóteses, somando as gerências do CSV
+    def soma_hip(m, chave):
+        return res[m].hipoteses.get(chave, 0.0) if m in res else None
+
+    rel.p("\n**Hipóteses** (somando as gerências; cx = painel − SAC):")
+    for m, campo, _, _ in medidas:
+        tot = defaultdict(float)
+        for g in sac:
+            for (_, _, causa, _), v in res[m].por_gc.get(g, {}).items():
+                tot[causa] += v
+        rotulo = "Real" if m == "real" else "Meta do dia"
+        rel.p(f"- {rotulo}, por causa: " + ("; ".join(f"{c_} ({_cx(v)} cx)" for c_, v in
+                                                   sorted(tot.items(), key=lambda cv: -abs(cv[1])) if abs(v) >= 0.5)
+                                         or "nenhuma"))
+    for letra, texto in [
+        ("a", "(a) rotas que o SAC soma e o painel exclui (EV*, SV.BL.*, INVALIDO/G*E/G*F/APE, sem cliente corrente e "
+              "ativo e outras fora do painel)"),
+        ("b", "(b) rota do painel atribuída a outra gerência no modelo (total deslocado; sai de uma, entra na outra)"),
+        ("d", "(d) cliente fora do painel com a meta numa rota do painel da mesma gerência (rota da meta ≠ rota do "
+              "cliente)")]:
+        rel.p(f"- {texto}: Real {_cx(soma_hip('real', letra))} cx"
+              + (f" · Meta do dia {_cx(soma_hip('dia', letra))} cx" if com_dia else ""))
+    if com_dia:
+        dentro = res["dia"].dentro
+        rel.p(f"- (d) dentro da mesma gerência: {_cx(dentro[0])} cx de meta do dia em {len(dentro[1])} pares rota da "
+              "meta ≠ rota do cliente, as duas no painel (muda a meta do dia de cada rota, não o total da gerência).")
+    fora_b = sum(abs(v) for r_ in res.values() for v in r_.fora_outra_gc.values())
+    rel.p(f"- (b) clientes de rotas fora do painel cuja gerência no modelo difere da gerência da rota na base: "
+          f"{_cx(fora_b)} cx (Real e Meta do dia; ver E7c).")
+    veredito = defaultdict(int)
+    for m, campo, *_ in medidas:
+        for g, a in tipos[m].items():
+            residuo = rec.get((m, g), (None, 0, None))[2]
+            if abs(a) < 1 or residuo is None:
+                continue
+            veredito["o SAC também soma (resíduo < 1 cx)" if abs(residuo) < 1 else
+                      "compatível com o SAC sem elas (resíduo = o valor delas)" if abs(residuo - a) < 1 else
+                      "inconclusivo"] += 1
+
+    def tipos_txt(m):
+        return "; ".join(f"{t} {_cx(v)} cx" for t, v in sorted(por_tipo[m].items())) or "nenhuma"
+    rel.p("- (c) Neutraliza, virtuais e supervisões ocultas entram no total do painel. Real: " + tipos_txt("real")
+          + (". Meta do dia: " + tipos_txt("dia") if com_dia else "")
+          + ". Gerência x medida com essas rotas: "
+          + ("; ".join(f"{k}: {v}" for k, v in sorted(veredito.items())) or "nenhuma") + ".")
+
+    # E7a. reconciliação
+    rel.h3("E7a. Reconciliação por gerência (só as que têm diferença)")
+    if not com_dif:
+        rel.p("Nenhuma gerência com diferença contra a tela do SAC.")
+    cab = ["GC", "Real painel", "Real SAC", "dif", "contribuições", "resíduo"]
+    if com_dia:
+        cab += ["Meta dia painel", "Meta dia SAC", "dif", "contribuições", "resíduo"]
+
+    def bloco(m, g):
+        if m not in res:
+            return []
+        dif, soma_c, residuo = rec[(m, g)]
+        return [_cx(painel[m][g]) if dif is not None else None, _cx(sac[g]["Real" if m == "real" else "MetaDia"]),
+                _cx(dif), _cx(soma_c), _cx(residuo)]
+
+    linhas_a = [[g] + bloco("real", g) + (bloco("dia", g) if com_dia else []) for g in com_dif]
+    tot = ["**todas as gerências do CSV**"]
+    for m, campo, *_ in medidas:
+        vals = [rec[(m, g)] for g in sac if rec[(m, g)][0] is not None]
+        tot += [_cx(sum(painel[m][g] for g in sac if rec[(m, g)][0] is not None)),
+                _cx(sum(sac[g][campo] for g in sac if rec[(m, g)][0] is not None)),
+                _cx(sum(v[0] for v in vals)), _cx(sum(v[1] for v in vals)), _cx(sum(v[2] for v in vals))]
+    rel.tabela(cab, linhas_a + [tot])
+
+    # E7b. contribuições por rota
+    rel.h3(f"E7b. Contribuições por rota (as {E7_MAX_LINHAS} maiores por gerência; códigos de rota e supervisão)")
+    for g in com_dif:
+        for m, campo, _, rota_meta in medidas:
+            dif, soma_c, residuo = rec[(m, g)]
+            if dif is None or (_inteiro(painel[m][g]) == _inteiro(sac[g][campo]) and not res[m].por_gc.get(g)):
+                continue
+            rel.p(f"\n**{g} · {'Real' if m == 'real' else 'Meta do dia'}** (dif {_cx(dif)} cx; contribuições "
+                  f"{_cx(soma_c)}; resíduo {_cx(residuo)})")
+            _tabela_contrib(rel, res[m].por_gc.get(g, {}), rota_meta)
+
+    # E7c. deslocamentos entre gerências
+    rel.h3("E7c. Deslocamentos entre gerências")
+    desloc = defaultdict(lambda: [0.0, 0.0])
+    for i, m in enumerate(("real", "dia")):
+        for k, v in (res[m].deslocamentos.items() if m in res else ()):
+            desloc[k][i] += v
+    rel.p("Rotas do painel que o modelo de vendas atribui a outra gerência (o painel soma na gerência da rota; o "
+          "SAC, na do modelo):")
+    rel.tabela(["rota", "gerência no painel", "gerência no modelo", "Real (cx)", "Meta do dia (cx)"],
+               [[_codigo(r) or "—", gp, gm, _n(v[0], 1), _n(v[1], 1) if com_dia else None]
+                for (r, gp, gm), v in sorted(desloc.items(), key=lambda kv: -abs(kv[1][0]) - abs(kv[1][1]))]
+               or [["nenhuma", "—", "—", None, None]])
+    fora = defaultdict(lambda: [0.0, 0.0])
+    for i, m in enumerate(("real", "dia")):
+        for k, v in (res[m].fora_outra_gc.items() if m in res else ()):
+            fora[k][i] += v
+    rel.p("\nRotas fora do painel com clientes de outra gerência no modelo (a rota é de uma gerência na base; o SAC "
+          "soma o cliente na gerência do modelo):")
+    rel.tabela(["rota (fora do painel)", "gerência na base", "gerência no modelo", "causa", "Real (cx)",
+                "Meta do dia (cx)"],
+               [[_codigo(r) or "—", gb, gm, causa_fora_do_painel(r, p), _n(v[0], 1), _n(v[1], 1) if com_dia else None]
+                for (r, gb, gm), v in sorted(fora.items(), key=lambda kv: -abs(kv[1][0]) - abs(kv[1][1]))]
+               or [["nenhuma", "—", "—", "—", None, None]])
+    entre = [sum(v[i] for (_, gp, gm), v in desloc.items() if {gp, gm} == {"G2", "G3"}) for i in (0, 1)]
+    par = []
+    for g in ("G2", "G3"):
+        if ("real", g) in rec and rec[("real", g)][0] is not None:
+            par.append(f"{g} Real {_explicado(rec[('real', g)][0], res['real'].por_gc.get(g, {}), rec[('real', g)][2])}")
+    rel.p(f"\nPar G2/G3: deslocamento direto entre as duas = Real {_cx(entre[0])} cx"
+          + (f", Meta do dia {_cx(entre[1])} cx" if com_dia else "") + ". " + " | ".join(par))
+
+    # E7d. resumo
+    rel.h3("E7d. Resumo por gerência")
+    if not com_dif:
+        rel.p("Nenhuma gerência com diferença.")
+    for g in com_dif:
+        partes = [f"{'Real' if m == 'real' else 'Meta do dia'} "
+                  + _explicado(rec[(m, g)][0], res[m].por_gc.get(g, {}), rec[(m, g)][2]) for m, *_ in medidas]
+        rel.p(f"- **{g}** · " + " · ".join(partes))
+
+
 def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
-             simulado: bool = False) -> tuple[Relatorio, float]:
+             simulado: bool = False, pasta_sac: Path = PASTA_SAC) -> tuple[Relatorio, float]:
     inicio = time.monotonic()
     rel = Relatorio()
     estado: dict = {}
@@ -174,7 +764,7 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
         est_base: dict = {}
         clientes, gcs = fontes.carregar_clientes(cons, estatisticas=est_base)
         gc_da_rota = {c.rota: c.gc for c in clientes}
-        estado.update(clientes=clientes, est_base=est_base)
+        estado.update(clientes=clientes, est_base=est_base, gc_rota_painel=rotas_do_painel(clientes)[0])
         fech = fontes.decidir_fechamento(cons, hoje, linhas_cal, gc_da_rota)
         estado.update(cal=cal, cal_ref=fech or cal, gcs=gcs, gc_da_rota=gc_da_rota,
                       rotas=sorted(gc_da_rota), dia_util=calmod.dia_util_hoje(linhas_cal, hoje))
@@ -431,29 +1021,36 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
                    or [["—", "—", "nenhuma", 0, None]])
     etapa("rota do cliente x rota da meta", rota_cliente_x_meta)
 
-    # 4. aceite contra o SAC ------------------------------------------------------------
-    rel.h("4. Aceite contra o SAC (Refrigerantes, 17-18/10/2026)")
+    # 4. aceite contra a tela do SAC (CSV do dia) -------------------------------------------
+    rel.h(f"4. Aceite contra a tela do SAC (Refrigerantes, {hoje:%d/%m/%Y})")
 
     def aceite():
-        calc, vm = estado["calc"], estado["vm"]
-        k = "VOL REFRIGERANTES"
-        por_gc = {}
-        for gc in SAC_17_10:
-            rotas = [r for r in estado["rotas"] if gc_da_rota[r] == gc]
+        caminho = arquivo_sac(hoje, pasta_sac)
+        if not caminho.exists():
+            rel.p(f"sem tela do SAC para esta data (para conferir, salve `conferencia/sac/{caminho.name}`: "
+                  "ver o README).")
+            return
+        comentario, sac = ler_tela_sac(caminho)
+        estado["sac"] = (caminho.name, comentario, sac)
+        calc, vm, gc_rota = estado["calc"], estado["vm"], estado["gc_rota_painel"]
+        dia = estado.get("meta_dia") if anomes == anomes_hoje else None
+        api = {}
+        for gc in sac:
+            rotas = [r for r in estado["rotas"] if gc_rota.get(r) == gc]
             if rotas:
-                real = sum(vm.real.get(r, {}).get(k, 0.0) for r in rotas)
-                meta = sum(calc[(r, k)][0] or 0.0 for r in rotas)
-                por_gc[gc] = (real, meta, real + sum(calc[(r, k)][1] or 0.0 for r in rotas))
-        vale = not simulado and hoje in DATAS_ACEITE
-        if not vale:
-            rel.p("Aceite só vale para hoje = 17/10/2026 ou 18/10/2026 sem simular a data; aqui só a comparação.")
-        rel.p("Tolerância: Real ±0,1% (G3 pode divergir pela SV.G3.3, fora do painel); Meta exata; "
-              "Tendência ±0,2%; % ±0,1 p.p.")
-        linhas, ok_total = aceite_sac(por_gc, vale)
-        rel.tabela(["GC", "Real API", "Real SAC", "", "Meta API", "Meta SAC", "", "Tend. API", "Tend. SAC", "",
-                    "% API", "% SAC", ""], linhas)
-        if vale:
-            rel.p(f"\nResultado: **{'OK' if ok_total else 'DIVERGE'}**")
+                real = sum(vm.real.get(r, {}).get(K_REFRI, 0.0) for r in rotas)
+                meta = sum(calc[(r, K_REFRI)][0] or 0.0 for r in rotas)
+                api[gc] = (real, meta, real + sum(calc[(r, K_REFRI)][1] or 0.0 for r in rotas),
+                           None if dia is None else sum(dia.get(r, {}).get(K_REFRI, 0.0) for r in rotas))
+        rel.p(f"Tela do SAC: `{caminho.name}`" + (f" ({comentario})" if comentario else "") + ". API = as mesmas "
+              "funções do gerador (o que o payload publica); gerência = a da rota no painel.")
+        if simulado:
+            rel.p("Data simulada (--hoje): a API traz os dados de agora no Datasphere; diferença no Real é esperada.")
+        rel.p("Tolerância: Real ±0,1%; Meta exata (inteiros arredondados); Tendência ±0,2%; % ±0,1 p.p.; "
+              "Meta do dia ±1%. Célula sem valor no CSV não é comparada. Diferenças por rota: seção E7.")
+        linhas, ok_total = comparar_sac(api, sac)
+        rel.tabela(CAB_SAC, linhas)
+        rel.p(f"\nResultado: **{'OK' if ok_total else 'DIVERGE'}**")
     etapa("aceite", aceite)
 
     # 5. curva da meta da rota ------------------------------------------------------------
@@ -843,8 +1440,12 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
                   + ("; também não tem venda nem meta no mês" if not vendas and not (meta_vol or meta_cob or meta_neg)
                      else "; **tem venda ou meta no mês: conferir a base de clientes**")
                   + ". Fica em M.NEUTRALIZA_ROTAS: se voltar à base, entra como Neutraliza na gerência a que pertencer.")
-        rel.p("\nE7: o aceite contra o SAC é a seção 4 (mesma regra de volume do main para G1, G2, G3, AP, IT e MO).")
     etapa("E5b rota 551", rota_551)
+
+    # E7. diferenças contra a tela do SAC, por gerência e rota (só com o CSV do dia) ----------------------
+    if "sac" in estado:
+        rel.h("E7. Diferenças contra o SAC, por gerência (Refrigerantes)")
+        etapa("E7 diferenças contra o SAC", lambda: diferencas_sac(rel, cons, estado, anomes, anomes_hoje, hoje))
 
     # 9. tempos --------------------------------------------------------------------------
     total = time.monotonic() - inicio
