@@ -884,6 +884,8 @@ const rotaNoPainel = (gc, r) => !ehVirtual(r) && rotasDe(gc, '').includes(r);
 // 2ª etapa da caixa, por gerência: supervisões pelo número e rotas em ordem natural (no grupo, uma gerência e depois a outra)
 const svsDaEntrada = gc => svsEmOrdem(gc).filter(s => svNoPainel(gc, s));
 const rotasDaEntrada = gc => rotasDe(gc, '').filter(r => rotaNoPainel(gc, r)).sort(ordemNatural);
+// Gerência: uma opção da 1ª etapa com dados (gerência ou grupo); Supervisão e Rota: também uma gerência do grupo
+const opcaoValida = u => opcoesGc().some(o => o.chave===u && o.ok);
 const gcValida = u => typeof u==='string' && (ehGrupo(u) || todasGcs().includes(u)) && temDados(u);
 
 /* Confere um acesso com as regras da entrada: o escolhido na caixa ou o guardado (ao reabrir e a cada payload novo).
@@ -892,8 +894,8 @@ const gcValida = u => typeof u==='string' && (ehGrupo(u) || todasGcs().includes(
 function validaAcesso(a){
   const perfil = a && a.perfil;
   if(perfil==='dir') return {perfil, gc:'', sv:'', rota:''};
-  if(!['gc', 'sv', 'rota'].includes(perfil) || !gcValida(a.gc)) return null;
-  if(perfil==='gc') return {perfil, gc:a.gc, sv:'', rota:''};
+  if(perfil==='gc') return opcaoValida(a.gc) ? {perfil, gc:a.gc, sv:'', rota:''} : null;
+  if(!['sv', 'rota'].includes(perfil) || !gcValida(a.gc)) return null;
   const gcs = membrosGc(a.gc).filter(g => DATA[g]);
   if(perfil==='sv'){
     const gc = gcs.find(g => svNoPainel(g, a.sv));

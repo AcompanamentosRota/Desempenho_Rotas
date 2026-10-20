@@ -1759,6 +1759,7 @@ describe('Parte I — grupos: acesso guardado, virada diária e link do Resumo',
     }
     for(const [nome, a] of [['grupo', {perfil: 'gc', gc: 'MO+IT'}], ['grupo', {perfil: 'gc', gc: 'IT+XX'}],
       ['grupo', {perfil: 'gc', gc: 'IT+MO+G1'}], ['semdados', {perfil: 'gc', gc: 'PA+DI'}], ['semdados', {perfil: 'gc', gc: 'G3'}],
+      ['grupo', {perfil: 'gc', gc: 'MO'}],      // gerência de grupo sozinha não é opção da entrada (só no seletor do grupo)
       ['grupo', {perfil: 'sv', gc: 'IT+MO', sv: 'SV.G2.1'}], ['grupo', {perfil: 'sv', gc: 'IT+MO', sv: 'Neutraliza'}],
       ['grupo', {perfil: 'rota', gc: 'IT+MO', rota: 'I32'}], ['grupo', {perfil: 'rota', gc: 'IT+MO', rota: 'MO-EV'}],
       ['normal', {perfil: 'rota', gc: 'SL', rota: 'SL-EV'}], ['normal', {perfil: 'gc', gc: {g: 'G2'}}]]){
