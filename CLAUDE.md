@@ -15,6 +15,17 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - Conferir tendência/fechamento com dados reais: workflow manual "Conferir tendência" (`conferir-tendencia.yml`,
   input `hoje` opcional) → artifact com `relatorio_tendencia.md` + `payload.json`/`online.json` (sem commit).
   `gerar.py --hoje AAAA-MM-DD --saida DIR` simula a data (o cron não usa).
+  Local: `python scripts/conferir_tendencia.py --saida DIR` (DIR fora do repo; nunca `frontend/data`).
+- Tela do SAC por dia: `backend/conferencia/sac/refri_AAAA-MM-DD.csv` (`;`, `GC;Real;Meta;Tendencia;MetaDia`, 1ª linha
+  `#` = fonte e horário; formato no README). Lida pela seção 4 (aceite, OK/DIVERGE por célula; sem o arquivo: "sem
+  tela do SAC para esta data") e pela E7 (diferenças por rota contra o SAC, só com o CSV do dia). Nada fixo no script.
+  A E7 lê colunas do modelo de vendas que o gerador não usa (`COL_*` no próprio script, não em `mapeamento.py`) e só
+  relata: escopo, Neutraliza, virtuais e meta do dia do gerador não mudam por causa dela (decisão da Karen).
+  Achado de 20/10/2026 (E7 com dado real): o SAC soma Real e meta do dia de Refrigerantes pela gerência comercial do
+  cliente no modelo de vendas (`DS_GERENCIA_COMERCIAL_AT_Clien`; resíduo ≤ 1 cx nas 16), sem excluir rotas. Toda a
+  diferença restante é de clientes hoje em rotas EV* (Real −407 cx; meta do dia −1.071 cx, quase toda com a meta numa
+  rota do painel: o gerador agrupa `META_RECUPERAVEL_ROTA` pela rota do cliente). Neutraliza, virtuais e SV.G3.3 entram
+  nos dois. O par G2/G3 (−71/−71) não é transferência entre elas (EV1 → G2; EVF/EV5/EV1 → G3).
 - Front local: `cd frontend && python -m http.server 8765`.
 - Testes de front (Chromium headless + dado sintético gerado pelo próprio back-end): `node --test frontend/tests/front.test.js`
   (precisa de Python com as dependências do back-end e do pacote `playwright`; sem ele os testes são pulados; o CI não roda).
