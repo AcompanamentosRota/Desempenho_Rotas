@@ -324,7 +324,7 @@ Retornável). A E8 sai sempre no relatório, para o mês de hoje, e **só relata
 - **E8c**: por item, a meta na BAND e por gerência, rotas do painel com e sem meta; para os itens Heineken, o
   portfólio (definição da Karen, 20/10/2026): **BARRACUDA** = filial com CD da Heineken, sem meta de Heineken. Rota com
   meta = **FULL**, sem meta = BARRACUDA; supervisão e gerência com as duas ficam com a classificação da **maioria das
-  rotas** (ex.: SV.G2.1, 4 de 7 rotas com meta = FULL); empate aparece como "empate" (sem regra). Só contam as rotas
+  rotas** (ex.: SV.G2.1, 4 de 7 rotas com meta = FULL); empate fica sem informação ("—"). Só contam as rotas
   normais (Neutraliza e virtuais ficam fora; nas listas, marcadas (N) e (V)). Por gerência: portfólio, rotas normais
   com · sem meta, supervisões por portfólio, as rotas com meta (gerência mista) e as sem meta (até 40); depois, a tabela
   das supervisões mistas, a divisão das gerências e as supervisões com portfólio diferente do da gerência. As rotas

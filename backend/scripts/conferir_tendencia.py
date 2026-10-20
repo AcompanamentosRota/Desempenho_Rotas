@@ -886,16 +886,16 @@ def rota_normal(rota: str) -> bool:
     return rota not in M.NEUTRALIZA_ROTAS and rota not in M.VIRTUAIS_ROTAS
 
 
-def portfolio(com: list[str], sem: list[str]) -> str:
+def portfolio(com: list[str], sem: list[str]) -> str | None:
     """Portfólio pela meta de Heineken (definição da Karen, 20/10/2026; BARRACUDA = filial com CD da Heineken):
     rota com meta = FULL, sem = BARRACUDA; supervisão ou gerência com as duas fica com a da maioria das rotas
-    (SV.G2.1: 4 de 7 com meta = FULL). Empate não tem regra: aparece como 'empate'."""
+    (SV.G2.1: 4 de 7 com meta = FULL). Empate fica sem informação (None)."""
     if not com and not sem:
         return "sem rotas"
-    return "FULL" if len(com) > len(sem) else "BARRACUDA" if len(sem) > len(com) else "empate"
+    return "FULL" if len(com) > len(sem) else "BARRACUDA" if len(sem) > len(com) else None
 
 
-def divisao_portfolio(com: list[str], sem: list[str], sv_rota: dict[str, str]) -> tuple[str, dict[str, tuple]]:
+def divisao_portfolio(com: list[str], sem: list[str], sv_rota: dict[str, str]) -> tuple[str | None, dict[str, tuple]]:
     """(portfólio da gerência, {supervisão: (portfólio, rotas com meta, rotas sem)}), só com as rotas normais;
     supervisões em ordem natural, rota sem supervisão no painel em '—'."""
     com, sem = [r for r in com if rota_normal(r)], [r for r in sem if rota_normal(r)]
@@ -906,12 +906,18 @@ def divisao_portfolio(com: list[str], sem: list[str], sv_rota: dict[str, str]) -
     return portfolio(com, sem), {s: (portfolio(*por_sv[s]),) + por_sv[s] for s in sorted(por_sv, key=_ordem_rota)}
 
 
-def grupos_txt(por: dict[str, str], sep: str = "; ") -> str:
-    """{gerência ou supervisão: portfólio} -> 'BARRACUDA: AP, G1; FULL: RV' (na ordem de entrada)."""
+def grupos_txt(por: dict[str, str | None], sep: str = "; ") -> str:
+    """{gerência ou supervisão: portfólio} -> 'BARRACUDA: AP, G1; FULL: RV' (na ordem de entrada; empate fica fora)."""
     grupos = defaultdict(list)
     for k, t in por.items():
-        grupos[t].append(k)
+        if t:
+            grupos[t].append(k)
     return sep.join(f"{t}: {', '.join(ks)}" for t, ks in sorted(grupos.items()))
+
+
+def diferentes_da_gc(por_sv: dict[str, tuple], por_gc: dict[str, str | None]) -> list[tuple[str, str, str]]:
+    """[(supervisão, portfólio, gerência)] das supervisões com portfólio diferente do da gerência (empate fica fora)."""
+    return [(s, t, g) for s, (g, t) in por_sv.items() if t and por_gc[g] and t != por_gc[g]]
 
 
 def _gcs_com_dados(gc_rota: dict[str, str]) -> list[str]:
@@ -1005,7 +1011,7 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
     rel.h3("E8c. Meta de cobertura por item (rotas do painel com e sem meta)")
     rel.p("Portfólio pela meta dos itens Heineken (definição de 20/10/2026: BARRACUDA = filial com CD da Heineken): rota "
           "com meta = FULL, sem meta = BARRACUDA; supervisão e gerência com as duas ficam com a classificação da maioria "
-          "das rotas (ex.: SV.G2.1 com 4 de 7 rotas com meta = FULL); empate aparece como 'empate'. Só as rotas normais "
+          "das rotas (ex.: SV.G2.1 com 4 de 7 rotas com meta = FULL); empate fica sem informação (—). Só as rotas normais "
           "contam (Neutraliza e virtuais ficam fora; nas listas, marcadas (N) e (V)).")
     sv_rota = estado.get("sv_rota_painel", {})
     divisao, divisao_sv, mudam_sem_t, rotas_t = {}, {}, {}, defaultdict(set)
@@ -1042,9 +1048,9 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
                 t_sem, svs_sem = divisao_portfolio(com, [r for r in sem if not ROTA_T.match(r)], sv_rota)
                 rotas_t[nome] |= {r for r in sem if rota_normal(r) and ROTA_T.match(r)}
                 mudam_sem_t.setdefault(nome, []).extend(
-                    [f"{g} {t} → {t_sem}"] * (t_sem != t)
-                    + [f"{s} {x[0]} → {svs_sem.get(s, ('sem rotas',))[0]}" for s, x in svs.items()
-                       if svs_sem.get(s, ("sem rotas",))[0] != x[0]])
+                    [f"{k} {a or 'sem informação'} → {b or 'sem informação'}"
+                     for k, a, b in [(g, t, t_sem)] + [(s, x[0], svs_sem.get(s, ("sem rotas",))[0])
+                                                       for s, x in svs.items()] if a != b])
                 mistas += [[s, g, len(c), len(sm), x, lista(c, E8_MAX_COM), lista(sm, E8_MAX_COM)]
                            for s, (x, c, sm) in svs.items() if c and sm]
                 linha += [t, f"{n_com} · {n_sem}", grupos_txt({s: x[0] for s, x in svs.items()}) or None,
@@ -1060,8 +1066,9 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
                        mistas or [["nenhuma"] + [None] * 6])
 
     for nome, por_gc in divisao.items():
-        rel.p(f"\nDivisão FULL x BARRACUDA pela meta de {nome} (maioria das rotas normais): {grupos_txt(por_gc)}.")
-        difs = [f"{s} {t} ({g} {por_gc[g]})" for s, (g, t) in divisao_sv[nome].items() if t != por_gc[g]]
+        rel.p(f"\nDivisão FULL x BARRACUDA pela meta de {nome} (maioria das rotas normais): "
+              f"{grupos_txt(por_gc) or 'sem informação'}.")
+        difs = [f"{s} {t} ({g} {por_gc[g]})" for s, t, g in diferentes_da_gc(divisao_sv[nome], por_gc)]
         rel.p(f"Supervisões com portfólio diferente do da gerência: {', '.join(difs) or 'nenhuma'}.")
         if rotas_t[nome]:
             ts = sorted(rotas_t[nome], key=_ordem_rota)
@@ -1120,7 +1127,7 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
         if m["parecidos"]:
             obs.append("também existe: " + ", ".join(repr(p) for p in m["parecidos"][:3]))
         if nome in divisao:
-            difs = [f"{s} {t}" for s, (g, t) in divisao_sv[nome].items() if t != divisao[nome][g]]
+            difs = [f"{s} {t}" for s, t, _ in diferentes_da_gc(divisao_sv[nome], divisao[nome])]
             obs.append("portfólio (maioria das rotas normais) " + grupos_txt(divisao[nome], " / ")
                        + (f" (supervisões diferentes da gerência: {', '.join(difs)})" if difs else ""))
         linhas.append([nome, repr(v) if v else "**não encontrado**", chave,

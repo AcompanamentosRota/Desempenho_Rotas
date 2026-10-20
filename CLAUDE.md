@@ -32,9 +32,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   pontuação), meta por gerência/rota com FULL x BARRACUDA pela meta de Heineken (`portfolio`/`divisao_portfolio`, só
   nas rotas normais: sem Neutraliza e virtuais; e o que mudaria sem as rotas T<nn>, `ROTA_T`), online de hoje e
   realizado. Definição da Karen (20/10/2026): BARRACUDA = filial com CD da Heineken; rota com meta de Heineken = FULL,
-  sem = BARRACUDA; supervisão e gerência mistas ficam com a da maioria das rotas (SV.G2.1: 4 de 7 = FULL); empate não
-  tem regra (o relatório mostra "empate"). Supervisão = a do painel (`sv_rota_painel`, regra do payload). `META_COBERTURA` não é somada pelo servidor (vem uma linha por valor): a E8 usa o maior por rota, como
-  `fontes.carregar_metas`. Como ler: README, "Descoberta do incentivo".
+  sem = BARRACUDA; supervisão e gerência mistas ficam com a da maioria das rotas (SV.G2.1: 4 de 7 = FULL); empate
+  fica sem informação (`portfolio` → None; "—" na tabela, fora das listas e das comparações). Supervisão = a do painel
+  (`sv_rota_painel`, regra do payload). `META_COBERTURA` não é somada pelo servidor (vem uma linha por valor): a E8 usa
+  o maior por rota, como `fontes.carregar_metas`. Como ler: README, "Descoberta do incentivo".
   Achado de 20/10/2026 (E8 com dado real): os 5 itens existem como agrupador na venda e na meta ('Cervejas', 'Heineken',
   'Eisenbahn - 600ml', 'Heineken - 600ml', 'Cervejas 600ml Retornavel'; há também variantes '... - 600ml Vr' só na
   venda). Heineken e Eisenbahn 600ml não estão em M.AGRUPADORES_COBERTURA (o gerador não os traz). Sem meta de
