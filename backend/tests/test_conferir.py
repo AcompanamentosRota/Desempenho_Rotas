@@ -659,3 +659,246 @@ class TestSecaoE7SemColunas(unittest.TestCase):
         self.assertIn("E7. Diferenças contra o SAC", txt)
         self.assertIn("a E7 não pode ser calculada", txt)
         self.assertIn("| AP | 200 | 272 |", txt)      # sem a gerência comercial, a rota oculta das EV* não existe
+
+
+# ---------------------------------------------------------------- E8: descoberta do incentivo Todos a Bordo 3.0
+from tests.test_fontes import _todas  # noqa: E402
+
+GC_ROTA_E8 = {"111": "G1", "112": "G1", "211": "G2", "212": "G2", "213": "G2", "221": "G2", "222": "G2",
+              "A11": "AP", "A12": "AP", "C11": "AN", "C12": "AN",
+              "R11": "RV", "R31": "RV", "T39": "RV", "G1-EV": "G1"}     # R31 Neutraliza; T39 rota T<nn>
+SV_ROTA_E8 = {"111": "SV.G1.1", "112": "SV.G1.1", "211": "SV.G2.1", "212": "SV.G2.1", "213": "SV.G2.1",
+              "221": "SV.G2.2", "222": "SV.G2.2", "A11": "SV.AP.1", "A12": "SV.AP.1", "C11": "SV.AN.1", "C12": "SV.AN.2",
+              "R11": "SV.RV.1", "R31": "SV.RV.1", "T39": "SV.RV.1"}
+
+
+def _cob(rota, pv, ag, cob, gc):
+    return {CM.ROTA: rota, CM.CLIENTE: str(pv), CM.AGRUPADOR: ag, CM.COB_MES: cob, CM.GC: gc}
+
+
+class ConsultaE8:
+    """Datasphere simulado para a E8: venda (cobertura), metas por rota, online e colunas de produto."""
+
+    COB = [_cob("111", 8880001, "Cervejas", 1, "Gc. G1"), _cob("111", 8880002, "Cervejas", 0, "Gc. G1"),
+           _cob("112", 8880003, "Cervejas", 1, "Gc. G1"), _cob("C11", 8880004, "Heineken", 1, "Gc. An"),
+           _cob("C11", 8880004, "Heineken - 600ml", 1, "Gc. An"), _cob("C12", 8880005, "Heineken", 2, "Gc. An"),
+           _cob("A11", 8880006, "Cervejas 600ml Retornavel", 1, "Gc. Ap"), _cob("A11", 8880006, "Eisenbahn", 1, "Gc. Ap"),
+           _cob("Z99", 8880007, "Cervejas", 1, "Gc. G1"),                      # rota fora do painel
+           _cob("211", 8880008, "Coca-Cola - 600ml", 1, "Gc. G2"),             # entra pelo "600"
+           _cob("211", 8880008, "Cervejas Descartável", 1, "Gc. G2"),          # acento: entra pelo "CERVEJ"
+           _cob("211", 8880009, "HEINEKEN - 600ML VR", 1, "Gc. G2"),           # caixa alta: parecido do Heineken 600
+           _cob("111", 8880001, "Refrigerantes", 1, "Gc. G1")]                 # sem os termos: fora da E8
+    METAS = [("111", "Cervejas", 10), ("112", "Cervejas", 5), ("C11", "Heineken", 8), ("C11", "Heineken", 3),
+             ("C11", "Heineken - 600ml", 3), ("R11", "Heineken", 6), ("R11", "Heineken - 600ml", 2),
+             ("A11", "Cervejas 600ml Retornavel", 4), ("A12", "Cervejas 600ml Retornavel", 0),
+             ("Z99", "Heineken", 7), ("211", "Heineken", 2), ("212", "Heineken", 1), ("111", "Ks Tt", 9)]
+    ONLINE = [{CM.ROTA: "C11", CM.CLIENTE: "8880004", CM.AGRUPADOR: "Heineken", CM.COB_ONLINE: 1, CM.GC: "Gc. An"},
+              {CM.ROTA: "111", CM.CLIENTE: "8880001", CM.AGRUPADOR: "Cervejas", CM.COB_ONLINE: 1, CM.GC: "Gc. G1"},
+              {CM.ROTA: "112", CM.CLIENTE: "8880003", CM.AGRUPADOR: "Cervejas", CM.COB_ONLINE: 0, CM.GC: "Gc. G1"}]
+    COLUNAS = {"DS_MARCA_Produto": ["Heineken", "Eisenbahn", "Amstel"], "DS_EMBALAGEM_Produto": ["600ml", "Lata"],
+               "DS_PRODUTO_Produto": [f"HEINEKEN LN {i}ML" for i in range(25)], "SKU_QUEBRA": [],
+               "VL_PESO_Produto": [], "AGRUPADOR_SEGMENTO_CLIEN_Clien": ["HEINEKEN CLIENTE"]}
+
+    def __init__(self, sem_600=False):
+        self.chamadas = []
+        self.cob = [l for l in self.COB if not (sem_600 and "600" in l[CM.AGRUPADOR] and "Heineken" in l[CM.AGRUPADOR])]
+        self.metas = [m for m in self.METAS if not (sem_600 and m[1] == "Heineken - 600ml")]
+
+    def colunas(self, objeto):
+        return _todas(CM) + list(self.COLUNAS)
+
+    def tipo(self, objeto, coluna):
+        return "Edm.Decimal" if coluna.startswith("VL_") else "Edm.String"
+
+    @staticmethod
+    def _da_gc(linhas, filtro):
+        if filtro and f"{CM.GC} eq '" in filtro:
+            gc = filtro.split(f"{CM.GC} eq '")[1].split("'")[0]
+            return [l for l in linhas if l[CM.GC] == gc]
+        return linhas
+
+    def linhas(self, objeto, select, filtro=None, top=None, orderby=None):
+        self.chamadas.append((objeto, tuple(select), filtro))
+        sel = tuple(select)
+        if sel == (CM.AGRUPADOR, CM.COB_MES):
+            return [{CM.AGRUPADOR: v, CM.COB_MES: 1} for v in sorted({l[CM.AGRUPADOR] for l in self.cob})]
+        if sel == (CM.META_AGRUPADOR, CM.META_COBERTURA):
+            return [{CM.META_AGRUPADOR: a, CM.META_COBERTURA: m} for _, a, m in self.metas]
+        if sel == (CM.META_ROTA, CM.META_AGRUPADOR, CM.META_COBERTURA):
+            return [{CM.META_ROTA: r, CM.META_AGRUPADOR: a, CM.META_COBERTURA: m} for r, a, m in self.metas
+                    if f"'{a}'" in filtro]
+        if CM.COB_MES in sel and CM.CLIENTE in sel:
+            return [l for l in self._da_gc(self.cob, filtro) if f"'{l[CM.AGRUPADOR]}'" in filtro]
+        if CM.COB_ONLINE in sel:
+            assert "FONTE eq 'WF Online'" in filtro and "SITUACAO_Pedido eq 'Inc. e Exp.'" in filtro
+            return [l for l in self._da_gc(self.ONLINE, filtro) if f"'{l[CM.AGRUPADOR]}'" in filtro]
+        if sel[0] == "SKU_QUEBRA":
+            raise RuntimeError("HTTP 500 (simulado)")
+        if sel[0] in self.COLUNAS:
+            return [{sel[0]: v, CM.COB_MES: 1} for v in self.COLUNAS[sel[0]]]
+        return []
+
+    def em_paralelo(self, tarefas):
+        return {n: self.linhas(*a) for n, a in tarefas.items()}
+
+
+def _e8(cons):
+    rel = ct.Relatorio()
+    estado = {"gc_rota_painel": dict(GC_ROTA_E8), "sv_rota_painel": dict(SV_ROTA_E8),
+              "gcs": ["Gc. G1", "Gc. G2", "Gc. Ap", "Gc. An", "Gc. Rv"]}
+    with contextlib.redirect_stdout(io.StringIO()):
+        ct.descoberta_incentivo(rel, cons, estado, "202610")
+    return "\n".join(rel.linhas)
+
+
+class TestE8Funcoes(unittest.TestCase):
+    def test_filtro_por_texto_sem_acento_e_caixa(self):
+        self.assertEqual(ct.chave_texto("Cervejas 600ml Retornável"), "CERVEJAS600MLRETORNAVEL")
+        self.assertEqual(ct.chave_texto(" heineken - 600 ML "), "HEINEKEN600ML")
+        for v in ["cervejá", "CERVEJAS", "Heineken Zero", "eisenbahn est", "Coca-Cola - 600ml", "Cc 600 - Imp"]:
+            self.assertTrue(ct.contem_termo(v), v)
+        for v in ["Refrigerantes", "Ks Tt", "Amstel - 350ml", "", None]:
+            self.assertFalse(ct.contem_termo(v), v)
+        self.assertTrue(ct.contem_termo("Hnk + Eisenbahn", ct.E8_TERMOS_MARCA))
+        self.assertFalse(ct.contem_termo("Cervejas 600ml", ct.E8_TERMOS_MARCA))
+
+    def test_mapeamento_dos_itens(self):
+        venda = ["Cervejas", "Cervejas 600ml Retornavel", "Cervejas Premium", "Heineken", "HEINEKEN - 600ML VR",
+                 "Heineken Zero", "Eisenbahn"]
+        m = ct.mapear_itens(venda, ["Cervejas", "Heineken", "Heineken - 600ml"])
+        self.assertEqual(m["Cervejas"], {"venda": "Cervejas", "meta": "Cervejas", "parecidos": ["Cervejas Premium"]})
+        self.assertEqual(m["Heineken"]["parecidos"], ["HEINEKEN - 600ML VR", "Heineken Zero"])   # sem os outros itens
+        self.assertEqual(m["Heineken 600ml"], {"venda": None, "meta": "Heineken - 600ml", "parecidos": ["HEINEKEN - 600ML VR"]})
+        self.assertEqual(m["Eisenbahn 600ml"], {"venda": None, "meta": None, "parecidos": []})     # Eisenbahn não vale
+        self.assertEqual(m["Cervejas 600ml Retornável"]["venda"], "Cervejas 600ml Retornavel")
+
+    def test_agregacao_por_gerencia(self):
+        cli = ct.clientes_por_gc(ConsultaE8.COB, CM.AGRUPADOR, CM.COB_MES, GC_ROTA_E8)
+        self.assertEqual({k: len(v) for k, v in cli.items() if k[0] == "Cervejas"},
+                         {("Cervejas", "G1"): 2, ("Cervejas", ct.FORA): 1})        # cobertura 0 não conta
+        self.assertEqual(len(cli[("Heineken", "AN")]), 2)
+        metas = ct.meta_por_rota([{CM.META_ROTA: r, CM.META_AGRUPADOR: a, CM.META_COBERTURA: m}
+                                  for r, a, m in ConsultaE8.METAS])
+        self.assertEqual(metas[("Heineken", "C11")], 8)                            # o maior valor da rota
+        mgc = ct.meta_por_gc(metas, GC_ROTA_E8)
+        self.assertEqual(mgc[("Heineken", "AN")], [8.0, 1])
+        self.assertEqual(mgc[("Heineken", ct.FORA)], [7.0, 1])
+        self.assertEqual(mgc[("Cervejas", "G1")], [15.0, 2])
+        self.assertEqual(mgc[("Cervejas 600ml Retornavel", "AP")], [4.0, 1])                 # A12 com meta 0 não conta
+
+    def test_com_e_sem_meta_e_portfolio(self):
+        metas = {("Heineken", "C11"): 8.0, ("Heineken", "R11"): 6.0, ("Heineken", "111"): 0.0}
+        rotas = ct.rotas_por_gc(GC_ROTA_E8)
+        self.assertEqual(rotas["G1"], ["111", "112"])                              # sem a rota oculta das EV*
+        cs = ct.com_sem_meta(metas, "Heineken", rotas)
+        self.assertEqual(cs["AN"], (["C11"], ["C12"]))
+        self.assertEqual(cs["G1"], ([], ["111", "112"]))
+        self.assertEqual(cs["RV"], (["R11"], ["R31", "T39"]))
+        self.assertFalse(ct.rota_normal("R31") or ct.rota_normal("A42"))
+        self.assertEqual(ct.divisao_portfolio(*cs["RV"], SV_ROTA_E8),                # a Neutraliza não conta
+                         (None, {"SV.RV.1": (None, ["R11"], ["T39"])}))           # empate: sem informação
+        self.assertEqual(ct.divisao_portfolio(*cs["G1"], {})[1], {"—": ("BARRACUDA", [], ["111", "112"])})
+
+    def test_portfolio_pela_maioria_das_rotas(self):
+        # exemplo da Karen (20/10/2026): SV.G2.1 com 4 das 7 rotas com meta de Heineken é FULL
+        self.assertEqual(ct.portfolio(["211", "212", "213", "214"], ["215", "216", "217"]), "FULL")
+        self.assertEqual(ct.portfolio(["A37"], [f"A3{i}" for i in range(1, 7)]), "BARRACUDA")
+        self.assertEqual(ct.portfolio(["R11"], []), "FULL")
+        self.assertEqual(ct.portfolio([], ["111"]), "BARRACUDA")
+        self.assertIsNone(ct.portfolio(["C11"], ["C12"]))                         # empate fica sem informação
+        self.assertEqual(ct.portfolio([], []), "sem rotas")
+        sv = {f"21{i}": "SV.G2.1" for i in range(1, 8)} | {f"22{i}": "SV.G2.2" for i in range(1, 7)}
+        g, svs = ct.divisao_portfolio(["211", "212", "213", "214"], ["215", "216", "217"] + [f"22{i}" for i in range(1, 7)], sv)
+        self.assertEqual((g, {s: x[0] for s, x in svs.items()}), ("BARRACUDA", {"SV.G2.1": "FULL", "SV.G2.2": "BARRACUDA"}))
+        self.assertEqual(ct.grupos_txt({"AN": "BARRACUDA", "RV": "FULL", "AP": "BARRACUDA", "IT": None}),
+                         "BARRACUDA: AN, AP; FULL: RV")
+        por_sv = {"SV.AN.1": ("AN", "FULL"), "SV.G2.1": ("G2", "FULL"), "SV.G2.2": ("G2", None), "SV.G2.3": ("G2", "BARRACUDA")}
+        self.assertEqual(ct.diferentes_da_gc(por_sv, {"AN": None, "G2": "BARRACUDA"}), [("SV.G2.1", "FULL", "G2")])
+
+
+class TestSecaoE8(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cons = ConsultaE8()
+        cls.txt = _e8(cls.cons)
+
+    def test_e8a_agrupadores(self):
+        self.assertIn("| 'Cervejas' | sim | sim | 4 | 3 | 15 | 2 |", self.txt)        # 4 linhas: uma com cobertura 0
+        self.assertIn("| 'Heineken' | sim | sim | 2 | 2 | 24 | 5 |", self.txt)        # 8 (C11) + 6 (R11) + 3 (G2) + 7 (fora)
+        self.assertIn("| 'Coca-Cola - 600ml' | sim | não | 1 | 1 | — | — |", self.txt)
+        self.assertIn("| 'Cervejas Descartável' | sim | não |", self.txt)
+        self.assertNotIn("Refrigerantes", self.txt)
+        self.assertNotIn("Ks Tt", self.txt)
+        # por gerência, na ordem do painel (AN AP G1 G2 RV)
+        self.assertIn("| agrupador | AN | AP | G1 | G2 | RV | fora |", self.txt)
+        self.assertIn("| 'Cervejas' | 0 | 0 | 2 | 0 | 0 | 1 |", self.txt)
+        self.assertIn("| 'Heineken' | 8 · 1 | — | — | 3 · 2 | 6 · 1 | 7 · 1 |", self.txt)
+
+    def test_e8b_itens_e_colunas(self):
+        self.assertIn("| Heineken 600ml | 'Heineken - 600ml' | 'Heineken - 600ml' | encontrado | 'HEINEKEN - 600ML VR' |",
+                      self.txt)
+        self.assertIn("| Eisenbahn 600ml | — | — | **não encontrado** | — |", self.txt)
+        self.assertIn("Eisenbahn 600ml sem agrupador na venda", self.txt)
+        self.assertIn("| `DS_MARCA_Produto` | sim | 'Eisenbahn', 'Heineken' |", self.txt)
+        self.assertIn("| `DS_EMBALAGEM_Produto` | sim | nenhum |", self.txt)
+        self.assertIn("| `SKU_QUEBRA` | **não** (RuntimeError) |", self.txt)
+        self.assertIn("(+5)", self.txt)                                             # até 20 valores por coluna
+        self.assertNotIn("VL_PESO_Produto", self.txt)                               # só colunas de texto
+        self.assertNotIn("CLIEN_Clien", self.txt)                                   # colunas de cliente ficam fora
+
+    def test_e8c_meta_com_e_sem_e_divisao(self):
+        self.assertIn("**Heineken** (`Heineken`): meta na BAND 24", self.txt)
+        self.assertIn("| G1 | 0 | 0 | 2 | BARRACUDA | 0 · 2 | BARRACUDA: SV.G1.1 | — | 111, 112 |", self.txt)
+        self.assertIn("| AN | 8 | 1 | 1 | — | 1 · 1 | BARRACUDA: SV.AN.2; FULL: SV.AN.1 | C11 | C12 |", self.txt)  # empate
+        self.assertIn("| G2 | 3 | 2 | 3 | BARRACUDA | 2 · 3 | BARRACUDA: SV.G2.2; FULL: SV.G2.1 | 211, 212 | 213, 221, 222 |",
+                      self.txt)
+        self.assertIn("| RV | 6 | 1 | 2 | — | 1 · 1 | — | R11 | R31 (N), T39 |", self.txt)  # sem a Neutraliza: empate
+        self.assertIn("| fora | 7 | 1 | — | — | — | — | — | — |", self.txt)
+        # supervisões mistas: a classificação vem da maioria (SV.G2.1: 2 de 3 com meta)
+        self.assertIn("| SV.G2.1 | G2 | 2 | 1 | FULL | 211, 212 | 213 |", self.txt)
+        self.assertIn("| SV.RV.1 | RV | 1 | 1 | — | R11 | T39 |", self.txt)
+        self.assertNotIn("| SV.AN.1 | AN |", self.txt)                              # só com meta: não é mista
+        self.assertIn("Divisão FULL x BARRACUDA pela meta de Heineken (maioria das rotas normais): BARRACUDA: AP, G1, G2.",
+                      self.txt)
+        self.assertIn("Supervisões com portfólio diferente do da gerência: SV.G2.1 FULL (G2 BARRACUDA).", self.txt)
+        self.assertIn("Observação do dado: as rotas T<nn> (T39) estão sem meta de Heineken em 1 gerências e contam como "
+                      "BARRACUDA; sem elas, muda: RV sem informação → FULL, SV.RV.1 sem informação → FULL.", self.txt)
+        self.assertNotIn("None", self.txt)
+        self.assertIn("| AP | 4 | 1 | 1 |", self.txt)                              # Cervejas 600ml: A12 com meta 0
+
+    def test_e8d_online(self):
+        self.assertIn("| Heineken | 'Heineken' | **não** | **não** | 1 | 0 | 0 | 0 | 0 | 0 | 1 |", self.txt)
+        self.assertIn("| Cervejas | 'Cervejas' | sim | CERVEJAS | 0 | 0 | 1 | 0 | 0 | 0 | 1 |", self.txt)
+        self.assertIn("- Heineken (`Heineken`): faltaria entrar em M.AGRUPADORES_COBERTURA com uma chave (ex.: INC HEINEKEN)",
+                      self.txt)
+        self.assertNotIn("- Cervejas (`Cervejas`): faltaria", self.txt)
+
+    def test_e8e_e_e8f(self):
+        self.assertIn("| Heineken | 'Heineken' | 2 | 0 | 0 | 0 | 0 | 0 | 2 |", self.txt)
+        self.assertIn("| Heineken | 'Heineken' | INC HEINEKEN | sim (5 rotas) | sim (1 clientes hoje) | também existe: "
+                      "'HEINEKEN - 600ML VR'; portfólio (maioria das rotas normais) BARRACUDA: AP, G1, G2 "
+                      "(supervisões diferentes da gerência: SV.G2.1 FULL) |", self.txt)
+        self.assertIn("| Eisenbahn 600ml | **não encontrado** | INC EISENBAHN 600ML | não | não | sem agrupador na venda |",
+                      self.txt)
+        self.assertIn("| Cervejas | 'Cervejas' | INC CERVEJAS | sim (2 rotas) | sim (1 clientes hoje) | já é o indicador "
+                      "CERVEJAS do painel; também existe: 'Cervejas Descartável' |", self.txt)
+
+    def test_sem_nomes_nem_codigos_de_clientes(self):
+        self.assertNotIn("888000", self.txt)
+        self.assertNotIn("HEINEKEN CLIENTE", self.txt)
+
+    def test_heineken_600_ausente_tambem_busca_nas_colunas(self):
+        txt = _e8(ConsultaE8(sem_600=True))
+        self.assertIn("Eisenbahn 600ml e Heineken 600ml sem agrupador na venda", txt)
+        self.assertIn("| Heineken 600ml | — | — | **não encontrado** |", txt)
+        self.assertIn("**Heineken 600ml**: sem agrupador na meta.", txt)
+
+
+class TestE8NoRelatorio(unittest.TestCase):
+    def test_aparece_sem_erro_no_relatorio_completo(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            txt = conferir_tendencia.conferir(ConsultaFalsa(DADOS), date(2026, 10, 13))[0].texto("E8")
+        self.assertNotIn("ERRO", txt)
+        for t in ["## E8. Descoberta do incentivo Todos a Bordo 3.0", "E8a.", "E8b.", "E8c.", "E8d.", "E8e.", "E8f."]:
+            self.assertIn(t, txt)
+        self.assertLess(txt.index("## E8."), txt.index("## 9."))

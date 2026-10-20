@@ -307,6 +307,34 @@ Real ±0,1%; Meta exata (inteiros arredondados); Tendência ±0,2%; % ±0,1 p.p.
   nas 16; meta do dia −1.071 cx, que é de rotas do painel mas estava em clientes das EV*). No mesmo dia o painel passou
   a somar o Real desses clientes na rota oculta da gerência e a meta do dia pela rota da meta; a E7 imita essas regras.
 
+### Descoberta do incentivo Todos a Bordo 3.0 (seção E8)
+
+Campanha de cobertura de cervejas (itens: Cervejas, Heineken, Eisenbahn 600ml, Heineken 600ml e Cervejas 600ml
+Retornável). A E8 sai sempre no relatório, para o mês de hoje, e **só relata** o que existe no Datasphere antes da aba
+"Incentivo"; nada muda no painel. Gerência = a da rota no painel; `fora` = rota fora do painel (EV*, balcão...).
+
+- **E8a**: todos os agrupadores (da venda, `DS_AGRUPADOR_Agrupador_Prod`, e da meta, `AGRUPADOR_PRODU_Chave_Meta_SAP`)
+  com HEINEKEN, EISENBAHN, CERVEJ ou 600 (sem acento e sem diferenciar caixa; o "600" traz também os refrigerantes
+  600ml): linhas (rota x cliente), clientes com cobertura realizada > 0, soma da meta de cobertura (o maior valor por
+  rota, como o gerador) e rotas com meta > 0, no total e por gerência.
+- **E8b**: qual agrupador corresponde a cada item (venda e meta) ou "não encontrado", e os "parecidos" (outros
+  agrupadores que começam igual, ex.: "Heineken - 600ml Vr"). Se Eisenbahn 600ml ou Heineken 600ml não existirem na
+  venda, lista as colunas de produto do `$metadata` (AGRUPADOR, MARCA, FAMILIA, EMBALAGEM, PRODUTO, SKU; só texto, sem
+  as de cliente) com os valores que têm HEINEKEN ou EISENBAHN (até 20) e se aceitam agregação no servidor.
+- **E8c**: por item, a meta na BAND e por gerência, rotas do painel com e sem meta; para os itens Heineken, o
+  portfólio (definição da Karen, 20/10/2026): **BARRACUDA** = filial com CD da Heineken, sem meta de Heineken. Rota com
+  meta = **FULL**, sem meta = BARRACUDA; supervisão e gerência com as duas ficam com a classificação da **maioria das
+  rotas** (ex.: SV.G2.1, 4 de 7 rotas com meta = FULL); empate fica sem informação ("—"). Só contam as rotas
+  normais (Neutraliza e virtuais ficam fora; nas listas, marcadas (N) e (V)). Por gerência: portfólio, rotas normais
+  com · sem meta, supervisões por portfólio, as rotas com meta (gerência mista) e as sem meta (até 40); depois, a tabela
+  das supervisões mistas, a divisão das gerências e as supervisões com portfólio diferente do da gerência. As rotas
+  T<nn> (T07, T29...) sem meta contam como BARRACUDA; uma linha diz o que mudaria sem elas (observação do dado).
+- **E8d**: clientes com compra no WF Online de hoje ('Inc. e Exp.') por item e gerência, se a consulta de vendas do
+  gerador já traz o agrupador e se ele já vira indicador; para o que não vira, o que faltaria.
+- **E8e**: clientes distintos com cobertura realizada > 0, por item e gerência.
+- **E8f**: proposta de mapeamento: item → agrupador → chave interna sugerida (INC ...) → tem meta? → tem online? →
+  observações.
+
 Diferenças em relação ao arquivo que era montado à mão:
 - **Visitas de hoje**: vêm do campo `VISITA_HOJE` do SAP e incluem clientes com mais de um dia de
   visita (ex.: "Ter - Sex"); o arquivo antigo só contava quem tinha exatamente o dia de hoje.

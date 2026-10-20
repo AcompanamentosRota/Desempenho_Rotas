@@ -25,6 +25,9 @@ nomes ou códigos de clientes) com:
   E7. diferenças contra a tela do SAC por gerência (Refrigerantes; só com o CSV do dia): qual gerência do modelo de
      vendas reproduz o SAC, reconciliação (painel x SAC x contribuições x resíduo), contribuições por rota com a
      causa, deslocamentos entre gerências e uma linha de resumo por gerência. Só relata: nada muda no gerador.
+  E8. descoberta do incentivo Todos a Bordo 3.0 (cobertura de cervejas, mês atual): agrupadores com HEINEKEN,
+     EISENBAHN, CERVEJ ou 600, os 5 itens da campanha, meta por gerência e rota (FULL x BARRACUDA pela meta de
+     Heineken), online de hoje, realizado e uma proposta de mapeamento. Só relata.
 """
 from __future__ import annotations
 
@@ -785,6 +788,356 @@ def diferencas_sac(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, an
         rel.p(f"- **{g}** · " + " · ".join(partes))
 
 
+# ------------------------------------------------------------------ E8: descoberta do incentivo Todos a Bordo 3.0
+# Campanha de cobertura de cervejas (mês atual). Só relata o que existe no Datasphere; nada muda no gerador.
+E8_TERMOS = ("HEINEKEN", "EISENBAHN", "CERVEJ", "600")
+E8_TERMOS_MARCA = ("HEINEKEN", "EISENBAHN")
+E8_COLUNAS = re.compile(r"AGRUPADOR|MARCA|FAMILIA|EMBALAGEM|PRODUTO|SKU", re.I)
+E8_MAX_VALORES, E8_MAX_ROTAS, E8_MAX_PARECIDOS, E8_MAX_COM = 20, 40, 10, 10
+ROTA_T = re.compile(r"^T\d+$")   # rotas T07, T29...: sem meta de Heineken em quase todas as gerências (20/10)
+FORA = "fora"   # coluna das rotas fora do painel
+# itens da campanha: (nome, chave interna sugerida, agrupador sem acento/caixa/espaços/pontuação)
+ITENS_INCENTIVO = [
+    ("Cervejas", "INC CERVEJAS", "CERVEJAS"),
+    ("Heineken", "INC HEINEKEN", "HEINEKEN"),
+    ("Eisenbahn 600ml", "INC EISENBAHN 600ML", "EISENBAHN600ML"),
+    ("Heineken 600ml", "INC HEINEKEN 600ML", "HEINEKEN600ML"),
+    ("Cervejas 600ml Retornável", "INC CERVEJAS 600ML RET", "CERVEJAS600MLRETORNAVEL"),
+]
+
+
+def chave_texto(valor: object) -> str:
+    """'Cervejas 600ml Retornável' -> 'CERVEJAS600MLRETORNAVEL' (sem acento, caixa, espaço ou pontuação)."""
+    return re.sub(r"[^A-Z0-9]", "", normalizar(valor))
+
+
+def contem_termo(valor: object, termos=E8_TERMOS) -> bool:
+    """O valor contém algum dos termos (comparação sem acento e sem diferenciar caixa)?"""
+    chave = chave_texto(valor)
+    return any(chave_texto(t) in chave for t in termos)
+
+
+def mapear_itens(venda: list[str], meta: list[str]) -> dict[str, dict]:
+    """Item da campanha -> {venda, meta: agrupador exato ou None; parecidos: outros que começam igual}."""
+    out = {}
+    chaves = {c for _, _, c in ITENS_INCENTIVO}   # parecidos não repetem os outros itens
+    for nome, _, chave in ITENS_INCENTIVO:
+        def exato(valores):
+            return next((v for v in valores if chave_texto(v) == chave), None)
+        parecidos = sorted({v for v in list(venda) + list(meta)
+                            if chave_texto(v).startswith(chave) and chave_texto(v) not in chaves}, key=chave_texto)
+        out[nome] = {"venda": exato(venda), "meta": exato(meta), "parecidos": parecidos[:E8_MAX_PARECIDOS]}
+    return out
+
+
+def rotas_por_gc(gc_rota: dict[str, str]) -> dict[str, list[str]]:
+    """Rotas do painel por gerência, sem as rotas ocultas dos clientes em EV* (não têm meta nem cobertura)."""
+    out = defaultdict(list)
+    for r, g in gc_rota.items():
+        if r != M.rota_eventuais(g):
+            out[g].append(r)
+    return {g: sorted(rs, key=_ordem_rota) for g, rs in out.items()}
+
+
+def _ordem_rota(r: str):
+    """Ordem natural (111, 112, A11...), como o front."""
+    return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", r)]
+
+
+def clientes_por_gc(linhas: list[dict], col_valor: str, col_medida: str, gc_rota: dict[str, str]) -> dict:
+    """{(valor, gerência ou FORA): {clientes com medida > 0}} pela rota do cliente."""
+    out = defaultdict(set)
+    for l in linhas:
+        if numero(l.get(col_medida)) > 0:
+            r = fontes._rota(l.get(CM.ROTA))
+            out[(limpar(l.get(col_valor)), gc_rota.get(r, FORA))].add(limpar(l.get(CM.CLIENTE)))
+    return dict(out)
+
+
+def meta_por_rota(linhas: list[dict]) -> dict[tuple[str, str], float]:
+    """{(agrupador, rota da meta): meta de cobertura}; o maior valor da rota, como o gerador (carregar_metas)."""
+    out: dict = {}
+    for l in linhas:
+        r, v = fontes._rota(l.get(CM.META_ROTA)), limpar(l.get(CM.META_AGRUPADOR))
+        if r and l.get(CM.META_COBERTURA) not in (None, ""):
+            out[(v, r)] = max(out.get((v, r), 0.0), numero(l.get(CM.META_COBERTURA)))
+    return out
+
+
+def meta_por_gc(metas: dict, gc_rota: dict[str, str]) -> dict[tuple[str, str], list]:
+    """{(agrupador, gerência ou FORA): [soma da meta, nº de rotas com meta > 0]}."""
+    out = defaultdict(lambda: [0.0, 0])
+    for (v, r), m in metas.items():
+        if m > 0:
+            t = out[(v, gc_rota.get(r, FORA))]
+            t[0] += m
+            t[1] += 1
+    return dict(out)
+
+
+def com_sem_meta(metas: dict, valor: str, rotas: dict[str, list[str]]) -> dict[str, tuple[list[str], list[str]]]:
+    """{gerência: (rotas do painel com meta > 0 do agrupador, rotas sem)}."""
+    return {g: ([r for r in rs if metas.get((valor, r), 0.0) > 0], [r for r in rs if metas.get((valor, r), 0.0) <= 0])
+            for g, rs in rotas.items()}
+
+
+def rota_normal(rota: str) -> bool:
+    """Nem Neutraliza nem virtual (as duas ficam fora da divisão FULL x BARRACUDA)."""
+    return rota not in M.NEUTRALIZA_ROTAS and rota not in M.VIRTUAIS_ROTAS
+
+
+def portfolio(com: list[str], sem: list[str]) -> str | None:
+    """Portfólio pela meta de Heineken (definição da Karen, 20/10/2026; BARRACUDA = filial com CD da Heineken):
+    rota com meta = FULL, sem = BARRACUDA; supervisão ou gerência com as duas fica com a da maioria das rotas
+    (SV.G2.1: 4 de 7 com meta = FULL). Empate fica sem informação (None)."""
+    if not com and not sem:
+        return "sem rotas"
+    return "FULL" if len(com) > len(sem) else "BARRACUDA" if len(sem) > len(com) else None
+
+
+def divisao_portfolio(com: list[str], sem: list[str], sv_rota: dict[str, str]) -> tuple[str | None, dict[str, tuple]]:
+    """(portfólio da gerência, {supervisão: (portfólio, rotas com meta, rotas sem)}), só com as rotas normais;
+    supervisões em ordem natural, rota sem supervisão no painel em '—'."""
+    com, sem = [r for r in com if rota_normal(r)], [r for r in sem if rota_normal(r)]
+    por_sv = defaultdict(lambda: ([], []))
+    for i, rs in enumerate((com, sem)):
+        for r in rs:
+            por_sv[_codigo(sv_rota.get(r)) or "—"][i].append(r)
+    return portfolio(com, sem), {s: (portfolio(*por_sv[s]),) + por_sv[s] for s in sorted(por_sv, key=_ordem_rota)}
+
+
+def grupos_txt(por: dict[str, str | None], sep: str = "; ") -> str:
+    """{gerência ou supervisão: portfólio} -> 'BARRACUDA: AP, G1; FULL: RV' (na ordem de entrada; empate fica fora)."""
+    grupos = defaultdict(list)
+    for k, t in por.items():
+        if t:
+            grupos[t].append(k)
+    return sep.join(f"{t}: {', '.join(ks)}" for t, ks in sorted(grupos.items()))
+
+
+def diferentes_da_gc(por_sv: dict[str, tuple], por_gc: dict[str, str | None]) -> list[tuple[str, str, str]]:
+    """[(supervisão, portfólio, gerência)] das supervisões com portfólio diferente do da gerência (empate fica fora)."""
+    return [(s, t, g) for s, (g, t) in por_sv.items() if t and por_gc[g] and t != por_gc[g]]
+
+
+def _gcs_com_dados(gc_rota: dict[str, str]) -> list[str]:
+    presentes = set(gc_rota.values())
+    return [g for g in M.GC_NOMES if g in presentes]
+
+
+def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: str):
+    """Seção E8: o que o Datasphere tem para a aba "Incentivo" (Todos a Bordo 3.0) no mês `anomes`."""
+    gc_rota, gcs = estado["gc_rota_painel"], estado["gcs"]
+    rotas = rotas_por_gc(gc_rota)
+    colunas_gc = _gcs_com_dados(gc_rota)
+    rel.p(f"Mês {anomes}, `{M.OBJ_META}`. Itens: " + "; ".join(n for n, *_ in ITENS_INCENTIVO) + ". Agrupador da venda "
+          f"`{CM.AGRUPADOR}` (o de M.AGRUPADORES_COBERTURA), da meta `{CM.META_AGRUPADOR}`; cobertura realizada "
+          f"`{CM.COB_MES}` > 0; meta `{CM.META_COBERTURA}` (o maior valor por rota, como o gerador). Gerência = a da rota "
+          f"no painel; '{FORA}' = rota fora do painel. Só nomes de agrupador e de coluna, contagens e códigos de rota.")
+
+    # E8a. agrupadores com os termos da campanha
+    venda = sorted({limpar(l.get(CM.AGRUPADOR)) for l in cons.linhas(M.OBJ_META, [CM.AGRUPADOR, CM.COB_MES],
+                                                                       eq(CM.ANOMES, anomes))
+                    if contem_termo(l.get(CM.AGRUPADOR))}, key=chave_texto)
+    meta = sorted({limpar(l.get(CM.META_AGRUPADOR)) for l in cons.linhas(M.OBJ_META, [CM.META_AGRUPADOR, CM.META_COBERTURA],
+                                                                           eq(CM.META_ANOMES, anomes))
+                   if contem_termo(l.get(CM.META_AGRUPADOR))}, key=chave_texto)
+    cob = [l for ls in cons.em_paralelo(fontes._por_gerencia(
+        M.OBJ_META, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_MES],
+        e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, venda)), gcs, None)).values() for l in ls] if venda else []
+    metas = meta_por_rota(cons.linhas(M.OBJ_META, [CM.META_ROTA, CM.META_AGRUPADOR, CM.META_COBERTURA],
+                                      e(eq(CM.META_ANOMES, anomes), ou(CM.META_AGRUPADOR, meta)))) if meta else {}
+    cli = clientes_por_gc(cob, CM.AGRUPADOR, CM.COB_MES, gc_rota)
+    mgc = meta_por_gc(metas, gc_rota)
+    n_linhas = defaultdict(int)
+    for l in cob:
+        n_linhas[limpar(l.get(CM.AGRUPADOR))] += 1
+
+    def clientes(v, gcs_=None):
+        return len(set().union(*[s for (vv, g), s in cli.items() if vv == v and (gcs_ is None or g in gcs_)] or [set()]))
+
+    rel.h3("E8a. Agrupadores com HEINEKEN, EISENBAHN, CERVEJ ou 600 (sem acento e sem diferenciar caixa)")
+    todos = sorted(set(venda) | set(meta), key=chave_texto)
+    rel.p(f"{len(venda)} agrupadores na venda e {len(meta)} na meta. Linhas = rota x cliente (agregado no servidor, uma "
+          "consulta por gerência, como o gerador).")
+    rel.tabela(["agrupador (como veio)", "na venda", "na meta", "linhas", "clientes com cobertura > 0",
+                "META_COBERTURA (soma)", "rotas com meta > 0"],
+               [[repr(v), "sim" if v in venda else "não", "sim" if v in meta else "não", n_linhas.get(v, 0),
+                 clientes(v) if v in venda else None,
+                 _n(sum(t[0] for (vv, _), t in mgc.items() if vv == v), 0) if v in meta else None,
+                 sum(t[1] for (vv, _), t in mgc.items() if vv == v) if v in meta else None] for v in todos] or [["nenhum"] + [None] * 6])
+    rel.p("\nClientes com cobertura > 0, por gerência:")
+    rel.tabela(["agrupador"] + colunas_gc + [FORA],
+               [[repr(v)] + [len(cli.get((v, g), ())) for g in colunas_gc + [FORA]] for v in venda] or [["nenhum"]])
+    rel.p("\nMeta de cobertura por gerência (soma · rotas com meta > 0):")
+    rel.tabela(["agrupador"] + colunas_gc + [FORA],
+               [[repr(v)] + [(f"{_n(mgc[(v, g)][0], 0)} · {mgc[(v, g)][1]}" if (v, g) in mgc else "—")
+                             for g in colunas_gc + [FORA]] for v in meta] or [["nenhum"]])
+
+    # E8b. os 5 itens
+    rel.h3("E8b. Os 5 itens da campanha nos agrupadores")
+    mapa = mapear_itens(venda, meta)
+
+    def situacao(m):
+        return ("encontrado" if m["venda"] and m["meta"] else "só na venda" if m["venda"] else "só na meta"
+                if m["meta"] else "**não encontrado**")
+    rel.tabela(["item", "agrupador na venda", "agrupador na meta", "situação", "parecidos (outros agrupadores)"],
+               [[n, repr(m["venda"]) if m["venda"] else None, repr(m["meta"]) if m["meta"] else None, situacao(m),
+                 ", ".join(repr(p) for p in m["parecidos"]) or None] for n, m in mapa.items()])
+    faltam = [n for n in ("Eisenbahn 600ml", "Heineken 600ml") if not mapa[n]["venda"]]
+    if faltam:
+        rel.p(f"\n{' e '.join(faltam)} sem agrupador na venda: colunas do $metadata com AGRUPADOR, MARCA, FAMILIA, "
+              "EMBALAGEM, PRODUTO ou SKU (texto; sem as que identificam cliente) e os valores com HEINEKEN ou EISENBAHN "
+              f"(até {E8_MAX_VALORES} por coluna):")
+        linhas = []
+        for col in sorted(set(cons.colunas(M.OBJ_META))):
+            if not E8_COLUNAS.search(col) or COLUNAS_PROIBIDAS.search(col) or "CLIEN" in col.upper():
+                continue
+            tipo = cons.tipo(M.OBJ_META, col) if hasattr(cons, "tipo") else None
+            if tipo and "String" not in tipo:
+                continue
+            try:
+                vals = sorted({limpar(l.get(col)) for l in cons.linhas(M.OBJ_META, [col, CM.COB_MES], eq(CM.ANOMES, anomes))
+                               if contem_termo(l.get(col), E8_TERMOS_MARCA)}, key=chave_texto)
+            except Exception as erro:   # noqa: BLE001
+                linhas.append([f"`{col}`", f"**não** ({type(erro).__name__})", None])
+                continue
+            mais = f" (+{len(vals) - E8_MAX_VALORES})" if len(vals) > E8_MAX_VALORES else ""
+            linhas.append([f"`{col}`", "sim", (", ".join(repr(v) for v in vals[:E8_MAX_VALORES]) + mais) or "nenhum"])
+        rel.tabela(["coluna", "aceita agregação no servidor", "valores com HEINEKEN ou EISENBAHN"],
+                   linhas or [["nenhuma", None, None]])
+
+    # E8c. meta por item
+    rel.h3("E8c. Meta de cobertura por item (rotas do painel com e sem meta)")
+    rel.p("Portfólio pela meta dos itens Heineken (definição de 20/10/2026: BARRACUDA = filial com CD da Heineken): rota "
+          "com meta = FULL, sem meta = BARRACUDA; supervisão e gerência com as duas ficam com a classificação da maioria "
+          "das rotas (ex.: SV.G2.1 com 4 de 7 rotas com meta = FULL); empate fica sem informação (—). Só as rotas normais "
+          "contam (Neutraliza e virtuais ficam fora; nas listas, marcadas (N) e (V)).")
+    sv_rota = estado.get("sv_rota_painel", {})
+    divisao, divisao_sv, mudam_sem_t, rotas_t = {}, {}, {}, defaultdict(set)
+
+    def marca(r):
+        return (_codigo(r) or "—") + (" (N)" if r in M.NEUTRALIZA_ROTAS else " (V)" if r in M.VIRTUAIS_ROTAS else "")
+
+    def lista(rs, n):
+        return (", ".join(marca(r) for r in rs[:n]) + (f" (+{len(rs) - n})" if len(rs) > n else "")) or None
+
+    for nome, _, _ in ITENS_INCENTIVO:
+        v = mapa[nome]["meta"]
+        if not v:
+            rel.p(f"\n**{nome}**: sem agrupador na meta.")
+            continue
+        cs = com_sem_meta(metas, v, rotas)
+        heineken = "HEINEKEN" in chave_texto(nome)
+        soma = sum(m for (vv, _), m in metas.items() if vv == v and m > 0)
+        rel.p(f"\n**{nome}** (`{v}`): meta na BAND {_n(soma, 0)}")
+        cab = ["gerência", "soma da meta", "rotas com meta", "rotas sem meta"]
+        if heineken:
+            cab += ["portfólio (maioria das rotas normais)", "rotas normais com · sem meta", "supervisões (maioria)",
+                    f"rotas com meta (gerência mista, até {E8_MAX_COM})", f"rotas sem meta (até {E8_MAX_ROTAS})"]
+        linhas, mistas = [], []
+        for g in colunas_gc:
+            com, sem = cs.get(g, ([], []))
+            linha = [g, _n(mgc.get((v, g), [0.0])[0], 0), len(com), len(sem)]
+            if heineken:
+                t, svs = divisao_portfolio(com, sem, sv_rota)
+                divisao.setdefault(nome, {})[g] = t
+                divisao_sv.setdefault(nome, {}).update({s: (g, x[0]) for s, x in svs.items()})
+                n_com, n_sem = sum(len(x[1]) for x in svs.values()), sum(len(x[2]) for x in svs.values())
+                # leitura sem as rotas T<nn> sem meta (observação do dado de 20/10)
+                t_sem, svs_sem = divisao_portfolio(com, [r for r in sem if not ROTA_T.match(r)], sv_rota)
+                rotas_t[nome] |= {r for r in sem if rota_normal(r) and ROTA_T.match(r)}
+                mudam_sem_t.setdefault(nome, []).extend(
+                    [f"{k} {a or 'sem informação'} → {b or 'sem informação'}"
+                     for k, a, b in [(g, t, t_sem)] + [(s, x[0], svs_sem.get(s, ("sem rotas",))[0])
+                                                       for s, x in svs.items()] if a != b])
+                mistas += [[s, g, len(c), len(sm), x, lista(c, E8_MAX_COM), lista(sm, E8_MAX_COM)]
+                           for s, (x, c, sm) in svs.items() if c and sm]
+                linha += [t, f"{n_com} · {n_sem}", grupos_txt({s: x[0] for s, x in svs.items()}) or None,
+                          lista(com, E8_MAX_COM) if n_com and n_sem else None, lista(sem, E8_MAX_ROTAS)]
+            linhas.append(linha)
+        if (v, FORA) in mgc:
+            linhas.append([FORA, _n(mgc[(v, FORA)][0], 0), mgc[(v, FORA)][1], None] + ([None] * 5 if heineken else []))
+        rel.tabela(cab, linhas)
+        if heineken:
+            rel.p(f"\nSupervisões com rotas normais com e sem meta de {nome} (portfólio pela maioria):")
+            rel.tabela(["supervisão", "gerência", "com meta", "sem meta", "portfólio",
+                        f"rotas com meta (até {E8_MAX_COM})", f"rotas sem meta (até {E8_MAX_COM})"],
+                       mistas or [["nenhuma"] + [None] * 6])
+
+    for nome, por_gc in divisao.items():
+        rel.p(f"\nDivisão FULL x BARRACUDA pela meta de {nome} (maioria das rotas normais): "
+              f"{grupos_txt(por_gc) or 'sem informação'}.")
+        difs = [f"{s} {t} ({g} {por_gc[g]})" for s, t, g in diferentes_da_gc(divisao_sv[nome], por_gc)]
+        rel.p(f"Supervisões com portfólio diferente do da gerência: {', '.join(difs) or 'nenhuma'}.")
+        if rotas_t[nome]:
+            ts = sorted(rotas_t[nome], key=_ordem_rota)
+            rel.p(f"Observação do dado: as rotas T<nn> ({', '.join(_codigo(r) or '—' for r in ts)}) estão sem meta de "
+                  f"{nome} em {len({gc_rota[r] for r in ts})} gerências e contam como BARRACUDA; sem elas, "
+                  + (f"muda: {', '.join(mudam_sem_t[nome])}." if mudam_sem_t[nome] else "nenhuma classificação muda."))
+
+    # E8d. online de hoje
+    rel.h3("E8d. Online de hoje (WF Online, 'Inc. e Exp.') por item")
+    achados = {n: m["venda"] for n, m in mapa.items() if m["venda"]}
+    on = [l for ls in cons.em_paralelo(fontes._por_gerencia(
+        M.OBJ_META, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_ONLINE],
+        e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(achados.values())), M.FILTRO_PEDIDOS_ONLINE,
+          eq(CM.FONTE, "WF Online")), gcs, None)).values() for l in ls] if achados else []
+    cli_on = clientes_por_gc(on, CM.AGRUPADOR, CM.COB_ONLINE, gc_rota)
+    na_consulta = {normalizar(a) for a in M.AGRUPADORES_CONSULTA_VENDAS}
+    rel.p(f"Clientes com `{CM.COB_ONLINE}` > 0 hoje. A consulta de vendas do gerador filtra "
+          "M.AGRUPADORES_CONSULTA_VENDAS e só vira online por indicador o agrupador de M.AGRUPADORES_COBERTURA.")
+    rel.tabela(["item", "agrupador", "a consulta do gerador traz?", "vira indicador no gerador?"] + colunas_gc
+               + [FORA, "BAND"],
+               [[n, repr(v), "sim" if normalizar(v) in na_consulta else "**não**",
+                 M.indicador_cobertura(v) or "**não**"]
+                + [len(cli_on.get((v, g), ())) for g in colunas_gc + [FORA]]
+                + [len(set().union(*[s for (vv, _), s in cli_on.items() if vv == v] or [set()]))]
+                for n, v in achados.items()] or [["nenhum item encontrado"] + [None] * (len(colunas_gc) + 5)])
+    for n, v in achados.items():
+        if M.indicador_cobertura(v):
+            continue
+        rel.p(f"- {n} (`{v}`): faltaria entrar em M.AGRUPADORES_COBERTURA com uma chave (ex.: "
+              f"{next(c for nn, c, _ in ITENS_INCENTIVO if nn == n)}); isso o leva à consulta de vendas (cobertura do "
+              "mês e online de hoje), à de metas (carregar_metas) e ao online por indicador; depois, a chave numa aba "
+              "ou grupo de exibição (hoje GROUPS/COV_GRUPO não têm aba de incentivo). Rota sem meta fica com o "
+              "indicador indisponível (regra atual de indicador_cobertura).")
+
+    # E8e. realizado
+    rel.h3("E8e. Clientes distintos com cobertura realizada > 0, por item e gerência")
+    rel.tabela(["item", "agrupador"] + colunas_gc + [FORA, "BAND"],
+               [[n, repr(v)] + [len(cli.get((v, g), ())) for g in colunas_gc + [FORA]] + [clientes(v)]
+                for n, v in achados.items()] or [["nenhum item encontrado"] + [None] * (len(colunas_gc) + 3)])
+
+    # E8f. proposta
+    rel.h3("E8f. Proposta de mapeamento para a aba Incentivo")
+    linhas = []
+    for nome, chave, _ in ITENS_INCENTIVO:
+        m = mapa[nome]
+        v = m["venda"] or m["meta"]
+        n_meta = sum(1 for (vv, _), x in metas.items() if vv == m["meta"] and x > 0) if m["meta"] else 0
+        n_on = len(set().union(*[s for (vv, _), s in cli_on.items() if vv == m["venda"]] or [set()])) if m["venda"] else 0
+        obs = []
+        if m["venda"] and M.indicador_cobertura(m["venda"]):
+            obs.append(f"já é o indicador {M.indicador_cobertura(m['venda'])} do painel")
+        if m["venda"] and m["meta"] and m["venda"] != m["meta"]:
+            obs.append(f"grafia diferente na meta ({m['meta']!r})")
+        if not m["venda"] or not m["meta"]:
+            obs.append("sem agrupador na " + ("venda" if not m["venda"] else "meta"))
+        if m["parecidos"]:
+            obs.append("também existe: " + ", ".join(repr(p) for p in m["parecidos"][:3]))
+        if nome in divisao:
+            difs = [f"{s} {t}" for s, t, _ in diferentes_da_gc(divisao_sv[nome], divisao[nome])]
+            obs.append("portfólio (maioria das rotas normais) " + grupos_txt(divisao[nome], " / ")
+                       + (f" (supervisões diferentes da gerência: {', '.join(difs)})" if difs else ""))
+        linhas.append([nome, repr(v) if v else "**não encontrado**", chave,
+                       f"sim ({n_meta} rotas)" if n_meta else "não",
+                       f"sim ({n_on} clientes hoje)" if n_on else ("não hoje" if m["venda"] else "não"),
+                       "; ".join(obs) or None])
+    rel.tabela(["item", "agrupador no Datasphere", "chave interna sugerida", "tem meta?", "tem online?", "observações"],
+               linhas)
+
+
 def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
              simulado: bool = False, pasta_sac: Path = PASTA_SAC) -> tuple[Relatorio, float]:
     inicio = time.monotonic()
@@ -807,7 +1160,8 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
         est_base: dict = {}
         clientes, gcs = fontes.carregar_clientes(cons, estatisticas=est_base)
         gc_da_rota = {c.rota: c.gc for c in clientes}
-        estado.update(clientes=clientes, est_base=est_base, gc_rota_painel=rotas_do_painel(clientes)[0])
+        gc_rota_painel, sv_rota_painel = rotas_do_painel(clientes)
+        estado.update(clientes=clientes, est_base=est_base, gc_rota_painel=gc_rota_painel, sv_rota_painel=sv_rota_painel)
         fech = fontes.decidir_fechamento(cons, hoje, linhas_cal, gc_da_rota)
         estado.update(cal=cal, cal_ref=fech or cal, gcs=gcs, gc_da_rota=gc_da_rota,
                       rotas=sorted(gc_da_rota), dia_util=calmod.dia_util_hoje(linhas_cal, hoje))
@@ -1495,6 +1849,10 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
     if "sac" in estado:
         rel.h("E7. Diferenças contra o SAC, por gerência (Refrigerantes)")
         etapa("E7 diferenças contra o SAC", lambda: diferencas_sac(rel, cons, estado, anomes, anomes_hoje, hoje))
+
+    # E8. descoberta do incentivo Todos a Bordo 3.0 (cobertura de cervejas, mês atual) ---------------------------
+    rel.h("E8. Descoberta do incentivo Todos a Bordo 3.0")
+    etapa("E8 incentivo", lambda: descoberta_incentivo(rel, cons, estado, anomes_hoje))
 
     # 9. tempos --------------------------------------------------------------------------
     total = time.monotonic() - inicio
