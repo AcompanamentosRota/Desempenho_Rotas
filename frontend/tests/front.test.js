@@ -47,6 +47,14 @@ before(async () => {
   fs.writeFileSync(path.join(antigo, 'payload.json'), JSON.stringify(p));
   fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(antigo, 'online.json'));
   DADOS.antigo = antigo;
+  // payload em que a SV.G2.2 saiu (acesso guardado que não vale mais)
+  const semsv = path.join(tmp, 'semsv');
+  fs.mkdirSync(semsv);
+  const q = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  delete q.DATA.G2['SV.G2.2'];
+  fs.writeFileSync(path.join(semsv, 'payload.json'), JSON.stringify(q));
+  fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(semsv, 'online.json'));
+  DADOS.semsv = semsv;
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -58,16 +66,17 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
   '.png':'image/png', '.webmanifest':'application/manifest+json'};
 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo'); devolve {page, erros}.
-   `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo). */
-async function abre(nome, {armazenado = {}, largura = 1200, entrar = 'gc', busca = ''} = {}){
-  const ctx = await browser.newContext({viewport: {width: largura, height: 1000}});
+   `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
+   `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()). */
+async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entrar = 'gc', busca = '', fuso, antes} = {}){
+  const ctx = await browser.newContext({viewport: {width: largura, height: altura}, ...(fuso ? {timezoneId: fuso} : {})});
   const page = await ctx.newPage();
-  const erros = [];
+  const erros = [], fonte = {nome};     // fonte.nome pode mudar no meio do teste (payload novo)
   page.on('pageerror', e => erros.push(String(e)));
   page.on('console', m => { if(m.type() === 'error') erros.push(m.text()); });
   await page.route('http://painel.test/**', rota => {
     const url = new URL(rota.request().url());
-    let arq = url.pathname.startsWith('/data/') ? path.join(DADOS[nome], url.pathname.slice(6))
+    let arq = url.pathname.startsWith('/data/') ? path.join(DADOS[fonte.nome], url.pathname.slice(6))
                                                  : path.join(FRONT, url.pathname);
     if(!fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
     rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream',
@@ -75,16 +84,41 @@ async function abre(nome, {armazenado = {}, largura = 1200, entrar = 'gc', busca
   });
   // bibliotecas do PDF (CDN) não são usadas nos testes
   await page.route(/cdnjs\.cloudflare\.com/, r => r.abort());
-  await page.addInitScript(itens => { try { for(const k in itens) localStorage.setItem(k, itens[k]); } catch(e){} },
-                           armazenado);
+  // só na 1ª carga da aba (um reload não deve regravar o acesso guardado)
+  await page.addInitScript(itens => { try { if(!sessionStorage.getItem('_teste')){ sessionStorage.setItem('_teste', '1');
+    for(const k in itens) localStorage.setItem(k, itens[k]); } } catch(e){} }, armazenado);
+  if(antes) await antes(page);
   await page.goto('http://painel.test/index.html' + busca);
-  // P é 'let' de script clássico: existe no escopo global, mas não em window
-  await page.waitForFunction(() => typeof P !== 'undefined' && P && document.querySelector('#lista').innerHTML !== '');
-  // a página abre na entrada; entrar = 'gc' | 'dir' escolhe o modo, null fica na entrada
-  if(entrar) await page.click(`#entrada [data-modo="${entrar}"]`);
-  return {page, ctx, erros};
+  await esperaCarga(page);
+  // sem acesso guardado a página abre na entrada; entrar = 'gc' | 'dir' | {perfil, ...} entra, null fica na entrada
+  if(entrar) await entra(page, entrar);
+  return {page, ctx, erros, fonte};
 }
 module.exports = {abre};
+
+/* Espera o payload e o fim da tela de carga (entrada, acesso guardado ou link do Resumo já resolvidos).
+   P é 'let' de script clássico: existe no escopo global, mas não em window. */
+const esperaCarga = page => page.waitForFunction(() => typeof P !== 'undefined' && P &&
+  document.querySelector('#lista').innerHTML !== '' && document.getElementById('carga').hidden);
+/* Entra pela tela de entrada: {perfil: 'dir', usuario} | {perfil: 'gc', gc} | {perfil: 'sv', gc, sv} | {perfil: 'rota', gc, rota};
+   'dir' = Diretoria com DICOM; 'gc' = Gerência na primeira gerência com dados (onde a Gerência abria antes dos perfis). */
+async function entra(page, entrar){
+  if(entrar === 'dir') entrar = {perfil: 'dir', usuario: 'DICOM'};
+  if(entrar === 'gc') entrar = {perfil: 'gc', gc: await page.evaluate(() => primeiraGc())};
+  const {perfil, usuario = '', gc = '', sv = '', rota = ''} = entrar;
+  if(await page.isVisible('#entForm')) await page.click('#entOutro');     // de volta aos quatro botões
+  await page.click(`#entrada [data-perfil="${perfil}"]`);
+  if(perfil === 'dir') await page.fill('#entUsuario', usuario);
+  else await page.fill('#entGc', gc);
+  if(perfil === 'sv') await page.fill('#entSv', sv);
+  if(perfil === 'rota') await page.fill('#entRota', rota);
+  await page.click('#entEntrar');
+}
+/* volta para a entrada pela casa e entra de novo */
+async function vaiPara(page, entrar){
+  await page.click('#btnCasa');
+  await entra(page, entrar);
+}
 
 /* Seleciona gerência/supervisão/rota e aba e espera o render. */
 async function filtra(page, {gc, sv = '', rota = '', aba} = {}){
@@ -395,7 +429,6 @@ function lerGaveta(page){
   }));
 }
 const somaMeta = ls => ls.filter(l => !l.off).reduce((a, l) => a + l.meta, 0);
-const decrescente = xs => xs.every((x, i) => i === 0 || xs[i - 1] >= x);
 
 describe('Parte D — entrada', {skip: pular}, () => {
   test('preta por padrão, sol/lua troca e guarda; casa volta; rodapé', async () => {
@@ -404,13 +437,13 @@ describe('Parte D — entrada', {skip: pular}, () => {
     await page.click('#btnTema');
     assert.equal(await page.evaluate(() => localStorage.getItem('drotas_entrada')), 'branca');
     assert.ok(await page.evaluate(() => document.getElementById('entrada').classList.contains('branca')));
-    await page.click('#entrada [data-modo="gc"]');
+    await entra(page, 'gc');
     assert.ok(await page.evaluate(() => document.getElementById('entrada').hidden));
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(245, 245, 247)');
     await page.click('#btnCasa');
     assert.ok(!(await page.evaluate(() => document.getElementById('entrada').hidden)));
     assert.equal(await page.textContent('#entRod'), 'Karen Oliveira - Inteligência de Mercado');
-    await page.click('#entrada [data-modo="gc"]');
+    await entra(page, 'gc');
     assert.match(await page.textContent('#rodape .creditos'), /^Karen Oliveira - Inteligência de Mercado$/);
     assert.deepEqual(erros, []);
     await ctx.close();
@@ -449,10 +482,9 @@ describe('Parte D — cascata', {skip: pular}, () => {
     const k = 'VOL REFRIGERANTES';
     const card = await page.evaluate(k => agrega(rotasAtuais()).ind[k], k);
     let g = await cascata(page, k, 'VOLUME');
-    assert.deepEqual(g.linhas.map(l => l.nome), [...g.linhas.slice(0, 2).map(l => l.nome), 'Neutraliza']);
-    assert.deepEqual(g.linhas.map(l => l.nome).slice(0, 2).sort(), ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor']);
+    // ordem pelo código (item 1 de entrada-perfis-ordem; antes era pela tendência), "Neutraliza" por último
+    assert.deepEqual(g.linhas.map(l => l.nome), ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor', 'Neutraliza']);
     assert.ok(Math.abs(somaMeta(g.linhas) - card.meta) < 1e-6, 'linhas (com a Neutraliza) = card');
-    assert.ok(decrescente(g.linhas.slice(0, 2).map(l => l.dir)));
     assert.match(g.sub, /^Meta [\d.]+ · Real [\d.]+ · tendência \d+%$/, 'D2: números pt-BR');
     await page.click('#dCorpo .cLin[data-i="0"]');
     g = await lerGaveta(page);
@@ -558,7 +590,7 @@ describe('Parte D — cascata', {skip: pular}, () => {
     assert.deepEqual((await cascata(page, 'VOL REFRIGERANTES', 'VOLUME')).nota, []);
     await page.keyboard.press('Escape');
     // Diretoria: a nota aparece ao abrir a gerência, não na lista de gerências (que já somam as virtuais)
-    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    await vaiPara(page, 'dir');
     let g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
     assert.deepEqual(g.nota, []);
     await page.click(`#dCorpo .cLin[data-i="${g.linhas.findIndex(l => l.nome === 'GC.AN · Anápolis')}"]`);
@@ -600,7 +632,9 @@ describe('Parte D — cascata', {skip: pular}, () => {
     assert.equal(g.linhas.length, 16);
     assert.deepEqual(g.linhas.filter(l => l.off).map(l => l.nome), ['GC.DI · Dianópolis']);
     assert.equal(somaMeta(g.linhas), r.total);
-    assert.ok(decrescente(g.linhas.filter(l => !l.off).map(l => l.dir)));
+    // ordem fixa de GC_NOMES/GC_ATIVAS (antes: pela tendência), a DI sem dados no lugar dela
+    assert.deepEqual(g.linhas.map(l => l.nome.split(' ·')[0]), ['AN', 'AP', 'AT', 'G1', 'G2', 'G3', 'PA', 'DI', 'RV', 'SL',
+      'GU', 'PO', 'IT', 'MO', 'UR', 'RI'].map(x => 'GC.' + x));
     const iG1 = g.linhas.findIndex(l => l.nome === 'GC.G1 · Goiânia 01');
     await page.click(`#dCorpo .cLin[data-i="${iG1}"]`);
     g = await lerGaveta(page);
@@ -631,14 +665,15 @@ describe('Parte D — cascata', {skip: pular}, () => {
     await ctx.close();
   });
 
-  test('fechamento: sem tendência nem meta do dia, ordem pelo % realizado', async () => {
+  test('fechamento: sem tendência nem meta do dia, % realizado (ordem pelo código)', async () => {
     const {page, ctx, erros} = await abre('fech');
     await filtra(page, {gc: 'G1'});
     const g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
     const pctReal = await page.evaluate(() => [...svsVisiveis('G1').map(s => agrega(rotasNormais('G1', s))),
       agrega(rotasNeutraliza('G1'))].map(a => a.ind['VOL REFRIGERANTES'].pctReal));
     assert.deepEqual(g.linhas.map(l => l.dir).sort(), pctReal.sort());
-    assert.ok(decrescente(g.linhas.slice(0, -1).map(l => l.dir)));
+    // ordem pelo código também no fechamento (antes: pelo % realizado)
+    assert.deepEqual(g.linhas.map(l => l.nome), ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor', 'Neutraliza']);
     assert.equal(g.linhas[g.linhas.length - 1].nome, 'Neutraliza');
     assert.ok(g.linhas.every(l => /online hoje/.test(l.meio)));
     assert.match(g.sub, /realizado$/);
@@ -684,7 +719,7 @@ describe('Parte D — Resumo de vendas', {skip: pular}, () => {
     assert.deepEqual(r.sel, ['dir', 'IT', gcAntes], 'o filtro da Gerência não muda');
     // reabrir a Diretoria volta para "Todas as gerências" (e o Resumo das 16)
     await page.click('#rsVoltar');
-    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    await vaiPara(page, 'dir');
     assert.equal(await page.inputValue('#fgc'), '');
     await page.click('#btnResumo');
     assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · Diretoria');
@@ -738,7 +773,7 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
     await confere('Resumo da Gerência');
     assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.IT · Itumbiara');
     await page.click('#rsVoltar');
-    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    await vaiPara(page, 'dir');
     await confere('Diretoria');
     await cascata(page, 'CCTM 2L PET', 'ICS_GC');
     await confere('cascata da Diretoria');
@@ -773,7 +808,7 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
     assert.deepEqual((await colunasRs(page))[1], ['GC.G1', 'Goiânia 01']);
     await page.click('#rsVoltar');
     // Diretoria: seletor "Todas" + as 16; cascata com as 16 gerências; Resumo com as colunas na ordem
-    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    await vaiPara(page, 'dir');
     assert.deepEqual(await opcoesGc(page), [['', 'Todas as gerências', false], ...lista]);
     assert.match(await page.textContent('#sub'), /· Diretoria$/);
     const g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
@@ -802,7 +837,7 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
   test('Diretoria com uma gerência: cards, cascata (supervisões, Neutraliza, nota das virtuais) e Resumo dela', async () => {
     const {page, ctx, erros} = await abre('normal');
     const gcGerencia = await page.evaluate(() => sel.gc);
-    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    await vaiPara(page, 'dir');
     const k = 'VOL REFRIGERANTES';
     const todas = await page.evaluate(k => agrega(rotasAtuais()).ind[k].meta, k);
     await page.selectOption('#fgc', 'G2');
@@ -851,10 +886,10 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
     assert.deepEqual((await colunasRs(page)).map(c => c[0]), ['Agrupador', 'GC.G2', 'SV.G2.1', 'SV.G2.2']);
     await page.click('#rsVoltar');
     // a escolha não muda a Gerência e volta para "Todas" ao reabrir a Diretoria
-    await page.click('#btnCasa'); await page.click('#entrada [data-modo="gc"]');
+    await vaiPara(page, 'gc');
     assert.deepEqual(await page.evaluate(() => [sel.modo, sel.gc, document.getElementById('fgc').value]),
                      ['gc', gcGerencia, gcGerencia]);
-    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    await vaiPara(page, 'dir');
     assert.deepEqual(await page.evaluate(() => [sel.dgc, document.getElementById('fgc').value]), ['', '']);
     assert.deepEqual(erros, []);
     await ctx.close();
@@ -885,7 +920,7 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
     await page.click('#btnResumo');
     assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.G1');
     await page.click('#rsVoltar');
-    await page.click('#btnCasa'); await page.click('#entrada [data-modo="dir"]');
+    await vaiPara(page, 'dir');
     await page.selectOption('#fgc', 'IT');
     await cascata(page, 'CCTM 2L PET', 'ICS_GC');
     await page.keyboard.press('Escape');
@@ -897,8 +932,8 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
   });
 
   test('Gerência inalterada: filtros de supervisão e rota, cascata a partir das supervisões', async () => {
-    const {page, ctx, erros} = await abre('normal');
-    await page.selectOption('#fgc', 'G3');
+    // perfil Gerência: a gerência vem do login (sem seletor de gerência)
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G3'}});
     const r = await page.evaluate(() => ({sel: [sel.modo, sel.gc, sel.sv, sel.rota],
       vis: [document.getElementById('fsv').hidden, document.getElementById('frota').hidden],
       svs: [...document.querySelectorAll('#fsv option')].map(o => o.value).filter(Boolean)}));
@@ -908,6 +943,501 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
     const g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
     assert.equal(g.tit, 'CCTM 2L Pet · GC.G3 · Goiânia 03');
     assert.ok(g.linhas.length && g.linhas.every(l => /^SV\.G3\./.test(l.nome)));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});
+
+/* ---------- Parte H: ordem das listas da cascata ---------- */
+/* Embaralha a G1 no navegador (só DATA): a SV.G1.2 vira SV.G1.10 com as rotas G129 e G1210 (antes G121 e G122), a
+   SV.G1.1 se divide em SV.G1.1 (G111) e SV.G1.2 (G112), as chaves ficam fora de ordem e as gerências de DATA invertidas. */
+const embaralha = page => page.evaluate(() => {
+  const g1 = DATA.G1, s1 = g1['SV.G1.1'], s2 = g1['SV.G1.2'];
+  DATA.G1 = {'SV.G1.5': g1['SV.G1.5'], 'SV.G1.10': {G1210: s2.G122, G129: s2.G121}, 'SV.G1.2': {G112: s1.G112},
+             'SV.G1.1': {G111: s1.G111}};
+  P.NOME_SUPERVISOR['SV.G1.10'] = 'SUPERVISOR G1 10';
+  DATA = Object.fromEntries(Object.entries(DATA).reverse());
+  ROTA_IDX = {};
+  for(const gc in DATA) for(const sv in DATA[gc]) for(const r in DATA[gc][sv]) ROTA_IDX[r] = [gc, sv];
+});
+/* linhas da gaveta: [nome, meta, número da direita, cor] */
+const linhasCor = page => page.$$eval('#dCorpo .cLin', ls => ls.map(l => [l.querySelector('.cNome b').textContent,
+  Number(l.dataset.meta), l.dataset.dir === '' ? null : Number(l.dataset.dir), l.classList.contains('ok') ? 'ok' : 'no']));
+
+describe('Parte H — ordem das listas da cascata', {skip: pular}, () => {
+  test('ordem natural dos códigos', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const r = await page.evaluate(() => [['A12', '111', 'I11', 'A11', '112', 'M21', '151'].sort(ordemNatural),
+      ['SV.G1.10', 'SV.G1.2', 'SV.G1.1', 'SV.G1.5'].sort(ordemNatural), ['G1210', 'G129', 'G2110', 'G211'].sort(ordemNatural),
+      ['sv.g1.2', 'SV.G1.02', 'SV.G1.1'].sort(ordemNatural)]);
+    assert.deepEqual(r, [['111', '112', '151', 'A11', 'A12', 'I11', 'M21'], ['SV.G1.1', 'SV.G1.2', 'SV.G1.5', 'SV.G1.10'],
+                         ['G129', 'G211', 'G1210', 'G2110'], ['SV.G1.1', 'SV.G1.02', 'sv.g1.2']]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const nome of ['normal', 'fech']){
+    test(`gerências, supervisões ("Neutraliza" por último), rotas e clientes pelo código (${nome})`, async () => {
+      const {page, ctx, erros} = await abre(nome);
+      const k = 'VOL REFRIGERANTES', ORDEM_SV = ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor', 'SV.G1.10 · Supervisor',
+        'Neutraliza'];
+      await embaralha(page);
+      // números diferentes por linha: pela ordem antiga (tendência / % realizado) a ordem seria outra
+      for(const [rs, f] of [[['G111'], 0.2], [['G112'], 0.6], [['G129'], 0.9], [['G1210'], 1.2], [['151'], 2]])
+        await ritmo(page, 'G1', rs, f);
+      await filtra(page, {gc: 'G1'});
+      let g = await cascata(page, k, 'VOLUME');
+      assert.deepEqual(g.linhas.map(l => l.nome), ORDEM_SV);
+      // cada linha com os números e a cor de agrega() do grupo (só a ordem muda)
+      const esperado = await page.evaluate(k => [['G111'], ['G112'], ['G129', 'G1210'], ['151']].map(rs => {
+        const b = agrega(rs).ind[k];
+        return [b.meta, P.FECHAMENTO ? b.pctReal : b.pctTendencia, b.onPace ? 'ok' : 'no'];
+      }), k);
+      assert.deepEqual((await linhasCor(page)).map(l => l.slice(1)), esperado);
+      assert.notDeepEqual([0, 1, 2].sort((a, b) => esperado[b][1] - esperado[a][1]), [0, 1, 2],
+                          'a ordem antiga (pelos números) seria outra');
+      // SV.G1.10: rotas em ordem natural (G129 antes de G1210)
+      await page.click('#dCorpo .cLin[data-i="2"]');
+      g = await lerGaveta(page);
+      assert.deepEqual(g.linhas.map(l => l.nome), ['Rota G129', 'Rota G1210']);
+      await page.click('#cVolta');
+      // clientes de volume: Meta, Real, Dif. Abs e %, do mais negativo para o mais positivo
+      await page.click('#dCorpo .cLin[data-i="0"]');
+      await page.click('#dCorpo .cLin[data-i="0"]');
+      g = await lerGaveta(page);
+      assert.deepEqual(await page.$$eval('#dCorpo .cCab span', s => s.map(x => x.textContent)),
+                       ['Cliente', 'Meta', 'Real', 'Dif. Abs', '%']);
+      assert.ok(g.clientes.length > 1 && g.clientes.every((d, i) => i === 0 || g.clientes[i - 1] <= d), 'Dif. Abs crescente');
+      await page.keyboard.press('Escape');
+      // Diretoria: gerências na ordem fixa, mesmo com DATA invertido e a RI com o maior número
+      await vaiPara(page, 'dir');
+      const gcs = ORDEM.filter(x => x !== 'DI');
+      for(const [i, gc] of gcs.entries())
+        await ritmo(page, gc, await page.evaluate(gc => rotasDe(gc, ''), gc), 0.1 + i * 0.1);
+      await filtra(page, {});
+      g = await cascata(page, k, 'VOLUME');
+      assert.deepEqual(g.linhas.map(l => l.nome), ORDEM.map(ROTULO));
+      await page.click(`#dCorpo .cLin[data-i="${ORDEM.indexOf('G1')}"]`);
+      g = await lerGaveta(page);
+      assert.deepEqual(g.linhas.map(l => l.nome), ORDEM_SV);
+      await page.keyboard.press('Escape');
+      // cobertura: lista de clientes como antes (pelo nome)
+      await filtra(page, {});
+      await vaiPara(page, 'gc');
+      await filtra(page, {gc: 'G2', sv: 'SV.G2.1', rota: 'G211'});
+      await cascata(page, 'KAPO', 'ICS_GC');
+      await page.click('#dLista .dchip[data-d="Todos"]');
+      const nomes = await page.$$eval('#dLista .item .nm', ns => ns.map(n => n.firstChild.textContent));
+      assert.ok(nomes.length > 1);
+      assert.deepEqual(nomes, [...nomes].sort((a, b) => a.localeCompare(b)));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+});
+
+/* ---------- Parte I: entrada com perfis, acesso guardado e virada diária ---------- */
+const MSG_GC = 'Gerência não reconhecida. Informe a sigla (ex.: G2) ou o nome completo (ex.: Goiânia 02).';
+const SEM_DADOS_GC = 'Gerência sem dados no painel.';
+const REINICIADO = 'Acesso reiniciado, entre novamente', INDISPONIVEL = 'O acesso anterior não está mais disponível';
+// relógio fixo: 13/10/2026 10:00 de Brasília (dia de trabalho 2026-10-13)
+const HOJE = new Date('2026-10-13T13:00:00Z'), DIA = '2026-10-13';
+const fixo = (quando = HOJE) => page => page.clock.setFixedTime(quando);
+/* acesso guardado em 'drotas_sessao' (dia = null: sem o campo) */
+const sessao = (a, dia = DIA) => JSON.stringify({gc: '', sv: '', rota: '', ...a, ...(dia ? {dia} : {})});
+/* estado da tela: entrada, aviso, acesso em uso, filtro, filtros visíveis, cabeçalho, botão do Resumo e acesso guardado */
+const estado = page => page.evaluate(() => ({
+  entrada: !document.getElementById('entrada').hidden,
+  msg: document.getElementById('entMsg').textContent,
+  acesso: ACESSO && [ACESSO.perfil, ACESSO.gc, ACESSO.sv, ACESSO.rota],
+  sel: [sel.modo, sel.modo === 'dir' ? sel.dgc : sel.gc, sel.sv, sel.rota],
+  filtros: ['fgc', 'fsv', 'frota'].filter(id => !document.getElementById(id).hidden),
+  sub: document.getElementById('sub').textContent,
+  resumo: !document.querySelector('.rsBox').hidden,
+  guardado: (() => { try { return JSON.parse(localStorage.getItem('drotas_sessao')); } catch(e) { return 'sem armazenamento'; } })(),
+}));
+const guardadoTxt = page => page.evaluate(() => localStorage.getItem('drotas_sessao'));
+
+describe('Parte I — entrada com perfis', {skip: pular}, () => {
+  test('quatro perfis; Diretoria com DICOM (maiúsculas, minúsculas e espaços); outro usuário fica na entrada', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    assert.deepEqual(await page.$$eval('#entBotoes button', bs => bs.map(b => b.textContent)),
+                     ['DIRETORIA', 'GERÊNCIA', 'SUPERVISÃO', 'ROTA']);
+    let e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, '', null, null]);
+    for(const usuario of ['DIRETOR', 'DICOMX', '']){
+      await entra(page, {perfil: 'dir', usuario});
+      e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, 'Usuário não reconhecido', null, null], usuario);
+    }
+    for(const usuario of ['DICOM', 'dicom', ' Di Com ']){
+      await entra(page, {perfil: 'dir', usuario});
+      e = await estado(page);
+      assert.ok(!e.entrada, usuario);
+      assert.deepEqual([e.sel, e.filtros, e.resumo], [['dir', '', '', ''], ['fgc'], true]);
+      assert.match(e.sub, /· Diretoria$/);
+      assert.deepEqual(e.guardado, {perfil: 'dir', gc: '', sv: '', rota: '', dia: DIA});
+      await page.click('#btnCasa');
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Gerência pela sigla ou pelo nome da filial (igualdade exata), travada; campo sem lista nem autocompletar', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    assert.deepEqual(await page.$eval('#entGc', i => ({tipo: i.type, lista: i.getAttribute('list'),
+      auto: i.getAttribute('autocomplete'), datalists: document.querySelectorAll('datalist').length})),
+      {tipo: 'text', lista: null, auto: 'off', datalists: 0});
+    for(const [txt, gc] of [['G2', 'G2'], ['g2', 'G2'], [' GC.G2 ', 'G2'], ['Gc. G2', 'G2'], ['gc g2', 'G2'],
+      ['Goiânia 02', 'G2'], ['goiania 2', 'G2'], ['GOIANIA02', 'G2'], ['itumbiara', 'IT'], ['IT', 'IT'], ['SAO LUIS', 'SL'],
+      ['São Luís', 'SL'], ['Goiânia 1', 'G1'], ['G01', 'G1'], ['uruacu', 'UR']]){
+      await entra(page, {perfil: 'gc', gc: txt});
+      const e = await estado(page);
+      assert.ok(!e.entrada, `${txt}: ${e.msg}`);
+      assert.deepEqual([e.sel, e.filtros, e.resumo], [['gc', gc, '', ''], ['fsv', 'frota'], true], txt);
+      assert.ok(e.sub.endsWith(`· Gerência · ${ROTULO(gc)}`), e.sub);
+      assert.deepEqual(e.guardado, {perfil: 'gc', gc, sv: '', rota: '', dia: DIA});
+      await page.click('#btnCasa');
+    }
+    for(const [txt, msg] of [['goiania', MSG_GC], ['ita', MSG_GC], ['xyz', MSG_GC], ['', MSG_GC], ['   ', MSG_GC], ['G', MSG_GC],
+      ['Goiânia 0', MSG_GC], ['GC', MSG_GC], ['DI', SEM_DADOS_GC], ['Dianópolis', SEM_DADOS_GC]]){
+      await entra(page, {perfil: 'gc', gc: txt});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, msg, null, null], `"${txt}"`);
+    }
+    // travada: supervisão e rota livres como hoje
+    await entra(page, {perfil: 'gc', gc: 'G2'});
+    await page.selectOption('#fsv', 'SV.G2.1');
+    await page.selectOption('#frota', 'G212');
+    let e = await estado(page);
+    assert.deepEqual([e.sel, e.filtros], [['gc', 'G2', 'SV.G2.1', 'G212'], ['fsv', 'frota']]);
+    assert.ok(e.sub.endsWith('· Gerência · GC.G2 · Goiânia 02 · SV.G2.1 · Supervisor · Rota G212 — Consultor G212'), e.sub);
+    await page.selectOption('#fsv', 'Neutraliza');
+    assert.deepEqual((await estado(page)).sel, ['gc', 'G2', 'Neutraliza', '']);
+    // cascata como hoje: card -> supervisões (com a Neutraliza)
+    await page.selectOption('#fsv', '');
+    const g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    assert.deepEqual(g.linhas.map(l => l.nome), ['SV.G2.1 · Supervisor', 'SV.G2.2 · Supervisor', 'Neutraliza']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Supervisão: mesmo reconhecimento da gerência + número; SV.G3.3, Neutraliza e inexistente recusadas; travada', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    for(const [g, s, msg] of [
+      ['G3', '3', 'Supervisão SV.G3.3 não está no painel da GC.G3 · Goiânia 03.'],     // oculta
+      ['G2', 'Neutraliza', 'Informe o número da supervisão (ex.: 1 para SV.G2.1).'],
+      ['G2', '5', 'Supervisão SV.G2.5 não está no painel da GC.G2 · Goiânia 02.'],      // só a 251 (Neutraliza)
+      ['G2', '9', 'Supervisão SV.G2.9 não está no painel da GC.G2 · Goiânia 02.'],
+      ['G2', '', 'Informe o número da supervisão (ex.: 1 para SV.G2.1).'],
+      ['goiania', '1', MSG_GC], ['DI', '1', SEM_DADOS_GC]]){
+      await entra(page, {perfil: 'sv', gc: g, sv: s});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, msg, null, null], `${g} ${s}`);
+    }
+    for(const [g, s, gc, sv] of [['goiania 2', '1', 'G2', 'SV.G2.1'], ['GC.IT', '02', 'IT', 'SV.IT.2'],
+      ['Itumbiara', 'SV.IT.1', 'IT', 'SV.IT.1'], ['atacados', '3', 'AT', 'SV.AT.3']]){
+      await entra(page, {perfil: 'sv', gc: g, sv: s});
+      const e = await estado(page);
+      assert.ok(!e.entrada, `${g} ${s}: ${e.msg}`);
+      assert.deepEqual([e.sel, e.filtros, e.guardado], [['gc', gc, sv, ''], ['frota'], {perfil: 'sv', gc, sv, rota: '', dia: DIA}]);
+      await page.click('#btnCasa');
+    }
+    // SV.G2.1: só o filtro das rotas dela; cascata card -> rotas -> clientes; "puxa a média" das rotas; Resumo dela
+    await entra(page, {perfil: 'sv', gc: 'G2', sv: '1'});
+    let e = await estado(page);
+    assert.ok(e.sub.endsWith('· Supervisão · GC.G2 · Goiânia 02 · SV.G2.1 · Supervisor'), e.sub);
+    assert.deepEqual(await page.$$eval('#frota option', os => os.map(o => o.value)), ['', 'G211', 'G212']);
+    let g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    assert.deepEqual([g.volta, g.linhas.map(l => l.nome)], ['', ['Rota G211', 'Rota G212']]);
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    g = await lerGaveta(page);
+    assert.equal(g.volta, '← Rotas');
+    assert.ok(await page.$('#dLista .chips'), 'clientes');
+    await page.keyboard.press('Escape');
+    await ritmo(page, 'G2', ['G212'], 1);
+    await ritmo(page, 'G2', ['G211'], 0);
+    await filtra(page, {});
+    assert.match(await page.textContent('#puxa'), /Rota que mais puxa a média para baixo: Rota G211/);
+    assert.ok(e.resumo);
+    await page.click('#btnResumo');
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · SV.G2.1');
+    assert.deepEqual((await colunasRs(page)).map(c => c[0]), ['Agrupador', 'SV.G2.1', 'G211', 'G212']);
+    await page.click('#rsVoltar');
+    // rota escolhida no filtro: a supervisão continua travada; sem "puxa a média"
+    await page.selectOption('#frota', 'G212');
+    e = await estado(page);
+    assert.deepEqual([e.sel, e.filtros], [['gc', 'G2', 'SV.G2.1', 'G212'], ['frota']]);
+    assert.equal(await page.innerHTML('#puxa'), '');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Rota: mesmo reconhecimento da gerência + código; Neutraliza vale; virtual e de outra gerência não; tudo travado', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    for(const [g, r, msg] of [
+      ['AN', 'A42', 'Rota A42 não está no painel da GC.AN · Anápolis.'],          // virtual
+      ['rio verde', 'r32', 'Rota R32 não está no painel da GC.RV · Rio Verde.'],   // virtual
+      ['G2', 'G111', 'Rota G111 não está no painel da GC.G2 · Goiânia 02.'],       // de outra gerência
+      ['G2', '999', 'Rota 999 não está no painel da GC.G2 · Goiânia 02.'],
+      ['G2', ' ', 'Informe o código da rota (ex.: 211).'],
+      ['xyz', 'G211', MSG_GC], ['Dianópolis', 'D11', SEM_DADOS_GC]]){
+      await entra(page, {perfil: 'rota', gc: g, rota: r});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, msg, null, null], `${g} ${r}`);
+    }
+    for(const [g, r, gc, sv, rota] of [['g2', 'g2 11', 'G2', 'SV.G2.1', 'G211'], ['Itumbiara', 'it11', 'IT', 'SV.IT.1', 'IT11'],
+      ['AT', '431', 'AT', 'Neutraliza', '431'], ['goiania 1', '151', 'G1', 'Neutraliza', '151'], ['G3', '331', 'G3', 'SV.G3.3', '331']]){
+      await entra(page, {perfil: 'rota', gc: g, rota: r});
+      const e = await estado(page);
+      assert.ok(!e.entrada, `${g} ${r}: ${e.msg}`);
+      assert.deepEqual([e.sel, e.filtros, e.resumo, e.guardado],
+                       [['gc', gc, sv, rota], [], false, {perfil: 'rota', gc, sv, rota, dia: DIA}], `${g} ${r}`);
+      await page.click('#btnCasa');
+    }
+    // G211: sem filtros nem Resumo; sem "puxa a média"; cascata card -> clientes
+    await entra(page, {perfil: 'rota', gc: 'G2', rota: 'G211'});
+    let e = await estado(page);
+    assert.ok(e.sub.endsWith('· Rota · GC.G2 · Goiânia 02 · SV.G2.1 · Supervisor · Rota G211 — Consultor G211'), e.sub);
+    assert.equal(await page.innerHTML('#puxa'), '');
+    let g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    assert.deepEqual([g.tit, g.volta, g.linhas.length], ['CCTM 2L Pet · Rota G211', '', 0]);
+    assert.ok(await page.$('#dLista .chips'), 'clientes');
+    await page.keyboard.press('Escape');
+    g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
+    assert.ok(g.clientes.length > 0);
+    await page.keyboard.press('Escape');
+    // rota Neutraliza: clientes dentro, sem Venda Zero
+    await vaiPara(page, {perfil: 'rota', gc: 'AT', rota: '431'});
+    e = await estado(page);
+    assert.ok(e.sub.endsWith('· Rota · GC.AT · Atacados · Neutraliza · Rota 431 — Consultor 431'), e.sub);
+    g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
+    assert.equal(g.clientes.length, 3);
+    await page.keyboard.press('Escape');
+    await filtra(page, {aba: 'ICS_GC'});
+    assert.ok(!(await page.$$eval('#lista .ind .tit', t => t.map(x => x.textContent))).includes('Venda Zero'));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('entrada em 390 px: botões e formulários sem rolagem lateral, campos de 16 px, sem erro no console', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, largura: 390, altura: 844});
+    const mede = () => page.evaluate(() => {
+      const caixa = el => { const b = el.getBoundingClientRect(); return [b.left, b.right, b.top, b.bottom].map(Math.round); };
+      const vis = [...document.querySelectorAll('#entrada button, #entrada input')].filter(el => el.offsetParent !== null);
+      return {largura: document.documentElement.clientWidth,
+              rolagem: [document.documentElement.scrollWidth, document.getElementById('entrada').scrollWidth],
+              caixas: vis.map(el => [el.id || el.textContent.trim(), ...caixa(el)]),
+              fontes: [...document.querySelectorAll('#entForm input')].filter(i => i.offsetParent !== null)
+                .map(i => parseFloat(getComputedStyle(i).fontSize))};
+    });
+    for(const tema of ['preta', 'branca']){
+      if(tema === 'branca') await page.click('#btnTema');
+      for(const p of ['', 'dir', 'gc', 'sv', 'rota']){
+        if(p) await page.click(`#entrada [data-perfil="${p}"]`);
+        if(p === 'rota'){ await page.fill('#entGc', 'goiania'); await page.click('#entEntrar'); }     // com o aviso
+        const m = await mede();
+        assert.equal(m.largura, 390);
+        assert.ok(m.rolagem.every(w => w <= 390), `${tema} ${p}: rolagem lateral ${m.rolagem}`);
+        assert.ok(m.caixas.length >= (p ? 4 : 5), `${tema} ${p}`);
+        for(const [nome, esq, dir, topo, base] of m.caixas)
+          assert.ok(esq >= 0 && dir <= 390 && topo >= 0 && base <= 844, `${tema} ${p} ${nome}: ${[esq, dir, topo, base]}`);
+        assert.ok(m.fontes.every(f => f >= 16), `${tema} ${p}: campos com 16 px (o celular não amplia ao tocar)`);
+        if(p) await page.click('#entOutro');
+      }
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});
+
+describe('Parte I — acesso guardado e virada diária', {skip: pular}, () => {
+  test('casa apaga o acesso; recarregar reabre os quatro perfis no mesmo contexto (demais filtros no padrão)', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    for(const [login, guardado, ctxSel, filtros] of [
+      [{perfil: 'dir', usuario: 'dicom'}, {perfil: 'dir', gc: '', sv: '', rota: ''}, ['dir', '', '', ''], ['fgc']],
+      [{perfil: 'gc', gc: 'Goiânia 02'}, {perfil: 'gc', gc: 'G2', sv: '', rota: ''}, ['gc', 'G2', '', ''], ['fsv', 'frota']],
+      [{perfil: 'sv', gc: 'it', sv: '2'}, {perfil: 'sv', gc: 'IT', sv: 'SV.IT.2', rota: ''}, ['gc', 'IT', 'SV.IT.2', ''], ['frota']],
+      [{perfil: 'rota', gc: 'at', rota: '431'}, {perfil: 'rota', gc: 'AT', sv: 'Neutraliza', rota: '431'},
+       ['gc', 'AT', 'Neutraliza', '431'], []]]){
+      await entra(page, login);
+      assert.deepEqual(JSON.parse(await guardadoTxt(page)), {...guardado, dia: DIA});
+      // mexe nos filtros livres e abre a cascata: ao recarregar, voltam ao padrão
+      if(login.perfil === 'dir') await page.selectOption('#fgc', 'IT');
+      if(login.perfil === 'gc') await page.selectOption('#fsv', 'SV.G2.2');
+      if(login.perfil === 'sv') await page.selectOption('#frota', 'IT22');
+      await page.click('.ind[data-k]');
+      await page.reload();
+      await esperaCarga(page);
+      let e = await estado(page);
+      assert.ok(!e.entrada, login.perfil);
+      assert.deepEqual([e.sel, e.filtros, e.guardado], [ctxSel, filtros, {...guardado, dia: DIA}], login.perfil);
+      assert.ok(!(await page.evaluate(() => document.getElementById('drw').classList.contains('on'))), 'cascata fechada');
+      await page.click('#btnCasa');
+      e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, '', null, null], login.perfil);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('acesso guardado que não vale mais (sem dados, saiu do payload, oculta, virtual...) volta para a entrada', async () => {
+    for(const [nome, a] of [['normal', {perfil: 'gc', gc: 'DI'}], ['semsv', {perfil: 'sv', gc: 'G2', sv: 'SV.G2.2'}],
+      ['normal', {perfil: 'sv', gc: 'G3', sv: 'SV.G3.3'}], ['normal', {perfil: 'sv', gc: 'G2', sv: 'Neutraliza'}],
+      ['normal', {perfil: 'rota', gc: 'AN', rota: 'A42'}], ['normal', {perfil: 'rota', gc: 'G2', rota: 'G111'}],
+      ['normal', {perfil: 'chefe'}]]){
+      const {page, ctx, erros} = await abre(nome, {entrar: null, antes: fixo(), armazenado: {drotas_sessao: sessao(a)}});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, INDISPONIVEL, null, null], JSON.stringify(a));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+    // controle: a SV.G2.2 vale no payload que tem ela; deixa de valer quando chega um payload novo sem ela
+    const {page, ctx, erros, fonte} = await abre('normal', {entrar: null, antes: fixo(),
+      armazenado: {drotas_sessao: sessao({perfil: 'sv', gc: 'G2', sv: 'SV.G2.2'})}});
+    let e = await estado(page);
+    assert.deepEqual([e.entrada, e.sel], [false, ['gc', 'G2', 'SV.G2.2', '']]);
+    fonte.nome = 'semsv';
+    await page.evaluate(() => recarregaPayload());
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, INDISPONIVEL, null, null]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('acesso guardado sem "dia" (ou ilegível) vale como vencido', async () => {
+    for(const s of [sessao({perfil: 'gc', gc: 'G2'}, null), '{quebrado', '"texto"']){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), armazenado: {drotas_sessao: s}});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado], [true, REINICIADO, null], s);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  test('sem localStorage (bloqueado): entrada normal a cada visita, sem erro', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: p => p.addInitScript(() => {
+      Object.defineProperty(window, 'localStorage', {get(){ throw new Error('bloqueado'); }});
+    })});
+    let e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado], [true, '', 'sem armazenamento']);
+    await entra(page, {perfil: 'sv', gc: 'G2', sv: '1'});
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.sel, e.filtros], [false, ['gc', 'G2', 'SV.G2.1', ''], ['frota']]);
+    await page.reload();
+    await esperaCarga(page);
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.acesso], [true, '', null]);
+    await page.click('#btnTema');
+    await entra(page, 'dir');
+    await page.click('#btnCasa');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('ao reabrir um acesso guardado a entrada não pisca (tela neutra de carregamento)', async () => {
+    const html = fs.readFileSync(path.join(FRONT, 'index.html'), 'utf-8');
+    assert.match(html, /<div id="entrada"[^>]*\shidden>/, 'a entrada começa escondida');
+    assert.match(html, /<div id="carga"(?![^>]*hidden)[^>]*>/, 'a tela de carga começa visível');
+    // vigia: a entrada apareceu em algum momento?
+    const vigia = p => p.addInitScript(() => {
+      window.__entradaVista = false;
+      new MutationObserver(() => { const el = document.getElementById('entrada'); if(el && !el.hidden) window.__entradaVista = true; })
+        .observe(document, {subtree: true, childList: true, attributes: true, attributeFilter: ['hidden']});
+    });
+    for(const [armazenado, vista] of [[{drotas_sessao: sessao({perfil: 'rota', gc: 'G2', rota: 'G211'})}, false], [{}, true]]){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, armazenado,
+                                                       antes: async p => { await fixo()(p); await vigia(p); }});
+      assert.equal(await page.evaluate(() => window.__entradaVista), vista, vista ? 'controle: sem acesso, a entrada aparece' : '');
+      assert.ok(await page.evaluate(() => document.getElementById('carga').hidden));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  test('?resumo= abre o Resumo sem mexer no acesso guardado; ao fechar, volta ao acesso (ou à entrada)', async () => {
+    const guardada = sessao({perfil: 'sv', gc: 'G2', sv: 'SV.G2.1'});
+    let {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), armazenado: {drotas_sessao: guardada},
+                                                   busca: '?resumo=vol,ics&modo=dir&gc=IT'});
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.IT · Itumbiara');
+    assert.equal(await guardadoTxt(page), guardada);
+    await page.click('#rsVoltar');
+    let e = await estado(page);
+    assert.deepEqual([e.entrada, e.sel, e.filtros], [false, ['gc', 'G2', 'SV.G2.1', ''], ['frota']]);
+    assert.equal(await guardadoTxt(page), guardada);
+    assert.equal(await page.evaluate(() => location.search), '');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // acesso de outro dia: o link abre sem mexer nele; ao fechar, ele vence
+    const velha = sessao({perfil: 'gc', gc: 'G2'}, '2026-10-12');
+    ({page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), armazenado: {drotas_sessao: velha},
+                                                busca: '?resumo=vol&gc=G2&sv=SV.G2.1'}));
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · SV.G2.1');
+    assert.equal(await guardadoTxt(page), velha);
+    await page.click('#rsVoltar');
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado], [true, REINICIADO, null]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // sem acesso guardado: ao fechar, a entrada
+    ({page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), busca: '?resumo=vol&gc=G1'}));
+    assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.G1 · Goiânia 01');
+    await page.click('#rsVoltar');
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado], [true, '', null]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('virada às 05:00 de Brasília nos quatro perfis, com o navegador em UTC e em America/Sao_Paulo', async () => {
+    const ACESSOS = [{perfil: 'dir'}, {perfil: 'gc', gc: 'G2'}, {perfil: 'sv', gc: 'G2', sv: 'SV.G2.1'},
+                     {perfil: 'rota', gc: 'AT', rota: '431'}];
+    for(const fuso of ['UTC', 'America/Sao_Paulo']){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, fuso, antes: fixo(new Date('2026-10-14T07:59:00Z'))});
+      assert.equal(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone), fuso);
+      const linhas = [];
+      for(const a of ACESSOS){
+        // acesso do dia 13 às 04:59 e às 05:00 de Brasília do dia 14
+        for(const hora of ['2026-10-14T07:59:00Z', '2026-10-14T08:00:00Z']){
+          await page.clock.setFixedTime(new Date(hora));
+          await page.evaluate(s => localStorage.setItem('drotas_sessao', s), sessao(a, '2026-10-13'));
+          await page.reload();
+          await esperaCarga(page);
+          const e = await estado(page);
+          linhas.push([a.perfil, hora.slice(11, 16), e.entrada, e.msg, e.acesso && e.acesso[0], e.guardado && e.guardado.dia]);
+        }
+      }
+      assert.deepEqual(linhas, ACESSOS.flatMap(a => [[a.perfil, '07:59', false, '', a.perfil, '2026-10-13'],
+                                                     [a.perfil, '08:00', true, REINICIADO, null, null]]), fuso);
+      // depois das 05:00, um acesso novo é do dia 14
+      await entra(page, {perfil: 'gc', gc: 'G2'});
+      assert.equal((await estado(page)).guardado.dia, '2026-10-14');
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  test('aba aberta atravessando as 05:00: entrada na próxima atualização do online ou ao voltar para a aba', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null,
+      antes: p => p.clock.install({time: new Date('2026-10-14T07:58:00Z')})});     // 04:58 de Brasília
+    await entra(page, {perfil: 'sv', gc: 'G2', sv: '1'});
+    let e = await estado(page);
+    assert.deepEqual([e.entrada, e.guardado.dia], [false, '2026-10-13']);
+    await page.clock.fastForward('06:00');           // 05:04: a atualização do online (a cada 5 min) confere o dia
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, REINICIADO, null, null]);
+    // acesso novo (dia 14): três horas depois, no mesmo dia de trabalho, continua (não reinicia por inatividade)
+    await entra(page, {perfil: 'rota', gc: 'G2', rota: 'G211'});
+    await page.clock.fastForward('03:00:00');
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.guardado.dia], [false, '2026-10-14']);
+    // virada com a aba em segundo plano (sem atualização do online): confere ao voltar para a aba
+    await page.clock.setSystemTime(new Date('2026-10-15T08:01:00Z'));     // 15/10 05:01 de Brasília
+    e = await estado(page);
+    assert.equal(e.entrada, false, 'ainda não conferiu');
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado], [true, REINICIADO, null]);
     assert.deepEqual(erros, []);
     await ctx.close();
   });

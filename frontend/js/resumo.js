@@ -285,9 +285,11 @@ const RS = (()=>{
     document.getElementById('rsOverlay').scrollTop = 0;
   }
   function fecha(){
+    if(!aberto) return;
     aberto = false; document.getElementById('rsOverlay').hidden = true;
     document.body.classList.remove('rs-travado');
-    if(location.search.includes('resumo=')) history.replaceState(null, '', location.pathname);
+    // Resumo aberto por link: limpa o endereço e segue como uma visita nova (acesso guardado ou entrada)
+    if(location.search.includes('resumo=')){ history.replaceState(null, '', location.pathname); entradaOuAcesso(); }
   }
   function alterna(k){
     const lig = Object.values(blocos).filter(Boolean).length;
@@ -297,7 +299,8 @@ const RS = (()=>{
     pinta();
   }
 
-  /* ---- abre direto quando vem do link (?resumo=vol,ics&gc=G2&sv=...) ---- */
+  /* ---- abre direto quando vem do link (?resumo=vol,ics&gc=G2&sv=...), sem passar pela entrada nem mexer no acesso
+     guardado ('drotas_sessao'); ao fechar, entradaOuAcesso() ---- */
   function doLink(){
     const q = new URLSearchParams(location.search);
     if(!q.has('resumo')) return;
@@ -327,5 +330,5 @@ const RS = (()=>{
     document.addEventListener('keydown', e=>{ if(e.key==='Escape' && aberto) fecha(); });
     let t; addEventListener('resize', ()=>{ clearTimeout(t); t = setTimeout(pinta, 150); });
   }
-  return {pinta, doLink, liga};
+  return {pinta, doLink, liga, fecha};
 })();

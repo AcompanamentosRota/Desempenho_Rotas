@@ -8,8 +8,8 @@ desempenho/
 ├── frontend/                 site estático (GitHub Pages)
 │   ├── index.html
 │   ├── css/app.css
-│   ├── js/config.js          URLs dos dados, intervalos, placa ATENÇÃO, CDN (com SRI)
-│   ├── js/app.js             painel (entrada, filtros, cards, cascata, busca, Desempenho GDM)
+│   ├── js/config.js          URLs dos dados, intervalos, placa ATENÇÃO, entrada (usuário, virada), CDN (com SRI)
+│   ├── js/app.js             painel (entrada com perfis, filtros, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/main.js            carga e atualização periódica dos JSONs
 │   ├── assets/, manifest.webmanifest
@@ -120,18 +120,58 @@ fechamento do mês; o cron não usa), `--fechamento "Setembro/26"` (só sobrepõ
 16 gerências, nesta ordem em todo o painel: GC.AN · Anápolis, GC.AP · Aparecida, GC.AT · Atacados, GC.G1 · Goiânia 01,
 GC.G2 · Goiânia 02, GC.G3 · Goiânia 03, GC.PA · Palmas, GC.DI · Dianópolis, GC.RV · Rio Verde, GC.SL · São Luís,
 GC.GU · Gurupi, GC.PO · Porangatu, GC.IT · Itumbiara, GC.MO · Morrinhos, GC.UR · Uruaçu e GC.RI · Rialma (lista e
-nomes em `backend/gerador/mapeamento.py`, `GC_NOMES`, enviados no payload). Não há visão por região. O painel abre na **entrada**
-(DIRETORIA ou GERÊNCIA; o botão sol/lua troca só o fundo da entrada, preto ou branco, e o aparelho guarda a
-escolha). A casa vermelha do topo volta para a entrada.
+nomes em `backend/gerador/mapeamento.py`, `GC_NOMES`, enviados no payload). Não há visão por região.
 
-- **Gerência**: filtros de gerência (as 16 em lista, as sem dados desabilitadas), supervisão e rota.
+### Entrada com perfis
+
+> **Controle de acesso interno: organiza o que cada perfil vê; NÃO é segurança — os dados estão em
+> frontend/data/*.json. A Gerência entra pela sigla ou pelo nome da filial. O acesso fica guardado no aparelho
+> até a virada do dia (05:00, horário de Brasília) ou até clicar na casa.**
+
+O painel abre na **entrada**, com quatro botões (o sol/lua troca só o fundo da entrada, preto ou branco, e o
+aparelho guarda a escolha em `drotas_entrada`):
+
+| Perfil | Pede | Abre |
+|---|---|---|
+| DIRETORIA | Usuário `DICOM` (sem senha; maiúsculas, minúsculas e espaços não importam) | a visão Diretoria |
+| GERÊNCIA | Gerência | a visão Gerência com a gerência travada (sem seletor de gerência); supervisão e rota livres |
+| SUPERVISÃO | Gerência + número da supervisão (G2 e 1 → SV.G2.1) | gerência e supervisão travadas; só o filtro das rotas dela; cascata card → rotas → clientes |
+| ROTA | Gerência + código da rota (G2 e 211, I11, M21) | gerência, supervisão e rota travadas, sem filtros e sem Resumo; cascata card → clientes |
+
+- **Gerência** (campo de texto, sem lista): a sigla (G2, AT, IT...) ou o nome da filial (Goiânia 02, Itumbiara,
+  Rio Verde...), de `GC_NOMES`. A comparação ignora acentos, maiúsculas, espaços, pontos, o prefixo "GC" e zeros
+  à esquerda ("GC.G2", "goiania 2" e "Goiânia 02" são a G2), mas tem de ser exata: "goiania" sozinho não é
+  nenhuma. Gerência sem dados no painel não entra.
+- **Supervisão** só vale se aparece no painel (não vale a SV.G3.3 nem a linha "Neutraliza"). **Rota** vale se
+  aparece no painel da gerência, inclusive rota Neutraliza; rota virtual (A42, A43, A44, R32) ou de outra gerência
+  não vale. Em todos os casos, a mensagem de erro aparece e a tela fica na entrada.
+- O cabeçalho mostra o contexto (ex.: "Supervisão · GC.G2 · Goiânia 02 · SV.G2.1 · Nome"). O "puxa a média" e o
+  Resumo seguem a lógica da visão Gerência (na Supervisão, a rota que mais puxa a média e o Resumo da supervisão;
+  na Rota, sem os dois).
+- **Acesso guardado** (`localStorage` `drotas_sessao`: perfil, gerência, supervisão, rota e o dia; nada de nomes,
+  senha ou token): recarregar a página reabre o mesmo perfil e contexto (Diretoria em "Todas as gerências"; os
+  outros filtros e a cascata voltam ao padrão), sem piscar a entrada. A **casa** vermelha apaga o acesso e volta
+  para a entrada (é a única forma manual de voltar). Sem armazenamento no aparelho, a entrada aparece a cada visita.
+- **Virada diária**: o acesso vale para o "dia de trabalho", que vira às **05:00 de Brasília** (independente do
+  fuso do aparelho; `CONFIG.SESSAO_VIRADA_HORA`). Acesso de outro dia (ou sem o dia) volta para a entrada com
+  "Acesso reiniciado, entre novamente"; com o painel aberto, isso é conferido ao voltar para a aba e a cada
+  atualização do online (não reinicia por inatividade). Acesso que não vale mais no payload (gerência sem dados,
+  supervisão ou rota que saiu) volta para a entrada com "O acesso anterior não está mais disponível".
+- **Links do Resumo** (`?resumo=...`) abrem o Resumo direto, sem passar pela entrada e sem mexer no acesso
+  guardado; ao fechar o Resumo, o painel segue como numa visita nova (o acesso guardado ou a entrada).
+
+### Telas
+
+- **Gerência**: filtros de supervisão e rota (a gerência é a do login).
 - **Diretoria**: filtro "Todas as gerências" (cards com o total das 16) ou uma gerência (cards só dela; a cascata
-  começa nas supervisões, com a linha "Neutraliza" e a nota das virtuais). A escolha não muda a Gerência e volta
-  para "Todas" ao reabrir a Diretoria.
+  começa nas supervisões, com a linha "Neutraliza" e a nota das virtuais). Volta para "Todas" ao reabrir a Diretoria.
 - **Cascata**: clicar num card abre gerências → supervisões → rotas → clientes, a partir do nível do filtro,
   com botões para subir um nível. Cada linha mostra Meta e Real, Online e meta do dia (verde quando o online
-  bate a meta do dia) e a tendência, da maior para a menor (no fechamento do mês, o % realizado). Na lista de
-  clientes de volume: Meta, Real (faturado + online de hoje), diferença e %, do mais negativo para o mais positivo.
+  bate a meta do dia) e a tendência (no fechamento do mês, o % realizado). **Ordem fixa, pelo código** (também no
+  fechamento): gerências na ordem acima; supervisões e rotas em ordem crescente natural (SV.G1.2 antes de SV.G1.10;
+  111, 112...; A11, A12...; I11...), com a linha "Neutraliza" sempre por último. Na lista de clientes de volume:
+  Meta, Real (faturado + online de hoje), diferença e %, do mais negativo para o mais positivo; listas de cobertura
+  e de Venda Zero como antes.
 - **Rotas Neutraliza** (por rota, em qualquer gerência: A41, 431, 251, I31, M31, C31, R31, S31, U31, 151, O21 e
   551): Meta e Real de Volume, ICS GC e Novos Negócios entram no total da gerência (e da Diretoria). Na cascata,
   ao abrir as supervisões de uma gerência, a última linha é **"Neutraliza"** (todas as rotas Neutraliza da
@@ -156,12 +196,14 @@ escolha). A casa vermelha do topo volta para a entrada.
   geladeira (GIRO_STATUS_MES_ATUAL): Giro Zero = vermelho "Venda Zero · x geladeira(s)"; Baixo Giro = amarelo;
   Giro Ok = preto/verde; < 30 dias = cinza, quadrinho pela venda do mês. Rede soma as lojas com geladeira.
 - **Resumo de vendas**: segue o filtro; na Diretoria com "Todas as gerências", as 16 lado a lado em faixas de 8;
-  com uma gerência no filtro, o resumo dela (gerência + supervisões). A placa ATENÇÃO existe, mas está desligada
+  com uma gerência no filtro, o resumo dela (gerência + supervisões); no perfil Supervisão, o da supervisão (e
+  das rotas dela); no perfil Rota, sem o botão. A placa ATENÇÃO existe, mas está desligada
   (`CONFIG.LIMIAR_ATENCAO = null`).
 - Rodapé: "Karen Oliveira - Inteligência de Mercado".
 
 Testes do front: `node --test frontend/tests/front.test.js` (Chromium headless com `playwright`; usa dado
-sintético gerado pelo próprio back-end em `frontend/tests/sintetico.py`).
+sintético gerado pelo próprio back-end em `frontend/tests/sintetico.py`; a virada diária é testada com o relógio
+simulado do Playwright, com o navegador em UTC e em America/Sao_Paulo).
 
 ## Volume: tendência pelo critério do SAC
 
@@ -224,3 +266,5 @@ Diferenças em relação ao arquivo que era montado à mão:
 - O secret do OAuth Client circulou em texto: peça a rotação no Datasphere e
   atualize o Secret `DATASPHERE_CLIENT_SECRET`.
 - O repositório é público: `payload.json` contém nomes e códigos de clientes.
+- A entrada com perfis (DICOM, gerência, supervisão, rota) é só organização interna, não protege os dados:
+  quem tiver o endereço de `frontend/data/*.json` lê tudo.

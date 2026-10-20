@@ -19,6 +19,11 @@ const CONFIG = Object.freeze({
   // Resumo da Diretoria: gerências por faixa (acima disso, quebra em faixas)
   RS_COLUNAS_FAIXA: 8,
   CREDITOS: 'Karen Oliveira - Inteligência de Mercado',
+  /* Controle de acesso interno: organiza o que cada perfil vê; NÃO é segurança — os dados estão em
+     frontend/data/*.json. A Gerência entra pela sigla ou pelo nome da filial. O acesso fica guardado no aparelho
+     até a virada do dia (05:00, horário de Brasília) ou até clicar na casa. */
+  USUARIO_DIRETORIA: 'DICOM',         // perfil Diretoria (sem senha; maiúsculas/minúsculas e espaços ignorados)
+  SESSAO_VIRADA_HORA: 5,              // o "dia de trabalho" do acesso guardado vira às 05:00 de Brasília
   LIMITE_LISTA: 400,
   CDN: {
     html2canvas: {
