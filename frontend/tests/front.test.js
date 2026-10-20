@@ -395,7 +395,6 @@ function lerGaveta(page){
   }));
 }
 const somaMeta = ls => ls.filter(l => !l.off).reduce((a, l) => a + l.meta, 0);
-const decrescente = xs => xs.every((x, i) => i === 0 || xs[i - 1] >= x);
 
 describe('Parte D — entrada', {skip: pular}, () => {
   test('preta por padrão, sol/lua troca e guarda; casa volta; rodapé', async () => {
@@ -449,10 +448,9 @@ describe('Parte D — cascata', {skip: pular}, () => {
     const k = 'VOL REFRIGERANTES';
     const card = await page.evaluate(k => agrega(rotasAtuais()).ind[k], k);
     let g = await cascata(page, k, 'VOLUME');
-    assert.deepEqual(g.linhas.map(l => l.nome), [...g.linhas.slice(0, 2).map(l => l.nome), 'Neutraliza']);
-    assert.deepEqual(g.linhas.map(l => l.nome).slice(0, 2).sort(), ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor']);
+    // ordem pelo código (item 1 de entrada-perfis-ordem; antes era pela tendência), "Neutraliza" por último
+    assert.deepEqual(g.linhas.map(l => l.nome), ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor', 'Neutraliza']);
     assert.ok(Math.abs(somaMeta(g.linhas) - card.meta) < 1e-6, 'linhas (com a Neutraliza) = card');
-    assert.ok(decrescente(g.linhas.slice(0, 2).map(l => l.dir)));
     assert.match(g.sub, /^Meta [\d.]+ · Real [\d.]+ · tendência \d+%$/, 'D2: números pt-BR');
     await page.click('#dCorpo .cLin[data-i="0"]');
     g = await lerGaveta(page);
@@ -600,7 +598,9 @@ describe('Parte D — cascata', {skip: pular}, () => {
     assert.equal(g.linhas.length, 16);
     assert.deepEqual(g.linhas.filter(l => l.off).map(l => l.nome), ['GC.DI · Dianópolis']);
     assert.equal(somaMeta(g.linhas), r.total);
-    assert.ok(decrescente(g.linhas.filter(l => !l.off).map(l => l.dir)));
+    // ordem fixa de GC_NOMES/GC_ATIVAS (antes: pela tendência), a DI sem dados no lugar dela
+    assert.deepEqual(g.linhas.map(l => l.nome.split(' ·')[0]), ['AN', 'AP', 'AT', 'G1', 'G2', 'G3', 'PA', 'DI', 'RV', 'SL',
+      'GU', 'PO', 'IT', 'MO', 'UR', 'RI'].map(x => 'GC.' + x));
     const iG1 = g.linhas.findIndex(l => l.nome === 'GC.G1 · Goiânia 01');
     await page.click(`#dCorpo .cLin[data-i="${iG1}"]`);
     g = await lerGaveta(page);
@@ -631,14 +631,15 @@ describe('Parte D — cascata', {skip: pular}, () => {
     await ctx.close();
   });
 
-  test('fechamento: sem tendência nem meta do dia, ordem pelo % realizado', async () => {
+  test('fechamento: sem tendência nem meta do dia, % realizado (ordem pelo código)', async () => {
     const {page, ctx, erros} = await abre('fech');
     await filtra(page, {gc: 'G1'});
     const g = await cascata(page, 'VOL REFRIGERANTES', 'VOLUME');
     const pctReal = await page.evaluate(() => [...svsVisiveis('G1').map(s => agrega(rotasNormais('G1', s))),
       agrega(rotasNeutraliza('G1'))].map(a => a.ind['VOL REFRIGERANTES'].pctReal));
     assert.deepEqual(g.linhas.map(l => l.dir).sort(), pctReal.sort());
-    assert.ok(decrescente(g.linhas.slice(0, -1).map(l => l.dir)));
+    // ordem pelo código também no fechamento (antes: pelo % realizado)
+    assert.deepEqual(g.linhas.map(l => l.nome), ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor', 'Neutraliza']);
     assert.equal(g.linhas[g.linhas.length - 1].nome, 'Neutraliza');
     assert.ok(g.linhas.every(l => /online hoje/.test(l.meio)));
     assert.match(g.sub, /realizado$/);
@@ -911,4 +912,97 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
     assert.deepEqual(erros, []);
     await ctx.close();
   });
+});
+
+/* ---------- Parte H: ordem das listas da cascata ---------- */
+/* Embaralha a G1 no navegador (só DATA): a SV.G1.2 vira SV.G1.10 com as rotas G129 e G1210 (antes G121 e G122), a
+   SV.G1.1 se divide em SV.G1.1 (G111) e SV.G1.2 (G112), as chaves ficam fora de ordem e as gerências de DATA invertidas. */
+const embaralha = page => page.evaluate(() => {
+  const g1 = DATA.G1, s1 = g1['SV.G1.1'], s2 = g1['SV.G1.2'];
+  DATA.G1 = {'SV.G1.5': g1['SV.G1.5'], 'SV.G1.10': {G1210: s2.G122, G129: s2.G121}, 'SV.G1.2': {G112: s1.G112},
+             'SV.G1.1': {G111: s1.G111}};
+  P.NOME_SUPERVISOR['SV.G1.10'] = 'SUPERVISOR G1 10';
+  DATA = Object.fromEntries(Object.entries(DATA).reverse());
+  ROTA_IDX = {};
+  for(const gc in DATA) for(const sv in DATA[gc]) for(const r in DATA[gc][sv]) ROTA_IDX[r] = [gc, sv];
+});
+/* linhas da gaveta: [nome, meta, número da direita, cor] */
+const linhasCor = page => page.$$eval('#dCorpo .cLin', ls => ls.map(l => [l.querySelector('.cNome b').textContent,
+  Number(l.dataset.meta), l.dataset.dir === '' ? null : Number(l.dataset.dir), l.classList.contains('ok') ? 'ok' : 'no']));
+/* volta para a entrada e entra no modo/perfil */
+async function vaiPara(page, modo){
+  await page.click('#btnCasa');
+  await page.click(`#entrada [data-modo="${modo}"]`);
+}
+
+describe('Parte H — ordem das listas da cascata', {skip: pular}, () => {
+  test('ordem natural dos códigos', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const r = await page.evaluate(() => [['A12', '111', 'I11', 'A11', '112', 'M21', '151'].sort(ordemNatural),
+      ['SV.G1.10', 'SV.G1.2', 'SV.G1.1', 'SV.G1.5'].sort(ordemNatural), ['G1210', 'G129', 'G2110', 'G211'].sort(ordemNatural),
+      ['sv.g1.2', 'SV.G1.02', 'SV.G1.1'].sort(ordemNatural)]);
+    assert.deepEqual(r, [['111', '112', '151', 'A11', 'A12', 'I11', 'M21'], ['SV.G1.1', 'SV.G1.2', 'SV.G1.5', 'SV.G1.10'],
+                         ['G129', 'G211', 'G1210', 'G2110'], ['SV.G1.1', 'SV.G1.02', 'sv.g1.2']]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const nome of ['normal', 'fech']){
+    test(`gerências, supervisões ("Neutraliza" por último), rotas e clientes pelo código (${nome})`, async () => {
+      const {page, ctx, erros} = await abre(nome);
+      const k = 'VOL REFRIGERANTES', ORDEM_SV = ['SV.G1.1 · Supervisor', 'SV.G1.2 · Supervisor', 'SV.G1.10 · Supervisor',
+        'Neutraliza'];
+      await embaralha(page);
+      // números diferentes por linha: pela ordem antiga (tendência / % realizado) a ordem seria outra
+      for(const [rs, f] of [[['G111'], 0.2], [['G112'], 0.6], [['G129'], 0.9], [['G1210'], 1.2], [['151'], 2]])
+        await ritmo(page, 'G1', rs, f);
+      await filtra(page, {gc: 'G1'});
+      let g = await cascata(page, k, 'VOLUME');
+      assert.deepEqual(g.linhas.map(l => l.nome), ORDEM_SV);
+      // cada linha com os números e a cor de agrega() do grupo (só a ordem muda)
+      const esperado = await page.evaluate(k => [['G111'], ['G112'], ['G129', 'G1210'], ['151']].map(rs => {
+        const b = agrega(rs).ind[k];
+        return [b.meta, P.FECHAMENTO ? b.pctReal : b.pctTendencia, b.onPace ? 'ok' : 'no'];
+      }), k);
+      assert.deepEqual((await linhasCor(page)).map(l => l.slice(1)), esperado);
+      assert.notDeepEqual([0, 1, 2].sort((a, b) => esperado[b][1] - esperado[a][1]), [0, 1, 2],
+                          'a ordem antiga (pelos números) seria outra');
+      // SV.G1.10: rotas em ordem natural (G129 antes de G1210)
+      await page.click('#dCorpo .cLin[data-i="2"]');
+      g = await lerGaveta(page);
+      assert.deepEqual(g.linhas.map(l => l.nome), ['Rota G129', 'Rota G1210']);
+      await page.click('#cVolta');
+      // clientes de volume: Meta, Real, Dif. Abs e %, do mais negativo para o mais positivo
+      await page.click('#dCorpo .cLin[data-i="0"]');
+      await page.click('#dCorpo .cLin[data-i="0"]');
+      g = await lerGaveta(page);
+      assert.deepEqual(await page.$$eval('#dCorpo .cCab span', s => s.map(x => x.textContent)),
+                       ['Cliente', 'Meta', 'Real', 'Dif. Abs', '%']);
+      assert.ok(g.clientes.length > 1 && g.clientes.every((d, i) => i === 0 || g.clientes[i - 1] <= d), 'Dif. Abs crescente');
+      await page.keyboard.press('Escape');
+      // Diretoria: gerências na ordem fixa, mesmo com DATA invertido e a RI com o maior número
+      await vaiPara(page, 'dir');
+      const gcs = ORDEM.filter(x => x !== 'DI');
+      for(const [i, gc] of gcs.entries())
+        await ritmo(page, gc, await page.evaluate(gc => rotasDe(gc, ''), gc), 0.1 + i * 0.1);
+      await filtra(page, {});
+      g = await cascata(page, k, 'VOLUME');
+      assert.deepEqual(g.linhas.map(l => l.nome), ORDEM.map(ROTULO));
+      await page.click(`#dCorpo .cLin[data-i="${ORDEM.indexOf('G1')}"]`);
+      g = await lerGaveta(page);
+      assert.deepEqual(g.linhas.map(l => l.nome), ORDEM_SV);
+      await page.keyboard.press('Escape');
+      // cobertura: lista de clientes como antes (pelo nome)
+      await filtra(page, {});
+      await vaiPara(page, 'gc');
+      await filtra(page, {gc: 'G2', sv: 'SV.G2.1', rota: 'G211'});
+      await cascata(page, 'KAPO', 'ICS_GC');
+      await page.click('#dLista .dchip[data-d="Todos"]');
+      const nomes = await page.$$eval('#dLista .item .nm', ns => ns.map(n => n.firstChild.textContent));
+      assert.ok(nomes.length > 1);
+      assert.deepEqual(nomes, [...nomes].sort((a, b) => a.localeCompare(b)));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
 });

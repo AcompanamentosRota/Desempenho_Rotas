@@ -46,6 +46,17 @@ const ehVolume = k => GROUPS.VOLUME.includes(k) || volExtras().includes(k);
 // números: volume inteiro e coberturas com até 1 casa, sempre no formato pt-BR (490.003, nunca 490002.69999)
 const fmt0 = n => Math.round(n||0).toLocaleString('pt-BR');
 const fmtN = n => (n||0).toLocaleString('pt-BR', {maximumFractionDigits:1});
+// ordem natural dos códigos: trechos numéricos pelo valor (SV.G1.2 antes de SV.G1.10; 111, 112...; A11, A12...; I11...)
+function ordemNatural(a, b){
+  const x = String(a).toUpperCase().match(/\d+|\D+/g) || [], y = String(b).toUpperCase().match(/\d+|\D+/g) || [];
+  for(let i=0; i<Math.min(x.length, y.length); i++){
+    const nx = /^\d/.test(x[i]), ny = /^\d/.test(y[i]);
+    if(nx && ny){ if(Number(x[i])!==Number(y[i])) return Number(x[i]) - Number(y[i]); continue; }
+    if(nx!==ny) return nx ? -1 : 1;
+    if(x[i]!==y[i]) return x[i] < y[i] ? -1 : 1;
+  }
+  return x.length - y.length || (a < b ? -1 : a > b ? 1 : 0);
+}
 // torna um elemento não-<button> clicável também pelo teclado (Enter/Espaço)
 function clicavel(el, fn){
   el.onclick = fn;
@@ -548,7 +559,9 @@ clicavel($('cSem'), ()=>{
    de uma gerência, a última linha é "Neutraliza" (as rotas Neutraliza juntas; dentro, as rotas e os clientes;
    fora da Venda Zero). As virtuais não têm linha, mas estão no total da gerência: uma nota discreta no fim das
    supervisões mostra só a Meta e o Real delas (sem rotas nem clientes), e linhas + nota = card.
-   Ordem: maior tendência primeiro (cobertura e Venda Zero: maior %); no fechamento, pelo % realizado. */
+   Ordem fixa, pelo código (não pelos números, também no fechamento): gerências na ordem de GC_NOMES/GC_ATIVAS;
+   supervisões e rotas em ordem natural (ordemNatural), com a "Neutraliza" sempre por último. Clientes: volume
+   pela Dif. Abs (mais negativo primeiro); cobertura e Venda Zero como antes. */
 const VOLTAR = {gc:'← Gerências', sv:'← Supervisões', rota:'← Rotas'};
 let CASC = null;     // {k, pilha:[{nivel, chave, gc, rotas, nome}]}
 
@@ -582,7 +595,7 @@ function gruposDo(ctx, k){
       filho:ctxGerencia(g)};
   });
   if(ctx.nivel==='sv'){
-    const grupos = svsVisiveis(ctx.gc).map(s=>{
+    const grupos = svsVisiveis(ctx.gc).sort(ordemNatural).map(s=>{
       const rs = rotasNormais(ctx.gc, s);
       return {nome:rotuloSv(s), rotas:rs, info:nRotas(rs), filho:{nivel:'rota', chave:s, gc:ctx.gc, rotas:rs, nome:rotuloSv(s)}};
     });
@@ -591,7 +604,7 @@ function gruposDo(ctx, k){
     if(n.rotas.length && k!=='VENDAZERO') grupos.push({nome:SV_NEUTRA, rotas:n.rotas, info:nRotas(n.rotas), fim:true, filho:n});
     return grupos;
   }
-  return ctx.rotas.filter(r=>!ehVirtual(r)).map(r=>{
+  return ctx.rotas.filter(r=>!ehVirtual(r)).sort(ordemNatural).map(r=>{
     const d = nodo(ctx.gc, r);
     return {nome:'Rota '+r, rotas:[r], info:`${titulo(d.consultor)} · ${d.baseTotal} clientes`,
       filho:{nivel:'cli', chave:r, gc:ctx.gc, rotas:[r], nome:'Rota '+r}};
@@ -660,9 +673,8 @@ function pintaCascata(){
     else if(k==='VENDAZERO') listaVendaZero(rotas);
     else listaCobertura(k, rotas);
   } else {
+    // na ordem de gruposDo (pelo código; a "Neutraliza" por último), sem reordenar pelos números
     const grupos = gruposDo(ctx, k).map(g=>({g, m: g.off ? null : metricas(k, g.rotas)}));
-    const chave = x => (x.m && x.m.dir!=null) ? x.m.dir : -Infinity;
-    grupos.sort((x,y)=> (x.g.fim?1:0)-(y.g.fim?1:0) || (x.m?0:1)-(y.m?0:1) || chave(y)-chave(x));
     $('dCorpo').innerHTML = volta + `<div class="cLista">${grupos.map((x,i)=>linhaGrupo(x.g, x.m, k, i)).join('')
       || '<div class="vazio">Nada neste filtro.</div>'}${ctx.nivel==='sv' ? notaVirtuais(k, ctx.gc) : ''}</div>`;
     $('dCorpo').querySelectorAll('.cLin[data-i]').forEach(el=>clicavel(el, ()=>{
