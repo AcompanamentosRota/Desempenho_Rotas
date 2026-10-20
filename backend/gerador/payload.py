@@ -12,6 +12,9 @@ O online.json segue a mesma regra (online_ks_tt).
 Volume (critério do SAC, modelo.indicador_volume): meta = Meta NEG, real = Vol Real, tendência =
 Vol Real + Neg Restante. No fechamento do mês (FECHAMENTO = true) todo o payload é do mês anterior:
 sem tendência e sem meta do dia, Venda Zero indisponível.
+
+Clientes em rotas EV* (Fontes.eventuais): uma rota oculta por gerência (M.rota_eventuais), sem clientes, só com o
+Real de volume (meta 0), numa supervisão própria (M.sv_eventuais); em VIRTUAIS_ROTAS e EVENTUAIS_ROTAS.
 """
 from __future__ import annotations
 
@@ -90,16 +93,21 @@ def montar_payload(f: Fontes) -> dict:
     por_rota: dict[str, dict[int, Cliente]] = defaultdict(dict)
     for c in f.clientes:
         por_rota[c.rota].setdefault(c.pv, c)
-    rotas = sorted(por_rota)
 
     info_rota = {}
     nomes_sv: dict[str, list[str]] = defaultdict(list)
-    for r in rotas:
+    for r in sorted(por_rota):
         cs = list(por_rota[r].values())
         gc = _mais_comum([c.gc for c in cs])
         sv = _mais_comum([c.sv for c in cs])
         info_rota[r] = (gc, sv, _mais_comum([c.consultor for c in cs]))
         nomes_sv[sv] += [c.nome_sv for c in cs]
+    # rota oculta com o Real dos clientes em rotas EV* (sem clientes; supervisão própria, que nunca aparece)
+    for r, gc in sorted(f.eventuais.items()):
+        info_rota[r] = (gc, M.sv_eventuais(gc), "")
+        nomes_sv[M.sv_eventuais(gc)] += []
+        por_rota[r] = {}
+    rotas = sorted(por_rota)
 
     arvore: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     for r in rotas:
@@ -258,7 +266,9 @@ def montar_payload(f: Fontes) -> dict:
         "FECHAMENTO": cal.fechamento,
         "GC_NOMES": M.GC_NOMES,
         "NEUTRALIZA_ROTAS": M.NEUTRALIZA_ROTAS,
-        "VIRTUAIS_ROTAS": M.VIRTUAIS_ROTAS,
+        # as rotas ocultas dos clientes em rotas EV* também vão em VIRTUAIS_ROTAS: o front as esconde como as virtuais
+        "VIRTUAIS_ROTAS": M.VIRTUAIS_ROTAS + sorted(f.eventuais),
+        "EVENTUAIS_ROTAS": sorted(f.eventuais),
         "OCULTAS": M.OCULTAS,
         "GC_SEM_OCULTAS": M.GC_SEM_OCULTAS,
         "VOLUME_EXTRA": M.VOLUME_EXTRA,

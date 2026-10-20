@@ -20,8 +20,8 @@ CHAVES_PAYLOAD = ["MES_LABEL", "TOTAL_DIAS_UTEIS", "DIA_ONTEM", "DIA_HOJE", "PAC
                   "COV_GRUPO", "LABELS_CURTO", "SEGS", "DIAS", "CLIENT_ROSTER", "CLIENTES_HOJE",
                   "OPORTUNIDADES_DIA", "VISITAS_DIA", "COBERTOS", "SEM_COMPRA_HOJE", "VENDAZERO_CLIENTES",
                   "COMODATO_ATIVOS", "REVERTIDO_HOJE", "OPORTUNIDADE_HOJE", "VOLUME_CLIENTE", "REDES_CLIENTE",
-                  "FONTES", "FECHAMENTO", "GC_NOMES", "NEUTRALIZA_ROTAS", "VIRTUAIS_ROTAS", "OCULTAS", "VOLUME_EXTRA",
-                  "COMODATO_CLIENTE"]
+                  "FONTES", "FECHAMENTO", "GC_NOMES", "NEUTRALIZA_ROTAS", "VIRTUAIS_ROTAS", "EVENTUAIS_ROTAS", "OCULTAS",
+                  "VOLUME_EXTRA", "COMODATO_CLIENTE"]
 
 # limites de queda em relação à versão publicada do MESMO mês de referência (MES_LABEL);
 # na virada (fechamento -> mês novo, ou mês anterior -> fechamento) a queda só gera aviso
@@ -117,8 +117,11 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
     if ks_acima:
         avisos.append(f"KS TT com real acima da base elegível (clientes que saíram da rota) em: {', '.join(ks_acima[:20])}")
 
-    # disponibilidade só nas gerências com alguma meta (as sem meta já viram aviso em _gerencias)
-    com_meta = {r: d for g in _rotas_por_gc(novo).values() if _tem_meta(g) for r, d in g.items()} or rotas
+    # disponibilidade só nas gerências com alguma meta (as sem meta já viram aviso em _gerencias); as rotas ocultas
+    # dos clientes em rotas EV* nunca têm cobertura e ficam fora da conta
+    eventuais = set(novo.get("EVENTUAIS_ROTAS") or [])
+    com_meta = {r: d for g in _rotas_por_gc(novo).values() if _tem_meta(g) for r, d in g.items()
+                if r not in eventuais} or rotas
     cob = [d["indicators"][k] for d in com_meta.values() for k in M.INDICADORES_COBERTURA]
     disp = sum(1 for b in cob if not b["unavailable"]) / max(1, len(cob))
     if disp < MIN_INDICADORES_DISPONIVEIS:
@@ -152,8 +155,11 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
             base_ant = sum(d.get("baseTotal", 0) for d in ant.values())
             base_gc = sum(d.get("baseTotal", 0) for d in nov.values())
             vol_ant, vol_novo = _volume_real(ant), _volume_real(nov)
-            if ant and len(nov) < MIN_ROTAS * len(ant):
-                quedas.append(f"{gc}: rotas caíram de {len(ant)} para {len(nov)}")
+            # nº de rotas sem as rotas ocultas dos clientes em rotas EV* (aparecem e somem com esse Real)
+            n_ant = len(set(ant) - set(anterior.get("EVENTUAIS_ROTAS") or []))
+            n_novo = len(set(nov) - eventuais)
+            if n_ant and n_novo < MIN_ROTAS * n_ant:
+                quedas.append(f"{gc}: rotas caíram de {n_ant} para {n_novo}")
             if base_ant and base_gc < MIN_CLIENTES * base_ant:
                 quedas.append(f"{gc}: clientes na base caíram de {base_ant} para {base_gc}")
             if vol_ant > 0 and vol_novo < MIN_VOLUME * vol_ant:
@@ -162,7 +168,8 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
             erros += quedas
         else:   # virada do mês de referência: só avisa
             avisos += [f"virada {anterior.get('MES_LABEL')} -> {novo['MES_LABEL']}: {q}" for q in quedas]
-        sumiram = sorted(set(rotas_ant) - set(rotas))
+        # a rota oculta dos clientes em rotas EV* some quando a gerência fica sem esse Real: não é aviso
+        sumiram = sorted(set(rotas_ant) - set(rotas) - set(anterior.get("EVENTUAIS_ROTAS") or []))
         if sumiram:
             avisos.append(f"rotas que saíram: {', '.join(sumiram[:20])}")
     return erros, avisos

@@ -25,6 +25,8 @@ const rotuloSv = sv => { const n = nomeSv(sv); return n ? `${sv} · ${n}` : sv; 
    Neutraliza: Meta e Real de Volume, ICS GC e Novos Negócios no total da gerência; na cascata e no filtro de
    supervisão aparecem juntas como "Neutraliza" (rotas e clientes dentro); fora das supervisões, do Resumo, do
    "puxa a média" e da Venda Zero (que já vem indisponível do back-end). Virtuais: ocultas em tudo, só no total.
+   Clientes em rotas EV* (EVENTUAIS_ROTAS, também em VIRTUAIS_ROTAS): uma rota oculta por gerência, só com o Real
+   de volume (meta 0), tratada como virtual; na cascata, nota própria.
    Ocultas: fora do "puxa a média" e das listas de clientes; na gerência AT nenhuma supervisão é oculta.
    CONFIG.SV_EXCLUIDOS só vale para payload antigo, sem essas chaves. */
 const SV_NEUTRA = 'Neutraliza';    // "supervisão" do filtro e da cascata que junta as rotas Neutraliza da gerência
@@ -32,6 +34,7 @@ const gcDoSv = sv => String(sv||'').split('.')[1] || '';
 const semOcultas = sv => ((P && P.GC_SEM_OCULTAS) || ['AT']).includes(gcDoSv(sv));
 const ehNeutraliza = r => ((P && P.NEUTRALIZA_ROTAS) || []).includes(r);
 const ehVirtual = r => ((P && P.VIRTUAIS_ROTAS) || []).includes(r);
+const ehEventual = r => ((P && P.EVENTUAIS_ROTAS) || []).includes(r);
 const ehNormal = r => !ehNeutraliza(r) && !ehVirtual(r);
 const ehOculta = sv => !semOcultas(sv) && ((P && P.OCULTAS) ? P.OCULTAS.includes(sv)
   : CONFIG.SV_EXCLUIDOS.includes(sv));
@@ -620,13 +623,18 @@ function gruposDo(ctx, k){
   });
 }
 
-// rotas virtuais da gerência: sem linha, rota ou cliente; só a Meta e o Real, para a conta das linhas fechar com o card
+// rotas virtuais da gerência: sem linha, rota ou cliente; só a Meta e o Real, para a conta das linhas fechar com o card.
+// Os clientes em rotas EV* (rota oculta, sem meta) têm nota própria, só com o Real.
 function notaVirtuais(k, gc){
-  const rs = rotasDe(gc, '').filter(ehVirtual);
-  const b = rs.length ? agrega(rs).ind[k] : null;
-  if(!b || b.unavailable) return '';
   const f = ehVolume(k) ? fmt0 : fmtN;
-  return `<div class="cNota" data-meta="${b.meta}" data-real="${b.real}">Inclui rotas virtuais: Meta ${f(b.meta)} · Real ${f(b.real)}</div>`;
+  const nota = (rs, texto) => {
+    const b = rs.length ? agrega(rs).ind[k] : null;
+    if(!b || b.unavailable) return '';
+    return `<div class="cNota" data-meta="${b.meta}" data-real="${b.real}">${texto(b)}</div>`;
+  };
+  const todas = rotasDe(gc, '').filter(ehVirtual);
+  return nota(todas.filter(r=>!ehEventual(r)), b => `Inclui rotas virtuais: Meta ${f(b.meta)} · Real ${f(b.real)}`)
+    + nota(todas.filter(ehEventual), b => `Inclui clientes de rotas eventuais (EV*): Real ${f(b.real)}`);
 }
 
 // números de uma linha: os mesmos de agrega()/caixaOnline() do card

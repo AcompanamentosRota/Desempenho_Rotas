@@ -11,11 +11,12 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
                                                 compras e volume de hoje (online, só pedidos 'Inc. e Exp.'),
                                                 meta (META_NEG) por cliente, segmento do cliente
   vol_real    AM_FAT_BND_ANALISE_META           rota x cliente x macro de volume x NF_STATUS (por gerência):
-                                                Vol Real = FX_VOL_PADRAO_FAT com status em M.STATUS_NF_REAL
+                                                Vol Real = FX_VOL_PADRAO_FAT com status em M.STATUS_NF_REAL;
+                                                clientes em rotas EV* também pela gerência comercial (eventuais)
   meta_neg    AM_FAT_BND_ANALISE_META           rota x macro: soma de META_NEG do mês e da parte restante
                                                 (DATA_MOVIMENTO de hoje ao fim do mês só no $filter)
-  meta_dia    AM_FAT_BND_ANALISE_META           rota x macro: META_RECUPERAVEL_ROTA com DATA_MOVIMENTO = hoje
-                                                no $filter (se der erro, repete por gerência)
+  meta_dia    AM_FAT_BND_ANALISE_META           rota da meta x macro: META_RECUPERAVEL_ROTA com DATA_MOVIMENTO =
+                                                hoje no $filter (se der erro, repete por gerência)
   metas       AM_FAT_BND_ANALISE_META           rota x agrupador da meta: meta de cobertura e META_VOLUME
                                                 (a meta de volume da rota, denominador do volume)
   metas_gc    AM_FAT_BND_ANALISE_META           META_VOLUME e META_COBERTURA do mês por rota -> gerência
@@ -224,6 +225,14 @@ class VolumeMes:
     real_gdm_cliente: dict = field(default_factory=dict)  # rota -> pv -> faturado nos agrupadores do GDM
     todos_status: dict = field(default_factory=dict)    # rota -> VOL -> soma sem filtro de status (Real antigo)
     por_status: dict = field(default_factory=dict)      # status como veio -> [linhas, volume, conta no Vol Real]
+    # gerência (sigla) -> VOL -> Vol Real dos clientes que estão em rotas EV*, pela gerência comercial do cliente
+    eventuais: dict = field(default_factory=dict)
+
+
+def _sigla_gc(valor: object) -> str | None:
+    """'Gc. An' -> 'AN'; só as siglas do painel ('Gc. Me', '--' e as agrupadas -> None)."""
+    g = M.codigo_gc(valor)
+    return g if g in M.GC_NOMES else None
 
 
 def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None) -> VolumeMes:
@@ -231,13 +240,16 @@ def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], 
 
     Agregado no servidor por rota x cliente x agrupador x status (sem dia), uma consulta por gerência.
     O status entra no $select (e não no $filter) para a comparação não depender da grafia exata.
+    Clientes em rotas EV* também vão para `eventuais`, pela gerência comercial do cliente (M.ColMeta.GC_COMERCIAL),
+    como o SAC soma; sem a coluna no $metadata, ficam fora (aviso no log).
     """
     obj = M.OBJ_META
-    sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES])
+    sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES], [CM.GC_COMERCIAL])
     filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_VOL_REAL),
                M.FILTRO_PEDIDOS_ONLINE, eq(CM.ROTA, rota) if rota else None)
     linhas = [l for ls in cons.em_paralelo(_por_gerencia(obj, sel, filtro, gcs_originais, rota)).values() for l in ls]
     vm = VolumeMes()
+    sem_gc: dict = defaultdict(float)    # Real de clientes em rotas EV* sem gerência comercial do painel
     for l in linhas:
         r, pv, ag = _rota(l.get(CM.ROTA)), inteiro(l.get(CM.CLIENTE)), l.get(CM.AGRUPADOR)
         vol, status = numero(l.get(CM.VOL_MES)), l.get(CM.NF_STATUS)
@@ -262,12 +274,47 @@ def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], 
         if pv is not None:
             rc = vm.real_cliente.setdefault(r, {}).setdefault(pv, {})
             rc[k] = rc.get(k, 0.0) + vol
+        if M.rota_eventual(r) and CM.GC_COMERCIAL in sel:
+            gc = _sigla_gc(l.get(CM.GC_COMERCIAL))
+            if gc:
+                ev = vm.eventuais.setdefault(gc, {})
+                ev[k] = ev.get(k, 0.0) + vol
+            else:
+                sem_gc[k] += vol
     fora = {s: round(v[1], 1) for s, v in vm.por_status.items() if not v[2]}
     log.info("Vol Real: %d linhas, %d rotas; status fora do Vol Real: %s", len(linhas), len(vm.real), fora or "nenhum")
+    if vm.eventuais:
+        log.info("Vol Real de clientes em rotas EV* por gerência comercial: %s",
+                 {g: {M.LABELS.get(k, k): round(v, 1) for k, v in ks.items()} for g, ks in sorted(vm.eventuais.items())})
+    if sem_gc:
+        log.warning("Vol Real de clientes em rotas EV* sem gerência comercial do painel (%s; fica fora): %s",
+                    CM.GC_COMERCIAL, {M.LABELS.get(k, k): round(v, 1) for k, v in sem_gc.items()})
+    if linhas and CM.GC_COMERCIAL not in sel:
+        log.warning("%s fora do $metadata: o Real dos clientes em rotas EV* fica fora do total da gerência.",
+                    CM.GC_COMERCIAL)
     if linhas and not vm.real:
         log.error("Nenhum NF_STATUS bateu com %s (vieram: %s). Ajuste M.STATUS_NF_REAL.",
                   M.STATUS_NF_REAL, sorted(vm.por_status))
     return vm
+
+
+def volume_eventuais(vm: VolumeMes, gc_da_rota: dict[str, str]) -> dict[str, tuple[str, dict[str, float]]]:
+    """{rota oculta (M.rota_eventuais): (gerência, {VOL: Vol Real})} dos clientes em rotas EV*.
+
+    Só nas gerências com rotas no painel e nos volumes da gerência (M.volume_extra_da_gc); o resto vai para o log.
+    Com --rota a consulta do Vol Real já vem só com a rota pedida (nunca uma EV*): fica vazio.
+    """
+    gcs_painel = set(gc_da_rota.values())
+    out = {}
+    for gc, ks in sorted(vm.eventuais.items()):
+        if gc not in gcs_painel:
+            log.warning("Real de clientes em rotas EV* da %s fica fora: gerência sem rotas no painel (%s).", gc,
+                        {M.LABELS.get(k, k): round(v, 1) for k, v in ks.items()})
+            continue
+        vols = {k: v for k, v in ks.items() if v and M.volume_extra_da_gc(k, gc)}
+        if vols:
+            out[M.rota_eventuais(gc)] = (gc, vols)
+    return out
 
 
 def ultimo_dia(d: date) -> date:
@@ -411,18 +458,33 @@ def carregar_curva_neg(cons: Consulta, anomes: str, gcs_originais: list[str], ro
 
 
 def carregar_meta_dia(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None, hoje: date) -> dict | None:
-    """META_RECUPERAVEL_ROTA com DATA_MOVIMENTO = hoje no $filter, por rota x macro (sem linha = 0).
+    """META_RECUPERAVEL_ROTA com DATA_MOVIMENTO = hoje no $filter, por rota da META x macro (sem linha = 0).
 
-    None (metaDia = null no payload) se a medida não existir ou se a consulta falhar inteira e por gerência.
+    Pela rota da meta (CD_ROTA_Chave_Meta_SAP), como o SAC: a meta de um cliente que está hoje numa rota EV* (ou
+    foi transferido) fica na rota dona da meta (pela rota do cliente, AP perdia 783 cx e PO 137 em 20/10/2026).
+    Se a consulta pela rota da meta falhar ou vier sem rota, vale a rota do cliente (regra anterior; aviso no log).
+    None (metaDia = null no payload) se a medida não existir ou se as duas consultas falharem (inteiras e por gerência).
     """
     if CM.META_RECUPERAVEL not in set(cons.colunas(M.OBJ_META)):
         log.error("%s não existe no $metadata de %s: meta do dia fica null.", CM.META_RECUPERAVEL, M.OBJ_META)
         return None
+    filtro = filtro_hoje(cons, hoje)
     try:
-        return _por_rota(cons, CM.META_RECUPERAVEL, anomes, gcs_originais, rota, filtro_hoje(cons, hoje))
+        dia = _por_rota(cons, CM.META_RECUPERAVEL, anomes, gcs_originais, rota, filtro, col_rota=CM.META_ROTA)
+        if dia:
+            return dia
+    except Exception as erro:   # noqa: BLE001
+        log.warning("%s por %s falhou (%s): usando a rota do cliente (%s).", CM.META_RECUPERAVEL, CM.META_ROTA,
+                    erro, CM.ROTA)
+    try:
+        dia = _por_rota(cons, CM.META_RECUPERAVEL, anomes, gcs_originais, rota, filtro)
     except Exception as erro:   # noqa: BLE001
         log.error("Consulta de %s falhou (%s): meta do dia fica null.", CM.META_RECUPERAVEL, erro)
         return None
+    if dia:
+        log.warning("%s por %s veio sem rota: meta do dia pela rota do cliente (%s).", CM.META_RECUPERAVEL,
+                    CM.META_ROTA, CM.ROTA)
+    return dia
 
 
 def carregar_metas(cons: Consulta, anomes: str, rota: str | None):
@@ -706,6 +768,13 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                 meta=meta, real=real or 0.0, meta_neg_clientes=nm,
                 neg_restante=None if cal.fechamento else rest,
                 meta_dia_hoje=None if meta_dia is None else meta_dia.get(r, {}).get(k, 0.0))
+    # clientes em rotas EV*: uma rota oculta por gerência com o Real deles (meta 0: só soma no total da gerência)
+    ev = volume_eventuais(vm, gc_da_rota)
+    eventuais = {r: gc for r, (gc, _) in ev.items()}
+    for r, (_, ks) in ev.items():
+        for k, real in ks.items():
+            volume[r][k] = VolumeRota(meta=0.0, real=real, neg_restante=None if cal.fechamento else 0.0,
+                                      meta_dia_hoje=None if meta_dia is None else 0.0)
     avisos = []
     if fonte_neg == ROTA_CLIENTE:
         avisos.append(f"META_NEG por {CM.META_ROTA} indisponível: Neg Restante escalonado pela curva da rota do cliente")
@@ -745,4 +814,5 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                   volume_cliente=so_painel(vol_cli), online=online,
                   vendazero=so_painel(vendazero) if vendazero is not None else None,
                   vz_meta=vz_meta, comodato_ativos=so_painel(ativos), segmento_venda=segmento, avisos=avisos,
-                  comodato_cliente=so_painel(comodato_cliente(por_cli_comodato, vm.real_gdm_cliente, virtuais)))
+                  comodato_cliente=so_painel(comodato_cliente(por_cli_comodato, vm.real_gdm_cliente, virtuais)),
+                  eventuais=eventuais)
