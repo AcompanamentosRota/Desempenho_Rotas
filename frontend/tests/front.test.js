@@ -1866,3 +1866,152 @@ describe('Parte H — ordem dentro de um grupo de gerências', {skip: pular}, ()
     });
   }
 });
+
+/* ---------- Parte K: "Meta batida!" (volume: meta do dia do nível <= 0; só rótulo e cor) ---------- */
+// põe a meta do dia (metaDia) do indicador `k` nas rotas: {rota: valor}
+const poeMetaDia = (page, k, valores) => page.evaluate(([k, v]) => {
+  for(const r in v) nodo('', r).indicators[k].metaDia = v[r];
+}, [k, valores]);
+// caixa Online do card: classe, número e rótulo
+const caixaCard = (page, k) => page.$eval(`.ind[data-k="${k}"] .obox`, el => ({
+  cls: el.className, num: el.querySelector('b').textContent, rot: el.querySelector('span').textContent.trim()}));
+// meio das linhas da gaveta: [nome, classe da caixa do online, número, rótulo de baixo, data-meta, data-real]
+// (sem as linhas "sem dados", que não têm números)
+const meioLinhas = page => page.$$eval('#dCorpo .cLin:not(.off)', ls => ls.map(l => [l.querySelector('.cNome b').textContent,
+  l.querySelector('.cOn').className, l.querySelector('.cOn').textContent, l.querySelector('.cMeio small').textContent,
+  Number(l.dataset.meta), Number(l.dataset.real)]));
+const fmtPt = n => Math.round(n).toLocaleString('pt-BR');
+const onlineDe = (page, k, rs) => page.evaluate(([k, rs]) => rs.reduce((a, r) => a + ((ONLINE.volume[r] || {})[k] || 0), 0), [k, rs]);
+const mdCard = (page, k) => page.evaluate(k => agrega(rotasAtuais()).ind[k].metaDia, k);
+
+describe('Parte K — "Meta batida!"', {skip: pular}, () => {
+  test('card, linhas de supervisão e rota, "Neutraliza", total somado e Diretoria; online mostrado e somado; valores iguais', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}, antes: fixo()});
+    const k = 'VOL REFRIGERANTES', online = rs => onlineDe(page, k, rs);
+    await filtra(page, {aba: 'VOLUME'});
+    // como hoje: meta do dia > 0 e online abaixo dela = vermelho com "meta do dia X"
+    let c = await caixaCard(page, k), md = await mdCard(page, k);
+    const onl = await online(['G111', 'G112', 'G121', 'G122', '151']);
+    assert.ok(md > onl && onl > 0, `${md} ${onl}`);
+    assert.deepEqual([c.cls, c.num, c.rot], ['obox no', fmtPt(onl), `meta do dia ${fmtPt(md)}`]);
+    // SV.G1.1 (0 e -5) e a Neutraliza 151 (-1) batidas; SV.G1.2 não; o total da G1 continua > 0
+    await poeMetaDia(page, k, {G111: 0, G112: -5, 151: -1});
+    await filtra(page, {});
+    md = await mdCard(page, k);
+    assert.ok(md > 0);
+    c = await caixaCard(page, k);
+    assert.deepEqual([c.cls, c.num, c.rot], [onl >= md ? 'obox ok' : 'obox no', fmtPt(onl), `meta do dia ${fmtPt(md)}`],
+                     'total > 0: como antes (verde só se o online bate)');
+    let g = await cascata(page, k, 'VOLUME');
+    const sv2 = await page.evaluate(k => agrega(['G121', 'G122']).ind[k], k);
+    assert.deepEqual(await meioLinhas(page), [
+      ['SV.G1.1 · Supervisor', 'cOn ok', fmtPt(await online(['G111', 'G112'])), 'Meta batida!', g.linhas[0].meta, g.linhas[0].real],
+      ['SV.G1.2 · Supervisor', 'cOn no', fmtPt(await online(['G121', 'G122'])), `meta do dia ${fmtPt(sv2.metaDia)}`,
+       sv2.meta, sv2.real],
+      ['Neutraliza', 'cOn ok', fmtPt(await online(['151'])), 'Meta batida!', g.linhas[2].meta, g.linhas[2].real]]);
+    // rotas da SV.G1.1: a G111 (0) e a G112 (-5) batidas, cada uma com o seu online
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    assert.deepEqual((await meioLinhas(page)).map(l => l.slice(0, 4)),
+      [['Rota G111', 'cOn ok', fmtPt(await online(['G111'])), 'Meta batida!'],
+       ['Rota G112', 'cOn ok', fmtPt(await online(['G112'])), 'Meta batida!']]);
+    await page.keyboard.press('Escape');
+    // total somado <= 0 com resíduo de decimais (0,1 + 0,2 - 0,3): card verde, "Meta batida!" e o online de todas as rotas
+    await poeMetaDia(page, k, {G111: 0.1, G112: 0.2, G121: -0.3, G122: 0, 151: 0});
+    await filtra(page, {});
+    md = await mdCard(page, k);
+    assert.ok(md !== 0 && Math.abs(md) < 1e-9, `soma com resíduo: ${md}`);
+    c = await caixaCard(page, k);
+    assert.deepEqual([c.cls, c.num, c.rot], ['obox ok', fmtPt(onl), 'Meta batida!']);
+    // os números não mudam: metaDia somada como sempre (sem virar 0), Meta, Real, Diferença e % do card
+    await poeMetaDia(page, k, {G111: 0, G112: -5, G121: -40, G122: -60, 151: -1});
+    const antes = await page.evaluate(() => JSON.stringify([P, ONLINE]));
+    await filtra(page, {});
+    const card = await page.evaluate(k => ({b: agrega(rotasAtuais()).ind[k],
+      cl: document.querySelector(`.ind[data-k="${k}"] .cl`).textContent.replace(/\s+/g, ' ').trim(),
+      big: document.querySelector(`.ind[data-k="${k}"] .big`).textContent}), k);
+    assert.equal(card.b.metaDia, -106);
+    assert.equal(card.cl, `Meta ${fmtPt(card.b.meta)} Real ${fmtPt(card.b.real)} Diferença ${fmtPt(card.b.real - card.b.meta)}`);
+    assert.equal(card.big, `${card.b.onPace ? '▲' : '▼'}${card.b.pctTendencia}%`);
+    assert.deepEqual(await caixaCard(page, k), {cls: 'obox ok', num: fmtPt(onl), rot: 'Meta batida!'});
+    // Diretoria: só a linha da G1 (meta do dia somada <= 0) muda
+    await vaiPara(page, 'dir');
+    g = await cascata(page, k, 'VOLUME');
+    const linhas = await meioLinhas(page);
+    assert.deepEqual(linhas.find(l => l[0] === 'GC.G1 · Goiânia 01').slice(1, 4), ['cOn ok', fmtPt(onl), 'Meta batida!']);
+    assert.ok(linhas.filter(l => l[0] !== 'GC.G1 · Goiânia 01').every(l => /^meta do dia /.test(l[3])), 'as outras como antes');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => JSON.stringify([P, ONLINE])), antes, 'o front não altera nenhum valor do payload');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Del Valle Frut e grupo; meta do dia > 0 (verde ao bater) e sem meta do dia como antes', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G2'}, antes: fixo()});
+    await filtra(page, {aba: 'VOLUME'});
+    const dv = 'VOL DEL VALLE FRUT', k = 'VOL REFRIGERANTES';
+    const rotas = await page.evaluate(dv => rotasAtuais().filter(r => nodo('', r).indicators[dv]), dv);
+    assert.ok(rotas.length >= 4);
+    await poeMetaDia(page, dv, Object.fromEntries(rotas.map(r => [r, 0])));
+    await filtra(page, {});
+    const onlDv = await onlineDe(page, dv, rotas);
+    assert.ok(onlDv > 0);
+    assert.deepEqual(await caixaCard(page, dv), {cls: 'obox ok', num: fmtPt(onlDv), rot: 'Meta batida!'});
+    let g = await cascata(page, dv, 'VOLUME');
+    assert.ok((await meioLinhas(page)).every(l => l[1] === 'cOn ok' && l[3] === 'Meta batida!'));
+    await page.keyboard.press('Escape');
+    // meta do dia > 0 e online acima dela: verde com "meta do dia X" (como hoje)
+    const todas = await page.evaluate(() => rotasAtuais());
+    await poeMetaDia(page, k, Object.fromEntries(todas.map(r => [r, 1])));
+    await filtra(page, {});
+    const onl = await onlineDe(page, k, todas);
+    assert.ok(onl >= todas.length);
+    assert.deepEqual(await caixaCard(page, k), {cls: 'obox ok', num: fmtPt(onl), rot: `meta do dia ${todas.length}`});
+    // sem meta do dia (META_RECUPERAVEL_ROTA ausente): "meta do dia —", cinza (como hoje)
+    await poeMetaDia(page, k, Object.fromEntries(todas.map(r => [r, null])));
+    await filtra(page, {});
+    assert.deepEqual(await caixaCard(page, k), {cls: 'obox nd', num: fmtPt(onl), rot: 'meta do dia —'});
+    g = await cascata(page, k, 'VOLUME');
+    assert.ok((await meioLinhas(page)).every(l => l[1] === 'cOn nd' && l[3] === 'meta do dia —'));
+    await page.keyboard.press('Escape');
+    // grupo IT+MO: a IT batida (total da IT <= 0), a MO não; o total do grupo segue a soma das duas
+    await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
+    await filtra(page, {aba: 'VOLUME'});
+    const it = await page.evaluate(() => rotasDe('IT', ''));
+    await poeMetaDia(page, k, Object.fromEntries(it.map(r => [r, -1000])));
+    await filtra(page, {});
+    assert.ok(await mdCard(page, k) <= 0);
+    assert.equal((await caixaCard(page, k)).rot, 'Meta batida!');
+    await cascata(page, k, 'VOLUME');
+    assert.deepEqual((await meioLinhas(page)).map(l => [l[0].split(' ·')[0], l[3] === 'Meta batida!']),
+      [['SV.IT.1', true], ['SV.IT.2', true], ['SV.MO.1', false], ['SV.MO.2', false], ['Neutraliza', true]]);
+    await page.keyboard.press('Escape');
+    await page.selectOption('#fgc', 'MO');
+    assert.match((await caixaCard(page, k)).rot, /^meta do dia \d/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('coberturas sem mudança (mesmo com meta 0) e fechamento sem "Meta batida!"', async () => {
+    let {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}, antes: fixo()});
+    await page.evaluate(() => { for(const r of rotasAtuais()) Object.assign(nodo('', r).indicators['CCTM 2L PET'], {meta: 0}); });
+    await filtra(page, {aba: 'ICS_GC'});
+    assert.doesNotMatch(await page.textContent('#lista'), /Meta batida/);
+    assert.equal((await caixaCard(page, 'CCTM 2L PET')).rot, 'no ritmo');
+    await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    assert.ok((await meioLinhas(page)).every(l => l[3] === 'meta do dia 0'), 'cobertura: rótulo de sempre');
+    await page.keyboard.press('Escape');
+    await ctx.close();
+    assert.deepEqual(erros, []);
+    // fechamento: metaDia null (mesmo com valores <= 0 nas rotas) -> "online hoje", como antes
+    ({page, ctx, erros} = await abre('fech', {entrar: {perfil: 'gc', gc: 'G1'}}));
+    const k = 'VOL REFRIGERANTES';
+    await poeMetaDia(page, k, Object.fromEntries((await page.evaluate(() => rotasAtuais())).map(r => [r, -5])));
+    await filtra(page, {aba: 'VOLUME'});
+    assert.deepEqual([(await caixaCard(page, k)).cls, (await caixaCard(page, k)).rot], ['obox nd', 'online hoje']);
+    await cascata(page, k, 'VOLUME');
+    assert.ok((await meioLinhas(page)).every(l => l[1] === 'cOn nd' && l[3] === 'online hoje'));
+    assert.doesNotMatch(await page.textContent('body'), /Meta batida/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});

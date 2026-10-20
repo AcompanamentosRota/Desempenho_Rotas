@@ -508,6 +508,10 @@ function linha(k, b, rotas){
 
 // número grande da caixa Online: a fonte é ajustada por encaixa() à largura real da caixa
 const numObox = txt => `<b data-fit="23" data-fit-min="10">${txt}</b>`;
+/* Volume: meta do dia do nível (já somada) <= 0 = "Meta batida!" e caixa do Online verde. Só o rótulo e a cor: o
+   número do online e todos os valores seguem iguais. Resíduo de soma de decimais (ex.: 1e-14) conta como zero. */
+const META_BATIDA = 'Meta batida!';
+const metaBatida = md => md!=null && md <= 1e-9;
 
 function caixaOnline(k, rotas, b){
   if(k==='VENDAZERO'){
@@ -520,10 +524,10 @@ function caixaOnline(k, rotas, b){
     if(b.metaDia==null)   // fechamento do mês (online de hoje, sem meta do dia) ou META_RECUPERAVEL_ROTA ausente
       return `<div class="obox nd">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
         <span>${P.FECHAMENTO?'online hoje':'meta do dia —'}</span></div>`;
-    const metaDia = b.metaDia;
-    const ok = volHoje >= metaDia;
+    const metaDia = b.metaDia, batida = metaBatida(metaDia);
+    const ok = batida || volHoje >= metaDia;
     return `<div class="obox ${ok?'ok':'no'}">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
-      <span>meta do dia ${Math.round(metaDia).toLocaleString('pt-BR')}</span></div>`;
+      <span>${batida ? META_BATIDA : 'meta do dia '+Math.round(metaDia).toLocaleString('pt-BR')}</span></div>`;
   }
   // Meta do dia: fora do ritmo é o próprio "faltam X"; no ritmo é teto(Meta / dias úteis).
   const fatia = b.meta ? Math.ceil(b.meta/P.TOTAL_DIAS_UTEIS) : 0;
@@ -685,10 +689,11 @@ function linhaGrupo(g, m, k, i){
   if(!m) return `<div class="cLin off"><div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
     <div class="cInd">${g.off ? 'sem dados' : 'indisponível'}</div></div>`;
   const {b, onl, md, dir} = m, vz = k==='VENDAZERO', f = ehVolume(k) ? fmt0 : fmtN;
-  const cor = vz ? 'ok' : (md==null ? 'nd' : (onl>=md ? 'ok' : 'no'));
+  const batida = ehVolume(k) && metaBatida(md);      // volume com a meta do dia da linha <= 0 (coberturas não mudam)
+  const cor = vz ? 'ok' : (md==null ? 'nd' : (batida || onl>=md ? 'ok' : 'no'));
   const meio = vz ? `<span class="cOn ok">${fmtN(onl)}</span><small>revertidos hoje</small>`
     : `<span class="cOn ${cor}">${f(onl)}</span><small>${md==null ? (P.FECHAMENTO ? 'online hoje' : 'meta do dia —')
-                                                        : 'meta do dia '+f(md)}</small>`;
+                                                        : batida ? META_BATIDA : 'meta do dia '+f(md)}</small>`;
   const rot = ehVolume(k) ? (P.FECHAMENTO ? 'realizado' : 'tendência') : 'do mês';
   return `<div class="cLin ${b.onPace?'ok':'no'}" role="button" tabindex="0" data-i="${i}"
       data-meta="${b.meta}" data-real="${b.real}" data-dir="${dir==null?'':dir}">
