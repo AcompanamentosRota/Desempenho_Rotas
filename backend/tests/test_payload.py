@@ -50,9 +50,18 @@ class TestIdaEVolta(unittest.TestCase):
         self.assertEqual([k for k in self.g if k not in CHAVES_NOVAS], list(self.p))
         self.assertFalse(self.g["FECHAMENTO"])
         for k in ["MES_LABEL", "TOTAL_DIAS_UTEIS", "DIA_ONTEM", "DIA_HOJE", "PACE_ONTEM_PCT", "SEMANA_NUM",
-                  "SEMANA_TIPO", "DIA_SEMANA", "NOME_SUPERVISOR", "LABELS", "GROUPS", "COV_GRUPO",
-                  "LABELS_CURTO", "SEGS", "DIAS", "FONTES"]:
+                  "SEMANA_TIPO", "DIA_SEMANA", "NOME_SUPERVISOR", "COV_GRUPO", "SEGS", "DIAS", "FONTES"]:
             self.assertEqual(self.g[k], self.p[k], k)
+        # LABELS, LABELS_CURTO e GROUPS: os do arquivo antigo + só o que a aba Incentivo acrescentou
+        inc = set(M.INDICADORES_INCENTIVO)
+        for k in ["LABELS", "LABELS_CURTO"]:
+            self.assertEqual({c: v for c, v in self.g[k].items() if c not in inc}, self.p[k], k)
+            self.assertEqual({c: self.g[k][c] for c in M.INDICADORES_INCENTIVO},
+                             {"INC HEINEKEN": "Heineken", "INC EISENBAHN 600ML": "Eisenbahn - 600ml",
+                              "INC HEINEKEN 600ML": "Heineken - 600ml"}, k)
+        self.assertEqual({c: v for c, v in self.g["GROUPS"].items() if c != "INCENTIVO"}, self.p["GROUPS"])
+        self.assertEqual(self.g["GROUPS"]["INCENTIVO"], ["CERVEJAS", "INC HEINEKEN", "INC EISENBAHN 600ML",
+                                                         "INC HEINEKEN 600ML", "CERVEJAS 600ML RETORNAVEL"])
         # as mesmas gerências, agora na ordem de M.GC_NOMES (a amostra é da ordem antiga: G1, G2, G3, AP, IT, MO)
         self.assertEqual(sorted(self.g["GC_ATIVAS"]), sorted(self.p["GC_ATIVAS"]))
         self.assertEqual(self.g["GC_ATIVAS"], ["AP", "G1", "G2", "G3", "IT", "MO"])

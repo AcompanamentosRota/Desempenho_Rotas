@@ -6,7 +6,8 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
   calendario  AM_BND_MTR_CALENDARIO_DATA_ATUAL  dias úteis do mês / dia útil de hoje
   base        AM_BND_BASE_CLIENTE               versão corrente dos clientes ativos das gerências do
                                                 painel: rota, visita de hoje, supervisor, vendedor, rede
-  vendas      AM_FAT_BND_ANALISE_META           rota x cliente x agrupador (só os 17 agrupadores do painel;
+  vendas      AM_FAT_BND_ANALISE_META           rota x cliente x agrupador (os 17 agrupadores do painel, os
+                                                extras de volume/GDM e os 3 do incentivo, M.AGRUPADORES_CONSULTA_VENDAS;
                                                 uma consulta por gerência, em paralelo): cobertura do mês,
                                                 compras e volume de hoje (online, só pedidos 'Inc. e Exp.'),
                                                 meta (META_NEG) por cliente, segmento do cliente
@@ -487,17 +488,36 @@ def carregar_meta_dia(cons: Consulta, anomes: str, gcs_originais: list[str], rot
     return dia
 
 
+def carregar_metas_incentivo(cons: Consulta, anomes: str, rota: str | None) -> list[dict]:
+    """META_COBERTURA dos 3 agrupadores do incentivo por rota (consulta à parte, só rota, agrupador e META_COBERTURA).
+
+    Se falhar, o resto do painel segue: os itens do incentivo ficam sem meta ("Sem meta" na aba) e vai aviso no log.
+    """
+    try:
+        return cons.linhas(M.OBJ_META, _colunas(cons, M.OBJ_META, [CM.META_ROTA, CM.META_AGRUPADOR, CM.META_COBERTURA]),
+                           e(eq(CM.META_ANOMES, anomes), ou(CM.META_AGRUPADOR, M.AGRUPADORES_METAS_INCENTIVO),
+                             eq(CM.META_ROTA, rota) if rota else None))
+    except ErroMapeamento:
+        raise
+    except Exception as erro:   # noqa: BLE001
+        log.warning("Metas do incentivo (Todos a Bordo 3.0) indisponíveis (%s): os itens ficam sem meta.", erro)
+        return []
+
+
 def carregar_metas(cons: Consulta, anomes: str, rota: str | None):
     """Metas por rota x agrupador: cobertura {rota: {ind: meta}} e META_VOLUME {rota: {VOL: meta}}.
 
-    META_VOLUME é a meta de volume da rota (denominador do volume, como no SAC).
+    META_VOLUME é a meta de volume da rota (denominador do volume, como no SAC). A meta de cobertura do incentivo
+    (chaves INC) vem de carregar_metas_incentivo, em paralelo, com a mesma regra (o maior valor por rota).
     """
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.META_ROTA, CM.META_AGRUPADOR, CM.META_COBERTURA, CM.META_VOLUME], [CM.META_NEG])
     f_rota = eq(CM.META_ROTA, rota) if rota else None
-    linhas = cons.linhas(obj, sel, e(eq(CM.META_ANOMES, anomes),
-                                     ou(CM.META_AGRUPADOR, M.AGRUPADORES_ORIGEM + list(M.AGRUPADORES_VOLUME_EXTRA.values())),
-                                     f_rota))
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_inc = ex.submit(carregar_metas_incentivo, cons, anomes, rota)
+        linhas = cons.linhas(obj, sel, e(eq(CM.META_ANOMES, anomes), ou(CM.META_AGRUPADOR, M.AGRUPADORES_CONSULTA_METAS),
+                                         f_rota))
+        linhas = linhas + f_inc.result()
     metas: dict = defaultdict(dict)
     metas_vol: dict = defaultdict(dict)
     for l in linhas:

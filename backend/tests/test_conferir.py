@@ -867,15 +867,16 @@ class TestSecaoE8(unittest.TestCase):
         self.assertIn("| AP | 4 | 1 | 1 |", self.txt)                              # Cervejas 600ml: A12 com meta 0
 
     def test_e8d_online(self):
-        self.assertIn("| Heineken | 'Heineken' | **não** | **não** | 1 | 0 | 0 | 0 | 0 | 0 | 1 |", self.txt)
+        # desde a aba Incentivo, a Heineken está na consulta de vendas e vira o indicador INC HEINEKEN
+        self.assertIn("| Heineken | 'Heineken' | sim | INC HEINEKEN | 1 | 0 | 0 | 0 | 0 | 0 | 1 |", self.txt)
         self.assertIn("| Cervejas | 'Cervejas' | sim | CERVEJAS | 0 | 0 | 1 | 0 | 0 | 0 | 1 |", self.txt)
-        self.assertIn("- Heineken (`Heineken`): faltaria entrar em M.AGRUPADORES_COBERTURA com uma chave (ex.: INC HEINEKEN)",
-                      self.txt)
+        self.assertNotIn("- Heineken (`Heineken`): faltaria", self.txt)
         self.assertNotIn("- Cervejas (`Cervejas`): faltaria", self.txt)
 
     def test_e8e_e_e8f(self):
         self.assertIn("| Heineken | 'Heineken' | 2 | 0 | 0 | 0 | 0 | 0 | 2 |", self.txt)
-        self.assertIn("| Heineken | 'Heineken' | INC HEINEKEN | sim (5 rotas) | sim (1 clientes hoje) | também existe: "
+        self.assertIn("| Heineken | 'Heineken' | INC HEINEKEN | sim (5 rotas) | sim (1 clientes hoje) | já é o indicador "
+                      "INC HEINEKEN do painel; também existe: "
                       "'HEINEKEN - 600ML VR'; portfólio (maioria das rotas normais) BARRACUDA: AP, G1, G2 "
                       "(supervisões diferentes da gerência: SV.G2.1 FULL) |", self.txt)
         self.assertIn("| Eisenbahn 600ml | **não encontrado** | INC EISENBAHN 600ML | não | não | sem agrupador na venda |",

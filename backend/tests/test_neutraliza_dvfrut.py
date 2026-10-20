@@ -221,7 +221,8 @@ class TestDelValleFrut(unittest.TestCase):
         self.assertTrue(any("indicadores fora do padrão" in e for e in validar_payload(ruim)[0]))
 
     def test_consulta_de_vendas_com_os_extras_e_compras_so_dos_17(self):
-        self.assertEqual(len(M.AGRUPADORES_CONSULTA_VENDAS), 20)
+        # os 17 + Del Valle Frut, Sucos e Ades + os 3 do incentivo (aba Incentivo)
+        self.assertEqual(len(M.AGRUPADORES_CONSULTA_VENDAS), 20 + len(M.AGRUPADORES_INCENTIVO))
         # cliente 3001 só comprou Refrigerantes e DV: conta como comprou (Refrigerantes é do painel)
         self.assertEqual(self.p["DATA"]["G2"]["SV.G2.1"]["211"]["compraram"], 1)
         d = _dados_dv()

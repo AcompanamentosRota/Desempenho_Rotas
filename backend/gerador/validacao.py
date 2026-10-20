@@ -60,6 +60,16 @@ def _gerencias(novo: dict) -> list[str]:
     return avisos
 
 
+def _incentivo(p: dict) -> list[str]:
+    """Aba Incentivo: aviso só para o item sem meta em NENHUMA rota da BAND. Gerência sem meta do item (BARRACUDA não
+    tem meta de Heineken) não é erro nem aviso."""
+    rotas = _rotas(p)
+    return [f"Incentivo: {M.LABELS.get(k, k)} sem meta em nenhuma rota da BAND (o item fica \"Sem meta\" em todo o painel)"
+            for k in M.GROUPS["INCENTIVO"]
+            if not any(not b.get("unavailable", True) and (b.get("meta") or 0) > 0
+                       for b in ((d.get("indicators") or {}).get(k) or {"unavailable": True} for d in rotas.values()))]
+
+
 def _volume_real(rotas: dict) -> float:
     return sum((d.get("indicators", {}).get(k) or {}).get("real") or 0 for d in rotas.values() for k in M.INDICADORES_VOLUME)
 
@@ -142,6 +152,7 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
     if not novo["FECHAMENTO"] and vol and all(b.get("metaDia") is None for b in vol if not b["unavailable"]):
         avisos.append("meta do dia do volume indisponível (META_RECUPERAVEL_ROTA não veio): metaDia = null")
     avisos += _gerencias(novo)
+    avisos += _incentivo(novo)
     if sum(novo["VISITAS_DIA"]["geral"].values()) == 0:
         avisos.append("nenhuma visita agendada hoje (fim de semana/feriado ou VISITA_HOJE mudou?)")
 

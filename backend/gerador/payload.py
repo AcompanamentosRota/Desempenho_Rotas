@@ -70,18 +70,36 @@ def _filtra_ks_tt(por_ind: dict[str, set[int]], seg_roster: dict[int, int], ks_t
     return {k: {pv for pv in pvs if elegivel(pv)} if k == "KS TT" else set(pvs) for k, pvs in por_ind.items()}
 
 
+def sem_incentivo(por_ind: dict) -> list[set]:
+    """Clientes por indicador sem as chaves INC do incentivo: "qualquer compra hoje" (revertido da Venda Zero, sem
+    compra hoje) continua só com os 17 agrupadores do painel."""
+    return [v for k, v in por_ind.items() if k not in M.INDICADORES_INCENTIVO]
+
+
+def _rotas_com_meta_incentivo(p: dict | None) -> dict[str, set[str]]:
+    """{rota: chaves INC com meta} pelo payload (sem payload: nenhuma)."""
+    out: dict[str, set[str]] = {}
+    for svs in (p or {}).get("DATA", {}).values():
+        for rotas in svs.values():
+            for r, d in rotas.items():
+                out[r] = {k for k in M.INDICADORES_INCENTIVO if not (d["indicators"].get(k) or {"unavailable": True})["unavailable"]}
+    return out
+
+
 def online_ks_tt(o: Online, p: dict | None, segmento_venda: dict[int, str]) -> Online:
     """Online por indicador com a mesma regra do COBERTOS, pelo roster do payload `p`
-    (sem payload, vale só o segmento da venda).
+    (sem payload, vale só o segmento da venda). As chaves INC do incentivo só nas rotas com meta do item no payload.
 
-    QUALQUER (revertido do Venda Zero, sem compra hoje) continua com todo PV que comprou hoje.
+    QUALQUER (revertido do Venda Zero, sem compra hoje) continua com todo PV que comprou hoje (nos 17 agrupadores).
     """
     ks_tt = _indices_ks_tt(p["SEGS"]) if p else set()
+    com_meta = _rotas_com_meta_incentivo(p)
     clientes, qualquer = {}, dict(o.qualquer)
     for r, por_ind in o.clientes.items():
         seg_roster = {c[0]: c[2] for c in p["CLIENT_ROSTER"].get(r, [])} if p else {}
-        clientes[r] = _filtra_ks_tt(por_ind, seg_roster, ks_tt, segmento_venda)
-        qualquer[r] = set(o.qualquer.get(r, set())).union(*por_ind.values())
+        clientes[r] = {k: v for k, v in _filtra_ks_tt(por_ind, seg_roster, ks_tt, segmento_venda).items()
+                       if k not in M.INDICADORES_INCENTIVO or k in com_meta.get(r, ())}
+        qualquer[r] = set(o.qualquer.get(r, set())).union(*sem_incentivo(por_ind))
     return replace(o, clientes=clientes, qualquer=qualquer)
 
 
@@ -129,7 +147,7 @@ def montar_payload(f: Fontes) -> dict:
     vz_ativo = f.vendazero is not None
     vendazero_clientes, revertido_hoje, oportunidade_hoje = {}, {}, {}
     for r in rotas:
-        qualquer = f.online.qualquer.get(r, set()) | set().union(*f.online.clientes.get(r, {}).values())
+        qualquer = f.online.qualquer.get(r, set()) | set().union(*sem_incentivo(f.online.clientes.get(r, {})))
         lista = []
         for e in sorted((f.vendazero or {}).get(r, []), key=lambda e: (e.pv, e.tipo)):
             lista.append({
@@ -168,9 +186,11 @@ def montar_payload(f: Fontes) -> dict:
 
                 ind = {}
                 metas_rota = f.metas.get(r, {})
+                # "rota tem meta" (real informado nos indicadores sem meta) continua só pelo ICS/NN, sem o incentivo
+                tem_meta_cob = any(k not in M.INDICADORES_INCENTIVO for k in metas_rota)
                 for k in M.INDICADORES_COBERTURA:
                     ind[k] = modelo.indicador_cobertura(metas_rota.get(k), len(cob.get(k, ())), cal,
-                                                        rota_tem_meta=bool(metas_rota))
+                                                        rota_tem_meta=tem_meta_cob)
                 ind["IMPERDOAVEIS"] = modelo.cobertura_indisponivel()
                 vz_lista = vendazero_clientes.get(r, [])
                 ind["VENDAZERO"] = modelo.indicador_vendazero(
@@ -178,12 +198,26 @@ def montar_payload(f: Fontes) -> dict:
                     revertido_hoje[r], oportunidade_hoje[r])
                 vol_online = f.online.volume.get(r)
                 # volume extra (Del Valle Frut): só quando a montagem trouxe o dado (gerências de M.VOLUME_EXTRA)
-                ks_vol = M.INDICADORES_VOLUME + [k for k in M.INDICADORES_VOLUME_EXTRA if k in f.volume.get(r, {})]
-                for k in ks_vol:
+                extras = [k for k in M.INDICADORES_VOLUME_EXTRA if k in f.volume.get(r, {})]
+                ks_vol = M.INDICADORES_VOLUME + extras
+
+                def volume_ind(k):
                     v = f.volume.get(r, {}).get(k)
                     sem_dado = bool(v is not None and v.meta is not None and round(v.real, 1) == 0
                                     and vol_online is not None and k not in vol_online)
-                    ind[k] = modelo.indicador_volume(v, cal, sem_dado)
+                    return modelo.indicador_volume(v, cal, sem_dado)
+
+                for k in M.INDICADORES_VOLUME:
+                    ind[k] = volume_ind(k)
+                # incentivo (chaves INC): como o ICS, mas rota sem meta do item (ou com meta 0) fica indisponível
+                # com meta e real null; o volume extra continua no fim do nó
+                for k in M.INDICADORES_INCENTIVO:
+                    meta = metas_rota.get(k)
+                    ind[k] = (modelo.indicador_cobertura(meta, len(cob.get(k, ())), cal) if meta
+                              else modelo.cobertura_indisponivel())
+                for k in extras:
+                    ind[k] = volume_ind(k)
+                inc_com_meta = [k for k in M.INDICADORES_INCENTIVO if not ind[k]["unavailable"]]
 
                 data[gc][sv][r] = {
                     "consultor": info_rota[r][2],
@@ -194,9 +228,10 @@ def montar_payload(f: Fontes) -> dict:
                     "indicators": ind,
                 }
 
-                cobertos_out[r] = {k: sorted(cob[k]) for k in M.INDICADORES_COBERTURA if cob.get(k)}
+                # incentivo: Real e oportunidades só nas rotas com meta do item
+                cobertos_out[r] = {k: sorted(cob[k]) for k in M.INDICADORES_COBERTURA + inc_com_meta if cob.get(k)}
                 op = {}
-                for k in M.INDICADORES_COBERTURA:
+                for k in M.INDICADORES_COBERTURA + inc_com_meta:
                     ja = cob.get(k, set())
                     op[k] = sum(1 for c in clientes_hoje[r]
                                 if c[0] not in ja and (k != "KS TT" or c[2] in ks_tt))
