@@ -321,11 +321,14 @@ Retornável). A E8 sai sempre no relatório, para o mês de hoje, e **só relata
   agrupadores que começam igual, ex.: "Heineken - 600ml Vr"). Se Eisenbahn 600ml ou Heineken 600ml não existirem na
   venda, lista as colunas de produto do `$metadata` (AGRUPADOR, MARCA, FAMILIA, EMBALAGEM, PRODUTO, SKU; só texto, sem
   as de cliente) com os valores que têm HEINEKEN ou EISENBAHN (até 20) e se aceitam agregação no servidor.
-- **E8c**: por item, a meta na BAND e por gerência, rotas do painel com e sem meta; para os itens Heineken, os códigos
-  das rotas sem meta (até 40; Neutraliza marcada (N), virtual (V)), as com meta quando a gerência é parcial e a divisão
-  do portfólio só nas rotas normais (sem Neutraliza e virtuais): **FULL** = todas com meta de Heineken, **BARRACUDA** =
-  nenhuma, parcial = algumas. Se rotas T<nn> (T07, T29...) estiverem sem meta, uma segunda leitura sem elas (são uma
-  observação do dado, não uma regra).
+- **E8c**: por item, a meta na BAND e por gerência, rotas do painel com e sem meta; para os itens Heineken, o
+  portfólio (definição da Karen, 20/10/2026): **BARRACUDA** = filial com CD da Heineken, sem meta de Heineken. Rota com
+  meta = **FULL**, sem meta = BARRACUDA; supervisão e gerência com as duas ficam com a classificação da **maioria das
+  rotas** (ex.: SV.G2.1, 4 de 7 rotas com meta = FULL); empate aparece como "empate" (sem regra). Só contam as rotas
+  normais (Neutraliza e virtuais ficam fora; nas listas, marcadas (N) e (V)). Por gerência: portfólio, rotas normais
+  com · sem meta, supervisões por portfólio, as rotas com meta (gerência mista) e as sem meta (até 40); depois, a tabela
+  das supervisões mistas, a divisão das gerências e as supervisões com portfólio diferente do da gerência. As rotas
+  T<nn> (T07, T29...) sem meta contam como BARRACUDA; uma linha diz o que mudaria sem elas (observação do dado).
 - **E8d**: clientes com compra no WF Online de hoje ('Inc. e Exp.') por item e gerência, se a consulta de vendas do
   gerador já traz o agrupador e se ele já vira indicador; para o que não vira, o que faltaria.
 - **E8e**: clientes distintos com cobertura realizada > 0, por item e gerência.

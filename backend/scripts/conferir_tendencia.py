@@ -887,10 +887,31 @@ def rota_normal(rota: str) -> bool:
 
 
 def portfolio(com: list[str], sem: list[str]) -> str:
-    """Divisão do portfólio pela meta de Heineken: todas as rotas com meta = FULL; nenhuma = BARRACUDA."""
+    """Portfólio pela meta de Heineken (definição da Karen, 20/10/2026; BARRACUDA = filial com CD da Heineken):
+    rota com meta = FULL, sem = BARRACUDA; supervisão ou gerência com as duas fica com a da maioria das rotas
+    (SV.G2.1: 4 de 7 com meta = FULL). Empate não tem regra: aparece como 'empate'."""
     if not com and not sem:
         return "sem rotas"
-    return "FULL (todas com meta)" if not sem else "BARRACUDA (nenhuma com meta)" if not com else "parcial"
+    return "FULL" if len(com) > len(sem) else "BARRACUDA" if len(sem) > len(com) else "empate"
+
+
+def divisao_portfolio(com: list[str], sem: list[str], sv_rota: dict[str, str]) -> tuple[str, dict[str, tuple]]:
+    """(portfólio da gerência, {supervisão: (portfólio, rotas com meta, rotas sem)}), só com as rotas normais;
+    supervisões em ordem natural, rota sem supervisão no painel em '—'."""
+    com, sem = [r for r in com if rota_normal(r)], [r for r in sem if rota_normal(r)]
+    por_sv = defaultdict(lambda: ([], []))
+    for i, rs in enumerate((com, sem)):
+        for r in rs:
+            por_sv[_codigo(sv_rota.get(r)) or "—"][i].append(r)
+    return portfolio(com, sem), {s: (portfolio(*por_sv[s]),) + por_sv[s] for s in sorted(por_sv, key=_ordem_rota)}
+
+
+def grupos_txt(por: dict[str, str], sep: str = "; ") -> str:
+    """{gerência ou supervisão: portfólio} -> 'BARRACUDA: AP, G1; FULL: RV' (na ordem de entrada)."""
+    grupos = defaultdict(list)
+    for k, t in por.items():
+        grupos[t].append(k)
+    return sep.join(f"{t}: {', '.join(ks)}" for t, ks in sorted(grupos.items()))
 
 
 def _gcs_com_dados(gc_rota: dict[str, str]) -> list[str]:
@@ -982,10 +1003,12 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
 
     # E8c. meta por item
     rel.h3("E8c. Meta de cobertura por item (rotas do painel com e sem meta)")
-    rel.p("Portfólio pela meta dos itens Heineken, só nas rotas normais (sem Neutraliza e virtuais, marcadas (N) e (V) "
-          "na lista): FULL = todas com meta; BARRACUDA = nenhuma; parcial = algumas (as com meta aparecem, até "
-          f"{E8_MAX_COM}).")
-    divisao, divisao_sem_t, rotas_t = {}, {}, defaultdict(set)
+    rel.p("Portfólio pela meta dos itens Heineken (definição de 20/10/2026: BARRACUDA = filial com CD da Heineken): rota "
+          "com meta = FULL, sem meta = BARRACUDA; supervisão e gerência com as duas ficam com a classificação da maioria "
+          "das rotas (ex.: SV.G2.1 com 4 de 7 rotas com meta = FULL); empate aparece como 'empate'. Só as rotas normais "
+          "contam (Neutraliza e virtuais ficam fora; nas listas, marcadas (N) e (V)).")
+    sv_rota = estado.get("sv_rota_painel", {})
+    divisao, divisao_sv, mudam_sem_t, rotas_t = {}, {}, {}, defaultdict(set)
 
     def marca(r):
         return (_codigo(r) or "—") + (" (N)" if r in M.NEUTRALIZA_ROTAS else " (V)" if r in M.VIRTUAIS_ROTAS else "")
@@ -1004,36 +1027,47 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
         rel.p(f"\n**{nome}** (`{v}`): meta na BAND {_n(soma, 0)}")
         cab = ["gerência", "soma da meta", "rotas com meta", "rotas sem meta"]
         if heineken:
-            cab += ["portfólio (rotas normais)", f"rotas com meta (parcial, até {E8_MAX_COM})",
-                    f"rotas sem meta (até {E8_MAX_ROTAS})"]
-        linhas = []
+            cab += ["portfólio (maioria das rotas normais)", "rotas normais com · sem meta", "supervisões (maioria)",
+                    f"rotas com meta (gerência mista, até {E8_MAX_COM})", f"rotas sem meta (até {E8_MAX_ROTAS})"]
+        linhas, mistas = [], []
         for g in colunas_gc:
             com, sem = cs.get(g, ([], []))
             linha = [g, _n(mgc.get((v, g), [0.0])[0], 0), len(com), len(sem)]
             if heineken:
-                com_n, sem_n = [r for r in com if rota_normal(r)], [r for r in sem if rota_normal(r)]
-                divisao.setdefault(nome, {})[g] = portfolio(com_n, sem_n)
-                divisao_sem_t.setdefault(nome, {})[g] = portfolio(com_n, [r for r in sem_n if not ROTA_T.match(r)])
-                rotas_t[nome] |= {r for r in sem_n if ROTA_T.match(r)}
-                linha += [divisao[nome][g], lista(com, E8_MAX_COM) if divisao[nome][g] == "parcial" else None,
-                          lista(sem, E8_MAX_ROTAS)]
+                t, svs = divisao_portfolio(com, sem, sv_rota)
+                divisao.setdefault(nome, {})[g] = t
+                divisao_sv.setdefault(nome, {}).update({s: (g, x[0]) for s, x in svs.items()})
+                n_com, n_sem = sum(len(x[1]) for x in svs.values()), sum(len(x[2]) for x in svs.values())
+                # leitura sem as rotas T<nn> sem meta (observação do dado de 20/10)
+                t_sem, svs_sem = divisao_portfolio(com, [r for r in sem if not ROTA_T.match(r)], sv_rota)
+                rotas_t[nome] |= {r for r in sem if rota_normal(r) and ROTA_T.match(r)}
+                mudam_sem_t.setdefault(nome, []).extend(
+                    [f"{g} {t} → {t_sem}"] * (t_sem != t)
+                    + [f"{s} {x[0]} → {svs_sem.get(s, ('sem rotas',))[0]}" for s, x in svs.items()
+                       if svs_sem.get(s, ("sem rotas",))[0] != x[0]])
+                mistas += [[s, g, len(c), len(sm), x, lista(c, E8_MAX_COM), lista(sm, E8_MAX_COM)]
+                           for s, (x, c, sm) in svs.items() if c and sm]
+                linha += [t, f"{n_com} · {n_sem}", grupos_txt({s: x[0] for s, x in svs.items()}) or None,
+                          lista(com, E8_MAX_COM) if n_com and n_sem else None, lista(sem, E8_MAX_ROTAS)]
             linhas.append(linha)
         if (v, FORA) in mgc:
-            linhas.append([FORA, _n(mgc[(v, FORA)][0], 0), mgc[(v, FORA)][1], None] + ([None] * 3 if heineken else []))
+            linhas.append([FORA, _n(mgc[(v, FORA)][0], 0), mgc[(v, FORA)][1], None] + ([None] * 5 if heineken else []))
         rel.tabela(cab, linhas)
-
-    def grupos_txt(por_gc):
-        grupos = defaultdict(list)
-        for g, t in por_gc.items():
-            grupos[t].append(g)
-        return "; ".join(f"{t}: {', '.join(gs)}" for t, gs in sorted(grupos.items()))
+        if heineken:
+            rel.p(f"\nSupervisões com rotas normais com e sem meta de {nome} (portfólio pela maioria):")
+            rel.tabela(["supervisão", "gerência", "com meta", "sem meta", "portfólio",
+                        f"rotas com meta (até {E8_MAX_COM})", f"rotas sem meta (até {E8_MAX_COM})"],
+                       mistas or [["nenhuma"] + [None] * 6])
 
     for nome, por_gc in divisao.items():
-        rel.p(f"\nDivisão FULL x BARRACUDA pela meta de {nome} (rotas normais): {grupos_txt(por_gc)}.")
+        rel.p(f"\nDivisão FULL x BARRACUDA pela meta de {nome} (maioria das rotas normais): {grupos_txt(por_gc)}.")
+        difs = [f"{s} {t} ({g} {por_gc[g]})" for s, (g, t) in divisao_sv[nome].items() if t != por_gc[g]]
+        rel.p(f"Supervisões com portfólio diferente do da gerência: {', '.join(difs) or 'nenhuma'}.")
         if rotas_t[nome]:
             ts = sorted(rotas_t[nome], key=_ordem_rota)
             rel.p(f"Observação do dado: as rotas T<nn> ({', '.join(_codigo(r) or '—' for r in ts)}) estão sem meta de "
-                  f"{nome} em {len({gc_rota[r] for r in ts})} gerências; sem elas: {grupos_txt(divisao_sem_t[nome])}.")
+                  f"{nome} em {len({gc_rota[r] for r in ts})} gerências e contam como BARRACUDA; sem elas, "
+                  + (f"muda: {', '.join(mudam_sem_t[nome])}." if mudam_sem_t[nome] else "nenhuma classificação muda."))
 
     # E8d. online de hoje
     rel.h3("E8d. Online de hoje (WF Online, 'Inc. e Exp.') por item")
@@ -1086,10 +1120,9 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
         if m["parecidos"]:
             obs.append("também existe: " + ", ".join(repr(p) for p in m["parecidos"][:3]))
         if nome in divisao:
-            sem = [g for g, t in divisao[nome].items() if t.startswith("BARRACUDA")]
-            parcial = [g for g, t in divisao[nome].items() if t == "parcial"]
-            obs.append(("sem meta em " + ", ".join(sem) if sem else "todas as gerências com meta")
-                       + (f"; parcial em {', '.join(parcial)}" if parcial else "") + " (rotas normais)")
+            difs = [f"{s} {t}" for s, (g, t) in divisao_sv[nome].items() if t != divisao[nome][g]]
+            obs.append("portfólio (maioria das rotas normais) " + grupos_txt(divisao[nome], " / ")
+                       + (f" (supervisões diferentes da gerência: {', '.join(difs)})" if difs else ""))
         linhas.append([nome, repr(v) if v else "**não encontrado**", chave,
                        f"sim ({n_meta} rotas)" if n_meta else "não",
                        f"sim ({n_on} clientes hoje)" if n_on else ("não hoje" if m["venda"] else "não"),
@@ -1120,7 +1153,8 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
         est_base: dict = {}
         clientes, gcs = fontes.carregar_clientes(cons, estatisticas=est_base)
         gc_da_rota = {c.rota: c.gc for c in clientes}
-        estado.update(clientes=clientes, est_base=est_base, gc_rota_painel=rotas_do_painel(clientes)[0])
+        gc_rota_painel, sv_rota_painel = rotas_do_painel(clientes)
+        estado.update(clientes=clientes, est_base=est_base, gc_rota_painel=gc_rota_painel, sv_rota_painel=sv_rota_painel)
         fech = fontes.decidir_fechamento(cons, hoje, linhas_cal, gc_da_rota)
         estado.update(cal=cal, cal_ref=fech or cal, gcs=gcs, gc_da_rota=gc_da_rota,
                       rotas=sorted(gc_da_rota), dia_util=calmod.dia_util_hoje(linhas_cal, hoje))

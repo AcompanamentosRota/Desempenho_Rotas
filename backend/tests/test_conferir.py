@@ -664,8 +664,12 @@ class TestSecaoE7SemColunas(unittest.TestCase):
 # ---------------------------------------------------------------- E8: descoberta do incentivo Todos a Bordo 3.0
 from tests.test_fontes import _todas  # noqa: E402
 
-GC_ROTA_E8 = {"111": "G1", "112": "G1", "211": "G2", "A11": "AP", "A12": "AP", "C11": "AN", "C12": "AN",
+GC_ROTA_E8 = {"111": "G1", "112": "G1", "211": "G2", "212": "G2", "213": "G2", "221": "G2", "222": "G2",
+              "A11": "AP", "A12": "AP", "C11": "AN", "C12": "AN",
               "R11": "RV", "R31": "RV", "T39": "RV", "G1-EV": "G1"}     # R31 Neutraliza; T39 rota T<nn>
+SV_ROTA_E8 = {"111": "SV.G1.1", "112": "SV.G1.1", "211": "SV.G2.1", "212": "SV.G2.1", "213": "SV.G2.1",
+              "221": "SV.G2.2", "222": "SV.G2.2", "A11": "SV.AP.1", "A12": "SV.AP.1", "C11": "SV.AN.1", "C12": "SV.AN.2",
+              "R11": "SV.RV.1", "R31": "SV.RV.1", "T39": "SV.RV.1"}
 
 
 def _cob(rota, pv, ag, cob, gc):
@@ -687,7 +691,7 @@ class ConsultaE8:
     METAS = [("111", "Cervejas", 10), ("112", "Cervejas", 5), ("C11", "Heineken", 8), ("C11", "Heineken", 3),
              ("C11", "Heineken - 600ml", 3), ("R11", "Heineken", 6), ("R11", "Heineken - 600ml", 2),
              ("A11", "Cervejas 600ml Retornavel", 4), ("A12", "Cervejas 600ml Retornavel", 0),
-             ("Z99", "Heineken", 7), ("111", "Ks Tt", 9)]
+             ("Z99", "Heineken", 7), ("211", "Heineken", 2), ("212", "Heineken", 1), ("111", "Ks Tt", 9)]
     ONLINE = [{CM.ROTA: "C11", CM.CLIENTE: "8880004", CM.AGRUPADOR: "Heineken", CM.COB_ONLINE: 1, CM.GC: "Gc. An"},
               {CM.ROTA: "111", CM.CLIENTE: "8880001", CM.AGRUPADOR: "Cervejas", CM.COB_ONLINE: 1, CM.GC: "Gc. G1"},
               {CM.ROTA: "112", CM.CLIENTE: "8880003", CM.AGRUPADOR: "Cervejas", CM.COB_ONLINE: 0, CM.GC: "Gc. G1"}]
@@ -740,7 +744,8 @@ class ConsultaE8:
 
 def _e8(cons):
     rel = ct.Relatorio()
-    estado = {"gc_rota_painel": dict(GC_ROTA_E8), "gcs": ["Gc. G1", "Gc. G2", "Gc. Ap", "Gc. An", "Gc. Rv"]}
+    estado = {"gc_rota_painel": dict(GC_ROTA_E8), "sv_rota_painel": dict(SV_ROTA_E8),
+              "gcs": ["Gc. G1", "Gc. G2", "Gc. Ap", "Gc. An", "Gc. Rv"]}
     with contextlib.redirect_stdout(io.StringIO()):
         ct.descoberta_incentivo(rel, cons, estado, "202610")
     return "\n".join(rel.linhas)
@@ -789,12 +794,23 @@ class TestE8Funcoes(unittest.TestCase):
         self.assertEqual(cs["AN"], (["C11"], ["C12"]))
         self.assertEqual(cs["G1"], ([], ["111", "112"]))
         self.assertEqual(cs["RV"], (["R11"], ["R31", "T39"]))
-        self.assertEqual([ct.portfolio(*cs[g]) for g in ("RV", "G1", "AN")],
-                         ["parcial", "BARRACUDA (nenhuma com meta)", "parcial"])
-        self.assertEqual(ct.portfolio(["R11"], [r for r in cs["RV"][1] if ct.rota_normal(r) and not ct.ROTA_T.match(r)]),
-                         "FULL (todas com meta)")
         self.assertFalse(ct.rota_normal("R31") or ct.rota_normal("A42"))
+        self.assertEqual(ct.divisao_portfolio(*cs["RV"], SV_ROTA_E8),                # a Neutraliza não conta
+                         ("empate", {"SV.RV.1": ("empate", ["R11"], ["T39"])}))
+        self.assertEqual(ct.divisao_portfolio(*cs["G1"], {})[1], {"—": ("BARRACUDA", [], ["111", "112"])})
+
+    def test_portfolio_pela_maioria_das_rotas(self):
+        # exemplo da Karen (20/10/2026): SV.G2.1 com 4 das 7 rotas com meta de Heineken é FULL
+        self.assertEqual(ct.portfolio(["211", "212", "213", "214"], ["215", "216", "217"]), "FULL")
+        self.assertEqual(ct.portfolio(["A37"], [f"A3{i}" for i in range(1, 7)]), "BARRACUDA")
+        self.assertEqual(ct.portfolio(["R11"], []), "FULL")
+        self.assertEqual(ct.portfolio([], ["111"]), "BARRACUDA")
+        self.assertEqual(ct.portfolio(["C11"], ["C12"]), "empate")
         self.assertEqual(ct.portfolio([], []), "sem rotas")
+        sv = {f"21{i}": "SV.G2.1" for i in range(1, 8)} | {f"22{i}": "SV.G2.2" for i in range(1, 7)}
+        g, svs = ct.divisao_portfolio(["211", "212", "213", "214"], ["215", "216", "217"] + [f"22{i}" for i in range(1, 7)], sv)
+        self.assertEqual((g, {s: x[0] for s, x in svs.items()}), ("BARRACUDA", {"SV.G2.1": "FULL", "SV.G2.2": "BARRACUDA"}))
+        self.assertEqual(ct.grupos_txt({"AN": "BARRACUDA", "RV": "FULL", "AP": "BARRACUDA"}), "BARRACUDA: AN, AP; FULL: RV")
 
 
 class TestSecaoE8(unittest.TestCase):
@@ -805,7 +821,7 @@ class TestSecaoE8(unittest.TestCase):
 
     def test_e8a_agrupadores(self):
         self.assertIn("| 'Cervejas' | sim | sim | 4 | 3 | 15 | 2 |", self.txt)        # 4 linhas: uma com cobertura 0
-        self.assertIn("| 'Heineken' | sim | sim | 2 | 2 | 21 | 3 |", self.txt)        # 8 (C11) + 6 (R11) + 7 (fora)
+        self.assertIn("| 'Heineken' | sim | sim | 2 | 2 | 24 | 5 |", self.txt)        # 8 (C11) + 6 (R11) + 3 (G2) + 7 (fora)
         self.assertIn("| 'Coca-Cola - 600ml' | sim | não | 1 | 1 | — | — |", self.txt)
         self.assertIn("| 'Cervejas Descartável' | sim | não |", self.txt)
         self.assertNotIn("Refrigerantes", self.txt)
@@ -813,7 +829,7 @@ class TestSecaoE8(unittest.TestCase):
         # por gerência, na ordem do painel (AN AP G1 G2 RV)
         self.assertIn("| agrupador | AN | AP | G1 | G2 | RV | fora |", self.txt)
         self.assertIn("| 'Cervejas' | 0 | 0 | 2 | 0 | 0 | 1 |", self.txt)
-        self.assertIn("| 'Heineken' | 8 · 1 | — | — | — | 6 · 1 | 7 · 1 |", self.txt)
+        self.assertIn("| 'Heineken' | 8 · 1 | — | — | 3 · 2 | 6 · 1 | 7 · 1 |", self.txt)
 
     def test_e8b_itens_e_colunas(self):
         self.assertIn("| Heineken 600ml | 'Heineken - 600ml' | 'Heineken - 600ml' | encontrado | 'HEINEKEN - 600ML VR' |",
@@ -828,15 +844,23 @@ class TestSecaoE8(unittest.TestCase):
         self.assertNotIn("CLIEN_Clien", self.txt)                                   # colunas de cliente ficam fora
 
     def test_e8c_meta_com_e_sem_e_divisao(self):
-        self.assertIn("**Heineken** (`Heineken`): meta na BAND 21", self.txt)
-        self.assertIn("| G1 | 0 | 0 | 2 | BARRACUDA (nenhuma com meta) | — | 111, 112 |", self.txt)
-        self.assertIn("| AN | 8 | 1 | 1 | parcial | C11 | C12 |", self.txt)
-        self.assertIn("| RV | 6 | 1 | 2 | parcial | R11 | R31 (N), T39 |", self.txt)     # a Neutraliza não conta
-        self.assertIn("| fora | 7 | 1 | — | — | — | — |", self.txt)
-        self.assertIn("Divisão FULL x BARRACUDA pela meta de Heineken (rotas normais): BARRACUDA (nenhuma com meta): AP, "
-                      "G1, G2; parcial: AN, RV.", self.txt)
-        self.assertIn("Observação do dado: as rotas T<nn> (T39) estão sem meta de Heineken em 1 gerências; sem elas: "
-                      "BARRACUDA (nenhuma com meta): AP, G1, G2; FULL (todas com meta): RV; parcial: AN.", self.txt)
+        self.assertIn("**Heineken** (`Heineken`): meta na BAND 24", self.txt)
+        self.assertIn("| G1 | 0 | 0 | 2 | BARRACUDA | 0 · 2 | BARRACUDA: SV.G1.1 | — | 111, 112 |", self.txt)
+        self.assertIn("| AN | 8 | 1 | 1 | empate | 1 · 1 | BARRACUDA: SV.AN.2; FULL: SV.AN.1 | C11 | C12 |", self.txt)
+        self.assertIn("| G2 | 3 | 2 | 3 | BARRACUDA | 2 · 3 | BARRACUDA: SV.G2.2; FULL: SV.G2.1 | 211, 212 | 213, 221, 222 |",
+                      self.txt)
+        self.assertIn("| RV | 6 | 1 | 2 | empate | 1 · 1 | empate: SV.RV.1 | R11 | R31 (N), T39 |", self.txt)  # sem a Neutraliza
+        self.assertIn("| fora | 7 | 1 | — | — | — | — | — | — |", self.txt)
+        # supervisões mistas: a classificação vem da maioria (SV.G2.1: 2 de 3 com meta)
+        self.assertIn("| SV.G2.1 | G2 | 2 | 1 | FULL | 211, 212 | 213 |", self.txt)
+        self.assertIn("| SV.RV.1 | RV | 1 | 1 | empate | R11 | T39 |", self.txt)
+        self.assertNotIn("| SV.AN.1 | AN |", self.txt)                              # só com meta: não é mista
+        self.assertIn("Divisão FULL x BARRACUDA pela meta de Heineken (maioria das rotas normais): BARRACUDA: AP, G1, G2; "
+                      "empate: AN, RV.", self.txt)
+        self.assertIn("Supervisões com portfólio diferente do da gerência: SV.AN.1 FULL (AN empate), SV.AN.2 BARRACUDA "
+                      "(AN empate), SV.G2.1 FULL (G2 BARRACUDA).", self.txt)
+        self.assertIn("Observação do dado: as rotas T<nn> (T39) estão sem meta de Heineken em 1 gerências e contam como "
+                      "BARRACUDA; sem elas, muda: RV empate → FULL, SV.RV.1 empate → FULL.", self.txt)
         self.assertIn("| AP | 4 | 1 | 1 |", self.txt)                              # Cervejas 600ml: A12 com meta 0
 
     def test_e8d_online(self):
@@ -848,8 +872,9 @@ class TestSecaoE8(unittest.TestCase):
 
     def test_e8e_e_e8f(self):
         self.assertIn("| Heineken | 'Heineken' | 2 | 0 | 0 | 0 | 0 | 0 | 2 |", self.txt)
-        self.assertIn("| Heineken | 'Heineken' | INC HEINEKEN | sim (3 rotas) | sim (1 clientes hoje) | também existe: "
-                      "'HEINEKEN - 600ML VR'; sem meta em AP, G1, G2; parcial em AN, RV (rotas normais) |", self.txt)
+        self.assertIn("| Heineken | 'Heineken' | INC HEINEKEN | sim (5 rotas) | sim (1 clientes hoje) | também existe: "
+                      "'HEINEKEN - 600ML VR'; portfólio (maioria das rotas normais) BARRACUDA: AP, G1, G2 / empate: AN, RV "
+                      "(supervisões diferentes da gerência: SV.AN.1 FULL, SV.AN.2 BARRACUDA, SV.G2.1 FULL) |", self.txt)
         self.assertIn("| Eisenbahn 600ml | **não encontrado** | INC EISENBAHN 600ML | não | não | sem agrupador na venda |",
                       self.txt)
         self.assertIn("| Cervejas | 'Cervejas' | INC CERVEJAS | sim (2 rotas) | sim (1 clientes hoje) | já é o indicador "

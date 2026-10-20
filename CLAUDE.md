@@ -29,15 +29,19 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - E8 do conferir (sempre, mês de hoje): descoberta do incentivo "Todos a Bordo 3.0" (cobertura de cervejas; itens em
   `ITENS_INCENTIVO` do script, com a chave interna sugerida `INC ...`). Só relata, antes da aba "Incentivo": agrupadores
   com HEINEKEN/EISENBAHN/CERVEJ/600 (venda e meta), item → agrupador por `chave_texto` (sem acento, caixa, espaço ou
-  pontuação), meta por gerência/rota com FULL x BARRACUDA pela meta de Heineken (`portfolio`, só nas rotas normais:
-  sem Neutraliza e virtuais; e uma leitura sem as rotas T<nn>, `ROTA_T`), online de hoje e
-  realizado. `META_COBERTURA` não é somada pelo servidor (vem uma linha por valor): a E8 usa o maior por rota, como
+  pontuação), meta por gerência/rota com FULL x BARRACUDA pela meta de Heineken (`portfolio`/`divisao_portfolio`, só
+  nas rotas normais: sem Neutraliza e virtuais; e o que mudaria sem as rotas T<nn>, `ROTA_T`), online de hoje e
+  realizado. Definição da Karen (20/10/2026): BARRACUDA = filial com CD da Heineken; rota com meta de Heineken = FULL,
+  sem = BARRACUDA; supervisão e gerência mistas ficam com a da maioria das rotas (SV.G2.1: 4 de 7 = FULL); empate não
+  tem regra (o relatório mostra "empate"). Supervisão = a do painel (`sv_rota_painel`, regra do payload). `META_COBERTURA` não é somada pelo servidor (vem uma linha por valor): a E8 usa o maior por rota, como
   `fontes.carregar_metas`. Como ler: README, "Descoberta do incentivo".
   Achado de 20/10/2026 (E8 com dado real): os 5 itens existem como agrupador na venda e na meta ('Cervejas', 'Heineken',
   'Eisenbahn - 600ml', 'Heineken - 600ml', 'Cervejas 600ml Retornavel'; há também variantes '... - 600ml Vr' só na
   venda). Heineken e Eisenbahn 600ml não estão em M.AGRUPADORES_COBERTURA (o gerador não os traz). Sem meta de
   Heineken em nenhuma rota normal: AP, AT, G3, PA, DI, GU; com meta só em A37 (AN), 111 (G1) e 211-214 (G2); nas
-  demais, todas as rotas normais têm meta, exceto R11, I19, C28 e as rotas T<nn>.
+  demais, todas as rotas normais têm meta, exceto R11, I19, C28 e as rotas T<nn>. Pela maioria (Heineken e Heineken
+  600ml iguais): BARRACUDA AN AP AT G1 G2 G3 PA DI GU; FULL RV SL PO IT MO UR RI; única supervisão diferente da
+  gerência: SV.G2.1 (FULL); sem empates; sem as T<nn>, nada muda.
 - Front local: `cd frontend && python -m http.server 8765`.
 - Testes de front (Chromium headless + dado sintético gerado pelo próprio back-end): `node --test frontend/tests/front.test.js`
   (precisa de Python com as dependências do back-end e do pacote `playwright`; sem ele os testes são pulados; o CI não roda).
