@@ -19,13 +19,13 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - Tela do SAC por dia: `backend/conferencia/sac/refri_AAAA-MM-DD.csv` (`;`, `GC;Real;Meta;Tendencia;MetaDia`, 1ª linha
   `#` = fonte e horário; formato no README). Lida pela seção 4 (aceite, OK/DIVERGE por célula; sem o arquivo: "sem
   tela do SAC para esta data") e pela E7 (diferenças por rota contra o SAC, só com o CSV do dia). Nada fixo no script.
-  A E7 lê colunas do modelo de vendas que o gerador não usa (`COL_*` no próprio script, não em `mapeamento.py`) e só
-  relata: escopo, Neutraliza, virtuais e meta do dia do gerador não mudam por causa dela (decisão da Karen).
+  A E7 imita o gerador (rota oculta das EV*, meta do dia pela rota da meta) e só relata; as colunas que só ela lê
+  (supervisão e gerência da meta) ficam como `COL_*` no próprio script.
   Achado de 20/10/2026 (E7 com dado real): o SAC soma Real e meta do dia de Refrigerantes pela gerência comercial do
-  cliente no modelo de vendas (`DS_GERENCIA_COMERCIAL_AT_Clien`; resíduo ≤ 1 cx nas 16), sem excluir rotas. Toda a
-  diferença restante é de clientes hoje em rotas EV* (Real −407 cx; meta do dia −1.071 cx, quase toda com a meta numa
-  rota do painel: o gerador agrupa `META_RECUPERAVEL_ROTA` pela rota do cliente). Neutraliza, virtuais e SV.G3.3 entram
-  nos dois. O par G2/G3 (−71/−71) não é transferência entre elas (EV1 → G2; EVF/EV5/EV1 → G3).
+  cliente no modelo de vendas (`M.ColMeta.GC_COMERCIAL`; resíduo ≤ 1 cx nas 16), sem excluir rotas. A diferença era
+  toda de clientes hoje em rotas EV* (Real −407 cx; meta do dia −1.071 cx, com a meta numa rota do painel). Decisão da
+  Karen no mesmo dia: o Real das EV* entra na rota oculta da gerência e a meta do dia vai pela rota da meta (abaixo).
+  O par G2/G3 (−71/−71) não era transferência entre elas (EV1 → G2; EVF/EV5/EV1 → G3).
 - Front local: `cd frontend && python -m http.server 8765`.
 - Testes de front (Chromium headless + dado sintético gerado pelo próprio back-end): `node --test frontend/tests/front.test.js`
   (precisa de Python com as dependências do back-end e do pacote `playwright`; sem ele os testes são pulados; o CI não roda).
@@ -40,6 +40,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 
 - **Contrato com o front**: `payload.json`/`online.json` têm o formato exato que `frontend/js/main.js` e `app.js` leem.
   `SEGS` e `DIAS` são tabelas de índice (cada cliente guarda a posição): só acrescentar no fim.
+  `EVENTUAIS_ROTAS` (rotas ocultas dos clientes em EV*) é chave obrigatória desde 20/10/2026.
   Fórmulas em `backend/gerador/modelo.py` espelham `agrega()` em `app.js`; mudou um, mude o outro.
 - **Todo nome de coluna, filtro e agrupador fica em `backend/gerador/mapeamento.py`.** Valores conferidos em 13/10/2026:
   - Base de clientes guarda histórico: filtrar `FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'`.
@@ -82,8 +83,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   à curva pela rota do cliente, sempre escalonada (`fontes.carregar_curva_neg`); Tendência = Vol Real + Neg Restante; % = Tendência / Meta, verde com % >= 100; Dif = Vol Real − Meta.
   Casos-limite (aviso por rota × macro): META_VOLUME sem META_NEG → Neg Restante = Meta × dias úteis restantes
   (com hoje) / dias úteis do mês; sem META_VOLUME → Meta e restante = somas de META_NEG; nenhuma → indisponível.
-  Meta do dia = `META_RECUPERAVEL_ROTA` por rota × agrupador com `DATA_MOVIMENTO` = hoje (se der HTTP 500, repete
-  por gerência; se falhar, `metaDia = null`, nunca outra conta). Supervisão e gerência somam as rotas e recalculam
+  Meta do dia = `META_RECUPERAVEL_ROTA` por **rota da meta** (`CD_ROTA_Chave_Meta_SAP`, como o SAC; decisão de
+  20/10/2026: pela rota do cliente, a meta de cliente em rota EV* sumia, AP −783 e PO −137) × agrupador com
+  `DATA_MOVIMENTO` = hoje (se der HTTP 500, repete por gerência; se falhar ou vier sem rota, pela rota do cliente,
+  com aviso no log; se falhar também, `metaDia = null`, nunca outra conta). Supervisão e gerência somam as rotas e recalculam
   o %. `validacao.py` informa por gerência a meta não distribuída (META_VOLUME − soma META_NEG), sem reprovar.
   **`DATA_MOVIMENTO` só no `$filter`, nunca no groupby**: por rota × agrupador × dia são ~25 mil linhas e ~150 s
   por medida (17/10); `META_NEG` do mês e restante são duas consultas por rota × agrupador. Literal de data pelo
@@ -114,6 +117,16 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   sem as virtuais. A 551 não tem versão corrente na base (FL_CORRENTE = 'S'; só histórico Ap/At até 03/2026), nem venda
   ou meta em out/26: fica na lista e entra sozinha se voltar. Ocultas (`M.OCULTAS`: SV.G3.3): fora do "puxa a média" e
   das listas de clientes; na AT (`M.GC_SEM_OCULTAS`) nenhuma supervisão é oculta (nem "sem vendedor").
+- **Clientes em rotas EV*** (decisão de 20/10/2026, como o SAC): a rota EV continua fora do painel, mas o Vol Real de
+  volume (5 macros; Del Valle Frut só na G2) dos clientes que estão nela entra no total da **gerência comercial do
+  cliente** (`M.ColMeta.GC_COMERCIAL`, coluna opcional da consulta do Vol Real; `VolumeMes.eventuais`), numa rota oculta
+  por gerência (`M.rota_eventuais`: `AP-EV`) e supervisão própria (`M.sv_eventuais`: `SV.AP.EV`, nunca aparece).
+  Só nas gerências com rotas no painel (`fontes.volume_eventuais`; o resto e cliente sem gerência comercial vão para o
+  log). Meta 0, sem Neg Restante (tendência = Real), meta do dia 0, sem clientes; fora de cobertura, Venda Zero e
+  online. Payload: em `VIRTUAIS_ROTAS` (o front esconde como virtual, também o front antigo em cache) e em
+  `EVENTUAIS_ROTAS` (chave nova, obrigatória na validação); na cascata, nota "Inclui clientes de rotas eventuais (EV*):
+  Real X" (`notaVirtuais`). A validação não conta essas rotas na disponibilidade de cobertura nem nas quedas de rotas.
+  Outras rotas fora do painel (SV.BL.*, APE...) continuam fora (em 20/10 não tinham diferença contra o SAC).
 - **Del Valle Frut** (`M.VOLUME_EXTRA`: `VOL DEL VALLE FRUT`, agrupador oficial "Del Valle Frut", conferido em 19/10/2026
   nas 18 rotas da G2; "Dv Frut" tem os mesmos números mas não é o oficial; só G2): todas as regras de volume; fora de
   `GROUPS`/`COV_GRUPO`/`INDICADORES_VOLUME` (nunca somado aos 5 macros; fora do Resumo, da Diretoria, do ritmo de

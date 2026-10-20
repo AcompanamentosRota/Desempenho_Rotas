@@ -31,6 +31,8 @@ class ColMeta:
     ANOMES = "ANOMES_REF"
     ROTA = "CD_ROTA_Clien"
     GC = "DS_GC_AGRUPADA_ATUAL_Clien"
+    GC_COMERCIAL = "DS_GERENCIA_COMERCIAL_AT_Clien"  # gerência comercial atual do cliente, não agrupada ('Gc. It'):
+    #                                                  o SAC soma por ela (Real dos clientes em rotas EV*)
     CLIENTE = "CD_CLIENTE"
     SEGMENTO = "DS_SEGMENTO_Clien"                   # segmento na venda: vale também para quem saiu da base
     AGRUPADOR = "DS_AGRUPADOR_Agrupador_Prod"        # 'Cctm 2l Pet', 'Ks Tt', 'Refrigerantes'... (748 valores)
@@ -53,7 +55,8 @@ class ColMeta:
     META_NEG = "META_NEG"                              # meta de volume distribuída (por cliente e por dia):
     #                                                    denominador do volume em todos os níveis (critério do SAC)
     META_DIA = "META_DIA"                              # meta do dia ANTIGA: o gerador não usa (só a conferência)
-    META_RECUPERAVEL = "META_RECUPERAVEL_ROTA"         # meta do dia do volume (DATA_MOVIMENTO = hoje)
+    META_RECUPERAVEL = "META_RECUPERAVEL_ROTA"         # meta do dia do volume (DATA_MOVIMENTO = hoje), pela
+    #                                                    rota da meta (META_ROTA), como o SAC
     NF_STATUS = "NF_STATUS_Nota_Fiscal"                # Vol Real só com os status de M.STATUS_NF_REAL
     CALENDARIO = "CALENDARIO"
     # meta de volume por cliente (barra de status por cliente na aba Volume): META_NEG por cliente x agrupador
@@ -240,6 +243,26 @@ NEUTRALIZA_ROTAS = ["A41", "431", "251", "I31", "M31", "C31", "R31", "S31", "U31
 # Virtuais: ocultas em todo o painel (cascata, listas, filtro, busca, Resumo); só no total da gerência
 # (Volume, ICS GC, NN); fora da Venda Zero
 VIRTUAIS_ROTAS = ["A42", "A43", "A44", "R32"]
+# Clientes que estão hoje numa rota eventual (EV*): a rota fica fora do painel, mas o Real de volume deles entra no
+# total da gerência, como no SAC (conferido em 20/10/2026, seção E7 do conferir_tendencia.py): uma rota oculta por
+# gerência (rota_eventuais), na gerência comercial do cliente (ColMeta.GC_COMERCIAL), numa supervisão própria
+# (sv_eventuais). Sem meta (as rotas EV não têm META_VOLUME nem META_NEG) e sem clientes; fora de cobertura, Venda
+# Zero e online. No payload vão em VIRTUAIS_ROTAS (ocultas como as virtuais) e em EVENTUAIS_ROTAS (nota própria).
+
+
+def rota_eventual(rota: str) -> bool:
+    """Rota eventual da base/vendas ('EV5', 'EVD'): fora do painel."""
+    return bool(rota) and rota.upper().startswith(ROTAS_IGNORAR_PREFIXOS)
+
+
+def rota_eventuais(gc: str) -> str:
+    """Rota oculta com o Real dos clientes em rotas EV* da gerência ('AP' -> 'AP-EV'; nenhuma rota real tem '-')."""
+    return f"{gc}-EV"
+
+
+def sv_eventuais(gc: str) -> str:
+    """Supervisão da rota oculta ('AP' -> 'SV.AP.EV'; fora do padrão SV.<sigla>.<n>, nunca aparece)."""
+    return f"SV.{gc}.EV"
 # Supervisões ocultas: fora do "puxa a média" e das listas de clientes (payload OCULTAS)
 OCULTAS = ["SV.G3.3"]
 # Gerências em que nenhuma supervisão é oculta (nem as de OCULTAS, nem "sem vendedor"); as listas por rota valem

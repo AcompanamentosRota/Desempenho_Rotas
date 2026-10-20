@@ -367,29 +367,37 @@ class TestRota551NaBase(unittest.TestCase):
 
 # ---------------------------------------------------------------- E7: diferenças contra o SAC, por rota
 ct = conferir_tendencia
-COL_GC, COL_SV, COL_GC_META = ct.COL_GC_COMERCIAL, ct.COL_SV_CLIENTE, ct.COL_GC_COMERCIAL_META
+COL_GC, COL_SV, COL_GC_META = CM.GC_COMERCIAL, ct.COL_SV_CLIENTE, ct.COL_GC_COMERCIAL_META
 
 
 class ConsultaE7(ConsultaFalsa):
-    """Datasphere simulado com as colunas de gerência e supervisão do modelo de vendas que a E7 lê
+    """Datasphere simulado com as colunas de supervisão e de gerência da meta que só a E7 lê
     (sem as da gerência agrupada da meta: a 4ª candidata fica fora)."""
 
     def colunas(self, objeto):
-        extra = [COL_GC, COL_SV, COL_GC_META] if objeto == M.OBJ_META else []
+        extra = [COL_SV, COL_GC_META] if objeto == M.OBJ_META else []
         return list(super().colunas(objeto)) + extra
+
+
+class ConsultaSemGc(ConsultaFalsa):
+    """Sem nenhuma coluna de gerência do modelo de vendas no $metadata (nem a comercial do cliente)."""
+
+    def colunas(self, objeto):
+        return [c for c in super().colunas(objeto) if c != CM.GC_COMERCIAL]
 
 
 def _p(gc_rota=None, sv_rota=None, base=None, gc_base=None):
     return ct.Painel(gc_rota or {}, sv_rota or {}, base or {}, gc_base or {})
 
 
-def _l(rota, gc, valor, rota_meta="", cod=None, sv=None, no_escopo=True):
-    return ct.Linha(rota, rota_meta, gc if gc in M.GC_NOMES else None, cod or gc, sv, no_escopo, valor)
+def _l(rota, gc, valor, rota_meta="", cod=None, sv=None, no_escopo=True, gc_comercial=None):
+    return ct.Linha(rota, rota_meta, gc if gc in M.GC_NOMES else None, cod or gc, sv, no_escopo, valor, gc_comercial)
 
 
 class TestCausas(unittest.TestCase):
-    P = _p(gc_rota={"111": "G1", "151": "G1", "311": "G3", "A42": "AN", "T99": "AT"},
-           sv_rota={"111": "SV.G1.1", "151": "SV.G1.5", "311": "SV.G3.3", "A42": "SV.AN.4", "T99": "SV.G3.3"},
+    P = _p(gc_rota={"111": "G1", "151": "G1", "311": "G3", "A42": "AN", "T99": "AT", "AP-EV": "AP"},
+           sv_rota={"111": "SV.G1.1", "151": "SV.G1.5", "311": "SV.G3.3", "A42": "SV.AN.4", "T99": "SV.G3.3",
+                    "AP-EV": "SV.AP.EV"},
            base={"EV5": {"SV.BL.AP"}, "GAP": {"SV.BL.AP"}, "APE": {"SV.BL.AP"}, "EXT": {"SV.ME"},
                  "R1X": {"INVALIDO"}, "111": {"SV.G1.1"}})
 
@@ -405,44 +413,67 @@ class TestCausas(unittest.TestCase):
     def test_tipo_da_rota(self):
         self.assertEqual(ct.tipo_rota("151", self.P), ct.CAUSA_NEUTRALIZA)
         self.assertEqual(ct.tipo_rota("A42", self.P), ct.CAUSA_VIRTUAL)
+        self.assertEqual(ct.tipo_rota("AP-EV", self.P), ct.CAUSA_EVENTUAIS)
         self.assertEqual(ct.tipo_rota("311", self.P), "oculta: SV.G3.3")
         self.assertIsNone(ct.tipo_rota("111", self.P))
         self.assertIsNone(ct.tipo_rota("T99", self.P))       # na AT nenhuma supervisão é oculta
 
+    def test_rota_em_que_o_painel_conta(self):
+        p = self.P
+        self.assertEqual(ct.rota_no_painel(_l("111", "G1", 1), p, False), ("111", "G1"))
+        self.assertEqual(ct.rota_no_painel(_l("111", "G1", 1, no_escopo=False), p, False), ("111", None))
+        # cliente em rota EV*: na rota oculta da gerência comercial dele (se a gerência tem a rota oculta)
+        self.assertEqual(ct.rota_no_painel(_l("EV5", "AP", 1, gc_comercial="AP"), p, False), ("AP-EV", "AP"))
+        self.assertEqual(ct.rota_no_painel(_l("EV5", "G3", 1, gc_comercial="G3"), p, False), ("EV5", None))
+        self.assertEqual(ct.rota_no_painel(_l("EV5", "AP", 1), p, False), ("EV5", None))
+        self.assertEqual(ct.rota_no_painel(_l("GAP", "AP", 1, gc_comercial="AP"), p, False), ("GAP", None))
+        # meta do dia: pela rota da meta, sem escopo
+        self.assertEqual(ct.rota_no_painel(_l("EV5", "AP", 1, "151", no_escopo=False), p, True), ("151", "G1"))
+        self.assertEqual(ct.rota_no_painel(_l("111", "G1", 1, ""), p, True), ("", None))
+
     def test_contribuicoes_do_real(self):
         linhas = [_l("111", "G1", 100), _l("111", "G2", 30, sv="SV.G2.1"),             # rota atribuída a outra gerência
-                  _l("EV5", "AP", 50, "535", sv="SV.BL.AP"), _l("GAP", "AP", 7), _l("APE", "AP", 3), _l("X99", "AP", 2),
+                  _l("EV5", "AP", 50, "535", sv="SV.BL.AP", gc_comercial="AP"),        # na rota oculta da AP: bate
+                  _l("EV5", "G3", 9, gc_comercial="G3"),                              # a G3 não tem rota oculta
+                  _l("EV6", "G1", 7, gc_comercial="AP"),                              # rota oculta da AP, modelo G1
+                  _l("GAP", "AP", 7), _l("APE", "AP", 3), _l("X99", "AP", 2),
                   _l("151", None, 4, cod="ME"), _l("A42", None, 8, cod="ME"), _l("311", None, 6, cod="ME"),
                   _l("111", "G1", 5, no_escopo=False), _l("EV5", None, 9, cod="ME")]  # ninguém conta a última
         p = self.P._replace(gc_rota=dict(self.P.gc_rota, **{"535": "AP"}), gc_base={"EV5": "AP"})
         r = ct.contribuicoes(linhas, p, por_rota_meta=False)
         c = {g: {(k[0], k[2]): round(v, 6) for k, v in d.items()} for g, d in r.por_gc.items()}
         self.assertEqual(c["G1"], {("111", ct.CAUSA_OUTRA_GC): 30, ("151", ct.CAUSA_NEUTRALIZA): 4,
-                                   ("111", "outra: gerência agrupada do cliente fora das do painel"): -5})
+                                   ("111", "outra: gerência agrupada do cliente fora das do painel"): -5,
+                                   ("EV6", ct.CAUSA_OUTRA_GC): -7})
         self.assertEqual(c["G2"], {("111", ct.CAUSA_OUTRA_GC): -30})
-        self.assertEqual(c["AP"], {("EV5", ct.CAUSA_EV): -50, ("GAP", ct.CAUSA_BALCAO): -7,
-                                   ("APE", ct.CAUSA_INVALIDA): -3, ("X99", ct.CAUSA_SEM_CLIENTE): -2})
+        self.assertEqual(c["AP"], {("GAP", ct.CAUSA_BALCAO): -7, ("APE", ct.CAUSA_INVALIDA): -3,
+                                   ("X99", ct.CAUSA_SEM_CLIENTE): -2, ("EV6", ct.CAUSA_OUTRA_GC): 7})
         self.assertEqual(c["AN"], {("A42", ct.CAUSA_VIRTUAL): 8})
-        self.assertEqual(c["G3"], {("311", "oculta: SV.G3.3"): 6})
-        self.assertEqual(r.deslocamentos, {("111", "G1", "G2"): 30})
-        self.assertEqual(r.hipoteses, {"b": 30, "a": -62, "d": -50})      # EV5 tem a meta na 535, rota da AP
-        det = next(k[3] for k in r.por_gc["AP"] if k[0] == "EV5")
-        self.assertEqual(det, "supervisão no modelo SV.BL.AP; rota da meta 535 (no painel)")
+        self.assertEqual(c["G3"], {("311", "oculta: SV.G3.3"): 6, ("EV5", ct.CAUSA_EV): -9})
+        self.assertEqual(r.deslocamentos, {("111", "G1", "G2"): 30, ("AP-EV", "AP", "G1"): 7})
+        self.assertEqual(r.fora_outra_gc, {("EV5", "AP", "G3"): -9})
+        self.assertEqual(r.hipoteses, {"a": -21, "b": 37})
+        det = {k[0]: k[3] for g in ("G3", "AP") for k in r.por_gc[g]}
+        self.assertEqual(det["EV5"], "a G3 não tem rota oculta das EV*; rota da AP na base")
+        self.assertIn("rota AP-EV no painel; clientes em rotas EV* (rota oculta, entra no total)", det["EV6"])
 
     def test_contribuicoes_da_meta_do_dia_pela_rota_da_meta(self):
         p = _p(gc_rota={"A11": "AP", "112": "G1", "211": "G2", "111": "G1", "151": "G1"},
                base={"EV5": {"SV.BL.AP"}})
-        linhas = [_l("EV5", "AP", 15, "A11"),           # cliente na EV5 com a meta da A11: o painel perde
-                  _l("112", "G2", 5, "211"),            # cliente da G1 no painel, da G2 no modelo, meta da 211
-                  _l("111", "G1", 3, "151"),            # dentro da mesma gerência: não muda o total
-                  _l("EV5", "AP", 2)]                   # sem rota da meta: a causa é a da rota do cliente
+        linhas = [_l("EV5", "AP", 15, "A11"),           # cliente na EV5 com a meta da A11: o painel conta na A11
+                  _l("112", "G2", 5, "211"),            # meta da 211 (G2), cliente da G2 no modelo: bate
+                  _l("112", "G1", 4, "211"),            # meta da 211 (G2), cliente da G1 no modelo
+                  _l("A11", "AP", 6, "EV7"),            # meta numa rota fora do painel, cliente na A11
+                  _l("111", "G1", 2),                   # sem rota da meta
+                  _l("111", "G1", 3, "151")]            # outra rota da mesma gerência: bate
         r = ct.contribuicoes(linhas, p, por_rota_meta=True)
-        self.assertEqual(r.por_gc["AP"], {("EV5", "A11", ct.CAUSA_ROTA_META, "cliente na rota EV5 (fora do painel: EV*)"): -15,
-                                          ("EV5", "", ct.CAUSA_EV, ""): -2})
-        self.assertEqual(r.por_gc["G2"], {("112", "211", ct.CAUSA_ROTA_META, "cliente na rota 112 da G1 no painel"): -5})
-        self.assertEqual(r.por_gc["G1"], {("112", "211", ct.CAUSA_OUTRA_GC, "gerência do modelo G2"): 5})
-        self.assertEqual(r.dentro, [3, {("151", "111")}])
-        self.assertEqual(r.hipoteses["d"], -15)
+        self.assertEqual(r.por_gc["AP"], {("A11", "EV7", ct.CAUSA_ROTA_META,
+                                           "rota da meta EV7 (fora do painel: EV*); cliente na rota A11 da AP no painel"): -6})
+        self.assertEqual(r.por_gc["G2"], {("112", "211", ct.CAUSA_OUTRA_GC, "gerência do modelo G1"): 4})
+        self.assertEqual(r.por_gc["G1"], {("112", "211", ct.CAUSA_OUTRA_GC, "rota 211 na G2 no painel"): -4,
+                                          ("111", "", "outra: meta do dia sem rota da meta", "cliente na rota 111"): -2})
+        self.assertEqual(r.deslocamentos, {("211", "G2", "G1"): 4})
+        self.assertEqual(r.hipoteses, {"a": -6, "d": -6, "b": 4})
 
     def test_reconciliacao_e_residuo(self):
         contrib = {("EV5", "", ct.CAUSA_EV, ""): -12.0, ("GAP", "", ct.CAUSA_BALCAO, ""): -3.0}
@@ -493,7 +524,7 @@ def _dados_e7():
         vr("111", "Gc. G1", "Gc. G1", 100.0, "111"),
         vr("112", "Gc. G1", "Gc. G2", 30.0, "112", gc_meta="Gc. G1"),     # cliente transferido: G1 -> G2
         vr("A11", "Gc. Ap", "Gc. Ap", 200.0, "A11"),
-        vr("EV5", "Gc. Ap", "Gc. Ap", 50.0, "A11", sv="Sv. Bl. Ap", gc_meta="Gc. G1"),
+        vr("EV5", "Gc. Ap", "Gc. Ap", 50.0, "A11", sv="Sv. Bl. Ap", gc_meta="Gc. G1"),   # rota oculta da AP
         vr("GAP", "Gc. Ap", "Gc. Ap", 7.0), vr("APE", "Gc. Ap", "Gc. Ap", 3.0),
         vr("G2F", "Gc. G2", "Gc. G2", 4.0), vr("X99", "Gc. Ap", "Gc. Ap", 2.0),
         vr("EXT", "--", "Gc. G1", 6.0, sv="Sv. Me"),
@@ -507,13 +538,15 @@ def _dados_e7():
     d["meta_dia"] = [md("111", "Gc. G1", 20.0, "111"), md("EV5", "Gc. Ap", 15.0, "A11"),
                      md("112", "Gc. G2", 5.0, "211"), md("111", "Gc. G1", 3.0, "151"),
                      md("A11", "Gc. Ap", 10.0, "A11"), md("211", "Gc. G2", 12.0, "211"),
+                     md("112", "Gc. G1", 4.0, "211"),                       # meta da 211 (G2), cliente da G1
+                     md("A11", "Gc. Ap", 6.0, "EV7"),                       # meta numa rota fora do painel
                      md("111", "Gc. G1", 99.0, "111", dia="2026-10-21")]
     d["metas"] = d["metas"] + [_meta("Refrigerantes", cob="10", vol="100", rota=r) for r in ("A11", "211", "311", "A42")]
     return d
 
 
 TELA_E7 = ("# Tela sintética do SAC, 20/10/2026 10h\nGC;Real;Meta;Tendencia;MetaDia\n"
-           "G1;111;120;150;23\nG2;104;100;100;17\nAP;272;100;300;25\nG3;49;100;100;0\nAN;0;100;100;0\n")
+           "G1;111;120;150;27\nG2;104;100;100;17\nAP;272;100;300;31\nG3;49;100;100;0\nAN;0;100;100;0\n")
 
 
 class TestSecaoE7(unittest.TestCase):
@@ -532,7 +565,7 @@ class TestSecaoE7(unittest.TestCase):
             self.assertIn(t, self.e7)
 
     def test_consulta_sem_filtros_de_escopo(self):
-        e7 = [c for c in self.cons.chamadas if COL_GC in c[1]]
+        e7 = [c for c in self.cons.chamadas if COL_SV in c[1]]          # só a E7 lê a supervisão do modelo
         self.assertEqual(len(e7), 2)                                    # Real e meta do dia
         for _, sel, filtro in e7:
             self.assertNotIn(f"{CM.GC} eq", filtro)
@@ -547,18 +580,25 @@ class TestSecaoE7(unittest.TestCase):
         self.assertIn(f"| `{COL_GC_META}` (gerência da meta) |", self.e7)
         self.assertNotIn(ct.COL_GC_AGRUPADA_META, self.e7)             # coluna fora do $metadata: candidata fora
 
+    def test_secao_4_com_a_rota_oculta_e_a_meta_do_dia_pela_rota_da_meta(self):
+        # Real da AP = A11 200 + rota oculta das EV* 50; meta do dia da AP = A11 15 + 10 (a de cliente na EV5 entra)
+        self.assertIn("| AP | 250 | 272 | -22 | **DIVERGE** |", self.txt)
+        self.assertIn("| 25 | 31 | -19,35% | **DIVERGE** |", self.txt)
+        self.assertIn("Clientes em rotas EV* (rota oculta da gerência comercial, como o payload), Vol Real de "
+                      "Refrigerantes: AP 50; G3 9", self.txt)
+
     def test_reconciliacao(self):
-        # painel: G1 111+112+151 = 134; G2 211 = 70; AP A11 = 200; G3 311 = 46; AN A42 = 8
-        self.assertIn("| G1 | 134 | 111 | 23 | 23 | 0 | 28 | 23 | 5 | 5 | 0 |", self.e7)
-        self.assertIn("| AP | 200 | 272 | -72 | -62 | -10 | 10 | 25 | -15 | -15 | 0 |", self.e7)
-        self.assertIn("| G2 | 70 | 104 | -34 | -34 | 0 | 12 | 17 | -5 | -5 | 0 |", self.e7)
-        self.assertIn("| G3 | 46 | 49 | -3 | -3 | 0 |", self.e7)
+        # painel: G1 111+112+151 = 134; G2 211 = 70; AP A11 + AP-EV = 250; G3 311 + G3-EV = 55; AN A42 = 8
+        # meta do dia pela rota da meta: G1 111+151 = 23; G2 211 = 21; AP A11 = 25
+        self.assertIn("| G1 | 134 | 111 | 23 | 23 | 0 | 23 | 27 | -4 | -4 | 0 |", self.e7)
+        self.assertIn("| AP | 250 | 272 | -22 | -12 | -10 | 25 | 31 | -6 | -6 | 0 |", self.e7)
+        self.assertIn("| G2 | 70 | 104 | -34 | -34 | 0 | 21 | 17 | 4 | 4 | 0 |", self.e7)
+        self.assertIn("| G3 | 55 | 49 | 6 | 6 | 0 |", self.e7)
         self.assertIn("| AN | 8 | 0 | 8 | 8 | 0 |", self.e7)
-        self.assertIn("| **todas as gerências do CSV** | 458 | 536 | -78 | -68 | -10 | 50 | 65 | -15 | -15 | 0 |", self.e7)
+        self.assertIn("| **todas as gerências do CSV** | 517 | 536 | -19 | -9 | -10 | 69 | 75 | -6 | -6 | 0 |", self.e7)
 
     def test_contribuicoes_por_rota_com_a_causa(self):
         for linha in [
-            "| EV5 | A11 | fora do painel: EV* | supervisão no modelo SV.BL.AP; rota da meta A11 (no painel) | -50,0 |",
             "| GAP | — | fora do painel: SV.BL.* | supervisão no modelo SV.G1.1 | -7,0 |",
             "| APE | — | fora do painel: INVALIDO / G*E / G*F / APE |",
             "| G2F | — | fora do painel: INVALIDO / G*E / G*F / APE |",
@@ -570,36 +610,40 @@ class TestSecaoE7(unittest.TestCase):
             "| A42 | A42 | virtual (entra no total) | gerência do modelo ME | 8,0 |",
             "| 311 | 311 | oculta: SV.G3.3 | gerência do modelo ME | 6,0 |",
             "| 111 | 111 | outra: gerência agrupada do cliente fora das do painel | rota 111 da G1 no painel | -5,0 |",
-            "| EV5 | — | fora do painel: EV* | supervisão no modelo SV.G3.2; rota da AP na base | -9,0 |",
             # meta do dia pela rota da meta (1ª coluna)
-            "| A11 | EV5 | rota da meta ≠ rota do cliente | cliente na rota EV5 (fora do painel: EV*) | -15,0 |",
-            "| 211 | 112 | rota da meta ≠ rota do cliente | cliente na rota 112 da G1 no painel | -5,0 |",
-            "| 211 | 112 | gerência do modelo ≠ gerência do painel (rota atribuída a outra gerência) | gerência do modelo G2 | 5,0 |",
+            "| 211 | 112 | gerência do modelo ≠ gerência do painel (rota atribuída a outra gerência) | rota 211 na G2 no painel | -4,0 |",
+            "| 211 | 112 | gerência do modelo ≠ gerência do painel (rota atribuída a outra gerência) | gerência do modelo G1 | 4,0 |",
+            "| EV7 | A11 | rota da meta ≠ rota do cliente | rota da meta EV7 (fora do painel: EV*); cliente na rota A11 da AP no "
+            "painel | -6,0 |",
         ]:
             self.assertIn(linha, self.e7)
-        self.assertNotIn("999", self.e7)                                # NF cancelada fica fora (como no Vol Real)
-        self.assertNotIn("99,0", self.e7)                               # meta do dia de outro dia fica fora
+        self.assertNotIn("| EV5 |", self.e7)          # clientes das EV* agora entram pela rota oculta da gerência
+        self.assertNotIn("999", self.e7)               # NF cancelada fica fora (como no Vol Real)
+        self.assertNotIn("99,0", self.e7)              # meta do dia de outro dia fica fora
 
     def test_deslocamentos_e_par_g2_g3(self):
-        self.assertIn("| 112 | G1 | G2 | 30,0 | 5,0 |", self.e7)
-        self.assertIn("| EV5 | AP | G3 | fora do painel: EV* | -9,0 | 0,0 |", self.e7)
+        self.assertIn("| 112 | G1 | G2 | 30,0 | 0,0 |", self.e7)
+        self.assertIn("| 211 | G2 | G1 | 0,0 | 4,0 |", self.e7)
+        self.assertIn("| nenhuma | — | — | — | — | — |", self.e7)   # nenhum cliente de EV* fica fora
         self.assertIn("Par G2/G3: deslocamento direto entre as duas = Real 0 cx, Meta do dia 0 cx.", self.e7)
-        self.assertIn("(d) dentro da mesma gerência: 3 cx de meta do dia em 1 pares", self.e7)
 
     def test_resumo_por_gerencia(self):
-        self.assertIn("- **AP** · Real -72 cx: explicado por: fora do painel: EV* (-50 cx); fora do painel: SV.BL.* (-7 cx); "
-                      "fora do painel: INVALIDO / G*E / G*F / APE (-3 cx); sem cliente corrente e ativo (-2 cx) · "
-                      "**resíduo -10 cx sem causa encontrada** · Meta do dia -15 cx: explicado por: rota da meta ≠ rota "
-                      "do cliente (-15 cx) · resíduo 0 cx", self.e7)
-        self.assertIn("- **G3** · Real -3 cx: explicado por: fora do painel: EV* (-9 cx); oculta: SV.G3.3 (6 cx) · resíduo 0 cx",
+        self.assertIn("- **AP** · Real -22 cx: explicado por: fora do painel: SV.BL.* (-7 cx); fora do painel: INVALIDO / "
+                      "G*E / G*F / APE (-3 cx); sem cliente corrente e ativo (-2 cx) · **resíduo -10 cx sem causa "
+                      "encontrada** · Meta do dia -6 cx: explicado por: rota da meta ≠ rota do cliente (-6 cx) · resíduo 0 cx",
                       self.e7)
+        self.assertIn("- **G3** · Real 6 cx: explicado por: oculta: SV.G3.3 (6 cx) · resíduo 0 cx", self.e7)
         self.assertNotIn("- **RV**", self.e7)                           # fora do CSV
 
     def test_hipoteses(self):
         self.assertIn("(b) rota do painel atribuída a outra gerência no modelo (total deslocado; sai de uma, entra na "
-                      "outra): Real 30 cx · Meta do dia 5 cx", self.e7)
-        self.assertIn("(c) Neutraliza, virtuais e supervisões ocultas entram no total do painel. Real: Neutraliza (entra "
-                      "no total) 4 cx; oculta: SV.G3.3 46 cx; virtual (entra no total) 8 cx.", self.e7)
+                      "outra): Real 30 cx · Meta do dia 4 cx", self.e7)
+        self.assertIn("(d) rota da meta ≠ rota do cliente (Real: cliente fora do painel com a meta numa rota do painel; "
+                      "meta do dia: meta numa rota fora do painel de cliente que está no painel): Real 0 cx · Meta do "
+                      "dia -6 cx", self.e7)
+        self.assertIn("(c) Neutraliza, virtuais, rotas ocultas das EV* e supervisões ocultas entram no total do painel. "
+                      "Real: Neutraliza (entra no total) 4 cx; clientes em rotas EV* (rota oculta, entra no total) 59 cx; "
+                      "oculta: SV.G3.3 46 cx; virtual (entra no total) 8 cx.", self.e7)
 
     def test_sem_nomes_nem_codigos_de_clientes(self):
         for v in ["CLIENTE SECRETO", "Secreto", "7770", "Warley", "WARLEY", "Marcos", "MARCOS", "1007382", "1015300"]:
@@ -610,7 +654,8 @@ class TestSecaoE7SemColunas(unittest.TestCase):
     def test_sem_colunas_de_gerencia_do_modelo(self):
         with tempfile.TemporaryDirectory() as pasta:
             (Path(pasta) / "refri_2026-10-20.csv").write_text(TELA_E7, encoding="utf-8")
-            txt = ct.conferir(ConsultaFalsa(_dados_e7()), date(2026, 10, 20), pasta_sac=Path(pasta))[0].texto("E7")
+            txt = ct.conferir(ConsultaSemGc(_dados_e7()), date(2026, 10, 20), pasta_sac=Path(pasta))[0].texto("E7")
         self.assertNotIn("ERRO", txt)
         self.assertIn("E7. Diferenças contra o SAC", txt)
         self.assertIn("a E7 não pode ser calculada", txt)
+        self.assertIn("| AP | 200 | 272 |", txt)      # sem a gerência comercial, a rota oculta das EV* não existe

@@ -62,9 +62,9 @@ COLUNAS_SAC = ["GC", "Real", "Meta", "Tendencia", "MetaDia"]
 K_REFRI = "VOL REFRIGERANTES"
 # tolerâncias do aceite: Real ±0,1%; Meta exata (inteiros); Tendência ±0,2%; % ±0,1 p.p.; Meta do dia ±1%
 TOL_REAL, TOL_TEND, TOL_PCT, TOL_META_DIA = 0.001, 0.002, 0.1, 0.01
-# E7: colunas do modelo de vendas lidas só pela conferência (as regras do painel continuam em mapeamento.py).
+# E7: colunas do modelo de vendas que só a conferência lê (as do painel ficam em mapeamento.py).
 # Só códigos: gerência ('Gc. An'), supervisão ('Sv. G1. 1') e rota; nunca nomes nem clientes.
-COL_GC_COMERCIAL = "DS_GERENCIA_COMERCIAL_AT_Clien"    # gerência comercial atual do cliente (não agrupada)
+COL_GC_COMERCIAL = CM.GC_COMERCIAL                     # gerência comercial do cliente (o gerador usa)
 COL_SV_CLIENTE = "DS_SUPERVISOR_ATUAL_Clien"           # código da supervisão atual do cliente
 COL_GC_COMERCIAL_META = "DS_GERENCIA_COM_Chave_Meta_SAP"
 COL_GC_AGRUPADA_META = "DS_GC_AGRUPADA__Chave_Meta_SAP"
@@ -77,11 +77,12 @@ CAUSA_INVALIDA = "fora do painel: INVALIDO / G*E / G*F / APE"
 CAUSA_SEM_CLIENTE = "sem cliente corrente e ativo"
 CAUSA_NEUTRALIZA = "Neutraliza (entra no total)"
 CAUSA_VIRTUAL = "virtual (entra no total)"
+CAUSA_EVENTUAIS = "clientes em rotas EV* (rota oculta, entra no total)"
 CAUSA_OUTRA_GC = "gerência do modelo ≠ gerência do painel (rota atribuída a outra gerência)"
 CAUSA_ROTA_META = "rota da meta ≠ rota do cliente"
 ROTA_INVALIDA = re.compile(r"^(INVALIDO|G[A-Z0-9]{1,2}[EF]|APE)$")
 _SV_SIGLA = re.compile(r"^SV\.(?:BL\.)?([A-Z0-9]+)(?:\.\d+)?$")
-_CODIGO = re.compile(r"^[A-Z0-9][A-Z0-9_.]{0,11}$")
+_CODIGO = re.compile(r"^[A-Z0-9][A-Z0-9_.-]{0,11}$")
 # colunas do comodato que não podem ir para o relatório (identificam cliente)
 COLUNAS_PROIBIDAS = re.compile(r"CLIENTE|(^|_)(NOME|NM|CD)(_|$)|FANTASIA|CNPJ|CPF|ENDERECO|EQUIPAMENTO|"
                                r"VENDEDOR|SUPERVISOR|CONSULTOR|GERENTE", re.I)
@@ -296,8 +297,8 @@ def rotas_do_painel(clientes) -> tuple[dict[str, str], dict[str, str]]:
 
 # ------------------------------------------------------------------ E7: diferenças contra o SAC, por rota
 def _codigo(valor: object) -> str | None:
-    """Código para o relatório (rota, gerência, supervisão): só letras, números, '.' e '_'; '--'/vazio -> None.
-    Qualquer outra coisa vira 'outro' (nunca imprime texto livre que possa ser nome)."""
+    """Código para o relatório (rota, gerência, supervisão): só letras, números, '.', '_' e '-', sem espaço;
+    '--'/vazio -> None. Qualquer outra coisa vira 'outro' (nunca imprime texto livre que possa ser nome)."""
     t = normalizar(valor).replace(" ", "")
     if t in ("", "--", "#"):
         return None
@@ -342,22 +343,25 @@ class Linha(NamedTuple):
     sv: str | None          # supervisão do cliente no modelo (código)
     no_escopo: bool         # a consulta do painel pega a linha (gerência agrupada do cliente é do painel)
     valor: float
+    gc_comercial: str | None = None   # gerência comercial do cliente: o painel soma por ela os clientes em EV*
 
 
 class Painel(NamedTuple):
     """O que o painel publica, por rota, e a base de clientes sem os filtros do painel (para as causas)."""
-    gc_rota: dict           # rota do painel -> gerência (regra do payload)
+    gc_rota: dict           # rota do painel -> gerência (regra do payload), com as rotas ocultas das EV*
     sv_rota: dict           # rota do painel -> supervisão
     base: dict              # rota da base (corrente e ativo, sem os filtros do painel) -> {supervisões}
     gc_base: dict           # rota da base -> sigla da gerência na base (None se não for uma das 16)
 
 
 def tipo_rota(rota: str, p: Painel) -> str | None:
-    """Neutraliza, virtual ou supervisão oculta (as três entram no total da gerência do painel)."""
+    """Neutraliza, virtual, rota oculta das EV* ou supervisão oculta (todas entram no total da gerência do painel)."""
     if rota in M.NEUTRALIZA_ROTAS:
         return CAUSA_NEUTRALIZA
     if rota in M.VIRTUAIS_ROTAS:
         return CAUSA_VIRTUAL
+    if p.gc_rota.get(rota) and rota == M.rota_eventuais(p.gc_rota[rota]):
+        return CAUSA_EVENTUAIS
     sv = p.sv_rota.get(rota)
     if sv in M.OCULTAS and p.gc_rota.get(rota) not in M.GC_SEM_OCULTAS:
         return f"oculta: {sv}"
@@ -365,7 +369,7 @@ def tipo_rota(rota: str, p: Painel) -> str | None:
 
 
 def causa_fora_do_painel(rota: str, p: Painel) -> str:
-    """Por que a rota do cliente não está no painel (a ordem decide quando há mais de um motivo)."""
+    """Por que a rota não está no painel (a ordem decide quando há mais de um motivo)."""
     if not rota:
         return "outra: venda sem rota do cliente"
     if not M.rota_do_painel(rota):
@@ -387,72 +391,96 @@ class Contribuicoes(NamedTuple):
     por_gc: dict            # gc -> {(rota do cliente, rota da meta, causa, detalhe): cx}; cx = painel - SAC
     deslocamentos: dict     # (rota, gc no painel, gc no modelo) -> cx (rota do painel em outra gerência no modelo)
     fora_outra_gc: dict     # (rota fora do painel, gc da rota na base, gc no modelo) -> cx
-    dentro: list            # [cx, {(rota da meta, rota do cliente)}]: meta em outra rota da mesma gerência
-    hipoteses: dict         # cx: 'a' fora do painel e 'd' rota da meta no painel (painel - SAC); 'b' total deslocado
+    hipoteses: dict         # cx: 'a' fora do painel, 'd' rota da meta ≠ rota do cliente (painel - SAC); 'b' deslocado
+
+
+def rota_no_painel(l: Linha, p: Painel, por_rota_meta: bool) -> tuple[str, str | None]:
+    """(rota em que o gerador conta a linha, gerência dela; None se o painel não conta).
+
+    Real: rota do cliente, no escopo da consulta (gerência agrupada do cliente do painel); cliente em rota EV*: a
+    rota oculta da gerência comercial dele. Meta do dia: rota da meta, sem filtro de gerência.
+    """
+    if por_rota_meta:
+        return l.rota_meta, (p.gc_rota.get(l.rota_meta) if l.rota_meta else None)
+    if not l.no_escopo:
+        return l.rota, None
+    if l.rota in p.gc_rota:
+        return l.rota, p.gc_rota[l.rota]
+    if M.rota_eventual(l.rota) and l.gc_comercial and p.gc_rota.get(M.rota_eventuais(l.gc_comercial)):
+        return M.rota_eventuais(l.gc_comercial), l.gc_comercial
+    return l.rota, None
 
 
 def contribuicoes(linhas: list[Linha], p: Painel, por_rota_meta: bool) -> Contribuicoes:
     """Linhas que o painel e o modelo do SAC contam em gerências diferentes, com a causa.
 
-    O painel conta a linha na gerência da rota do cliente (se a rota está no painel e a linha no escopo da
-    consulta); o SAC, na gerência do modelo. Linha contada só pelo SAC entra com sinal negativo na gerência do
-    modelo; só pelo painel, positivo na gerência do painel; assim, soma das contribuições = painel - modelo.
-    por_rota_meta (meta do dia): a rota de referência é a da meta; o painel agrupa pela do cliente.
+    O painel conta a linha na gerência da rota em que o gerador a põe (rota_no_painel); o SAC, na gerência do
+    modelo. Linha contada só pelo SAC entra com sinal negativo na gerência do modelo; só pelo painel, positivo na
+    gerência do painel; assim, soma das contribuições = painel - modelo.
     """
     def c(r):
         return _codigo(r) or "—"
 
     por_gc = defaultdict(lambda: defaultdict(float))
     desloc, fora_gc, hip = defaultdict(float), defaultdict(float), defaultdict(float)
-    dentro = [0.0, set()]
     for l in linhas:
         if not l.valor:
             continue
-        gp = p.gc_rota.get(l.rota) if l.no_escopo else None
+        rp, gp = rota_no_painel(l, p, por_rota_meta)
         gm = l.gc_modelo
         rm = l.rota_meta if l.rota_meta != l.rota else ""
-        meta_no_painel = bool(rm) and gm is not None and p.gc_rota.get(rm) == gm
         if gp is not None and gp == gm:
-            if por_rota_meta and meta_no_painel:
-                dentro[0] += l.valor
-                dentro[1].add((rm, l.rota))
             continue
         if gm:   # o SAC conta na gerência do modelo e o painel não
             if gp:
-                causa, det = CAUSA_OUTRA_GC, f"rota {c(l.rota)} na {gp} no painel"
+                causa, det = CAUSA_OUTRA_GC, f"rota {c(rp)} na {gp} no painel"
+            elif por_rota_meta:
+                if not l.rota_meta:
+                    causa, det = "outra: meta do dia sem rota da meta", f"cliente na rota {c(l.rota)}"
+                else:
+                    fora = causa_fora_do_painel(l.rota_meta, p)
+                    hip["a"] -= l.valor
+                    if rm and p.gc_rota.get(l.rota) == gm:   # pela rota do cliente (regra anterior) contaria
+                        hip["d"] -= l.valor
+                        causa = CAUSA_ROTA_META
+                        det = f"rota da meta {c(rm)} ({fora}); cliente na rota {c(l.rota)} da {gm} no painel"
+                    else:
+                        causa, det = fora, (f"cliente na rota {c(l.rota)}" if rm else "")
             elif l.rota in p.gc_rota:
                 causa = "outra: gerência agrupada do cliente fora das do painel"
                 det = f"rota {c(l.rota)} da {p.gc_rota[l.rota]} no painel"
             else:
-                fora = causa_fora_do_painel(l.rota, p)
+                causa = causa_fora_do_painel(l.rota, p)
                 hip["a"] -= l.valor
+                meta_no_painel = bool(rm) and p.gc_rota.get(rm) == gm
                 if meta_no_painel:
                     hip["d"] -= l.valor
                 gb = p.gc_base.get(l.rota)
                 if gb and gb != gm:
                     fora_gc[(l.rota, gb, gm)] -= l.valor
-                if por_rota_meta and meta_no_painel:
-                    causa, det = CAUSA_ROTA_META, f"cliente na rota {c(l.rota)} ({fora})"
-                else:
-                    causa = fora
-                    det = "; ".join(x for x in [
-                        f"supervisão no modelo {l.sv}" if l.sv else "",
-                        f"rota da {gb} na base" if gb and gb != gm else "",
-                        f"rota da meta {c(rm)}" + (" (no painel)" if meta_no_painel else "") if rm else ""] if x)
-            if por_rota_meta and meta_no_painel and causa == CAUSA_OUTRA_GC:
-                causa, det = CAUSA_ROTA_META, f"cliente na rota {c(l.rota)} da {gp} no painel"
+                fora_oculta = ("" if not M.rota_eventual(l.rota) else
+                               f"a {l.gc_comercial} não tem rota oculta das EV*" if l.gc_comercial else
+                               "cliente sem gerência comercial do painel (fora da rota oculta)")
+                det = "; ".join(x for x in [
+                    fora_oculta,
+                    f"supervisão no modelo {l.sv}" if l.sv else "",
+                    f"rota da {gb} na base" if gb and gb != gm else "",
+                    f"rota da meta {c(rm)}" + (" (no painel)" if meta_no_painel else "") if rm else ""] if x)
             por_gc[gm][(l.rota, l.rota_meta, causa, det)] -= l.valor
         if gp:   # o painel conta na gerência dele e o SAC não
-            tipo = tipo_rota(l.rota, p)
+            tipo = tipo_rota(rp, p)
             if gm:
-                causa, det = CAUSA_OUTRA_GC, "; ".join(x for x in [f"gerência do modelo {gm}", tipo or ""] if x)
-                desloc[(l.rota, gp, gm)] += l.valor
+                causa = CAUSA_OUTRA_GC
+                det = "; ".join(x for x in [f"gerência do modelo {gm}",
+                                            f"rota {c(rp)} no painel" if rp != l.rota and not por_rota_meta else "",
+                                            tipo or ""] if x)
+                desloc[(rp, gp, gm)] += l.valor
                 hip["b"] += l.valor
             else:
                 causa = tipo or f"outra: gerência do modelo fora das 16 ({l.cod_modelo or '—'})"
                 det = f"gerência do modelo {l.cod_modelo or '—'}"
             por_gc[gp][(l.rota, l.rota_meta, causa, det)] += l.valor
-    return Contribuicoes({g: dict(v) for g, v in por_gc.items()}, dict(desloc), dict(fora_gc), dentro, dict(hip))
+    return Contribuicoes({g: dict(v) for g, v in por_gc.items()}, dict(desloc), dict(fora_gc), dict(hip))
 
 
 def reconciliar(painel: float | None, sac: float | None, contrib: dict) -> tuple[float | None, float, float | None]:
@@ -479,12 +507,14 @@ def linha_modelo(l: dict, candidata, gcs_painel: set[str] | None, valor: float) 
     return Linha(rota=fontes._rota(l.get(CM.ROTA)), rota_meta="" if rm in ("--", "#") else rm,
                  gc_modelo=sigla(l), cod_modelo=_codigo(M.codigo_gc(bruto(l))),
                  sv=_codigo(M.codigo_sv(l.get(COL_SV_CLIENTE))),
-                 no_escopo=gcs_painel is None or limpar(l.get(CM.GC)) in gcs_painel, valor=valor)
+                 no_escopo=gcs_painel is None or limpar(l.get(CM.GC)) in gcs_painel, valor=valor,
+                 gc_comercial=_sigla_gc(l.get(CM.GC_COMERCIAL)))
 
 
-def painel_e7(clientes, linhas_base: list[dict]) -> Painel:
-    """Rotas do painel (regra do payload) e a base de clientes corrente e ativa sem os filtros do painel."""
-    gc_rota, sv_rota = rotas_do_painel(clientes)
+def painel_e7(gc_rota: dict, sv_rota: dict, linhas_base: list[dict]) -> Painel:
+    """Rotas do painel (as do payload, com as rotas ocultas das EV*) e a base de clientes corrente e ativa sem os
+    filtros do painel."""
+    sv_rota = dict(sv_rota, **{r: M.sv_eventuais(g) for r, g in gc_rota.items() if r == M.rota_eventuais(g)})
     base, gcs = defaultdict(set), defaultdict(list)
     for l in linhas_base:
         r = fontes._rota(l.get(CB.ROTA))
@@ -495,7 +525,7 @@ def painel_e7(clientes, linhas_base: list[dict]) -> Painel:
         m = _SV_SIGLA.match(sv)
         gcs[r].append(m.group(1) if m and m.group(1) in M.GC_NOMES else _sigla_gc(l.get(CB.GC)))
     gc_base = {r: _mais_comum([g for g in gs if g]) or None for r, gs in gcs.items()}
-    return Painel(gc_rota, sv_rota, dict(base), gc_base)
+    return Painel(dict(gc_rota), sv_rota, dict(base), gc_base)
 
 
 def consultas_e7(cons: Consulta, anomes: str, anomes_hoje: str, hoje: date, com_dia: bool) -> tuple[dict, set]:
@@ -545,6 +575,18 @@ def _explicado(dif: float | None, contrib: dict, residuo: float | None) -> str:
     return txt + f" · resíduo {_cx(residuo) if residuo is not None else '—'} cx"
 
 
+def incluir_eventuais(estado: dict, vm: fontes.VolumeMes) -> None:
+    """Como o payload: a rota oculta de cada gerência, com o Real dos clientes em rotas EV*, entra nas rotas do
+    painel (gerência, lista de rotas e Vol Real), para todas as seções somarem como o gerador."""
+    ev = fontes.volume_eventuais(vm, estado["gc_da_rota"])
+    for r, (gc, ks) in ev.items():
+        vm.real[r] = dict(ks)
+        estado["gc_da_rota"][r] = gc
+        estado["gc_rota_painel"][r] = gc
+    estado["rotas"] = sorted(estado["gc_da_rota"])
+    estado["eventuais"] = {r: gc for r, (gc, _) in ev.items()}
+
+
 def diferencas_sac(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, anomes_hoje: str, hoje: date):
     """Seção E7: explica, rota a rota, a diferença entre o painel e a tela do SAC (Real e Meta do dia)."""
     nome, comentario, sac = estado["sac"]
@@ -553,12 +595,14 @@ def diferencas_sac(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, an
     com_dia = tem_dia_sac and dia_painel is not None
     rel.p(f"Tela do SAC: `{nome}`" + (f" ({comentario})" if comentario else "") + ". Diferença = painel − SAC "
           "(negativa: o SAC soma mais). Painel = o da seção 4 (as funções do gerador, por rota, na gerência da rota "
-          "no painel). Modelo de vendas consultado **sem filtros de escopo** (nenhuma gerência, rota ou base de "
-          "clientes), só Refrigerantes, agregado no servidor por gerência x supervisão x rota do cliente "
+          "no painel: Real pela rota do cliente, com os clientes em rotas EV* na rota oculta da gerência comercial "
+          "deles; meta do dia pela rota da meta). Modelo de vendas consultado **sem filtros de escopo** (nenhuma "
+          "gerência, rota ou base de clientes), só Refrigerantes, agregado no servidor por gerência x supervisão x "
+          "rota do cliente "
           f"(`{CM.ROTA}`) x rota da meta (`{CM.META_ROTA}`): Real = `{CM.VOL_MES}` do mês com os NF_STATUS do Vol "
           f"Real; Meta do dia = `{CM.META_RECUPERAVEL}` com DATA_MOVIMENTO = hoje. Contribuição = o que só o painel "
           "conta na gerência (+) ou só o SAC (−); resíduo = diferença − contribuições (perto de 0 = explicado). "
-          "**Só relata: o gerador e as regras de escopo não mudam.**")
+          "**Só relata: esta seção não muda o gerador.**")
     if not com_dia:
         rel.p("Meta do dia fora desta seção: " + ("a tela do SAC não traz MetaDia." if not tem_dia_sac else
                                                   "o painel não tem a meta do dia (fechamento ou consulta falhou)."))
@@ -574,10 +618,12 @@ def diferencas_sac(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, an
     if com_dia:
         medidas.append(("dia", "MetaDia", [(l, numero(l.get(CM.META_RECUPERAVEL))) for l in linhas["dia"]
                                            if M.indicador_volume(l.get(CM.AGRUPADOR)) == K_REFRI], True))
-    p = painel_e7(estado["clientes"], linhas["base"])
     vm = estado.get("vm") or fontes.carregar_volume_real(cons, anomes, estado["gcs"], None)
+    if "eventuais" not in estado:
+        incluir_eventuais(estado, vm)
+    p = painel_e7(estado["gc_rota_painel"], rotas_do_painel(estado["clientes"])[1], linhas["base"])
     painel = {"real": defaultdict(float), "dia": defaultdict(float)}
-    # Neutraliza, virtuais e ocultas no total do painel: por gerência (hipótese c) e por tipo
+    # Neutraliza, virtuais, rotas ocultas das EV* e ocultas no total do painel: por gerência (hipótese c) e por tipo
     tipos = {"real": defaultdict(float), "dia": defaultdict(float)}
     por_tipo = {"real": defaultdict(float), "dia": defaultdict(float)}
     for r, g in p.gc_rota.items():
@@ -635,17 +681,13 @@ def diferencas_sac(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, an
                                                    sorted(tot.items(), key=lambda cv: -abs(cv[1])) if abs(v) >= 0.5)
                                          or "nenhuma"))
     for letra, texto in [
-        ("a", "(a) rotas que o SAC soma e o painel exclui (EV*, SV.BL.*, INVALIDO/G*E/G*F/APE, sem cliente corrente e "
-              "ativo e outras fora do painel)"),
+        ("a", "(a) rotas fora do painel que o SAC soma (SV.BL.*, INVALIDO/G*E/G*F/APE, sem cliente corrente e ativo e "
+              "outras; os clientes das EV* entram pela rota oculta da gerência, ver (c))"),
         ("b", "(b) rota do painel atribuída a outra gerência no modelo (total deslocado; sai de uma, entra na outra)"),
-        ("d", "(d) cliente fora do painel com a meta numa rota do painel da mesma gerência (rota da meta ≠ rota do "
-              "cliente)")]:
+        ("d", "(d) rota da meta ≠ rota do cliente (Real: cliente fora do painel com a meta numa rota do painel; meta "
+              "do dia: meta numa rota fora do painel de cliente que está no painel)")]:
         rel.p(f"- {texto}: Real {_cx(soma_hip('real', letra))} cx"
               + (f" · Meta do dia {_cx(soma_hip('dia', letra))} cx" if com_dia else ""))
-    if com_dia:
-        dentro = res["dia"].dentro
-        rel.p(f"- (d) dentro da mesma gerência: {_cx(dentro[0])} cx de meta do dia em {len(dentro[1])} pares rota da "
-              "meta ≠ rota do cliente, as duas no painel (muda a meta do dia de cada rota, não o total da gerência).")
     fora_b = sum(abs(v) for r_ in res.values() for v in r_.fora_outra_gc.values())
     rel.p(f"- (b) clientes de rotas fora do painel cuja gerência no modelo difere da gerência da rota na base: "
           f"{_cx(fora_b)} cx (Real e Meta do dia; ver E7c).")
@@ -661,7 +703,8 @@ def diferencas_sac(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, an
 
     def tipos_txt(m):
         return "; ".join(f"{t} {_cx(v)} cx" for t, v in sorted(por_tipo[m].items())) or "nenhuma"
-    rel.p("- (c) Neutraliza, virtuais e supervisões ocultas entram no total do painel. Real: " + tipos_txt("real")
+    rel.p("- (c) Neutraliza, virtuais, rotas ocultas das EV* e supervisões ocultas entram no total do painel. Real: "
+          + tipos_txt("real")
           + (". Meta do dia: " + tipos_txt("dia") if com_dia else "")
           + ". Gerência x medida com essas rotas: "
           + ("; ".join(f"{k}: {v}" for k, v in sorted(veredito.items())) or "nenhuma") + ".")
@@ -785,6 +828,12 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
     def status():
         vm = fontes.carregar_volume_real(cons, anomes, gcs, None)
         estado["vm"] = vm
+        incluir_eventuais(estado, vm)
+        if estado["eventuais"]:
+            rel.p("Clientes em rotas EV* (rota oculta da gerência comercial, como o payload), Vol Real de Refrigerantes: "
+                  + "; ".join(f"{gc} {_n(vm.real[r].get(K_REFRI, 0.0), 0)}"
+                              for r, gc in sorted(estado["eventuais"].items(), key=lambda rg: list(M.GC_NOMES).index(rg[1])))
+                  + "\n")
         todos = defaultdict(float)
         for l in cons.linhas(M.OBJ_META, [CM.NF_STATUS, CM.VOL_MES], eq(CM.ANOMES, anomes)):
             todos[limpar(l.get(CM.NF_STATUS))] += numero(l.get(CM.VOL_MES))
@@ -837,19 +886,19 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
             if gc:
                 for k, v in ks.items():
                     por_gc[gc][k] += v
-        rel.p(f"(a) soma por gerência, {fontes.filtro_hoje(cons, hoje)} (rotas do painel):")
+        rel.p(f"(a) soma por gerência, {fontes.filtro_hoje(cons, hoje)}, pela rota da meta (rotas do painel):")
         rel.tabela(["gerência"] + [M.LABELS[k] for k in VOL] + ["total"],
                    [[g] + [_n(por_gc[g].get(k, 0.0)) for k in VOL] + [_n(sum(por_gc[g].values()))]
                     for g in M.GC_ATIVAS if g in por_gc])
         # (b) e (c): a mesma medida por rota x cliente, para ver se o valor da rota se repete em cada cliente
-        sel = [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.META_RECUPERAVEL]
+        sel = [CM.META_ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.META_RECUPERAVEL]   # pela rota da meta, como o gerador
         filtro = e(eq(CM.ANOMES, anomes_hoje), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())),
-                   fontes.filtro_hoje(cons, hoje), ou(CM.ROTA, [r for r in amostra if r in gc_da_rota]))
+                   fontes.filtro_hoje(cons, hoje), ou(CM.META_ROTA, [r for r in amostra if r in gc_da_rota]))
         lin = [l for ls in cons.em_paralelo(fontes._por_gerencia(M.OBJ_META, sel, filtro, gcs, None)).values()
                for l in ls]
         soma, maximo, n = defaultdict(float), defaultdict(float), defaultdict(int)
         for l in lin:
-            r, k, v = fontes._rota(l.get(CM.ROTA)), M.indicador_volume(l.get(CM.AGRUPADOR)), numero(l.get(CM.META_RECUPERAVEL))
+            r, k, v = fontes._rota(l.get(CM.META_ROTA)), M.indicador_volume(l.get(CM.AGRUPADOR)), numero(l.get(CM.META_RECUPERAVEL))
             if r and k:
                 soma[(r, k)] += v
                 maximo[(r, k)] = max(maximo[(r, k)], v)
@@ -863,8 +912,8 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
                 rep = n[(r, k)] > 1 and a > 0 and abs(maximo[(r, k)] - a) <= 0.005 * a
                 linhas.append([f"rota {r}", M.LABELS[k], _n(a), _n(soma[(r, k)]), _n(maximo[(r, k)]), n[(r, k)],
                                "**sim**" if rep else "não"])
-        rel.p("\n(a) por rota (o gerador usa esta) x (b) soma por rota x cliente x (c) máximo por rota x cliente e nº de "
-              "clientes com valor > 0. 'Repetido' = o máximo de um cliente já é o valor da rota.")
+        rel.p("\n(a) por rota da meta (o gerador usa esta) x (b) soma por rota da meta x cliente x (c) máximo por rota "
+              "da meta x cliente e nº de clientes com valor > 0. 'Repetido' = o máximo de um cliente já é o valor da rota.")
         rel.tabela(["rota", "macro", "(a) por rota", "(b) soma rota x cliente", "(c) máx. por cliente",
                     "clientes > 0", "repetido?"], linhas)
     etapa("META_RECUPERAVEL_ROTA", recuperavel)

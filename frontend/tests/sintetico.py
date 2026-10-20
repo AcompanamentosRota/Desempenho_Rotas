@@ -13,7 +13,7 @@ Cenário: 15 gerências com 2 supervisões x 2 rotas x 3 clientes (a DI fica sem
 desabilitada). Rotas Neutraliza em supervisão própria (SV.G1.5/151, SV.G2.5/251, SV.IT.3/I31, SV.MO.3/M31) e
 misturadas com rotas normais (SV.AT.3/431, SV.PO.2/O21) ou virtuais (SV.AN.4/A41 com as virtuais A42-A44,
 SV.RV.3/R31 com a virtual R32); oculta SV.G3.3/331; na AT a 411 é normal (SV.AT.1) e a SV.AT.3 é
-"sem vendedor". Del Valle Frut só nas rotas da G2.
+"sem vendedor". Del Valle Frut só nas rotas da G2. Clientes numa rota eventual (EVS) da SL: rota oculta SL-EV.
 """
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ def dados(fechamento: bool, sem_meta_dv: bool = False) -> dict:
                     for dia, parte in (("2026-10-02", 0.6), ("2026-10-20", 0.4)):
                         meta_neg.append({CM.ROTA: rota, CM.META_ROTA: rota, CM.AGRUPADOR: ag, CM.DATA: dia,
                                          CM.META_NEG: round(vol * fator * parte, 1), "_gc": origem})
-                    meta_dia.append({CM.ROTA: rota, CM.AGRUPADOR: ag, CM.DATA: "2026-10-13",
+                    meta_dia.append({CM.ROTA: rota, CM.META_ROTA: rota, CM.AGRUPADOR: ag, CM.DATA: "2026-10-13",
                                      CM.META_RECUPERAVEL: round(vol * fator / 21, 1), "_gc": origem})
                 if sigla == "G2" and not sem_meta_dv:
                     metas.append({CM.META_ROTA: rota, CM.META_AGRUPADOR: "Del Valle Frut", CM.META_VOLUME: "80",
@@ -129,6 +129,11 @@ def dados(fechamento: bool, sem_meta_dv: bool = False) -> dict:
                                          CO.DIA_VISITA: "SEG", CO.VISITA_HOJE: "S" if hoje else "N",
                                          CO.EQUIPAMENTO: f"EQ{pv}{e}", CO.GIRO: giro, CO.META_EQPTO: 40.0,
                                          CO.VOLUME: 0.0 if giro == "Giro Zero" else 30.0})
+        if sigla == "SL":   # clientes que estão numa rota eventual (fora da base): rota oculta SL-EV no total da SL
+            for ag, vol, gc_cli in (("Refrigerantes", 120.0, "Gc. Sl"), ("Agua Mineral", 30.0, "Gc. Sl"),
+                                    ("Refrigerantes", 50.0, "Gc. Di")):    # DI sem dados no painel: fica fora
+                vol_real.append({CM.ROTA: "EVS", CM.CLIENTE: "99001", CM.AGRUPADOR: ag, CM.NF_STATUS: "Acertado",
+                                 CM.VOL_MES: vol, CM.GC_COMERCIAL: gc_cli, "_gc": origem})
     d = {M.OBJ_BASE_CLIENTE: base, "comodato": comodato, "meta_vz": meta_vz}
     if not fechamento:
         d[M.OBJ_CALENDARIO] = [{CC.DATA: "2026-10-13", CC.DIAS_UTEIS_MES: 21, CC.DIA_UTIL: 8, CC.DIAS_RESTANTES: 13}]

@@ -105,7 +105,8 @@ fechamento do mês; o cron não usa), `--fechamento "Setembro/26"` (só sobrepõ
 - **Base de clientes**: versão corrente (`FL_CORRENTE = 'S'`) de clientes `Ativo` das gerências
   G1, G2, G3, AP e IT_MO (conferidas) e At, An, Sl, Rv, Pa_Di, Ur_Ri e Gu_Po (a confirmar). Supervisões de
   balcão (`Sv. Bl.`) e rotas eventuais (`EV*`) ficam fora, também na At. As gerências que vêm juntas na fonte
-  (It_Mo, Pa_Di, Ur_Ri, Gu_Po) são separadas pelo código do supervisor.
+  (It_Mo, Pa_Di, Ur_Ri, Gu_Po) são separadas pelo código do supervisor. O Real de volume dos clientes que estão
+  numa rota EV* entra no total da gerência deles (ver "Clientes em rotas eventuais" abaixo).
 - **Cobertura**: cliente com `FX_COBERTURA_REALIZADO > 0` no agrupador (13 agrupadores do painel).
 - **Online**: medidas `*_WF_ONLINE` (pedidos de hoje). Em dia útil, das 07:00 às 18:45, se a consulta vier sem
   nenhum cliente online (o Datasphere em recarga: 0 às 09:28 de 19/10/2026, 199 rotas às 10:13) e o
@@ -186,6 +187,12 @@ aparelho guarda a escolha em `drotas_entrada`):
   Volume, ICS GC e Novos Negócios só no total da gerência; fora da Venda Zero. Para a conta fechar, a cascata
   traz no fim das supervisões uma nota discreta só com os números delas (ex.: "Inclui rotas virtuais: Meta 56.453 ·
   Real 11.733"), sem rotas nem clientes: linhas + nota = card.
+- **Clientes em rotas eventuais (EV*)** (desde 20/10/2026, como o SAC): a rota EV continua fora do painel, mas o
+  Real de volume (os 5 grupos; Del Valle Frut só na G2) dos clientes que estão nela entra no total da gerência
+  comercial do cliente (`DS_GERENCIA_COMERCIAL_AT_Clien`), numa rota oculta por gerência (ex.: `AP-EV`), sem meta,
+  sem clientes e fora de ICS, Novos Negócios, Venda Zero e online. A tendência da gerência sobe o mesmo valor (sem Neg
+  Restante). Na cascata, ao abrir as supervisões, uma nota mostra o valor: "Inclui clientes de rotas eventuais (EV*):
+  Real 149" (linhas + notas = card). Supervisões e rotas não mudam.
 - Supervisão que só tem rotas Neutraliza ou virtuais (SV.G1.5, SV.AN.4...) não aparece; a que mistura soma só
   as rotas normais. SV.G3.3 continua oculta. Na gerência **AT** nenhuma supervisão é oculta (a 431 vai para a
   linha "Neutraliza"; a 411 é rota normal).
@@ -218,7 +225,7 @@ Por rota × macro de volume (Refrigerantes, Cervejas, Still, Água Mineral, Dest
 | Tendência | Vol Real + Neg Restante |
 | % Tendência | Tendência ÷ Meta; verde a partir de 100% |
 | Dif | Vol Real − Meta |
-| Meta do dia | `META_RECUPERAVEL_ROTA` por rota com `DATA_MOVIMENTO` = hoje (sem a medida, fica "—") |
+| Meta do dia | `META_RECUPERAVEL_ROTA` pela rota da meta (`CD_ROTA_Chave_Meta_SAP`, como o SAC) com `DATA_MOVIMENTO` = hoje (sem a medida, fica "—") |
 
 A rota da meta é a mesma que o SAC usa: pela rota atual do cliente, quem foi transferido levaria a curva
 para outra rota. Se a consulta pela rota da meta não funcionar, o gerador volta à curva pela rota do cliente
@@ -287,15 +294,18 @@ Real ±0,1%; Meta exata (inteiros arredondados); Tendência ±0,2%; % ±0,1 p.p.
 - **E7b**: as 12 maiores contribuições por gerência (e o total das demais), por rota do cliente no Real e por rota
   da meta na meta do dia, com a causa: `fora do painel: EV*`, `fora do painel: SV.BL.*`, `fora do painel: INVALIDO /
   G*E / G*F / APE`, `sem cliente corrente e ativo`, `oculta: SV.G3.3`, `Neutraliza (entra no total)`, `virtual
-  (entra no total)`, `gerência do modelo ≠ gerência do painel (rota atribuída a outra gerência)`, `rota da meta ≠ rota
-  do cliente` ou `outra: ...`. Sinal: − = só o SAC conta naquela gerência; + = só o painel.
+  (entra no total)`, `clientes em rotas EV* (rota oculta, entra no total)`, `gerência do modelo ≠ gerência do painel
+  (rota atribuída a outra gerência)`, `rota da meta ≠ rota do cliente` ou `outra: ...`. Sinal: − = só o SAC conta
+  naquela gerência; + = só o painel. A E7 imita o painel: clientes em EV* na rota oculta da gerência comercial e
+  meta do dia pela rota da meta.
 - **E7c**: rotas do painel que o modelo põe em outra gerência e rotas fora do painel com clientes de outra gerência
   (ex.: a EV1 é da G1 na base, mas o cliente é da G2 no modelo), com uma linha sobre o par G2/G3.
 - **E7d**: uma linha por gerência: "explicado por: <causa> (<valor> cx)" e o resíduo.
 - Só códigos de rota, supervisão e gerência: nunca nomes nem códigos de clientes.
 - Em 20/10/2026 a E7 explicou tudo (resíduo ≤ 1 cx): o SAC soma pela gerência comercial do cliente
-  (`DS_GERENCIA_COMERCIAL_AT_Clien`) e inclui os clientes que estão em rotas EV*; o painel não (Real −407 cx nas 16;
-  meta do dia −1.071 cx, que é de rotas do painel mas está em clientes das EV*). Nada mudou no painel por isso.
+  (`DS_GERENCIA_COMERCIAL_AT_Clien`) e inclui os clientes que estão em rotas EV*; o painel não incluía (Real −407 cx
+  nas 16; meta do dia −1.071 cx, que é de rotas do painel mas estava em clientes das EV*). No mesmo dia o painel passou
+  a somar o Real desses clientes na rota oculta da gerência e a meta do dia pela rota da meta; a E7 imita essas regras.
 
 Diferenças em relação ao arquivo que era montado à mão:
 - **Visitas de hoje**: vêm do campo `VISITA_HOJE` do SAP e incluem clientes com mais de um dia de

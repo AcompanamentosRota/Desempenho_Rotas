@@ -113,3 +113,5 @@ class Fontes:
     avisos: list[str] = field(default_factory=list)
     # Desempenho GDM e tag de geladeira: rota -> pv -> [meta, faturado GDM, situação, nº de geladeiras]
     comodato_cliente: dict[str, dict[int, list]] = field(default_factory=dict)
+    # rota oculta com o Real dos clientes em rotas EV* (M.rota_eventuais) -> gerência; o volume dela está em `volume`
+    eventuais: dict[str, str] = field(default_factory=dict)

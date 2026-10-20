@@ -561,6 +561,42 @@ describe('Parte D — cascata', {skip: pular}, () => {
     await ctx.close();
   });
 
+  test('clientes de rotas eventuais (EV*): rota oculta só no total da gerência, com nota própria', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const k = 'VOL REFRIGERANTES';
+    await filtra(page, {gc: 'SL', aba: 'VOLUME'});
+    const op = await opcoes(page);
+    assert.deepEqual(op.sv, ['SV.SL.1', 'SV.SL.2'], 'a supervisão da rota oculta não aparece');
+    assert.ok(!op.rota.includes('SL-EV'), op.rota.join('|'));
+    const r = await page.evaluate(k => ({card: agrega(rotasAtuais()).ind[k], ev: nodo('SL', 'SL-EV').indicators[k],
+      eventuais: P.EVENTUAIS_ROTAS, base: agrega(rotasAtuais()).tot.baseTotal,
+      baseVis: rotasVisiveis().reduce((a, x) => a + nodo('SL', x).baseTotal, 0)}), k);
+    assert.deepEqual(r.eventuais, ['SL-EV']);
+    assert.deepEqual([r.ev.meta, r.ev.real, r.ev.tendencia], [0, 120, 120]);
+    assert.equal(r.base, r.baseVis, 'sem clientes');
+    let g = await cascata(page, k, 'VOLUME');
+    assert.equal(g.nota.length, 1);
+    assert.deepEqual([g.nota[0].texto, g.nota[0].meta, g.nota[0].real, g.nota[0].ultima],
+                     ['Inclui clientes de rotas eventuais (EV*): Real 120', 0, 120, true]);
+    const somaReal = g.linhas.filter(l => !l.off).reduce((a, l) => a + l.real, 0);
+    assert.ok(Math.abs(somaReal + g.nota[0].real - r.card.real) < 1e-6, 'linhas + nota = card (Real)');
+    assert.ok(Math.abs(somaMeta(g.linhas) - r.card.meta) < 1e-6, 'sem meta');
+    await page.keyboard.press('Escape');
+    assert.deepEqual((await cascata(page, 'CCTM 2L PET', 'ICS_GC')).nota, [], 'só volume');
+    await page.keyboard.press('Escape');
+    // Diretoria: a linha da SL soma a rota oculta; a nota aparece ao abrir a gerência
+    await vaiPara(page, 'dir');
+    g = await cascata(page, k, 'VOLUME');
+    const iSl = g.linhas.findIndex(l => l.nome === 'GC.SL · São Luís');
+    const sl = await page.evaluate(k => agrega(rotasDe('SL', '')).ind[k].real, k);
+    assert.equal(g.linhas[iSl].real, sl);
+    await page.click(`#dCorpo .cLin[data-i="${iSl}"]`);
+    g = await lerGaveta(page);
+    assert.deepEqual(g.nota.map(n => n.texto), ['Inclui clientes de rotas eventuais (EV*): Real 120']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
   test('nota das rotas virtuais no fim das supervisões: só Meta e Real, e a conta fecha com o card', async () => {
     const {page, ctx, erros} = await abre('normal');
     const virtuais = (k, gc) => page.evaluate(([k, gc]) => {

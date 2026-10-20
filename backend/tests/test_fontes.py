@@ -164,8 +164,8 @@ DADOS = {
         _dia("Refrigerantes", "2026-10-13", CM.META_NEG, 1.0, rota="999"),   # rota fora do painel
     ],
     "meta_dia": [
-        _dia("Refrigerantes", "2026-10-13", CM.META_RECUPERAVEL, 5.0),
-        _dia("Refrigerantes", "2026-10-14", CM.META_RECUPERAVEL, 7.0),
+        dict(_dia("Refrigerantes", "2026-10-13", CM.META_RECUPERAVEL, 5.0), **{CM.META_ROTA: "111"}),
+        dict(_dia("Refrigerantes", "2026-10-14", CM.META_RECUPERAVEL, 7.0), **{CM.META_ROTA: "111"}),
     ],
     "metas": [
         _meta("Cctm 2l Pet", cob="3"),
@@ -276,8 +276,8 @@ class TestFontes(unittest.TestCase):
         self.assertEqual(sorted(CM.DATA in c[2] for c in neg), [False, True])
         self.assertTrue(any("DATA_MOVIMENTO ge 2026-10-13 and DATA_MOVIMENTO le 2026-10-31" in c[2] for c in neg))
         dia = [c for c in meta if CM.META_RECUPERAVEL in c[1]]
-        self.assertEqual(len(dia), 1)
-        self.assertEqual(dia[0][1], (CM.ROTA, CM.AGRUPADOR, CM.META_RECUPERAVEL))
+        self.assertEqual(len(dia), 1)                                   # pela rota da meta, como o SAC
+        self.assertEqual(dia[0][1], (CM.META_ROTA, CM.AGRUPADOR, CM.META_RECUPERAVEL))
         self.assertIn("DATA_MOVIMENTO eq 2026-10-13", dia[0][2])
         self.assertFalse([c for c in meta if CM.META_DIA in c[1]])
 
