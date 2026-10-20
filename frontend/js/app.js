@@ -33,8 +33,9 @@ const SV_NEUTRA = 'Neutraliza';    // "supervisão" do filtro e da cascata que j
 const gcDoSv = sv => String(sv||'').split('.')[1] || '';
 const semOcultas = sv => ((P && P.GC_SEM_OCULTAS) || ['AT']).includes(gcDoSv(sv));
 const ehNeutraliza = r => ((P && P.NEUTRALIZA_ROTAS) || []).includes(r);
-const ehVirtual = r => ((P && P.VIRTUAIS_ROTAS) || []).includes(r);
 const ehEventual = r => ((P && P.EVENTUAIS_ROTAS) || []).includes(r);
+// a rota oculta das eventuais ('-EV') já vem em VIRTUAIS_ROTAS; conferida aqui também, para nunca aparecer em lista
+const ehVirtual = r => ((P && P.VIRTUAIS_ROTAS) || []).includes(r) || ehEventual(r);
 const ehNormal = r => !ehNeutraliza(r) && !ehVirtual(r);
 const ehOculta = sv => !semOcultas(sv) && ((P && P.OCULTAS) ? P.OCULTAS.includes(sv)
   : CONFIG.SV_EXCLUIDOS.includes(sv));
@@ -152,12 +153,30 @@ let ROTA_IDX = {};   // rota -> [gc, sv] (montado em aplicaPayload; a Diretoria 
    REGIOES de payload antigo é ignorada. */
 const nomesGc = () => (P && P.GC_NOMES) || {};
 const todasGcs = () => [...new Set([...Object.keys(nomesGc()), ...((P && P.GC_ATIVAS) || []), ...Object.keys(DATA || {})])];
-const rotuloGc = gc => `GC.${gc}${nomesGc()[gc] ? ' · '+nomesGc()[gc] : ''}`;   // "GC.G1 · Goiânia 01"
 const gcsComDados = () => todasGcs().filter(g=>DATA[g]);
 const primeiraGc = () => gcsComDados()[0] || Object.keys(DATA)[0];
 
-const svsDe = gc => Object.keys(DATA[gc]||{});
-const rotasDe = (gc,sv) => !DATA[gc] ? [] : sv ? Object.keys(DATA[gc][sv]||{}) : svsDe(gc).flatMap(s=>Object.keys(DATA[gc][s]));
+/* Gerências agrupadas (CONFIG.GC_GRUPOS, os pares que o Datasphere junta): um grupo é uma "gerência" com a chave
+   'IT+MO' (só as gerências do grupo que existem no painel; com menos de duas, não há grupo). Onde o código recebe
+   uma gerência (rotasDe, svsVisiveis, rotasNeutraliza, ctxGerencia, rótulo...), recebe também a chave de um grupo:
+   as rotas e supervisões são as das duas, na ordem do grupo. */
+function gruposGc(){
+  const todas = todasGcs();
+  return (CONFIG.GC_GRUPOS || []).map(g => g.filter(x => todas.includes(x))).filter(g => g.length > 1)
+    .map(membros => ({chave: membros.join('+'), membros}));
+}
+const ehGrupo = u => typeof u==='string' && u.includes('+') && gruposGc().some(g => g.chave===u);
+const membrosGc = u => typeof u==='string' && u.includes('+') ? ((gruposGc().find(g => g.chave===u) || {}).membros || []) : [u];
+const temDados = u => membrosGc(u).some(g => DATA[g]);
+// "GC.G1 · Goiânia 01"; grupo: "GC.IT + GC.MO · Itumbiara + Morrinhos" (sem GC_NOMES, só os códigos)
+function rotuloGc(u){
+  const ms = membrosGc(u), nomes = ms.map(g => nomesGc()[g]);
+  return ms.map(g => 'GC.'+g).join(' + ') + (nomes.every(Boolean) && nomes.length ? ' · '+nomes.join(' + ') : '');
+}
+
+const svsDe = gc => membrosGc(gc).flatMap(g => Object.keys(DATA[g]||{}));
+const rotasDe = (gc,sv) => membrosGc(gc).filter(g => DATA[g])
+  .flatMap(g => sv ? Object.keys(DATA[g][sv]||{}) : Object.keys(DATA[g]).flatMap(s=>Object.keys(DATA[g][s])));
 const rotaSv = (gc,r) => (ROTA_IDX[r]||[])[1];
 const nodo = (gc,r) => { const i = ROTA_IDX[r]; return i ? DATA[i[0]][i[1]][r] : undefined; };
 const ehKstt = c => KSTT_SEG.has((SEGS[c[2]]||'').toUpperCase());
@@ -166,6 +185,8 @@ const rotasNormais = (gc,sv) => rotasDe(gc, sv).filter(ehNormal);
 const rotasNeutraliza = gc => rotasDe(gc, '').filter(ehNeutraliza);
 // supervisões que aparecem (selects, colunas, linhas): as que têm alguma rota normal
 const svsVisiveis = gc => svsDe(gc).filter(s=>rotasNormais(gc, s).length);
+// em ordem crescente do código (SV.G1.2 antes de SV.G1.10); num grupo, gerência -> número
+const svsEmOrdem = gc => membrosGc(gc).flatMap(g => svsVisiveis(g).sort(ordemNatural));
 // supervisão do filtro para a rota: "Neutraliza" ou a da rota
 const svDaRota = r => ehNeutraliza(r) ? SV_NEUTRA : rotaSv(sel.gc, r);
 // rotas do filtro para os indicadores: o total da gerência (e da Diretoria) inclui Neutraliza e virtuais;
@@ -607,7 +628,7 @@ function gruposDo(ctx, k){
       filho:ctxGerencia(g)};
   });
   if(ctx.nivel==='sv'){
-    const grupos = svsVisiveis(ctx.gc).sort(ordemNatural).map(s=>{
+    const grupos = svsEmOrdem(ctx.gc).map(s=>{
       const rs = rotasNormais(ctx.gc, s);
       return {nome:rotuloSv(s), rotas:rs, info:nRotas(rs), filho:{nivel:'rota', chave:s, gc:ctx.gc, rotas:rs, nome:rotuloSv(s)}};
     });

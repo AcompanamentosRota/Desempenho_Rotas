@@ -1070,6 +1070,24 @@ describe('Parte H — ordem das listas da cascata', {skip: pular}, () => {
       await ctx.close();
     });
   }
+
+  test('rota oculta das eventuais (-EV) nunca aparece em lista, mesmo fora de VIRTUAIS_ROTAS; o Real fica no total', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const k = 'VOL REFRIGERANTES';
+    await page.evaluate(() => { P.VIRTUAIS_ROTAS = P.VIRTUAIS_ROTAS.filter(r => r !== 'SL-EV'); });
+    await filtra(page, {gc: 'SL', aba: 'VOLUME'});
+    const op = await opcoes(page);
+    assert.deepEqual(op.sv, ['SV.SL.1', 'SV.SL.2']);
+    assert.ok(!op.rota.includes('SL-EV'), op.rota.join('|'));
+    const r = await page.evaluate(k => ({card: agrega(rotasAtuais()).ind[k].real,
+      soma: rotasDe('SL', '').reduce((a, x) => a + nodo('SL', x).indicators[k].real, 0)}), k);
+    assert.equal(r.card, r.soma, 'o Real da rota oculta continua no total');
+    const g = await cascata(page, k, 'VOLUME');
+    assert.ok(!g.linhas.some(l => /EV/.test(l.nome)), g.linhas.map(l => l.nome).join('|'));
+    assert.deepEqual(g.nota.map(n => n.texto), ['Inclui clientes de rotas eventuais (EV*): Real 120']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
 });
 
 /* ---------- Parte I: entrada com perfis, acesso guardado e virada diária ---------- */
