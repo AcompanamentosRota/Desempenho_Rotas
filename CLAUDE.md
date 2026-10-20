@@ -47,8 +47,11 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - Testes de front (Chromium headless + dado sintético gerado pelo próprio back-end): `node --test frontend/tests/front.test.js`
   (precisa de Python com as dependências do back-end e do pacote `playwright`; sem ele os testes são pulados; o CI não roda).
   O teste chama `python3` (no Windows, ponha um `python3.exe` do venv no PATH) e acha o `playwright` por `NODE_PATH`.
-  `abre(nome, {entrar})` entra pela tela de entrada (`entra()`: 'gc' = primeira gerência com dados, 'dir' = DICOM,
-  ou {perfil, gc, sv, rota}); `vaiPara()` = casa + `entra()`; relógio simulado por `antes: p => p.clock...`.
+  `abre(nome, {entrar})` entra pela tela de entrada clicando na caixa de seleção (`entra()`: 'gc' = primeira gerência
+  com dados, 'dir' = Diretoria, ou {perfil, gc, sv, rota}, com gc = sigla ou grupo 'IT+MO'; a sigla de uma gerência
+  agrupada escolhe o grupo); `vaiPara()` = casa + `entra()`; relógio simulado por `antes: p => p.clock...`.
+  Variantes do payload montadas no próprio teste: 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV), 'semdados'
+  (G3 e PA sem dados), 'semsv', 'antigo'.
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -160,26 +163,40 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Cores: Zero vermelho, Baixo sempre amarelo, Ok verde, < 30 dias e rede pela venda. Fechamento: sem tag nem quadrinho.
 - **Validação por gerência**: gerência sem rotas, metas ou Real = aviso; quedas (rotas, clientes, volume real) só contra
   a mesma gerência publicada (gerência nova não é comparada).
-- **Entrada com perfis** (controle de acesso INTERNO, não é segurança: os dados estão em `frontend/data/*.json`;
-  aviso no README e em `config.js`): DIRETORIA (usuário `CONFIG.USUARIO_DIRETORIA` = DICOM, sem senha), GERÊNCIA
-  (gerência), SUPERVISÃO (gerência + número) e ROTA (gerência + código). A gerência é reconhecida por `reconheceGc`
-  (sigla ou nome de `GC_NOMES`; sem acentos, maiúsculas, espaços, pontos, prefixo "gc" e zeros à esquerda; igualdade
-  exata) e tudo passa por `validaAcesso` (login e reabertura): supervisão visível e não oculta nem "Neutraliza"
-  (`svNoPainel`); rota da gerência, Neutraliza aceita, virtual não (`rotaNoPainel`). Os perfis Gerência, Supervisão e
-  Rota usam o modo 'gc' com parte do filtro travada (`ACESSO`; `montaFiltros` esconde os selects; Rota sem Resumo).
-  Acesso em `localStorage 'drotas_sessao'` {perfil, gc, sv, rota, dia}: `entradaOuAcesso()` ao carregar (atrás da
-  tela `#carga`, para não piscar a entrada) e ao fechar um Resumo aberto por link; `dia` = dia de trabalho em
-  America/Sao_Paulo com virada às `CONFIG.SESSAO_VIRADA_HORA` (5h), conferido também em `puxaOnline` e no
-  `visibilitychange` (`confereDia`); payload novo revalida (`confereAcesso`). A casa apaga o acesso. Link `?resumo=`
-  não lê nem grava o acesso. Sol/lua só no fundo da entrada (`'drotas_entrada'`, à parte).
+- **Entrada com perfis, por seleção** (controle de acesso INTERNO, não é segurança: os dados estão em
+  `frontend/data/*.json`; aviso no README e em `config.js`; nada de usuário, senha ou campo de texto): DIRETORIA entra
+  direto ("Todas as gerências"); GERÊNCIA, SUPERVISÃO e ROTA abrem a caixa de seleção (`#entCaixa`: `abreCaixa` /
+  `pintaCaixa`, diálogo com foco, Tab preso, setas, ESC, × e clique fora). 1ª etapa (`opcoesGc`): as 16 na ordem de
+  `GC_NOMES`/`GC_ATIVAS` com os grupos de `CONFIG.GC_GRUPOS` (PA+DI, GU+PO, IT+MO, UR+RI, os pares que o Datasphere
+  junta) numa opção só, na posição do 1º membro; sem dados = desabilitada (grupo: se nenhuma das duas tiver). 2ª etapa
+  (Supervisão e Rota): `svsDaEntrada`/`rotasDaEntrada` da gerência (no grupo, das duas, por gerência), só o que
+  aparece no painel (`svNoPainel`: sem SV.G3.3 nem "Neutraliza"; `rotaNoPainel`: Neutraliza sim, virtual e '-EV' não).
+  Grupo = "gerência" com a chave 'IT+MO': `membrosGc`/`ehGrupo`/`temDados`, e `rotasDe`, `svsDe`, `svsVisiveis`,
+  `rotasNeutraliza`, `ctxGerencia`, `ctxNeutraliza`, `notaVirtuais`, `rotuloGc` aceitam a chave (rotas das duas; uma
+  linha "Neutraliza"). Na Gerência de um grupo, `sel.gc` = chave (Total) ou uma das duas; `fgc` só com "Total (GC.IT +
+  GC.MO)" e as duas (`grupoDoFiltro`); Resumo do Total = total + as duas lado a lado (`colunas()` em resumo.js).
+  `validaAcesso` (caixa, reabertura e payload novo): Gerência = uma opção da caixa com dados (`opcaoValida`; a MO
+  sozinha não vale); Supervisão/Rota = gerência (ou grupo) com dados e sv/rota no painel de uma delas, devolvendo a
+  gerência da sv/rota. Os perfis Gerência, Supervisão e Rota usam o modo 'gc' com parte do filtro travada (`ACESSO`;
+  `montaFiltros` esconde os selects; Rota sem Resumo). Acesso em `localStorage 'drotas_sessao'` {perfil, gc, sv, rota,
+  dia} (no grupo, gc = 'IT+MO'; Supervisão/Rota guardam a gerência delas): `entradaOuAcesso()` ao carregar (atrás da
+  tela `#carga`, para não piscar a entrada; grupo reabre no Total) e ao fechar um Resumo aberto por link; `dia` = dia
+  de trabalho em America/Sao_Paulo com virada às `CONFIG.SESSAO_VIRADA_HORA` (5h), conferido também em `puxaOnline` e
+  no `visibilitychange` (`confereDia`); payload novo revalida (`confereAcesso`; no grupo, a escolha do seletor fica
+  enquanto tiver dados). A casa apaga o acesso. Link `?resumo=` (também `gc=IT%2BMO`) não lê nem grava o acesso.
+  Sol/lua só no fundo da entrada (`'drotas_entrada'`, à parte).
 - **Front**: Diretoria: filtro "Todas as gerências" ou uma delas (`sel.dgc`, separado do `sel.gc` da Gerência; volta
   para "Todas" ao reabrir a Diretoria). Cards abrem a cascata única (`abreIndicador` → `pintaCascata`): gerências →
   supervisões → rotas → clientes; com uma gerência no filtro da Diretoria, começa nas supervisões dela
   (`ctxGerencia`), como na Gerência. Linhas com os números de `agrega()` (nada recalculado), em **ordem fixa pelo
   código** (`gruposDo`; também no fechamento): gerências na ordem de `GC_NOMES`/`GC_ATIVAS`, supervisões e rotas em
-  ordem natural (`ordemNatural`: SV.G1.2 antes de SV.G1.10), "Neutraliza" por último; clientes de volume pela Dif.
-  Abs. Resumo segue o filtro (Diretoria "Todas": as 16 em faixas de 8; uma gerência: gerência + supervisões; sem
-  seletor próprio); placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada). Del Valle Frut continua fora
+  ordem natural (`ordemNatural`: SV.G1.2 antes de SV.G1.10; `svsEmOrdem`: num grupo, gerência -> número),
+  "Neutraliza" por último; virtuais e '-EV' nunca em lista (`ehVirtual` inclui `EVENTUAIS_ROTAS`); clientes de
+  volume pela Dif. Abs. **"Meta batida!"** (`metaBatida`, só volume, em `caixaOnline` e `linhaGrupo`): meta do dia
+  do nível, já somada, <= 0 (resíduo de decimais conta como 0) troca o rótulo "meta do dia X" e deixa o Online verde;
+  o número do online e todos os valores seguem iguais; metaDia > 0, null e fechamento como antes; coberturas não.
+  Resumo segue o filtro (Diretoria "Todas": as 16 em faixas de 8; uma gerência: gerência + supervisões; grupo no
+  Total: total + as duas; sem seletor próprio); placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada). Del Valle Frut continua fora
   da Diretoria, mesmo com uma gerência. Rodapé: "Karen Oliveira - Inteligência de Mercado".
 - **Decisões aceitas** (diferem do arquivo antigo, montado à mão): visitas de hoje pelo campo `VISITA_HOJE` do SAP.
 - **Semana**: `SEMANA_NUM` conta a partir da 1ª segunda-feira do mês; dias antes dela são da última semana do mês anterior.

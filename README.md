@@ -8,8 +8,8 @@ desempenho/
 ├── frontend/                 site estático (GitHub Pages)
 │   ├── index.html
 │   ├── css/app.css
-│   ├── js/config.js          URLs dos dados, intervalos, placa ATENÇÃO, entrada (usuário, virada), CDN (com SRI)
-│   ├── js/app.js             painel (entrada com perfis, filtros, cards, cascata, busca, Desempenho GDM)
+│   ├── js/config.js          URLs dos dados, intervalos, placa ATENÇÃO, entrada (grupos, virada), CDN (com SRI)
+│   ├── js/app.js             painel (entrada por seleção, filtros, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/main.js            carga e atualização periódica dos JSONs
 │   ├── assets/, manifest.webmanifest
@@ -126,54 +126,75 @@ nomes em `backend/gerador/mapeamento.py`, `GC_NOMES`, enviados no payload). Não
 
 ### Entrada com perfis
 
-> **Controle de acesso interno: organiza o que cada perfil vê; NÃO é segurança — os dados estão em
-> frontend/data/*.json. A Gerência entra pela sigla ou pelo nome da filial. O acesso fica guardado no aparelho
-> até a virada do dia (05:00, horário de Brasília) ou até clicar na casa.**
+> **Controle de acesso interno: a entrada só organiza o que cada perfil vê, sem usuário nem senha; NÃO é
+> segurança — os dados estão em frontend/data/*.json. O acesso fica guardado no aparelho até a virada do dia
+> (05:00, horário de Brasília) ou até clicar na casa.**
 
 O painel abre na **entrada**, com quatro botões (o sol/lua troca só o fundo da entrada, preto ou branco, e o
-aparelho guarda a escolha em `drotas_entrada`):
+aparelho guarda a escolha em `drotas_entrada`). Nada é digitado: Gerência, Supervisão e Rota abrem uma **caixa de
+seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa; funciona no celular).
 
-| Perfil | Pede | Abre |
+| Perfil | Escolhe | Abre |
 |---|---|---|
-| DIRETORIA | Usuário `DICOM` (sem senha; maiúsculas, minúsculas e espaços não importam) | a visão Diretoria |
-| GERÊNCIA | Gerência | a visão Gerência com a gerência travada (sem seletor de gerência); supervisão e rota livres |
-| SUPERVISÃO | Gerência + número da supervisão (G2 e 1 → SV.G2.1) | gerência e supervisão travadas; só o filtro das rotas dela; cascata card → rotas → clientes |
-| ROTA | Gerência + código da rota (G2 e 211, I11, M21) | gerência, supervisão e rota travadas, sem filtros e sem Resumo; cascata card → clientes |
+| DIRETORIA | nada (entra direto) | a visão Diretoria de hoje, em "Todas as gerências" |
+| GERÊNCIA | a gerência (ou o grupo) | a visão Gerência com a gerência travada (sem seletor de gerência); supervisão e rota livres. No grupo: o total das duas e o seletor Total / uma delas |
+| SUPERVISÃO | a gerência (ou o grupo) e depois a supervisão | gerência e supervisão travadas; só o filtro das rotas dela; cascata card → rotas → clientes |
+| ROTA | a gerência (ou o grupo) e depois a rota | gerência, supervisão e rota travadas, sem filtros e sem Resumo; cascata card → clientes |
 
-- **Gerência** (campo de texto, sem lista): a sigla (G2, AT, IT...) ou o nome da filial (Goiânia 02, Itumbiara,
-  Rio Verde...), de `GC_NOMES`. A comparação ignora acentos, maiúsculas, espaços, pontos, o prefixo "GC" e zeros
-  à esquerda ("GC.G2", "goiania 2" e "Goiânia 02" são a G2), mas tem de ser exata: "goiania" sozinho não é
-  nenhuma. Gerência sem dados no painel não entra.
-- **Supervisão** só vale se aparece no painel (não vale a SV.G3.3 nem a linha "Neutraliza"). **Rota** vale se
-  aparece no painel da gerência, inclusive rota Neutraliza; rota virtual (A42, A43, A44, R32) ou de outra gerência
-  não vale. Em todos os casos, a mensagem de erro aparece e a tela fica na entrada.
+- **Gerências na caixa** (12 opções, na ordem do painel): GC.AN, GC.AP, GC.AT, GC.G1, GC.G2, GC.G3,
+  **GC.PA + GC.DI**, GC.RV, GC.SL, **GC.GU + GC.PO**, **GC.IT + GC.MO** e **GC.UR + GC.RI**, com o nome da praça
+  ("GC.G1 · Goiânia 01", "GC.IT + GC.MO · Itumbiara + Morrinhos"). Os grupos são os pares que o Datasphere junta
+  numa gerência só (Pa_Di, Gu_Po, It_Mo, Ur_Ri; `CONFIG.GC_GRUPOS` em `frontend/js/config.js`) e ficam na posição
+  da primeira gerência do par. Gerência sem dados aparece desabilitada; o grupo fica habilitado se uma das duas
+  tiver dados.
+- **Grupo na Gerência**: abre com o **Total** das duas gerências (cards, cascata e listas somam as rotas das duas,
+  com as Neutraliza, virtuais e eventuais de cada uma; uma linha "Neutraliza" só, com as das duas; o "puxa a média"
+  compara as supervisões das duas). O seletor do cabeçalho tem três opções, "Total (GC.IT + GC.MO)", "GC.IT ·
+  Itumbiara" e "GC.MO · Morrinhos": escolher uma gerência filtra todas as telas para ela (os filtros de supervisão e
+  rota ficam dentro da escolha). Cabeçalho: "Gerência · GC.IT + GC.MO · Itumbiara + Morrinhos" (ou a gerência
+  escolhida). Resumo de vendas: no Total, as duas gerências lado a lado (como o da Diretoria); com uma, o dela.
+- **Supervisão e Rota** em duas etapas: escolhida a gerência (ou o grupo), a caixa lista as supervisões ("SV.G2.1 ·
+  Nome") ou as rotas ("Rota 211 · Consultor") que aparecem no painel dela (no grupo, as das duas, primeiro as de uma
+  gerência e depois as da outra; supervisões pelo número, rotas em ordem natural), com "← Gerências" para voltar.
+  Não aparecem a SV.G3.3, a linha "Neutraliza", supervisões só de rotas Neutraliza/virtuais, rotas virtuais (A42,
+  A43, A44, R32) nem as rotas ocultas das eventuais ('-EV'); as rotas Neutraliza aparecem (como no painel).
 - O cabeçalho mostra o contexto (ex.: "Supervisão · GC.G2 · Goiânia 02 · SV.G2.1 · Nome"). O "puxa a média" e o
   Resumo seguem a lógica da visão Gerência (na Supervisão, a rota que mais puxa a média e o Resumo da supervisão;
   na Rota, sem os dois).
 - **Acesso guardado** (`localStorage` `drotas_sessao`: perfil, gerência, supervisão, rota e o dia; nada de nomes,
-  senha ou token): recarregar a página reabre o mesmo perfil e contexto (Diretoria em "Todas as gerências"; os
-  outros filtros e a cascata voltam ao padrão), sem piscar a entrada. A **casa** vermelha apaga o acesso e volta
-  para a entrada (é a única forma manual de voltar). Sem armazenamento no aparelho, a entrada aparece a cada visita.
+  senha ou token; no grupo, a gerência é a chave do grupo, ex.: `IT+MO`): recarregar a página reabre o mesmo
+  perfil e contexto (Diretoria em "Todas as gerências"; grupo no Total; os outros filtros e a cascata voltam ao
+  padrão), sem piscar a entrada. A **casa** vermelha apaga o acesso e volta para a entrada (é a única forma manual
+  de voltar). Sem armazenamento no aparelho, a entrada aparece a cada visita.
 - **Virada diária**: o acesso vale para o "dia de trabalho", que vira às **05:00 de Brasília** (independente do
   fuso do aparelho; `CONFIG.SESSAO_VIRADA_HORA`). Acesso de outro dia (ou sem o dia) volta para a entrada com
   "Acesso reiniciado, entre novamente"; com o painel aberto, isso é conferido ao voltar para a aba e a cada
-  atualização do online (não reinicia por inatividade). Acesso que não vale mais no payload (gerência sem dados,
-  supervisão ou rota que saiu) volta para a entrada com "O acesso anterior não está mais disponível".
-- **Links do Resumo** (`?resumo=...`) abrem o Resumo direto, sem passar pela entrada e sem mexer no acesso
-  guardado; ao fechar o Resumo, o painel segue como numa visita nova (o acesso guardado ou a entrada).
+  atualização do online (não reinicia por inatividade). Acesso que não vale mais pelas regras da caixa (gerência
+  ou grupo sem dados, supervisão ou rota que saiu do painel, rota virtual ou '-EV') volta para a entrada com
+  "O acesso anterior não está mais disponível".
+- **Links do Resumo** (`?resumo=...`, também do grupo: `gc=IT%2BMO`) abrem o Resumo direto, sem passar pela
+  entrada e sem mexer no acesso guardado; ao fechar o Resumo, o painel segue como numa visita nova (o acesso
+  guardado ou a entrada).
 
 ### Telas
 
-- **Gerência**: filtros de supervisão e rota (a gerência é a do login).
+- **Gerência**: filtros de supervisão e rota (a gerência é a da entrada; num grupo, também o seletor Total / uma
+  das duas).
 - **Diretoria**: filtro "Todas as gerências" (cards com o total das 16) ou uma gerência (cards só dela; a cascata
   começa nas supervisões, com a linha "Neutraliza" e a nota das virtuais). Volta para "Todas" ao reabrir a Diretoria.
 - **Cascata**: clicar num card abre gerências → supervisões → rotas → clientes, a partir do nível do filtro,
   com botões para subir um nível. Cada linha mostra Meta e Real, Online e meta do dia (verde quando o online
   bate a meta do dia) e a tendência (no fechamento do mês, o % realizado). **Ordem fixa, pelo código** (também no
   fechamento): gerências na ordem acima; supervisões e rotas em ordem crescente natural (SV.G1.2 antes de SV.G1.10;
-  111, 112...; A11, A12...; I11...), com a linha "Neutraliza" sempre por último. Na lista de clientes de volume:
-  Meta, Real (faturado + online de hoje), diferença e %, do mais negativo para o mais positivo; listas de cobertura
-  e de Venda Zero como antes.
+  111, 112...; A11, A12...; I11...), com a linha "Neutraliza" sempre por último; num grupo, as supervisões de uma
+  gerência e depois as da outra (SV.UR.1, SV.UR.2, SV.RI.1...). Rotas virtuais e '-EV' nunca aparecem em lista.
+  Na lista de clientes de volume: Meta, Real (faturado + online de hoje), diferença e %, do mais negativo para o
+  mais positivo; listas de cobertura e de Venda Zero como antes.
+- **"Meta batida!"** (só volume: os 5 agrupadores e Del Valle Frut): no card e nas linhas da cascata (gerência,
+  supervisão, rota e "Neutraliza"), quando a meta do dia do nível, já somada, é zero ou negativa, o rótulo "meta do
+  dia X" vira "Meta batida!" e a caixa do Online fica verde. O número do online continua aparecendo e somando
+  (volume de hoje); nenhum valor muda (meta do dia e totais iguais aos do SAC). Meta do dia positiva: como antes
+  (verde se o online alcança, vermelho se não); sem meta do dia ou no fechamento: como antes. Coberturas não mudam.
 - **Rotas Neutraliza** (por rota, em qualquer gerência: A41, 431, 251, I31, M31, C31, R31, S31, U31, 151, O21 e
   551): Meta e Real de Volume, ICS GC e Novos Negócios entram no total da gerência (e da Diretoria). Na cascata,
   ao abrir as supervisões de uma gerência, a última linha é **"Neutraliza"** (todas as rotas Neutraliza da
@@ -204,7 +225,8 @@ aparelho guarda a escolha em `drotas_entrada`):
   geladeira (GIRO_STATUS_MES_ATUAL): Giro Zero = vermelho "Venda Zero · x geladeira(s)"; Baixo Giro = amarelo;
   Giro Ok = preto/verde; < 30 dias = cinza, quadrinho pela venda do mês. Rede soma as lojas com geladeira.
 - **Resumo de vendas**: segue o filtro; na Diretoria com "Todas as gerências", as 16 lado a lado em faixas de 8;
-  com uma gerência no filtro, o resumo dela (gerência + supervisões); no perfil Supervisão, o da supervisão (e
+  com uma gerência no filtro, o resumo dela (gerência + supervisões); num grupo no Total, o total e as duas
+  gerências lado a lado; no perfil Supervisão, o da supervisão (e
   das rotas dela); no perfil Rota, sem o botão. A placa ATENÇÃO existe, mas está desligada
   (`CONFIG.LIMIAR_ATENCAO = null`).
 - Rodapé: "Karen Oliveira - Inteligência de Mercado".
@@ -354,5 +376,6 @@ Diferenças em relação ao arquivo que era montado à mão:
 - O secret do OAuth Client circulou em texto: peça a rotação no Datasphere e
   atualize o Secret `DATASPHERE_CLIENT_SECRET`.
 - O repositório é público: `payload.json` contém nomes e códigos de clientes.
-- A entrada com perfis (DICOM, gerência, supervisão, rota) é só organização interna, não protege os dados:
+- A entrada com perfis (Diretoria, Gerência, Supervisão e Rota, por seleção, sem usuário nem senha) é só
+  organização interna, não protege os dados:
   quem tiver o endereço de `frontend/data/*.json` lê tudo.
