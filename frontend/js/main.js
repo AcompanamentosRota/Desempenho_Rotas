@@ -9,8 +9,8 @@ function aplicaPayload(novo){
   // índice rota -> [gerência, supervisão]: a Diretoria e a cascata juntam rotas de várias gerências
   ROTA_IDX = {};
   for(const gc in DATA) for(const sv in DATA[gc]) for(const r in DATA[gc][sv]) ROTA_IDX[r] = [gc, sv];
-  // preserva o filtro atual se ele ainda existir no payload novo
-  if(!DATA[sel.gc]) sel = {...sel, gc:primeiraGc(), sv:'', rota:''};
+  // preserva o filtro atual se ele ainda existir no payload novo (a gerência ou o grupo de gerências)
+  if(!temDados(sel.gc)) sel = {...sel, gc:primeiraGc(), sv:'', rota:''};
   if(sel.dgc && !DATA[sel.dgc]) sel.dgc = '';
   // supervisão: uma que ainda tem rota normal ou "Neutraliza" se a gerência ainda tem rota Neutraliza
   if(sel.sv && !(sel.sv===SV_NEUTRA ? rotasNeutraliza(sel.gc).length : svsVisiveis(sel.gc).includes(sel.sv))) { sel.sv=''; sel.rota=''; }

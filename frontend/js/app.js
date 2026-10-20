@@ -144,7 +144,8 @@ setInterval(atualizarStatusTag, CONFIG.STATUS_TICK_MS);
 
 /* Filtro: modo 'gc' (Gerência: gc > sv > rota) ou 'dir' (Diretoria: todas as gerências ou a do filtro, dgc).
    O filtro da Diretoria (dgc) não mexe no da Gerência (gc) e volta para "Todas" ao reabrir a Diretoria.
-   Os perfis Gerência, Supervisão e Rota usam o modo 'gc' com parte do filtro travada (ACESSO, ver a entrada). */
+   Os perfis Gerência, Supervisão e Rota usam o modo 'gc' com parte do filtro travada (ACESSO, ver a entrada).
+   Na Gerência de um grupo (ex.: IT+MO), sel.gc é a chave do grupo (o Total das duas) ou uma das duas. */
 let sel = {modo:'gc', dgc:'', gc:'', sv:'', rota:''};
 let ROTA_IDX = {};   // rota -> [gc, sv] (montado em aplicaPayload; a Diretoria junta rotas de várias gerências)
 
@@ -256,16 +257,20 @@ function agrega(rotas){
 }
 
 /* ---------- filtros ---------- */
+// grupo de gerências do filtro: o do acesso Gerência (ou o do link do Resumo, sem acesso); '' = gerência individual
+const grupoDoFiltro = () => sel.modo==='dir' ? ''
+  : ACESSO ? (ACESSO.perfil==='gc' && ehGrupo(ACESSO.gc) ? ACESSO.gc : '') : (ehGrupo(sel.gc) ? sel.gc : '');
 let _chaveFiltros = '';
 function montaFiltros(){
   // só reconstrói os <select> quando o filtro (ou o payload) muda -- o polling do online não mexe neles
-  const perfil = ACESSO ? ACESSO.perfil : '';
-  const chave = `${perfil}|${sel.modo}|${sel.dgc}|${sel.gc}|${sel.sv}|${sel.rota}|${P._versao||''}`;
+  const perfil = ACESSO ? ACESSO.perfil : '', grupo = grupoDoFiltro();
+  const chave = `${perfil}|${grupo}|${sel.modo}|${sel.dgc}|${sel.gc}|${sel.sv}|${sel.rota}|${P._versao||''}`;
   if(chave===_chaveFiltros) return;
   _chaveFiltros = chave;
   const dir = sel.modo==='dir';
-  // perfis com contexto travado: Gerência sem o filtro de gerência; Supervisão só com o das rotas dela; Rota sem filtros
-  $('fgc').hidden = !dir && !!perfil;
+  // perfis com contexto travado: Gerência sem o filtro de gerência (no grupo, só Total / uma das duas); Supervisão só
+  // com o das rotas dela; Rota sem filtros
+  $('fgc').hidden = !dir && !!perfil && !grupo;
   $('fsv').hidden = dir || perfil==='sv' || perfil==='rota';
   $('frota').hidden = dir || perfil==='rota';
   $('fgc').classList.toggle('largo', dir);
@@ -277,11 +282,15 @@ function montaFiltros(){
     $('fgc').value = sel.dgc;
     return;
   }
-  $('fgc').innerHTML = todasGcs().map(opc).join('');
+  // grupo: "Total (GC.IT + GC.MO)" e cada uma das duas; a escolha filtra tudo (supervisão e rota dentro dela)
+  $('fgc').innerHTML = grupo
+    ? `<option value="${esc(grupo)}">Total (${esc(membrosGc(grupo).map(g=>'GC.'+g).join(' + '))})</option>` +
+      membrosGc(grupo).map(opc).join('')
+    : todasGcs().map(opc).join('');
   $('fgc').value = sel.gc;
   const neutra = rotasNeutraliza(sel.gc);
   $('fsv').innerHTML = `<option value="">Todos os SVs</option>`+
-    svsVisiveis(sel.gc).map(s=>`<option value="${esc(s)}">${esc(rotuloSv(s))}</option>`).join('')+
+    svsEmOrdem(sel.gc).map(s=>`<option value="${esc(s)}">${esc(rotuloSv(s))}</option>`).join('')+
     (neutra.length ? `<option value="${SV_NEUTRA}">${SV_NEUTRA}</option>` : '');
   $('fsv').value = sel.sv;
   const rs = sel.sv===SV_NEUTRA ? neutra : sel.sv ? rotasNormais(sel.gc, sel.sv) : rotasDe(sel.gc,'').filter(r=>!ehVirtual(r));
@@ -617,7 +626,9 @@ const nRotas = rs => `${rs.length} rota${rs.length>1?'s':''}`;
 // nível das supervisões de uma gerência (cards da Gerência ou linha de gerência da Diretoria)
 const ctxGerencia = gc => ({nivel:'sv', chave:gc, gc, rotas:rotasDe(gc,''), nome:rotuloGc(gc)});
 // nível das rotas Neutraliza de uma gerência (linha "Neutraliza" da cascata ou filtro de supervisão "Neutraliza")
-const ctxNeutraliza = gc => ({nivel:'rota', chave:SV_NEUTRA, gc, rotas:rotasNeutraliza(gc), nome:`${SV_NEUTRA} · ${gc}`});
+// (num grupo, uma linha só com as Neutraliza das duas gerências)
+const ctxNeutraliza = gc => ({nivel:'rota', chave:SV_NEUTRA, gc, rotas:rotasNeutraliza(gc),
+  nome:`${SV_NEUTRA} · ${membrosGc(gc).join(' + ')}`});
 
 // grupos do nível (cada um com as rotas que somam e o contexto do nível de baixo)
 function gruposDo(ctx, k){
@@ -794,27 +805,24 @@ function listaCobertura(k, rotas){
   pinta();
 }
 
-/* ---------- entrada com perfis (Diretoria / Gerência / Supervisão / Rota) ----------
-   Controle de acesso INTERNO: organiza o que cada perfil vê; não é segurança (os dados estão em data/*.json).
-   Diretoria: usuário CONFIG.USUARIO_DIRETORIA. Gerência, Supervisão e Rota: a gerência pela sigla ou pelo nome da
-   filial (reconheceGc, GC_NOMES do payload) e, conforme o perfil, o número da supervisão ou o código da rota.
-   Todos abrem a visão de hoje: Diretoria como antes; Gerência com a gerência travada (supervisão e rota livres);
-   Supervisão com gerência e supervisão travadas (só o filtro das rotas dela); Rota com tudo travado (sem filtros
-   nem Resumo). O acesso {perfil, gc, sv, rota, dia} fica em localStorage 'drotas_sessao' até a virada do dia de
-   trabalho (CONFIG.SESSAO_VIRADA_HORA, horário de Brasília) ou até a casa: recarregar reabre o mesmo perfil e
-   contexto; sem armazenamento, a entrada aparece a cada visita. O sol/lua troca só o fundo da entrada (preto,
-   padrão, ou branco), guardado à parte em 'drotas_entrada'. */
+/* ---------- entrada com perfis (Diretoria / Gerência / Supervisão / Rota), por seleção ----------
+   Controle de acesso INTERNO: a entrada só organiza o que cada perfil vê, sem usuário nem senha; NÃO é segurança
+   (os dados estão em data/*.json). Diretoria entra direto ("Todas as gerências"). Gerência, Supervisão e Rota abrem a
+   caixa de seleção com as gerências (cada grupo de CONFIG.GC_GRUPOS numa opção só, "GC.IT + GC.MO"); na Supervisão e
+   na Rota, a 2ª etapa lista as supervisões ou as rotas da gerência escolhida (no grupo, das duas). Todos abrem a visão
+   de hoje: Gerência com a gerência travada (supervisão e rota livres; no grupo, o total das duas e o seletor Total /
+   uma delas); Supervisão com gerência e supervisão travadas (só o filtro das rotas dela); Rota com tudo travado (sem
+   filtros nem Resumo). O acesso {perfil, gc, sv, rota, dia} fica em localStorage 'drotas_sessao' até a virada do dia
+   de trabalho (CONFIG.SESSAO_VIRADA_HORA, horário de Brasília) ou até a casa: recarregar reabre o mesmo perfil e
+   contexto (no grupo, no Total); sem armazenamento, a entrada aparece a cada visita. O sol/lua troca só o fundo da
+   entrada (preto, padrão, ou branco), guardado à parte em 'drotas_entrada'. */
 const TEMA_ENTRADA = 'drotas_entrada', SESSAO = 'drotas_sessao';
 const PERFIS = {dir:'Diretoria', gc:'Gerência', sv:'Supervisão', rota:'Rota'};
 const MSG_ENTRADA = {
-  usuario: 'Usuário não reconhecido',
-  gc: 'Gerência não reconhecida. Informe a sigla (ex.: G2) ou o nome completo (ex.: Goiânia 02).',
-  semDados: 'Gerência sem dados no painel.',
   reiniciado: 'Acesso reiniciado, entre novamente',
   indisponivel: 'O acesso anterior não está mais disponível',
 };
 let ACESSO = null;        // acesso em uso; null = na entrada (ou no Resumo aberto por link, sem acesso)
-let PERFIL_ENTRADA = '';  // perfil escolhido na entrada ('' = os quatro botões)
 
 function temaEntrada(){
   try { return localStorage.getItem(TEMA_ENTRADA)==='branca' ? 'branca' : 'preta'; } catch(e) { return 'preta'; }
@@ -851,51 +859,46 @@ function gravaSessao(a){
 }
 function apagaSessao(){ try { localStorage.removeItem(SESSAO); } catch(e) { /* sem armazenamento */ } }
 
-/* Gerência digitada -> {gc} ou {erro}. Texto e chaves (sigla e nome de GC_NOMES) sem acentos, minúsculas, sem
-   espaços e pontos, sem o prefixo "gc" e sem zeros à esquerda ("GC.G2", "goiania 2" e "Goiânia 02" -> G2);
-   igualdade exata, nada de parcial ("goiania" não é nenhuma). */
-const normGc = s => String(s==null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-  .replace(/[\s.]+/g, '').replace(/^gc/, '').replace(/\d+/g, d=>String(Number(d)));
-function reconheceGc(texto){
-  const t = normGc(texto);
-  const achadas = t ? todasGcs().filter(g=>normGc(g)===t || (nomesGc()[g] && normGc(nomesGc()[g])===t)) : [];
-  if(achadas.length!==1) return {erro:MSG_ENTRADA.gc};
-  return DATA[achadas[0]] ? {gc:achadas[0]} : {erro:MSG_ENTRADA.semDados};
-}
-// supervisão digitada (o número; aceita também o código SV.G2.1) -> "SV.<gc>.<n>", ou '' se não for número
-function svDoTexto(gc, texto){
-  let t = String(texto==null ? '' : texto).toUpperCase().replace(/[\s.]+/g, '');
-  if(t.startsWith('SV'+gc)) t = t.slice(2 + gc.length);
-  return /^\d+$/.test(t) ? `SV.${gc}.${Number(t)}` : '';
+/* Opções de gerência da entrada: as 16 na ordem de GC_NOMES/GC_ATIVAS, cada grupo na posição do seu primeiro membro
+   (AN, AP, AT, G1, G2, G3, PA+DI, RV, SL, GU+PO, IT+MO, UR+RI). Sem dados: desabilitada (o grupo, se nenhuma das
+   duas tiver). */
+function opcoesGc(){
+  const grupos = gruposGc(), vistas = new Set(), out = [];
+  todasGcs().forEach(g=>{
+    if(vistas.has(g)) return;
+    const gr = grupos.find(x => x.membros.includes(g)), chave = gr ? gr.chave : g;
+    membrosGc(chave).forEach(m => vistas.add(m));
+    out.push({chave, rotulo:rotuloGc(chave), ok:temDados(chave)});
+  });
+  return out;
 }
 /* Supervisão que aparece no painel (não vale a oculta SV.G3.3 nem a linha "Neutraliza"); rota que aparece no painel
-   da gerência (Neutraliza vale; virtual, que é oculta, não). */
+   da gerência (Neutraliza vale; virtual e a das eventuais, '-EV', que são ocultas, não). */
 const svNoPainel = (gc, sv) => sv!==SV_NEUTRA && !ehOculta(sv) && svsVisiveis(gc).includes(sv);
 const rotaNoPainel = (gc, r) => !ehVirtual(r) && rotasDe(gc, '').includes(r);
+// 2ª etapa da caixa, por gerência: supervisões pelo número e rotas em ordem natural (no grupo, uma gerência e depois a outra)
+const svsDaEntrada = gc => svsEmOrdem(gc).filter(s => svNoPainel(gc, s));
+const rotasDaEntrada = gc => rotasDe(gc, '').filter(r => rotaNoPainel(gc, r)).sort(ordemNatural);
+const gcValida = u => typeof u==='string' && (ehGrupo(u) || todasGcs().includes(u)) && temDados(u);
 
-/* Confere um acesso com as regras da entrada: o digitado no login ou o guardado ao reabrir (a gerência passa sempre
-   por reconheceGc). Devolve {acesso} com os códigos do painel, ou {erro}. O usuário da Diretoria é conferido no login. */
+/* Confere um acesso com as regras da entrada: o escolhido na caixa ou o guardado (ao reabrir e a cada payload novo).
+   Gerência ou grupo com dados; supervisão ou rota que aparece no painel da gerência (no grupo, de uma das duas).
+   Devolve o acesso com os códigos do painel (na Supervisão e na Rota, a gerência delas) ou null. */
 function validaAcesso(a){
   const perfil = a && a.perfil;
-  if(perfil==='dir') return {acesso:{perfil, gc:'', sv:'', rota:''}};
-  if(!PERFIS[perfil]) return {erro:MSG_ENTRADA.indisponivel};
-  const r = reconheceGc(a.gc);
-  if(r.erro) return r;
-  const gc = r.gc;
-  if(perfil==='gc') return {acesso:{perfil, gc, sv:'', rota:''}};
+  if(perfil==='dir') return {perfil, gc:'', sv:'', rota:''};
+  if(!['gc', 'sv', 'rota'].includes(perfil) || !gcValida(a.gc)) return null;
+  if(perfil==='gc') return {perfil, gc:a.gc, sv:'', rota:''};
+  const gcs = membrosGc(a.gc).filter(g => DATA[g]);
   if(perfil==='sv'){
-    const sv = svDoTexto(gc, a.sv);
-    if(!sv) return {erro:`Informe o número da supervisão (ex.: 1 para SV.${gc}.1).`};
-    if(!svNoPainel(gc, sv)) return {erro:`Supervisão ${sv} não está no painel da ${rotuloGc(gc)}.`};
-    return {acesso:{perfil, gc, sv, rota:''}};
+    const gc = gcs.find(g => svNoPainel(g, a.sv));
+    return gc ? {perfil, gc, sv:a.sv, rota:''} : null;
   }
-  const rota = String(a.rota==null ? '' : a.rota).toUpperCase().replace(/\s+/g, '');
-  if(!rota) return {erro:'Informe o código da rota (ex.: 211).'};
-  if(!rotaNoPainel(gc, rota)) return {erro:`Rota ${rota} não está no painel da ${rotuloGc(gc)}.`};
-  return {acesso:{perfil, gc, sv:svDaRota(rota), rota}};
+  const gc = gcs.find(g => rotaNoPainel(g, a.rota));
+  return gc ? {perfil, gc, sv:svDaRota(a.rota), rota:a.rota} : null;
 }
 
-// abre o painel no perfil e contexto do acesso (demais filtros e a cascata no padrão)
+// abre o painel no perfil e contexto do acesso (demais filtros e a cascata no padrão; no grupo, o Total)
 function aplicaAcesso(a){
   ACESSO = a;
   sel = a.perfil==='dir' ? {...sel, modo:'dir', dgc:'', sv:'', rota:''} : {...sel, modo:'gc', gc:a.gc, sv:a.sv, rota:a.rota};
@@ -907,7 +910,7 @@ function aplicaAcesso(a){
 }
 function mostraEntrada(msg){
   fecha(); RS.fecha();
-  escolhePerfil('');
+  fechaCaixa(false);
   $('entMsg').textContent = msg || '';
   $('entrada').hidden = false;
   document.body.classList.add('na-entrada');
@@ -925,8 +928,8 @@ function entradaOuAcesso(){
   if(!s) return mostraEntrada('');
   if(!s.dia || s.dia!==diaTrabalho()){ apagaSessao(); return mostraEntrada(MSG_ENTRADA.reiniciado); }
   const v = validaAcesso(s);
-  if(v.erro){ apagaSessao(); return mostraEntrada(MSG_ENTRADA.indisponivel); }
-  aplicaAcesso({...v.acesso, dia:s.dia});
+  if(!v){ apagaSessao(); return mostraEntrada(MSG_ENTRADA.indisponivel); }
+  aplicaAcesso({...v, dia:s.dia});
 }
 // virada do dia de trabalho com o painel aberto (ao voltar para a aba e a cada online): volta para a entrada
 function confereDia(){
@@ -934,51 +937,104 @@ function confereDia(){
   saiDoAcesso(MSG_ENTRADA.reiniciado);
   return true;
 }
-// payload novo com o painel aberto: o acesso ainda vale? Se vale, a parte travada continua a dele.
+/* Payload novo com o painel aberto: o acesso ainda vale? Se vale, a parte travada continua a dele (no grupo, a escolha
+   do seletor fica enquanto tiver dados; senão volta para o Total). */
 function confereAcesso(){
   if(!ACESSO) return true;
   const v = validaAcesso(ACESSO);
-  if(v.erro){ saiDoAcesso(MSG_ENTRADA.indisponivel); return false; }
-  const a = ACESSO = {...v.acesso, dia:ACESSO.dia};
-  if(a.perfil==='gc') sel.gc = a.gc;
+  if(!v){ saiDoAcesso(MSG_ENTRADA.indisponivel); return false; }
+  const a = ACESSO = {...v, dia:ACESSO.dia};
+  if(a.perfil==='gc' && sel.gc!==a.gc && !(ehGrupo(a.gc) && membrosGc(a.gc).includes(sel.gc) && DATA[sel.gc]))
+    sel = {...sel, gc:a.gc, sv:'', rota:''};
   if(a.perfil==='sv') sel = {...sel, gc:a.gc, sv:a.sv};
   if(a.perfil==='rota') sel = {...sel, gc:a.gc, sv:a.sv, rota:a.rota};
   return true;
 }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') confereDia(); });
 
-// passo da entrada: os quatro botões ('') ou o formulário do perfil escolhido
-function escolhePerfil(p){
-  PERFIL_ENTRADA = p;
-  $('entBotoes').hidden = !!p;
-  $('entForm').hidden = !p;
-  if(!p) return;
-  $('entMsg').textContent = '';
-  $('entPerfil').textContent = PERFIS[p].toUpperCase();
-  const campos = {usuario: p==='dir', gc: p!=='dir', sv: p==='sv', rota: p==='rota'};
-  document.querySelectorAll('#entForm [data-campo]').forEach(l=>{ l.hidden = !campos[l.dataset.campo]; });
-  ['entUsuario', 'entGc', 'entSv', 'entRota'].forEach(id=>{ $(id).value = ''; });
-  $(p==='dir' ? 'entUsuario' : 'entGc').focus();
-}
-document.querySelectorAll('#entrada [data-perfil]').forEach(b=>b.onclick=()=>escolhePerfil(b.dataset.perfil));
-$('entOutro').onclick = () => { escolhePerfil(''); $('entMsg').textContent = ''; };
-// Enter no campo Gerência vai para o campo seguinte (Supervisão ou Rota), se houver
-$('entGc').addEventListener('keydown', e=>{
-  const prox = PERFIL_ENTRADA==='sv' ? 'entSv' : PERFIL_ENTRADA==='rota' ? 'entRota' : '';
-  if(e.key==='Enter' && prox){ e.preventDefault(); $(prox).focus(); }
-});
-$('entForm').onsubmit = e => {
-  e.preventDefault();
-  const perfil = PERFIL_ENTRADA;
-  if(perfil==='dir' && $('entUsuario').value.replace(/\s+/g, '').toUpperCase()!==CONFIG.USUARIO_DIRETORIA){
-    $('entMsg').textContent = MSG_ENTRADA.usuario; return;
-  }
-  const v = validaAcesso({perfil, gc:$('entGc').value, sv:$('entSv').value, rota:$('entRota').value});
-  if(v.erro){ $('entMsg').textContent = v.erro; return; }
-  const a = {...v.acesso, dia:diaTrabalho()};
+// escolha feita (Diretoria ou a última etapa da caixa): grava o acesso do dia e abre o painel
+function entraCom(escolha){
+  const v = validaAcesso(escolha);
+  fechaCaixa(false);
+  if(!v){ $('entMsg').textContent = MSG_ENTRADA.indisponivel; return; }     // a caixa só lista o que vale
+  const a = {...v, dia:diaTrabalho()};
   gravaSessao(a);
   aplicaAcesso(a);
+}
+
+/* Caixa de seleção (diálogo): 1ª etapa = gerências; na Supervisão e na Rota, 2ª etapa = a lista da gerência escolhida,
+   com "← Gerências". Sem campo de texto. Foco na primeira opção, Tab preso na caixa, setas entre as opções, ESC, × e
+   clique fora fecham (o foco volta ao botão do perfil); a lista rola dentro da caixa. */
+let CAIXA = null, _focoCaixa = null;     // {perfil, gc}: gc '' = 1ª etapa; senão a gerência (ou grupo) escolhida
+function abreCaixa(perfil){
+  _focoCaixa = document.activeElement;
+  $('entMsg').textContent = '';
+  CAIXA = {perfil, gc:''};
+  $('entCaixa').hidden = false;
+  pintaCaixa();
+}
+function fechaCaixa(devolveFoco = true){
+  if($('entCaixa').hidden) return;
+  $('entCaixa').hidden = true;
+  CAIXA = null;
+  if(devolveFoco && _focoCaixa && _focoCaixa.focus) _focoCaixa.focus({preventScroll:true});
+}
+const opcaoCaixa = (attr, valor, rotulo, off) =>
+  `<button type="button" data-${attr}="${esc(valor)}"${off ? ' disabled' : ''}>${esc(rotulo)}</button>`;
+function pintaCaixa(){
+  const {perfil, gc} = CAIXA, nome = perfil==='sv' ? 'supervisão' : 'rota';
+  $('entCaixaTit').textContent = PERFIS[perfil].toUpperCase();
+  $('entVoltar').hidden = !gc;
+  let html;
+  if(!gc){
+    $('entCaixaSub').textContent = 'Escolha a gerência';
+    html = opcoesGc().map(o => opcaoCaixa('gc', o.chave, o.rotulo + (o.ok ? '' : ' · sem dados'), !o.ok)).join('');
+  } else {
+    $('entCaixaSub').textContent = `${rotuloGc(gc)} · escolha a ${nome}`;
+    const gcs = membrosGc(gc).filter(g => DATA[g]);
+    html = gcs.map(g => {
+      const itens = perfil==='sv' ? svsDaEntrada(g).map(s => opcaoCaixa('sv', s, rotuloSv(s)))
+        : rotasDaEntrada(g).map(r => { const c = titulo(nodo(g, r).consultor);
+            return opcaoCaixa('rota', r, c ? `Rota ${r} · ${c}` : `Rota ${r}`); });
+      // no grupo, o nome de cada gerência antes da lista dela
+      return itens.length ? (gcs.length > 1 ? `<div class="entSecao">${esc(rotuloGc(g))}</div>` : '') + itens.join('') : '';
+    }).join('') || `<div class="entVazio">Nenhuma ${nome} disponível nesta gerência.</div>`;
+  }
+  $('entOpcoes').innerHTML = html;
+  $('entOpcoes').scrollTop = 0;
+  ($('entOpcoes').querySelector('button:not([disabled])') || $('entFechar')).focus({preventScroll:true});
+}
+$('entOpcoes').onclick = e => {
+  const b = e.target.closest('button');
+  if(!b || b.disabled || !CAIXA) return;
+  const {perfil} = CAIXA;
+  if(b.dataset.gc!=null){
+    if(perfil==='gc') return entraCom({perfil, gc:b.dataset.gc});
+    CAIXA = {perfil, gc:b.dataset.gc};
+    return pintaCaixa();
+  }
+  entraCom({perfil, gc:CAIXA.gc, sv:b.dataset.sv || '', rota:b.dataset.rota || ''});
 };
+$('entVoltar').onclick = () => { CAIXA = {...CAIXA, gc:''}; pintaCaixa(); };
+$('entFechar').onclick = () => fechaCaixa();
+$('entCaixa').onclick = e => { if(e.target===$('entCaixa')) fechaCaixa(); };     // clique fora do painel
+$('entCaixa').addEventListener('keydown', e=>{
+  if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); fechaCaixa(); return; }
+  if(e.key==='Tab'){
+    const f = [...$('entCaixa').querySelectorAll('button')].filter(b => !b.disabled && !b.hidden);
+    const i = f.indexOf(document.activeElement);
+    if(e.shiftKey && i<=0){ e.preventDefault(); f[f.length-1].focus(); }
+    else if(!e.shiftKey && i===f.length-1){ e.preventDefault(); f[0].focus(); }
+    return;
+  }
+  if((e.key==='ArrowDown' || e.key==='ArrowUp') && e.target.closest('#entOpcoes')){
+    const ops = [...$('entOpcoes').querySelectorAll('button:not([disabled])')];
+    const prox = ops[ops.indexOf(document.activeElement) + (e.key==='ArrowDown' ? 1 : -1)];
+    if(prox){ e.preventDefault(); prox.focus(); }
+  }
+});
+document.querySelectorAll('#entrada [data-perfil]').forEach(b => b.onclick = () =>
+  b.dataset.perfil==='dir' ? entraCom({perfil:'dir'}) : abreCaixa(b.dataset.perfil));
 $('btnCasa').onclick = () => saiDoAcesso('');
 aplicaTemaEntrada(temaEntrada());
 $('entRod').textContent = CONFIG.CREDITOS;

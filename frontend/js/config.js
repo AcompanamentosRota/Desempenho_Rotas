@@ -22,7 +22,6 @@ const CONFIG = Object.freeze({
   /* Controle de acesso interno: a entrada só organiza o que cada perfil vê, sem usuário nem senha; NÃO é
      segurança — os dados estão em frontend/data/*.json. O acesso fica guardado no aparelho até a virada do dia
      (05:00, horário de Brasília) ou até clicar na casa. */
-  USUARIO_DIRETORIA: 'DICOM',         // perfil Diretoria (sem senha; maiúsculas/minúsculas e espaços ignorados)
   SESSAO_VIRADA_HORA: 5,              // o "dia de trabalho" do acesso guardado vira às 05:00 de Brasília
   // Gerências agrupadas: os pares que o Datasphere junta numa gerência só (Pa_Di, Gu_Po, It_Mo, Ur_Ri; ver
   // GC_ORIGEM e GC_SIGLAS_ORIGEM em backend/gerador/mapeamento.py). Na entrada viram uma opção "GC.IT + GC.MO"

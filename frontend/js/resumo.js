@@ -10,7 +10,8 @@
    Online verde ao bater o número ao lado.
    Rotas Neutraliza e virtuais (payload NEUTRALIZA_ROTAS / VIRTUAIS_ROTAS) não têm coluna nem entram na coluna da
    supervisão; Meta e Real delas entram só no total da gerência (1ª coluna). Com o filtro "Neutraliza" (ou uma
-   rota Neutraliza), o Resumo mostra a gerência.
+   rota Neutraliza), o Resumo mostra a gerência. Gerência de um grupo (IT+MO) no "Total": o total do grupo e as
+   duas gerências lado a lado, como na Diretoria; com uma das duas no seletor, o Resumo dela.
    ===================================================================== */
 const RS = (()=>{
   const VOL_ORD = ['VOL REFRIGERANTES','VOL CERVEJAS','VOL STILL','VOL AGUA MINERAL','VOL DEST+ART+CND'];
@@ -100,10 +101,18 @@ const RS = (()=>{
       const rs = rotasNormais(gc, sv);
       return {titulo:sv, sub:rotuloSv(sv)+' → rotas', cols:[[sv, rs], ...rs.map(r=>[r,[r]])]};
     }
+    // grupo de gerências no "Total": as duas lado a lado, como na Diretoria (o total do grupo + uma coluna por gerência)
+    if(ehGrupo(gc)){
+      const gcs = membrosGc(gc).filter(g=>DATA[g]), nomes = membrosGc(gc).map(g=>nomesGc()[g]);
+      const total = Object.assign([membrosGc(gc).map(g=>'GC.'+g).join(' + '), rotasDe(gc,'')],
+                                  {nome: nomes.every(Boolean) ? nomes.join(' + ') : ''});
+      return {titulo:rotuloGc(gc), sub:'Total → gerências', cols:[total, ...gcs.map(g=>['GC.'+g, rotasDe(g,'')])]};
+    }
     return porSv();
   }
   // cabeçalho da coluna: código (GC.G1 / SV.G1.1 / rota) + nome da praça (GC_NOMES) ou primeiro nome do supervisor
-  const cab = c => { if(c.vazio) return ''; const nm = /^GC\./.test(c[0]) ? nomesGc()[c[0].slice(3)] : nomeSv(c[0]);
+  const cab = c => { if(c.vazio) return '';
+    const nm = c.nome!=null ? c.nome : /^GC\./.test(c[0]) ? nomesGc()[c[0].slice(3)] : nomeSv(c[0]);
     return esc(c[0]) + (nm ? `<small class="rs-svnome">${esc(nm)}</small>` : ''); };
   // coluna em branco: completa as faixas da Diretoria para as colunas ficarem alinhadas entre as faixas
   const colVazia = () => Object.assign(['', [], {c:{}, v:{}, vz:{n:0}}], {vazio:true});
@@ -315,7 +324,9 @@ const RS = (()=>{
       render(); abre();
       return;
     }
-    if(gc && DATA[gc]) sel = {...sel, modo:'gc', gc, sv:'', rota:''};
+    // gerência ou grupo de gerências (gc=IT%2BMO; um '+' sem codificar chega como espaço)
+    const gcLink = (gc || '').trim().replace(/\s+/g, '+');
+    if(gcLink && temDados(gcLink)) sel = {...sel, modo:'gc', gc:gcLink, sv:'', rota:''};
     const sv = q.get('sv'); if(sv && svsVisiveis(sel.gc).includes(sv)) sel.sv = sv;
     const rota = q.get('rota'); if(rota && rotaSv(sel.gc, rota) && !ehVirtual(rota)){ sel.rota = rota; sel.sv = svDaRota(rota); }
     render(); abre();
