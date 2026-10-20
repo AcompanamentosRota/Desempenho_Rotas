@@ -26,8 +26,14 @@ body.drw-aberto{overflow:hidden}
   padding:0 max(12px,env(safe-area-inset-right)) calc(96px + var(--seguro-b)) max(12px,env(safe-area-inset-left))}
 .hd{max-width:var(--largura);margin:0 auto;padding:0 max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left))}
 
-/* ---------- entrada (Diretoria / Gerência): preta por padrão, branca pelo botão sol/lua ---------- */
-.entrada{position:fixed;inset:0;z-index:90;background:var(--preto);color:#fff;display:flex;flex-direction:column;
+/* ---------- carregando: tela neutra até o payload chegar (segue o fundo da entrada) ---------- */
+.carga{position:fixed;inset:0;z-index:95;background:var(--preto);color:var(--topo-txt);display:flex;align-items:center;
+  justify-content:center;padding:16px;font-size:13px;letter-spacing:.04em;text-align:center}
+.carga.branca{background:#fff;color:var(--cinza)}
+.carga[hidden]{display:none}
+
+/* ---------- entrada (Diretoria / Gerência / Supervisão / Rota): preta por padrão, branca pelo botão sol/lua ---------- */
+.entrada{position:fixed;inset:0;z-index:90;background:var(--preto);color:#fff;display:flex;flex-direction:column;overflow-y:auto;
   align-items:center;justify-content:space-between;padding:calc(18px + env(safe-area-inset-top,0px)) 16px calc(18px + var(--seguro-b))}
 .entrada[hidden]{display:none}
 .entrada.branca{background:#fff;color:var(--preto)}
@@ -46,6 +52,24 @@ body.na-entrada{overflow:hidden}
 .entBotoes button:first-child{background:var(--vermelho);border-color:var(--vermelho)}
 .entrada.branca .entBotoes button{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
 .entrada.branca .entBotoes button:first-child{background:var(--vermelho);color:#fff;border-color:var(--vermelho)}
+.entBotoes[hidden],.entForm[hidden],.entCampo[hidden]{display:none}
+/* formulário do perfil escolhido e aviso (usuário/gerência não reconhecidos, acesso reiniciado) */
+.entMsg{width:100%;margin:0 0 14px;padding:10px 12px;border-radius:10px;font-size:13.5px;text-align:center;
+  background:rgba(228,0,43,.16);border:1px solid rgba(255,122,140,.4);color:#ffb3bf}
+.entMsg:empty{display:none}
+.entrada.branca .entMsg{background:var(--rosa);border-color:#f0c4c4;color:var(--vermelho2)}
+.entForm{display:flex;flex-direction:column;gap:12px;width:100%}
+.entPerfil{font-size:13px;font-weight:800;letter-spacing:.12em;text-align:center;color:var(--topo-txt)}
+.entCampo{display:flex;flex-direction:column;gap:6px;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--topo-txt)}
+.entCampo input{font:inherit;font-size:16px;letter-spacing:0;text-transform:none;width:100%;padding:14px;border-radius:12px;
+  border:1px solid var(--escuro-borda2);background:var(--escuro-1);color:#fff}
+.entCampo input::placeholder{color:#77777d}
+.entCampo input:focus{outline:2px solid var(--vermelho);outline-offset:1px}
+.entEntrar{font:inherit;font-size:17px;font-weight:800;letter-spacing:.08em;padding:16px;border-radius:14px;cursor:pointer;
+  border:1px solid var(--vermelho);background:var(--vermelho);color:#fff;margin-top:4px}
+.entOutro{font:inherit;font-size:13px;background:none;border:0;color:var(--topo-txt);cursor:pointer;padding:8px}
+.entrada.branca .entPerfil,.entrada.branca .entCampo,.entrada.branca .entOutro{color:var(--cinza-escuro)}
+.entrada.branca .entCampo input{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
 .entRod{font-size:11px;color:var(--topo-txt);text-align:center}
 .entrada.branca .entRod{color:var(--cinza)}
 /* casa: volta para a entrada */
@@ -279,6 +303,7 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 
 /* ---------- resumo de vendas (botão no fim da consulta) ---------- */
 .rsBox{background:var(--carvao);border-radius:13px;padding:12px;margin:6px 0 4px;display:flex;flex-direction:column;gap:9px}
+.rsBox[hidden]{display:none}
 .rsBox .rsLbl{font-size:10.5px;letter-spacing:.09em;color:var(--topo-txt);text-transform:uppercase}
 .rsChips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 .rsChips button{font:inherit;font-size:12.5px;font-weight:700;border:1px solid var(--escuro-borda2);border-radius:10px;padding:10px 4px;

@@ -20,6 +20,7 @@ function aplicaPayload(novo){
 async function recarregaPayload(){
   try{
     aplicaPayload(await buscaJson(CONFIG.PAYLOAD_URL));
+    if(!confereAcesso()) return;       // o acesso em uso não vale mais no payload novo: entrada com o aviso
     render();
     if($('q').value.trim()) buscaCliente();
   }catch(e){ console.warn('payload.json indisponível', e); }
@@ -29,12 +30,18 @@ async function iniciar(){
   try{
     aplicaPayload(await buscaJson(CONFIG.PAYLOAD_URL));
   }catch(e){
+    $('cargaTxt').textContent = 'Não foi possível carregar os dados. Atualize a página.';
     $('lista').innerHTML = '<div class="vazio">Não foi possível carregar os dados. Atualize a página.</div>'; return;
   }
   RS.liga();
+  // a tela de carga fica até decidir: acesso guardado (painel direto, sem piscar a entrada) ou entrada; o link do
+  // Resumo (?resumo=) abre direto e não mexe no acesso guardado
+  const link = new URLSearchParams(location.search).has('resumo');
+  if(!link) entradaOuAcesso();
   render();
+  if(!link) $('carga').hidden = true;
   await puxaOnline();
-  RS.doLink();
+  if(link){ RS.doLink(); $('carga').hidden = true; }
   setInterval(puxaOnline, CONFIG.ONLINE_POLL_MS);
   setInterval(recarregaPayload, CONFIG.PAYLOAD_POLL_MS);
 }
