@@ -177,6 +177,9 @@ LABELS = {
     "ARTD KO": "Artd KO",
     "PERFETTI TT": "Perfetti TT",
     "APEROL": "Aperol",
+    "INC HEINEKEN": "Heineken",
+    "INC EISENBAHN 600ML": "Eisenbahn - 600ml",
+    "INC HEINEKEN 600ML": "Heineken - 600ml",
     "IMPERDOAVEIS": "Imperdoáveis",
     "VENDAZERO": "Venda Zero",
     "VOL AGUA MINERAL": "Água Mineral",
@@ -199,12 +202,23 @@ LABELS_CURTO = {
     "PERFETTI TT": "Perfetti TT",
     "ARTD KO": "Artd KO",
     "APEROL": "Aperol",
+    "INC HEINEKEN": "Heineken",
+    "INC EISENBAHN 600ML": "Eisenbahn - 600ml",
+    "INC HEINEKEN 600ML": "Heineken - 600ml",
 }
+# Campanha "Todos a Bordo 3.0" (aba Incentivo, cobertura de cervejas): os 5 itens na ordem da aba. CERVEJAS e
+# CERVEJAS 600ML RETORNAVEL são os indicadores do ICS (continuam lá, como ARTD KO está em ICS e Novos Negócios);
+# as 3 chaves INC são só da aba: fora de ICS_GC, NOVOS_NEG, COV_GRUPO e de tudo que conta ou lista o ICS e os
+# Novos Negócios. Mesmas regras de dado do ICS (meta por rota, Real = clientes distintos com cobertura > 0,
+# online = clientes com compra hoje), sem filtro de segmento; rota sem meta do item (as BARRACUDA não têm meta
+# de Heineken) = indicador indisponível, com meta e real null.
+INDICADORES_INCENTIVO = ["INC HEINEKEN", "INC EISENBAHN 600ML", "INC HEINEKEN 600ML"]
 GROUPS = {
     "ICS_GC": ["CCTM 2L PET", "KS TT", "REFRI SABORES ZERO", "CERVEJAS 600ML RETORNAVEL", "CERVEJAS",
                "EISENBAHN", "KAPO", "POWERADE", "ARTD KO", "IMPERDOAVEIS", "VENDAZERO"],
     "NOVOS_NEG": ["CAMPARI", "DREHER", "PERFETTI TT", "ARTD KO", "APEROL"],
     "VOLUME": ["VOL REFRIGERANTES", "VOL CERVEJAS", "VOL STILL", "VOL AGUA MINERAL", "VOL DEST+ART+CND"],
+    "INCENTIVO": ["CERVEJAS", "INC HEINEKEN", "INC EISENBAHN 600ML", "INC HEINEKEN 600ML", "CERVEJAS 600ML RETORNAVEL"],
 }
 COV_GRUPO = {
     "ICS_GC": [k for k in GROUPS["ICS_GC"] if k not in ("IMPERDOAVEIS", "VENDAZERO")],
@@ -223,7 +237,9 @@ FONTES_PADRAO = {"venda": True, "online": True, "real": "venda", "imperdoaveis":
 INDICADORES_COBERTURA = list(dict.fromkeys(COV_GRUPO["ICS_GC"] + COV_GRUPO["NOVOS_NEG"]))
 INDICADORES_NOVOS_NEG = set(GROUPS["NOVOS_NEG"]) - set(COV_GRUPO["ICS_GC"])
 INDICADORES_VOLUME = list(GROUPS["VOLUME"])
-ORDEM_INDICADORES = INDICADORES_COBERTURA + ["IMPERDOAVEIS", "VENDAZERO"] + INDICADORES_VOLUME
+# ordem do nó "indicators": os do ICS/NN, Imperdoáveis, Venda Zero, os 5 macros, as 3 chaves INC do incentivo e,
+# no fim, o volume extra só nas rotas que têm o dado (VOLUME_EXTRA)
+ORDEM_INDICADORES = INDICADORES_COBERTURA + ["IMPERDOAVEIS", "VENDAZERO"] + INDICADORES_VOLUME + INDICADORES_INCENTIVO
 
 # Volume de uma gerência só (aba Volume): segue todas as regras de volume, mas NUNCA entra nas somas dos
 # 5 macros (INDICADORES_VOLUME), no Resumo, na Diretoria, no "ritmo de coberturas" nem no "puxa a média";
@@ -277,17 +293,27 @@ SEGMENTOS_KS_TT = {"LANCHONETE", "RESTAURANTE", "BOTECO", "PADARIAS"}
 # Atenção: 'Cervejas' é ao mesmo tempo indicador de cobertura e grupo de volume, e
 # 'Destilados' é outro agrupador (já contido em 'Dest+Art+Cnd'): não somar.
 # ---------------------------------------------------------------------------
+# Incentivo "Todos a Bordo 3.0": agrupadores exatos do Datasphere (venda e meta; seção E8 de 20/10/2026). O casamento
+# é por igualdade depois de normalizar() (sem acento e caixa), nunca por pedaço: 'Heineken - 330ml', 'Heineken Zero',
+# 'Heineken - 600ml Vr', 'Eisenbahn - 600ml Vr' e 'Cervejas 600ml Retornavel C/ Sol Ow' NÃO entram.
+AGRUPADORES_INCENTIVO = {
+    "INC HEINEKEN": "Heineken", "INC EISENBAHN 600ML": "Eisenbahn - 600ml", "INC HEINEKEN 600ML": "Heineken - 600ml",
+}
 AGRUPADORES_COBERTURA = {
     "CCTM 2L PET": "Cctm 2l Pet", "KS TT": "Ks Tt", "REFRI SABORES ZERO": "Refri Sabores Zero",
     "CERVEJAS 600ML RETORNAVEL": "Cervejas 600ml Retornavel", "CERVEJAS": "Cervejas", "EISENBAHN": "Eisenbahn",
     "KAPO": "Kapo", "POWERADE": "Powerade", "ARTD KO": "Artd Ko", "CAMPARI": "Campari", "DREHER": "Dreher",
     "PERFETTI TT": "Perfetti Tt", "APEROL": "Aperol",
+    **AGRUPADORES_INCENTIVO,
 }
 AGRUPADORES_VOLUME = {
     "VOL REFRIGERANTES": "Refrigerantes", "VOL CERVEJAS": "Cervejas", "VOL STILL": "Still",
     "VOL AGUA MINERAL": "Agua Mineral", "VOL DEST+ART+CND": "Dest+Art+Cnd",
 }
-AGRUPADORES_ORIGEM = sorted(set(AGRUPADORES_COBERTURA.values()) | set(AGRUPADORES_VOLUME.values()))
+# os 17 agrupadores do painel (compras do mês, cobertura do ICS/NN, "qualquer compra hoje", virada do mês): sem os
+# do incentivo, que não mudam a base, o "sem compra" nem os revertidos da Venda Zero
+AGRUPADORES_ORIGEM = sorted({v for k, v in AGRUPADORES_COBERTURA.items() if k not in AGRUPADORES_INCENTIVO}
+                            | set(AGRUPADORES_VOLUME.values()))
 # volume extra (VOLUME_EXTRA). Agrupador oficial "Del Valle Frut" (conferido em 19/10/2026: META_VOLUME e META_NEG
 # nas rotas da G2; "Dv Frut" traz os mesmos números, mas não é o oficial)
 AGRUPADORES_VOLUME_EXTRA = {"VOL DEL VALLE FRUT": "Del Valle Frut"}
@@ -298,10 +324,16 @@ AGRUPADORES_VOLUME_CONSULTA = list(AGRUPADORES_VOLUME.values()) + list(AGRUPADOR
 # A CONFIRMAR (descoberta): grafia de Sucos e Ades
 AGRUPADORES_GDM = ["Refrigerantes", "Agua Mineral", "Sucos", "Ades", "Powerade"]
 
-# Consulta de vendas: os 17 agrupadores do painel + os extras de volume e do GDM. Compras do mês, cobertura e
-# "comprou qualquer coisa hoje" continuam só com os 17 (AGRUPADORES_ORIGEM).
+# Consulta de vendas: os 17 agrupadores do painel + os extras de volume e do GDM + os 3 do incentivo (cobertura do
+# mês e online de hoje das chaves INC). Compras do mês, cobertura e "comprou qualquer coisa hoje" continuam só com
+# os 17 (AGRUPADORES_ORIGEM).
 AGRUPADORES_CONSULTA_VENDAS = sorted(set(AGRUPADORES_ORIGEM) | set(AGRUPADORES_VOLUME_EXTRA.values())
-                                     | set(AGRUPADORES_GDM))
+                                     | set(AGRUPADORES_GDM) | set(AGRUPADORES_INCENTIVO.values()))
+# Consulta de metas (carregar_metas): os 17 + os extras de volume, como antes. Os 3 do incentivo vão numa consulta
+# à parte, só com rota, agrupador e META_COBERTURA (AGRUPADORES_METAS_INCENTIVO): na mesma consulta, com META_VOLUME e
+# META_NEG, o Datasphere devolve HTTP 500 depois de ~150 s (20/10/2026; a separada leva ~9 s, como na seção E8).
+AGRUPADORES_CONSULTA_METAS = AGRUPADORES_ORIGEM + list(AGRUPADORES_VOLUME_EXTRA.values())
+AGRUPADORES_METAS_INCENTIVO = list(AGRUPADORES_INCENTIVO.values())
 # Vol Real: macros de volume + extras + GDM (o GDM usa o mesmo filtro de NF_STATUS)
 AGRUPADORES_VOL_REAL = sorted(set(AGRUPADORES_VOLUME_CONSULTA) | set(AGRUPADORES_GDM))
 

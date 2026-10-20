@@ -3,8 +3,10 @@ online.py — Monta o online.json (vendas do dia) a partir de Online.
 
 Formato lido pelo front (puxaOnline em frontend/js/app.js):
     updatedAt : "2026-10-13T14:04:07" (horário de Brasília, sem fuso)
-    rotas     : {rota: {indicador: nº de clientes com compra hoje}}      (só > 0)
-    clientes  : {rota: {indicador: [pv...], "QUALQUER": [pv...]}}       (só listas não vazias)
+    rotas     : {rota: {indicador: nº de clientes com compra hoje}}      (só > 0; inclui as chaves INC do incentivo
+                nas rotas com meta do item)
+    clientes  : {rota: {indicador: [pv...], "QUALQUER": [pv...]}}       (só listas não vazias; QUALQUER sem o
+                incentivo, como sempre só com os 17 agrupadores do painel)
     volume    : {rota: {"VOL ...": volume de hoje}}
     volumeCliente: {rota: {pv: {"VOL ...": volume de hoje}}}  (somado ao Real da barra por cliente no front,
                    fora do fechamento do mês)
@@ -30,13 +32,17 @@ JANELA_RECARGA = (time(7, 0), time(18, 45))
 def montar_online(o: Online) -> dict:
     rotas_out, clientes_out, volume_out, volume_cli_out, gdm_out = {}, {}, {}, {}, {}
     todas = sorted(set(o.clientes) | set(o.qualquer) | set(o.volume) | set(o.volume_cliente) | set(o.gdm_cliente))
+    # cobertura (ICS/NN) e as chaves INC do incentivo (que chegam aqui só nas rotas com meta do item: online_ks_tt)
+    ks_cob = M.INDICADORES_COBERTURA + M.INDICADORES_INCENTIVO
     for r in todas:
         por_ind = o.clientes.get(r, {})
-        contagem = {k: len(por_ind[k]) for k in M.INDICADORES_COBERTURA if por_ind.get(k)}
+        contagem = {k: len(por_ind[k]) for k in ks_cob if por_ind.get(k)}
         if contagem:
             rotas_out[r] = contagem
-        listas = {k: sorted(por_ind[k]) for k in M.INDICADORES_COBERTURA if por_ind.get(k)}
-        qualquer = set(o.qualquer.get(r, set())).union(*por_ind.values()) if por_ind else set(o.qualquer.get(r, set()))
+        listas = {k: sorted(por_ind[k]) for k in ks_cob if por_ind.get(k)}
+        # QUALQUER (revertido da Venda Zero, sem compra hoje): só os 17 agrupadores do painel, sem o incentivo
+        sem_inc = [v for k, v in por_ind.items() if k not in M.INDICADORES_INCENTIVO]
+        qualquer = set(o.qualquer.get(r, set())).union(*sem_inc)
         if qualquer:
             listas["QUALQUER"] = sorted(qualquer)
         if listas:
