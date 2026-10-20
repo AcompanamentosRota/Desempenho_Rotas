@@ -38,7 +38,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   o maior por rota, como `fontes.carregar_metas`. Como ler: README, "Descoberta do incentivo".
   Achado de 20/10/2026 (E8 com dado real): os 5 itens existem como agrupador na venda e na meta ('Cervejas', 'Heineken',
   'Eisenbahn - 600ml', 'Heineken - 600ml', 'Cervejas 600ml Retornavel'; há também variantes '... - 600ml Vr' só na
-  venda). Heineken e Eisenbahn 600ml não estão em M.AGRUPADORES_COBERTURA (o gerador não os traz). Sem meta de
+  venda). Desde a aba Incentivo, Heineken, Eisenbahn - 600ml e Heineken - 600ml estão no gerador (chaves INC; abaixo). Sem meta de
   Heineken em nenhuma rota normal: AP, AT, G3, PA, DI, GU; com meta só em A37 (AN), 111 (G1) e 211-214 (G2); nas
   demais, todas as rotas normais têm meta, exceto R11, I19, C28 e as rotas T<nn>. Pela maioria (Heineken e Heineken
   600ml iguais): BARRACUDA AN AP AT G1 G2 G3 PA DI GU; FULL RV SL PO IT MO UR RI; única supervisão diferente da
@@ -51,7 +51,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   com dados, 'dir' = Diretoria, ou {perfil, gc, sv, rota}, com gc = sigla ou grupo 'IT+MO'; a sigla de uma gerência
   agrupada escolhe o grupo); `vaiPara()` = casa + `entra()`; relógio simulado por `antes: p => p.clock...`.
   Variantes do payload montadas no próprio teste: 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV), 'semdados'
-  (G3 e PA sem dados), 'semsv', 'antigo'.
+  (G3 e PA sem dados), 'semsv', 'antigo', 'inc'/'incfech' (cenários da aba Incentivo, `montaIncentivo`) e 'seminc'
+  (payload sem o grupo INCENTIVO). `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js).
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -185,6 +186,27 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   no `visibilitychange` (`confereDia`); payload novo revalida (`confereAcesso`; no grupo, a escolha do seletor fica
   enquanto tiver dados). A casa apaga o acesso. Link `?resumo=` (também `gc=IT%2BMO`) não lê nem grava o acesso.
   Sol/lua só no fundo da entrada (`'drotas_entrada'`, à parte).
+- **Aba Incentivo ("Todos a Bordo 3.0", cobertura de cervejas)**: `M.GROUPS['INCENTIVO']` = CERVEJAS, INC HEINEKEN,
+  INC EISENBAHN 600ML, INC HEINEKEN 600ML, CERVEJAS 600ML RETORNAVEL (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS,
+  como ARTD KO está no ICS e nos NN). As 3 chaves INC (`M.AGRUPADORES_INCENTIVO`: 'Heineken', 'Eisenbahn - 600ml',
+  'Heineken - 600ml', igualdade exata após `normalizar`; '... Vr', '330ml', 'Zero', 'C/ Sol Ow' não entram) estão em
+  `AGRUPADORES_COBERTURA` e em `AGRUPADORES_CONSULTA_VENDAS`, mas FORA de `AGRUPADORES_ORIGEM` (os 17: compras do mês,
+  "qualquer compra hoje"/revertido da VZ, virada do mês), de ICS_GC/NOVOS_NEG/COV_GRUPO/`INDICADORES_COBERTURA` e do
+  "rota tem meta" do ICS (`payload`: `tem_meta_cob`). Meta delas numa consulta À PARTE (`fontes.carregar_metas_incentivo`,
+  só rota, agrupador e META_COBERTURA; `M.AGRUPADORES_METAS_INCENTIVO`): na consulta de metas de sempre (com META_VOLUME e
+  META_NEG) o Datasphere dá HTTP 500 depois de ~150 s (20/10/2026); se só ela falhar, os itens ficam sem meta e o resto
+  segue. Rota sem meta (ou meta 0) = `cobertura_indisponivel()` (meta e real null); COBERTOS, OPORTUNIDADES_DIA e
+  online.json (`online_ks_tt` pelo payload) só nas rotas com meta; QUALQUER sem o incentivo (`payload.sem_incentivo`).
+  No nó, as 3 chaves INC vêm depois dos 5 macros (`M.ORDEM_INDICADORES`) e o volume extra continua no fim.
+  `validacao._incentivo`: aviso só para item sem meta em nenhuma rota da BAND (gerência BARRACUDA não avisa).
+  Front (`app.js`, seção "aba Incentivo"): `incItem` (só as rotas com meta do item, `temMetaInc`; EF = Real + clientes
+  do online de hoje fora do COBERTOS da rota; % = `pctInc` EF/Meta para baixo; verde com EF >= Meta; no fechamento
+  EF = Real), `incStatus` (soma dos itens com meta; Hoje = EF − Real; Diferença = EF − Meta; verde só com todos ok),
+  `cardIncItem`/`cardIncStatus` ("Exclusivo portfólio Full" para INC HEINEKEN/INC HEINEKEN 600ML, senão "Sem meta"),
+  cascata com `CASC.inc` (`metricasInc`, `notaVirtuaisInc`; Status termina nas rotas; `ctxInicial` é o mesmo de
+  `abreIndicador`). `CONFIG.INCENTIVO_ATIVO` e `GROUPS.INCENTIVO` no payload decidem se a aba aparece.
+  Conferido em 20/10/2026 (`gerar.py --saida` fora do repo): meta e nº de rotas com meta iguais à E8c nos 5 itens
+  (15.992/213, 6.273/81, 460/182, 2.871/81, 4.732/182); payload 6,54 MB; gerar.py 84 s.
 - **Front**: Diretoria: filtro "Todas as gerências" ou uma delas (`sel.dgc`, separado do `sel.gc` da Gerência; volta
   para "Todas" ao reabrir a Diretoria). Cards abrem a cascata única (`abreIndicador` → `pintaCascata`): gerências →
   supervisões → rotas → clientes; com uma gerência no filtro da Diretoria, começa nas supervisões dela
