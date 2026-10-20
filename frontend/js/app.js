@@ -310,11 +310,14 @@ $('frota').onchange = e => {
   if(sel.rota && !sel.sv) sel.sv = svDaRota(sel.rota);
   render();
 };
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
-  aba=t.dataset.g;
+function marcaAba(g){
+  aba = g;
   document.querySelectorAll('.tab').forEach(x=>{
-    x.classList.toggle('on',x===t); x.setAttribute('aria-selected', x===t);
+    x.classList.toggle('on', x.dataset.g===g); x.setAttribute('aria-selected', x.dataset.g===g);
   });
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  marcaAba(t.dataset.g);
   render();
   if($('q').value.trim()) buscaCliente();
 });
@@ -322,6 +325,10 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
 /* ---------- render ---------- */
 function render(){
   if(!P) return;
+  // aba Incentivo: só com CONFIG.INCENTIVO_ATIVO e o grupo INCENTIVO no payload (payload antigo: oculta)
+  const tabInc = document.querySelector('.tab[data-g="INCENTIVO"]');
+  tabInc.hidden = !incentivoAtivo();
+  if(aba==='INCENTIVO' && tabInc.hidden) marcaAba('ICS_GC');
   montaFiltros();
   const rotas = rotasAtuais();
   const {ind, tot} = agrega(rotas);
@@ -353,23 +360,36 @@ function render(){
   $('xSem').innerHTML = scHoje==null ? 'sem venda do dia'
     : `sem compra <b class="inl">hoje</b><b class="no">${scHoje}</b>`;
 
-  const disp = P.COV_GRUPO[aba].filter(k=>ind[k] && !ind[k].unavailable);
-  const noRitmo = disp.filter(k=>ind[k].onPace).length;
-  const ritmoOk = noRitmo*2>=disp.length;
-  $('nRitmo').textContent = `${noRitmo} / ${disp.length}`;
-  $('nRitmo').className = 'n ' + (disp.length ? (ritmoOk?'ok':'no') : '');
-  $('xRitmo').textContent = ritmoOk? 'dentro do ritmo' : 'abaixo do ritmo';
+  if(aba==='INCENTIVO'){
+    // aba Incentivo: no lugar do "ritmo de coberturas", os itens com meta no escopo que estão em 100%; sem "puxa a média"
+    const itens = itensInc().map(k=>incItem(k, rotas)).filter(x=>!x.semMeta), nOk = itens.filter(x=>x.ok).length;
+    $('lRitmo').textContent = 'Itens em 100%';
+    $('nRitmo').textContent = `${nOk} / ${itens.length}`;
+    $('nRitmo').className = 'n ' + (itens.length ? (nOk===itens.length?'ok':'no') : '');
+    $('xRitmo').textContent = !itens.length ? 'sem meta' : nOk===itens.length ? 'todos em 100%' : 'abaixo de 100%';
+    $('puxa').innerHTML = '';
+    $('lista').innerHTML = cardIncStatus(rotas) + itensInc().map(k=>cardIncItem(k, rotas)).join('');
+    document.querySelectorAll('.ind[data-inc]').forEach(el=>clicavel(el, ()=>abreIncentivo(el.dataset.inc)));
+  } else {
+    const disp = P.COV_GRUPO[aba].filter(k=>ind[k] && !ind[k].unavailable);
+    const noRitmo = disp.filter(k=>ind[k].onPace).length;
+    const ritmoOk = noRitmo*2>=disp.length;
+    $('lRitmo').textContent = 'Ritmo de coberturas';
+    $('nRitmo').textContent = `${noRitmo} / ${disp.length}`;
+    $('nRitmo').className = 'n ' + (disp.length ? (ritmoOk?'ok':'no') : '');
+    $('xRitmo').textContent = ritmoOk? 'dentro do ritmo' : 'abaixo do ritmo';
 
-  $('puxa').innerHTML = piorSv();
+    $('puxa').innerHTML = piorSv();
 
-  // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir;
-  // a Venda Zero não vale para a Neutraliza: sem card quando o filtro só tem rotas Neutraliza
-  const soNeutra = rotas.length>0 && rotas.every(ehNeutraliza);
-  const oculta = k => (k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable)) || (k==='VENDAZERO' && soNeutra);
-  // volume extra (Del Valle Frut): card só na aba Volume e só quando as rotas do filtro trazem o dado
-  const extras = (aba==='VOLUME' && sel.modo!=='dir') ? volExtras().filter(k=>ind[k] && !ind[k].unavailable) : [];
-  $('lista').innerHTML = [...GROUPS[aba].filter(k=>!oculta(k)), ...extras].map(k=>linha(k, ind[k], rotas)).join('');
-  document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k)));
+    // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir;
+    // a Venda Zero não vale para a Neutraliza: sem card quando o filtro só tem rotas Neutraliza
+    const soNeutra = rotas.length>0 && rotas.every(ehNeutraliza);
+    const oculta = k => (k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable)) || (k==='VENDAZERO' && soNeutra);
+    // volume extra (Del Valle Frut): card só na aba Volume e só quando as rotas do filtro trazem o dado
+    const extras = (aba==='VOLUME' && sel.modo!=='dir') ? volExtras().filter(k=>ind[k] && !ind[k].unavailable) : [];
+    $('lista').innerHTML = [...GROUPS[aba].filter(k=>!oculta(k)), ...extras].map(k=>linha(k, ind[k], rotas)).join('');
+    document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k)));
+  }
   encaixa($('lista'));
   const upd = (ONLINE && ONLINE.updatedAt) ? ONLINE.updatedAt.replace('T',' ').slice(0,16).split(' ') : null;
   $('rodape').innerHTML =
@@ -616,17 +636,20 @@ clicavel($('cSem'), ()=>{
 const VOLTAR = {gc:'← Gerências', sv:'← Supervisões', rota:'← Rotas'};
 let CASC = null;     // {k, pilha:[{nivel, chave, gc, rotas, nome}]}
 
+// primeiro nível da cascata pelo filtro: Diretoria = gerências; gerência = supervisões; supervisão = rotas; rota = clientes
+function ctxInicial(){
+  if(sel.modo==='dir' && !sel.dgc) return {nivel:'gc', chave:'', rotas:rotasAtuais(), nome:'Diretoria'};
+  if(sel.modo==='dir') return ctxGerencia(sel.dgc);     // uma gerência no filtro: como na Gerência
+  if(sel.rota) return {nivel:'cli', chave:sel.rota, gc:sel.gc, rotas:[sel.rota], nome:'Rota '+sel.rota};
+  if(sel.sv===SV_NEUTRA) return ctxNeutraliza(sel.gc);
+  if(sel.sv) return {nivel:'rota', chave:sel.sv, gc:sel.gc, rotas:rotasNormais(sel.gc, sel.sv), nome:rotuloSv(sel.sv)};
+  return ctxGerencia(sel.gc);
+}
+
 function abreIndicador(k){
   const b = agrega(rotasAtuais()).ind[k];
   if(!b || b.unavailable) return;
-  let ctx;
-  if(sel.modo==='dir' && !sel.dgc) ctx = {nivel:'gc', chave:'', rotas:rotasAtuais(), nome:'Diretoria'};
-  else if(sel.modo==='dir') ctx = ctxGerencia(sel.dgc);     // uma gerência no filtro: como na Gerência
-  else if(sel.rota) ctx = {nivel:'cli', chave:sel.rota, gc:sel.gc, rotas:[sel.rota], nome:'Rota '+sel.rota};
-  else if(sel.sv===SV_NEUTRA) ctx = ctxNeutraliza(sel.gc);
-  else if(sel.sv) ctx = {nivel:'rota', chave:sel.sv, gc:sel.gc, rotas:rotasNormais(sel.gc, sel.sv), nome:rotuloSv(sel.sv)};
-  else ctx = ctxGerencia(sel.gc);
-  CASC = {k, pilha:[ctx]};
+  CASC = {k, pilha:[ctxInicial()]};
   abre('', '', '');
   pintaCascata();
 }
@@ -697,12 +720,15 @@ function linhaGrupo(g, m, k, i){
   // volume: meta do dia da linha <= 0; cobertura: Real >= Meta do mês (fora do fechamento); Venda Zero não
   const batida = !vz && (ehVolume(k) ? metaBatida(md) : md!=null && coberturaBatida(b));
   const cor = vz ? 'ok' : (md==null ? 'nd' : (batida || onl>=md ? 'ok' : 'no'));
-  const meio = vz ? `<span class="cOn ok">${fmtN(onl)}</span><small>revertidos hoje</small>`
+  // aba Incentivo (metricasInc): cor pelo EF, rótulo do % e o meio próprios; linha sem filho (Status) não abre
+  const meio = m.meio || (vz ? `<span class="cOn ok">${fmtN(onl)}</span><small>revertidos hoje</small>`
     : `<span class="cOn ${cor}">${f(onl)}</span><small>${md==null ? (P.FECHAMENTO ? 'online hoje' : 'meta do dia —')
-                                                        : batida ? META_BATIDA : 'meta do dia '+f(md)}</small>`;
-  const rot = ehVolume(k) ? (P.FECHAMENTO ? 'realizado' : 'tendência') : 'do mês';
-  return `<div class="cLin ${b.onPace?'ok':'no'}" role="button" tabindex="0" data-i="${i}"
-      data-meta="${b.meta}" data-real="${b.real}" data-dir="${dir==null?'':dir}">
+                                                        : batida ? META_BATIDA : 'meta do dia '+f(md)}</small>`);
+  const rot = m.rot || (ehVolume(k) ? (P.FECHAMENTO ? 'realizado' : 'tendência') : 'do mês');
+  const ok = m.ok!=null ? m.ok : b.onPace;
+  const extra = ['ef', 'hoje', 'dif'].filter(c=>m[c]!=null).map(c=>` data-${c}="${m[c]}"`).join('');
+  return `<div class="cLin ${ok?'ok':'no'}"${g.filho ? ` role="button" tabindex="0" data-i="${i}"` : ''}
+      data-meta="${b.meta}" data-real="${b.real}" data-dir="${dir==null?'':dir}"${extra}>
     <div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
     <div class="cEsq"><span>Meta ${f(b.meta)}</span><span>Real ${f(b.real)}</span></div>
     <div class="cMeio">${meio}</div>
@@ -721,22 +747,31 @@ function resumoInd(k, b){
 }
 
 function pintaCascata(){
-  const {k, pilha} = CASC, ctx = pilha[pilha.length-1];
-  $('dTit').textContent = `${rotuloInd(k)} · ${ctx.nome}`;
-  $('dSub').textContent = resumoInd(k, agrega(ctx.rotas).ind[k]);
+  const {k, pilha, inc} = CASC, ctx = pilha[pilha.length-1];
+  $('dTit').textContent = `${k===INC_STATUS ? ROTULO_STATUS : rotuloInd(k)} · ${ctx.nome}`;
+  $('dSub').textContent = inc ? resumoInc(k, ctx.rotas) : resumoInd(k, agrega(ctx.rotas).ind[k]);
   const volta = pilha.length>1 ? `<button class="cVolta" id="cVolta">${VOLTAR[pilha[pilha.length-2].nivel]}</button>` : '';
   if(ctx.nivel==='cli'){
     $('dCorpo').innerHTML = volta + '<div id="dLista"></div>';
-    // listas de clientes: sem virtuais e sem ocultas (na AT, tudo)
-    const rotas = ctx.rotas.filter(r=>!ehVirtual(r) && !ehOculta(rotaSv(ctx.gc, r)));
+    // listas de clientes: sem virtuais e sem ocultas (na AT, tudo); no Incentivo, só as rotas com meta do item
+    const rotas = ctx.rotas.filter(r=>!ehVirtual(r) && !ehOculta(rotaSv(ctx.gc, r)) && (!inc || temMetaInc(k, r)));
     if(ehVolume(k)) listaVolume(k, rotas);
     else if(k==='VENDAZERO') listaVendaZero(rotas);
     else listaCobertura(k, rotas);
   } else {
-    // na ordem de gruposDo (pelo código; a "Neutraliza" por último), sem reordenar pelos números
-    const grupos = gruposDo(ctx, k).map(g=>({g, m: g.off ? null : metricas(k, g.rotas)}));
+    // na ordem de gruposDo (pelo código; a "Neutraliza" por último), sem reordenar pelos números. No Incentivo, só os
+    // grupos com rota com meta do item (Status: de algum item), e o Status termina nas rotas (sem clientes)
+    let gs = gruposDo(ctx, k);
+    if(inc) gs = gs.filter(g=>!g.off && temMetaGrupoInc(k, g.rotas)).map(g=>{
+      // escopo misto: quantas rotas do grupo têm meta (só elas somam)
+      const vis = g.rotas.filter(r=>!ehVirtual(r)), n = vis.filter(r=>temMetaGrupoInc(k, [r])).length;
+      return {...g, info: vis.length>1 && n<vis.length ? `${g.info} · ${n} com meta` : g.info,
+              filho: k===INC_STATUS && g.filho && g.filho.nivel==='cli' ? null : g.filho};
+    });
+    const grupos = gs.map(g=>({g, m: g.off ? null : inc ? metricasInc(k, g.rotas) : metricas(k, g.rotas)}));
+    const nota = ctx.nivel!=='sv' ? '' : inc ? notaVirtuaisInc(k, ctx.gc) : notaVirtuais(k, ctx.gc);
     $('dCorpo').innerHTML = volta + `<div class="cLista">${grupos.map((x,i)=>linhaGrupo(x.g, x.m, k, i)).join('')
-      || '<div class="vazio">Nada neste filtro.</div>'}${ctx.nivel==='sv' ? notaVirtuais(k, ctx.gc) : ''}</div>`;
+      || '<div class="vazio">Nada neste filtro.</div>'}${nota}</div>`;
     $('dCorpo').querySelectorAll('.cLin[data-i]').forEach(el=>clicavel(el, ()=>{
       pilha.push(grupos[Number(el.dataset.i)].g.filho); pintaCascata();
     }));
@@ -814,6 +849,149 @@ function listaCobertura(k, rotas){
     $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
   };
   pinta();
+}
+
+/* ---------- aba Incentivo: campanha "Todos a Bordo 3.0" (cobertura de cervejas) ----------
+   Itens = GROUPS.INCENTIVO do payload, na ordem da aba (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS; INC
+   HEINEKEN, INC EISENBAHN 600ML e INC HEINEKEN 600ML só existem aqui). Cada item soma só as rotas do escopo com meta do
+   item (indicador disponível e meta > 0; as BARRACUDA não têm meta de Heineken); as demais ficam fora de todas as somas
+   e listas dele. Meta, Real e Diferença como no ICS; caixa do Online como a do ICS. EF = clientes distintos no Real
+   (COBERTOS) ou no online de hoje (online.clientes), união por cliente dentro de cada rota, somando as rotas;
+   % = EF / Meta (para baixo: 99,6% = 99%); verde com EF >= Meta. No fechamento do mês o online é do mês novo:
+   EF = Real e % = Real / Meta. Status: soma dos itens com meta no escopo (Meta, Real, Hoje = EF - Real,
+   Diferença = EF - Meta, % = EF / Meta), verde só com todos esses itens em 100%; a cascata dele termina nas rotas.
+   Escopo sem meta do item: "Exclusivo portfólio Full" (Heineken e Heineken - 600ml) ou "Sem meta".
+   CONFIG.INCENTIVO_ATIVO = false ou payload sem GROUPS.INCENTIVO: aba oculta. */
+const INC_STATUS = 'INC_STATUS', ROTULO_STATUS = 'Status Todos a Bordo 3.0';
+const INC_SO_FULL = ['INC HEINEKEN', 'INC HEINEKEN 600ML'];
+const incentivoAtivo = () => CONFIG.INCENTIVO_ATIVO !== false && !!(GROUPS && GROUPS.INCENTIVO);
+const itensInc = () => (GROUPS && GROUPS.INCENTIVO) || [];
+const pctInc = (a, b) => Math.floor(a / b * 100 + 1e-9);
+const msgSemMetaInc = k => INC_SO_FULL.includes(k) ? 'Exclusivo portfólio Full' : 'Sem meta';
+// rota com meta do item: indicador disponível e meta > 0
+function temMetaInc(k, r){
+  const b = ((nodo(sel.gc, r) || {}).indicators || {})[k];
+  return !!b && !b.unavailable && b.meta > 0;
+}
+const temMetaGrupoInc = (k, rotas) => (k===INC_STATUS ? itensInc() : [k]).some(kk=>rotas.some(r=>temMetaInc(kk, r)));
+
+// um item no escopo `rotas` (só as rotas com meta dele); {semMeta:true} se nenhuma tem
+function incItem(k, rotas){
+  const rs = rotas.filter(r=>temMetaInc(k, r));
+  if(!rs.length) return {semMeta:true};
+  const fech = !!P.FECHAMENTO;
+  let meta = 0, real = 0, onl = 0, ef = 0, opo = 0;
+  rs.forEach(r=>{
+    const b = nodo(sel.gc, r).indicators[k];
+    meta += b.meta; real += b.real || 0;
+    opo += (OPORTUNIDADES_DIA[r] || {})[k] || 0;
+    if(fech){ ef += b.real || 0; return; }
+    const cob = new Set(((COBERTOS[r] || {})[k]) || []);
+    const hoje = (((ONLINE && ONLINE.clientes) || {})[r] || {})[k] || [];
+    onl += ((((ONLINE && ONLINE.rotas) || {})[r] || {})[k]) || 0;
+    ef += (b.real || 0) + hoje.filter(pv=>!cob.has(pv)).length;   // quem já está no Real e comprou hoje conta 1 vez
+  });
+  const gap = Math.max(0, Math.ceil(meta*P.DIA_HOJE/P.TOTAL_DIAS_UTEIS) - real);
+  return {rotas:rs, meta, real, onl, ef, opo, gap, pct:pctInc(ef, meta), ok:ef >= meta, b:{meta, real, gap}};
+}
+// Status: soma dos itens com meta no escopo
+function incStatus(rotas){
+  const itens = itensInc().map(k=>incItem(k, rotas)).filter(x=>!x.semMeta);
+  if(!itens.length) return {semMeta:true};
+  const soma = c => itens.reduce((a, x)=>a + x[c], 0);
+  const meta = soma('meta'), real = soma('real'), ef = soma('ef');
+  return {meta, real, ef, hoje:ef - real, dif:ef - meta, pct:pctInc(ef, meta), n:itens.length,
+          nOk:itens.filter(x=>x.ok).length, ok:itens.every(x=>x.ok)};
+}
+const sinalN = n => `${n>0?'+':''}${fmtN(n)}`;
+
+function cardIncItem(k, rotas){
+  const nome = esc(rotuloInd(k)), x = incItem(k, rotas);
+  if(x.semMeta) return `<div class="ind off" data-inc-off="${esc(k)}"><div class="tit">${nome}</div>
+    <div class="semdado">${msgSemMetaInc(k)}</div></div>`;
+  const fech = !!P.FECHAMENTO, dif = x.real - x.meta;
+  const online = fech ? `<div class="obox nd"><b>—</b><span>mês fechado</span></div>` : caixaOnline(k, x.rotas, x.b);
+  return `<div class="ind ${x.ok?'ok':''}" data-inc="${esc(k)}" data-meta="${x.meta}" data-real="${x.real}"
+      data-ef="${x.ef}" role="button" tabindex="0">
+    <div class="tit">${nome}</div>
+    <div class="row">
+      <div class="cl">
+        <div>Meta ${x.meta.toLocaleString('pt-BR')}</div>
+        <div>Real ${x.real.toLocaleString('pt-BR')}</div>
+        <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${dif.toLocaleString('pt-BR')}</div>
+      </div>
+      <div class="cm">
+        <div class="big"><span class="seta">${x.ok?'▲':'▼'}</span>${x.pct}%</div>
+        <div class="acao">${x.ok ? 'meta batida' : `faltam ${fmtN(x.meta - x.ef)}`}</div>
+        <div class="opo">${fech ? 'realizado no mês' : 'real + hoje'}${x.opo && !fech ? ` · oportunidades do dia ${x.opo}` : ''}</div>
+      </div>
+      <div class="cr"><div class="olab">Online</div>${online}</div>
+    </div></div>`;
+}
+function cardIncStatus(rotas){
+  const s = incStatus(rotas);
+  if(s.semMeta) return `<div class="ind off incStatus"><div class="tit">${ROTULO_STATUS}</div>
+    <div class="semdado">Sem meta</div></div>`;
+  const fech = !!P.FECHAMENTO;
+  // a cascata do Status termina nas rotas: com uma rota no filtro (perfil Rota) o card não abre
+  const abreCasc = ctxInicial().nivel!=='cli';
+  return `<div class="ind incStatus ${s.ok?'ok':''}"${abreCasc ? ` data-inc="${INC_STATUS}" role="button" tabindex="0"` : ''}
+      data-meta="${s.meta}" data-real="${s.real}" data-hoje="${s.hoje}" data-dif="${s.dif}" data-ef="${s.ef}">
+    <div class="tit">${ROTULO_STATUS}</div>
+    <div class="row dois">
+      <div class="cl">
+        <div>Meta ${fmtN(s.meta)}</div>
+        <div>Real ${fmtN(s.real)}</div>
+        ${fech ? '' : `<div class="hoje">+ hoje ${fmtN(s.hoje)}</div>`}
+        <div class="dif ${s.dif>=0?'pos':'neg'}">Diferença ${sinalN(s.dif)}</div>
+      </div>
+      <div class="cm">
+        <div class="big"><span class="seta">${s.ok?'▲':'▼'}</span>${s.pct}%</div>
+        <div class="acao">${s.nOk} de ${s.n} ite${s.n>1?'ns':'m'} em 100%</div>
+        <div class="opo">${fech ? 'realizado no mês' : 'real + hoje, clientes distintos'}</div>
+      </div>
+    </div></div>`;
+}
+
+// cascata do Incentivo: o primeiro nível é o do filtro, como nas outras abas
+function abreIncentivo(k){
+  const x = k===INC_STATUS ? incStatus(rotasAtuais()) : incItem(k, rotasAtuais()), ctx = ctxInicial();
+  if(x.semMeta || (k===INC_STATUS && ctx.nivel==='cli')) return;
+  CASC = {k, inc:true, pilha:[ctx]};
+  abre('', '', '');
+  pintaCascata();
+}
+// números de uma linha da cascata do Incentivo (os mesmos dos cards)
+function metricasInc(k, rotas){
+  const fech = !!P.FECHAMENTO;
+  if(k===INC_STATUS){
+    const s = incStatus(rotas);
+    if(s.semMeta) return null;
+    return {b:{meta:s.meta, real:s.real}, ok:s.ok, dir:s.pct, ef:s.ef, hoje:s.hoje, dif:s.dif,
+            rot:fech ? 'realizado' : 'real + hoje',
+            meio:`<span class="cOn nd">${fech ? '—' : '+'+fmtN(s.hoje)}</span><small>${fech ? 'mês fechado' : 'hoje'}`
+              + ` · Dif. ${sinalN(s.dif)}</small>`};
+  }
+  const x = incItem(k, rotas);
+  if(x.semMeta) return null;
+  return {b:x.b, onl:x.onl, md:fech ? null : (x.gap>0 ? x.gap : Math.ceil(x.meta/P.TOTAL_DIAS_UTEIS)), dir:x.pct,
+          ok:x.ok, ef:x.ef, rot:fech ? 'realizado' : 'real + hoje',
+          meio:fech ? '<span class="cOn nd">—</span><small>mês fechado</small>' : undefined};
+}
+// rotas virtuais com meta no total da gerência: nota no fim das supervisões, para a conta das linhas fechar com o card
+function notaVirtuaisInc(k, gc){
+  const rs = rotasDe(gc, '').filter(r=>ehVirtual(r) && !ehEventual(r));
+  const x = !rs.length ? null : k===INC_STATUS ? incStatus(rs) : incItem(k, rs);
+  if(!x || x.semMeta) return '';
+  const hoje = x.ef - x.real;
+  return `<div class="cNota" data-meta="${x.meta}" data-real="${x.real}" data-ef="${x.ef}">Inclui rotas virtuais: `
+    + `Meta ${fmtN(x.meta)} · Real ${fmtN(x.real)}${hoje ? ` · hoje +${fmtN(hoje)}` : ''}</div>`;
+}
+function resumoInc(k, rotas){
+  const x = k===INC_STATUS ? incStatus(rotas) : incItem(k, rotas);
+  if(x.semMeta) return k===INC_STATUS ? 'Sem meta' : msgSemMetaInc(k);
+  return `Meta ${fmtN(x.meta)} · Real ${fmtN(x.real)}` + (P.FECHAMENTO ? '' : ` · hoje +${fmtN(x.ef - x.real)}`)
+    + ` · ${x.pct}%` + (k===INC_STATUS ? ` · ${x.nOk} de ${x.n} itens em 100%` : '');
 }
 
 /* ---------- entrada com perfis (Diretoria / Gerência / Supervisão / Rota), por seleção ----------
@@ -1232,7 +1410,7 @@ function buscaCliente(){
     $('cli').innerHTML='';return;
   }
   const kstt = ehKstt(achado);
-  const grupo = P.COV_GRUPO[aba];              // só os itens da aba ativa
+  const grupo = aba==='INCENTIVO' ? itensInc() : P.COV_GRUPO[aba];              // só os itens da aba ativa
   let chips;
   if(aba==='VOLUME'){
     // Volume não tem cobertura binária: usa a barra de status de meta por cliente (VOLUME_CLIENTE + online de hoje)
@@ -1240,6 +1418,8 @@ function buscaCliente(){
       + tileGdm(gdmCliente(rota, achado[0]));
   } else {
     chips = grupo.map(k=>{
+      // Incentivo: item sem meta na rota do cliente (BARRACUDA sem Heineken) não tem quadrinho de compra
+      if(aba==='INCENTIVO' && !temMetaInc(k, rota)) return tileCob(k, 'na', INC_SO_FULL.includes(k) ? 'só Full' : 'sem meta');
       if(k==='KS TT' && !kstt) return tileCob(k, 'na', 'não elegível');
       if(!P.FONTES.venda) return tileCob(k, 'nd', 'sem venda');
       const ok=(((COBERTOS[rota]||{})[k])||[]).includes(achado[0]);
@@ -1277,7 +1457,7 @@ function gdmRede(membros){
 function renderRede(rede){
   const membros = rede.membros;                  // [[rota,cid], ...]
   const rotasUnicas = [...new Set(membros.map(m=>m[0]))];
-  const grupo = P.COV_GRUPO[aba];
+  const grupo = aba==='INCENTIVO' ? itensInc() : P.COV_GRUPO[aba];
   let chips;
   if(aba==='VOLUME'){
     const ks = [...grupo, ...volExtras().filter(k=>rotasUnicas.some(r=>volDaRota(r).includes(k)))];
@@ -1300,10 +1480,11 @@ function renderRede(rede){
       membros.forEach(([r,cid])=>{
         const c = (CLIENT_ROSTER[r]||[]).find(x=>x[0]===cid);
         if(k==='KS TT' && (!c || !ehKstt(c))) return;   // fora do denominador, igual ao cliente avulso
+        if(aba==='INCENTIVO' && !temMetaInc(k, r)) return;   // Incentivo: só as lojas de rotas com meta do item
         elegiveis++;
         if((((COBERTOS[r]||{})[k])||[]).includes(cid)) cobertos++;
       });
-      if(elegiveis===0) return tileCob(k, 'na', 'não elegível');
+      if(elegiveis===0) return tileCob(k, 'na', aba==='INCENTIVO' ? 'sem meta' : 'não elegível');
       const cls = cobertos===elegiveis ? 'ok' : (cobertos===0 ? 'no' : 'parcial');
       return tileCob(k, cls, `${cobertos}/${elegiveis} lojas`);
     }).join('');

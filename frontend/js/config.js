@@ -14,6 +14,9 @@ const CONFIG = Object.freeze({
   // back-end). Esta lista só vale para um payload antigo, sem essas chaves: fora do "puxa a média" (além de
   // "ROTA SEM VENDEDOR") e das listas de clientes.
   SV_EXCLUIDOS: ['SV.G1.5', 'SV.G2.5', 'SV.G3.3', 'SV.IT.3', 'SV.MO.3'],
+  // Aba Incentivo (campanha "Todos a Bordo 3.0", cobertura de cervejas): false esconde a aba. Sem o grupo
+  // INCENTIVO no payload (payload antigo), a aba fica oculta de qualquer jeito.
+  INCENTIVO_ATIVO: true,
   // Placa ATENÇÃO do Resumo: % mínimo de indicadores no ritmo; null = desligada (não aparece)
   LIMIAR_ATENCAO: null,
   // Resumo da Diretoria: gerências por faixa (acima disso, quebra em faixas)
