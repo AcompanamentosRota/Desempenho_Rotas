@@ -696,7 +696,7 @@ def decidir_fechamento(cons: Consulta, hoje: date, linhas_cal: list[dict], gc_da
     if not calmod.em_fechamento(dia_util, metas_ok):
         return None
     ref = calmod.mes_anterior(hoje)
-    cal = calmod.fechado(hoje, ref, calmod.total_dias_uteis(linhas_cal, ref))
+    cal = calmod.com_data_ontem(calmod.fechado(hoje, ref, calmod.total_dias_uteis(linhas_cal, ref)), linhas_cal)
     log.warning("Fechamento do mês: painel em %s (%s).", cal.mes_label, motivo)
     return cal
 

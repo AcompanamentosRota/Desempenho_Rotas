@@ -3,7 +3,6 @@
    ambos gerados pelo back-end a partir do SAP Datasphere (OData). */
 let P = null;
 let DATA,LABELS,GROUPS,CLIENT_ROSTER,CLIENTES_HOJE,OPORTUNIDADES_DIA,VISITAS_DIA,SEGS,DIAS,COBERTOS,SEM_COMPRA_HOJE,VENDAZERO_CLIENTES,COMODATO_ATIVOS,REVERTIDO_HOJE,OPORTUNIDADE_HOJE;
-const INVERTED = new Set(['VENDAZERO']);
 const KSTT_SEG = new Set(['LANCHONETE','RESTAURANTE','BOTECO','PADARIAS']);
 
 let ONLINE = null, aba='ICS_GC';
@@ -12,7 +11,7 @@ let ONLINE = null, aba='ICS_GC';
 const $ = id => document.getElementById(id);
 const ESC_MAP = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
 const esc = v => String(v==null?'':v).replace(/[&<>"']/g, ch=>ESC_MAP[ch]);
-const titulo = s => String(s||'').toLowerCase().replace(/(^|\s)\S/g, m=>m.toUpperCase());
+const titulo = NUCLEO.titulo;
 function nomeSv(sv){
   const n = ((P && P.NOME_SUPERVISOR)||{})[sv];
   if(!n) return '';
@@ -50,17 +49,8 @@ const ehVolume = k => GROUPS.VOLUME.includes(k) || volExtras().includes(k);
 // números: volume inteiro e coberturas com até 1 casa, sempre no formato pt-BR (490.003, nunca 490002.69999)
 const fmt0 = n => Math.round(n||0).toLocaleString('pt-BR');
 const fmtN = n => (n||0).toLocaleString('pt-BR', {maximumFractionDigits:1});
-// ordem natural dos códigos: trechos numéricos pelo valor (SV.G1.2 antes de SV.G1.10; 111, 112...; A11, A12...; I11...)
-function ordemNatural(a, b){
-  const x = String(a).toUpperCase().match(/\d+|\D+/g) || [], y = String(b).toUpperCase().match(/\d+|\D+/g) || [];
-  for(let i=0; i<Math.min(x.length, y.length); i++){
-    const nx = /^\d/.test(x[i]), ny = /^\d/.test(y[i]);
-    if(nx && ny){ if(Number(x[i])!==Number(y[i])) return Number(x[i]) - Number(y[i]); continue; }
-    if(nx!==ny) return nx ? -1 : 1;
-    if(x[i]!==y[i]) return x[i] < y[i] ? -1 : 1;
-  }
-  return x.length - y.length || (a < b ? -1 : a > b ? 1 : 0);
-}
+// ordem natural dos códigos (SV.G1.2 antes de SV.G1.10; 111, 112...; A11, A12...; I11...): nucleo.js
+const ordemNatural = NUCLEO.ordemNatural;
 // torna um elemento não-<button> clicável também pelo teclado (Enter/Espaço)
 function clicavel(el, fn){
   el.onclick = fn;
@@ -204,61 +194,11 @@ const rotasVisiveis = () => rotasAtuais().filter(r=>!ehVirtual(r));
 // listas de clientes: também sem as ocultas (na AT, tudo aparece)
 const rotasListas = () => rotasVisiveis().filter(r=>!ehOculta(rotaSv(sel.gc, r)));
 
-/* ---------- agregação ---------- */
+/* ---------- agregação ----------
+   A conta é a de NUCLEO.agrega (nucleo.js, pura: também a do Painel de Ritmo em PDF); aqui com os campos de hoje
+   (revertidoHoje, oportunidadeHoje, semDadoHoje) do payload. */
 function agrega(rotas){
-  const ind={}, tot={baseTotal:0,compraram:null,semCompra:null};
-  // os itens da aba Todos a Bordo (GROUPS.INCENTIVO) com a mesma conta das coberturas do ICS GC
-  [...new Set([...GROUPS.ICS_GC,...GROUPS.NOVOS_NEG,...(GROUPS.INCENTIVO||[])])].forEach(k=>ind[k]={meta:0,real:0,n:0});
-  const volKs=[...GROUPS.VOLUME, ...volExtras()];
-  const volAgg={}; volKs.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,neg:0,mdia:null,n:0});
-  rotas.forEach(r=>{
-    const d=nodo(sel.gc,r);
-    if(!ehVirtual(r)){               // clientes das virtuais não aparecem (só os indicadores somam)
-      tot.baseTotal+=d.baseTotal||0;
-      if(d.compraram!=null){tot.compraram=(tot.compraram||0)+d.compraram;
-        tot.semCompra=(tot.semCompra||0)+d.semCompra;}
-    }
-    Object.keys(ind).forEach(k=>{
-      const b=d.indicators[k]; if(!b||b.unavailable) return;
-      ind[k].meta+=b.meta||0; ind[k].real+=b.real||0; ind[k].n++;
-    });
-    volKs.forEach(k=>{
-      const b=d.indicators[k], a=volAgg[k]; if(!b||b.unavailable) return;
-      a.meta+=b.meta||0; a.real+=b.real||0; a.tend+=b.tendencia||0; a.neg+=b.negRestante||0;
-      if(b.metaDia!=null) a.mdia=(a.mdia||0)+b.metaDia;
-      a.n++;
-    });
-  });
-  const out={};
-  Object.keys(ind).forEach(k=>{
-    const a=ind[k];
-    if(!a.n){out[k]={unavailable:true};return;}
-    const pct = a.meta ? Math.round(a.real/a.meta*100) : null;
-    out[k]={meta:a.meta,real:a.real,pct,
-      onPace: pct!=null && (INVERTED.has(k)? pct<=100 : pct>=P.PACE_ONTEM_PCT),
-      gap: INVERTED.has(k)
-        ? Math.max(0, Math.ceil(a.real - a.meta))
-        : Math.max(0, Math.ceil(a.meta*P.DIA_HOJE/P.TOTAL_DIAS_UTEIS)-a.real),
-      revertidoHoje: rotas.reduce((s,r)=>s+((REVERTIDO_HOJE||{})[r]||0),0),
-      oportunidadeHoje: rotas.reduce((s,r)=>s+((OPORTUNIDADE_HOJE||{})[r]||0),0),
-      unavailable:false};
-  });
-  /* Volume (critério do SAC, igual a modelo.agrega_volume): soma as rotas (Vol Real, Neg Restante, Tendência,
-     Meta, Meta do dia) e recalcula o % sobre as somas. Meta = META_VOLUME da rota; Neg Restante = curva da
-     META_NEG dos clientes aplicada à meta da rota (calculado no back-end, por rota). Fechamento do mês: sem
-     tendência nem meta do dia, no ritmo pelo % realizado (Real / Meta). */
-  const fech = !!P.FECHAMENTO;
-  volKs.forEach(k=>{
-    const a=volAgg[k];
-    if(!a.n){out[k]={unavailable:true};return;}
-    const pctT = (!fech && a.meta) ? Math.round(a.tend/a.meta*100) : null;
-    const pctR = a.meta ? Math.round(a.real/a.meta*100) : null;
-    const semDadoHoje = rotas.length===1 && !!(nodo(sel.gc,rotas[0]).indicators[k]||{}).semDadoHoje;
-    out[k]={meta:a.meta,real:a.real,dif:a.real-a.meta, metaDia: fech?null:a.mdia,
-      tendencia: fech?null:a.tend, negRestante: fech?null:a.neg, pctTendencia:pctT, pctReal:pctR,
-      onPace: fech ? (pctR!=null && pctR>=100) : (pctT!=null && pctT>=100), unavailable:false, semDadoHoje};
-  });
-  return {ind:out, tot};
+  return NUCLEO.agrega(P, rotas, r=>nodo(sel.gc,r), {revertido:REVERTIDO_HOJE, oportunidade:OPORTUNIDADE_HOJE});
 }
 
 /* ---------- filtros ---------- */
@@ -406,8 +346,9 @@ function render(){
     `<span id="rodapeStatus">${esc((statusAtualizado()||{}).texto || 'sem dados de venda online neste export')}</span>`+
     (upd? `<br><span class="fonte">Fonte: SAP Datasphere · ${upd[0].split('-').reverse().join('/')} ${upd[1]}</span>`:'')+
     `<div class="creditos">${esc(CONFIG.CREDITOS)}</div>`;
-  document.querySelector('.rsBox').hidden = perfil==='rota';     // perfil Rota: sem Resumo de vendas
+  document.querySelector('.rsBox').hidden = perfil==='rota';     // perfil Rota: sem Resumo de vendas nem Painel de Ritmo
   RS.pinta();
+  RT.estado();                     // botão "Painel de ritmo": desabilitado no fechamento do mês
 }
 
 function piorSv(){
@@ -561,9 +502,8 @@ function caixaOnline(k, rotas, b){
     return `<div class="obox ${ok?'ok':'no'}">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
       <span>${batida ? META_BATIDA : 'meta do dia '+Math.round(metaDia).toLocaleString('pt-BR')}</span></div>`;
   }
-  // Meta do dia: fora do ritmo é o próprio "faltam X"; no ritmo é teto(Meta / dias úteis).
-  const fatia = b.meta ? Math.ceil(b.meta/P.TOTAL_DIAS_UTEIS) : 0;
-  const metaDia = b.gap > 0 ? b.gap : fatia;
+  // Meta do dia: fora do ritmo é o próprio "faltam X"; no ritmo é teto(Meta / dias úteis) (NUCLEO.metaDiaCobertura).
+  const metaDia = NUCLEO.metaDiaCobertura(b, P.TOTAL_DIAS_UTEIS);
   const batida = coberturaBatida(b);
   if(!ONLINE)
     return `<div class="obox ${batida?'ok':'nd'}"><b>—</b><span>${batida ? META_BATIDA : `meta do dia ${metaDia}`}</span></div>`;
@@ -717,8 +657,7 @@ function metricas(k, rotas){
   if(k==='VENDAZERO') return {b, onl:b.revertidoHoje, md:null, dir:b.pct};
   if(ehVolume(k)) return {b, onl:rotas.reduce((a,r)=>a+soma('volume', r),0), md:fech ? null : b.metaDia,
                           dir:fech ? b.pctReal : b.pctTendencia};
-  const fatia = b.meta ? Math.ceil(b.meta/P.TOTAL_DIAS_UTEIS) : 0;
-  return {b, onl:rotas.reduce((a,r)=>a+soma('rotas', r),0), md:fech ? null : (b.gap>0 ? b.gap : fatia), dir:b.pct};
+  return {b, onl:rotas.reduce((a,r)=>a+soma('rotas', r),0), md:fech ? null : NUCLEO.metaDiaCobertura(b, P.TOTAL_DIAS_UTEIS), dir:b.pct};
 }
 
 function linhaGrupo(g, m, k, i){

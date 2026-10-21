@@ -5,8 +5,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 
 ## Estrutura e comandos
 
-- `frontend/`: site publicado. JS clássico (sem build, sem módulos ES): `config.js` → `app.js` → `resumo.js` → `main.js`,
-  todos com `defer` e compartilhando globais (`P`, `DATA`, `sel`, `RS`...). Dados em `frontend/data/` (gerados, não editar à mão).
+- `frontend/`: site publicado. JS clássico (sem build, sem módulos ES): `config.js` → `nucleo.js` → `app.js` → `resumo.js` → `ritmo.js` → `main.js`,
+  todos com `defer` e compartilhando globais (`P`, `DATA`, `sel`, `RS`, `RT`, `NUCLEO`...). Dados em `frontend/data/` (gerados, não editar à mão).
 - `backend/`: `odata/` (cópia do kit `C:\Users\luan.arantes\Documents\Teste_ODATA`, sem pandas), `gerador/`, `scripts/`, `tests/`.
 - Testes (sem rede, stdlib `unittest`): `cd backend && python -m unittest discover -s tests -t .`
 - Gerar dados: `cd backend && python scripts/gerar.py --forcar` (fora de 07:00-18:59 BRT só roda com `--forcar`).
@@ -78,7 +78,12 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - **Contrato com o front**: `payload.json`/`online.json` têm o formato exato que `frontend/js/main.js` e `app.js` leem.
   `SEGS` e `DIAS` são tabelas de índice (cada cliente guarda a posição): só acrescentar no fim.
   `EVENTUAIS_ROTAS` (rotas ocultas dos clientes em EV*) é chave obrigatória desde 20/10/2026.
-  Fórmulas em `backend/gerador/modelo.py` espelham `agrega()` em `app.js`; mudou um, mude o outro.
+  Fórmulas em `backend/gerador/modelo.py` espelham `NUCLEO.agrega` em `nucleo.js` (o `agrega()` do app.js só o chama com os
+  campos de hoje); mudou um, mude o outro. `nucleo.js` é puro (payload por parâmetro, sem DOM nem ONLINE) e só expõe
+  `NUCLEO` (o app.js do 0a59eb4, servido na Parte N, declara `INVERTED`, `titulo`, `ordemNatural`: não redeclarar).
+  `DATA_ONTEM` (AAAA-MM-DD do último dia útil fechado, o dia útil DIA_ONTEM do mês de referência: calendário do
+  Datasphere, 1º dia de semana com NO_DIA_UTIL = DIA_ONTEM; sem a linha, o último dia útil local antes de hoje) e
+  `DIA_ONTEM_NOME` ("sexta-feira") são chaves novas opcionais no fim do payload (null se não houver; fora da validação).
 - **Todo nome de coluna, filtro e agrupador fica em `backend/gerador/mapeamento.py`.** Valores conferidos em 13/10/2026:
   - Base de clientes guarda histórico: filtrar `FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'`.
   - Gerências do painel na fonte (`M.GC_ORIGEM`): `Gc. G1/G2/G3/Ap/It_Mo` conferidas; `Gc. At/An/Sl/Rv/Pa_Di/Ur_Ri/Gu_Po`
@@ -246,6 +251,20 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Total: total + as duas; sem seletor próprio); placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada). Del Valle Frut continua fora
   da Diretoria, mesmo com uma gerência. Rodapé do painel: "Karen Oliveira - Inteligência de Mercado" (`CONFIG.CREDITOS`);
   a folha do Resumo NÃO tem assinatura (sem `.rs-rod`, na tela e no PDF; desde 21/10/2026).
+  **Painel de Ritmo em PDF** (`ritmo.js`; botão `#btnRitmo` na barra do Resumo, ao lado do "Gerar resumo de vendas"):
+  SÓ DADOS REAIS (payload; nunca ONLINE nem REVERTIDO_HOJE/OPORTUNIDADE_HOJE/SEM_COMPRA_HOJE/revertidoHoje/
+  oportunidadeHoje/semDadoHoje). `montaRitmo(P, escopo)` é pura (Parte R a roda em vm com getters que lançam);
+  `RT.escopoRitmo()` lê o filtro: Diretoria "Todas" = {tipo:'band'} (GC + SVs de cada gerência, ordem de GC_ATIVAS,
+  `confirm("Exportar N páginas?")`); gerência/grupo (Total = as duas; uma delas = só ela) = {tipo:'gc'}; supervisão no
+  filtro ou perfil Supervisão = {tipo:'sv'} (filtro "Neutraliza" = a gerência); perfil Rota = null (barra oculta).
+  Colunas: o nível (NUCLEO.agrega das rotas, como os cards: no GC todas as rotas, com Neutraliza/virtuais/-EV/ocultas)
+  + SVs visíveis sem as ocultas (página do GC) ou rotas normais (página da SV). Volume pela tendência (>= 100) e meta do
+  dia ("Meta batida!" com <= 0); coberturas pelo `onPace` (PACE_ONTEM) com `NUCLEO.metaDiaCobertura` ("Meta dia N" /
+  "faltam N", a conta da caixa dos cards); Venda Zero pelo `gap` ("reverter N"). "Puxando a média": coluna com menos
+  coberturas no ritmo (empate: menor código; sem linha se nenhuma ou se a pior está toda no ritmo). Página 1280x720,
+  html2canvas escala 1.5, JPEG 0.85, uma por vez fora da tela (`.rt-palco`), progresso no botão ("Gerando i/n");
+  bibliotecas e entrega por `RS.carregaScript`/`RS.salvaPdf`; arquivo `Painel_Ritmo_<BAND|G1|IT+MO|SV.G1.1>_AAAAMMDD.pdf`.
+  Fechamento: botão desabilitado ("Indisponível durante o fechamento"). ~165 KB por página.
   **PDF do Resumo**: páginas = `RS.paginas(atomos, H0, altTotal)` (função pura; átomos = [cabeçalho, blocos...]
   medidos no clone do html2canvas). O cabeçalho (`.rs-cab` + `.rs-atencao`) nunca fica sozinho: é um átomo só com o
   1º `.rs-bloco` (do topo do cabeçalho à base do bloco); átomo mais alto que a página = página mais alta. Diretoria
@@ -257,7 +276,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `@fontsource-variable/inter` 5.3.0, licença `OFL.txt`; nunca CDN nem Google Fonts), `font-display: swap`, fallback
   `system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`; `encaixa()` remede no `loadingdone` das fontes e o PDF
   espera `document.fonts.ready`. Escala só por variáveis de `:root` (`--fs-titulo/card/ind/valor/legenda`, celular até
-  640 px): não pôr tamanho de letra solto fora dela (exceção: caixas `.rs-k` do Resumo/PDF). `%` de cards e linhas
+  640 px): não pôr tamanho de letra solto fora dela (exceções: caixas `.rs-k` do Resumo/PDF e a página `.rt-*` do Painel de Ritmo). `%` de cards e linhas
   de grupo com `data-fit=""` (parte da escala, só reduz se não couber). Vermelho só no % abaixo, na Diferença
   negativa, no "faltam" (`.acao.falta`) e em alertas; Meta/Real/apoio em `--txt`/`--txt-apoio` (AA 4,5:1); rosa e verde
   claro dos cards e o verde do ritmo não mudam. Alturas mínimas por tipo (`--h-*`, card de volume com classe `vol`).

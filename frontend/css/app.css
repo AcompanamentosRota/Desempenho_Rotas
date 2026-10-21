@@ -401,6 +401,11 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .rsChips button[aria-pressed="true"]{background:#fff;color:var(--preto);border-color:#fff}
 .rsChips button[aria-pressed="true"]::before{background:var(--vermelho);border-color:var(--vermelho)}
 #btnResumo{font:inherit;font-size:var(--fs-valor);font-weight:700;background:var(--vermelho);color:#fff;border:0;border-radius:11px;padding:13px;cursor:pointer}
+/* Painel de Ritmo em PDF: ao lado do "Gerar resumo de vendas" (no celular, embaixo dele) */
+#btnRitmo{font:inherit;font-size:var(--fs-valor);font-weight:700;background:var(--escuro-2);color:#fff;border:1px solid var(--escuro-borda2);
+  border-radius:11px;padding:12px;cursor:pointer;overflow-wrap:anywhere}
+#btnRitmo:disabled{opacity:.55;cursor:not-allowed}
+#btnRitmo[aria-busy="true"]{opacity:1;cursor:progress}
 body.rs-travado{overflow:hidden}
 #rsOverlay{position:fixed;inset:0;z-index:80;background:var(--papel);overflow:auto;-webkit-overflow-scrolling:touch}
 .rs-barra{position:sticky;top:0;z-index:2;background:var(--preto);color:#fff;
@@ -540,6 +545,7 @@ body.rs-travado{overflow:hidden}
   .rsBox .rsLbl{flex:none}
   .rsBox .rsChips{flex:1;max-width:520px}
   #btnResumo{margin-left:auto;padding:12px 22px}
+  #btnRitmo{flex:none;padding:11px 20px}
   .drw{bottom:auto;top:50%;border-radius:16px;max-height:82vh;transform:translateY(calc(-50% + 40px));opacity:0;
     transition:transform .2s ease,opacity .2s ease,visibility 0s linear .2s;box-shadow:0 24px 60px rgba(0,0,0,.3)}
   .drw.on{transform:translateY(-50%);opacity:1;transition:transform .2s ease,opacity .2s ease,visibility 0s}
@@ -594,3 +600,45 @@ body.rs-travado{overflow:hidden}
 #rsFolha.rs-pdf.rs-compacto .rs-k small{font-size:8.5px}
 #rsFolha.rs-pdf.rs-compacto .rs-k strong{font-size:15px}
 #rsFolha.rs-pdf.rs-compacto .rs-sec{font-size:9.5px}
+
+/* ---------- Painel de Ritmo (PDF): página 1280x720 desenhada fora da tela só durante a exportação ----------
+   Tamanhos fixos em px (como as caixas .rs-k do PDF do Resumo): a página é sempre 1280x720, em qualquer aparelho.
+   7 colunas ou mais: .rt-compacto (fontes menores); o que ainda não couber, encaixa() reduz. */
+.rt-palco{position:fixed;left:-20000px;top:0;width:1280px;height:720px;overflow:hidden;pointer-events:none;z-index:-1}
+.rt-pag{width:1280px;height:720px;overflow:hidden;background:#fff;color:#1f1f23;font-family:var(--sans);
+  padding:18px 30px 10px;display:flex;flex-direction:column;line-height:1.15}
+.rt-pag>*{flex:none}
+.rt-cab{display:flex;align-items:baseline;justify-content:space-between;gap:20px}
+.rt-cab h2{margin:0;flex:1;min-width:0;font-size:24px;line-height:1.25;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden}
+.rt-marca{flex:none;font-size:12px;font-weight:700;letter-spacing:.12em;color:#5e5e65}
+.rt-pt{color:#e4002b}
+.rt-sub{margin-top:3px;font-size:13px;line-height:1.35;color:#5e5e65;white-space:nowrap;overflow:hidden}
+.rt-puxa{margin-top:2px;font-size:14px;line-height:1.35;font-weight:700;color:#c62828;white-space:nowrap;overflow:hidden}
+.rt-tab{margin-top:8px;width:100%;table-layout:fixed;border-collapse:separate;border-spacing:3px 2px}
+.rt-c0{width:150px}
+.rt-tab th{font-weight:400;padding:3px 4px 4px;text-align:center;vertical-align:bottom;border-radius:6px}
+.rt-tab th.rt-foco{background:#1c1c1e;color:#fff}
+.rt-cod{display:block;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden}
+.rt-nm{display:block;min-height:12px;font-size:10.5px;color:#5e5e65;white-space:nowrap;overflow:hidden}
+.rt-foco .rt-nm{color:#c7c7cc}
+.rt-tab td{padding:1px 4px;text-align:center;border-radius:5px;overflow:hidden}
+.rt-tab td.rt-nome,.rt-tab th.rt-nome{text-align:left;font-size:12.5px;font-weight:600;white-space:nowrap}
+.rt-tab td.rt-nome span{display:block;white-space:nowrap;overflow:hidden}
+.rt-bloco td{padding:6px 4px 1px;font-size:11px;font-weight:700;letter-spacing:.1em;color:#5e5e65;text-align:left}
+.rt-tot td{background:#f2f2f2;font-size:11.5px;font-weight:700;padding:3px 4px}
+.rt-tot td.rt-nome{background:none;font-size:11px;letter-spacing:.06em;color:#5e5e65}
+.rt-c{display:block;white-space:nowrap;overflow:hidden}
+td.rt-ok{background:#e9f4ef}
+td.rt-no{background:#fbeeee}
+td.rt-vazio{background:#f7f7f8;color:#75757b}
+.rt-v{display:block;font-size:14px;line-height:1.12;font-weight:700;white-space:nowrap;overflow:hidden}
+.rt-ok .rt-v{color:#146b4f}
+.rt-no .rt-v{color:#c62828}
+.rt-seta{font-size:.8em;margin-right:3px}
+.rt-s{display:block;font-size:10.5px;line-height:1.12;color:#5e5e65;white-space:nowrap;overflow:hidden}
+.rt-s.rt-falta{color:#c62828;font-weight:600}
+.rt-compacto .rt-cod{font-size:12px}
+.rt-compacto .rt-nm{font-size:9.5px}
+.rt-compacto .rt-v{font-size:13px}
+.rt-compacto .rt-s{font-size:9.5px}
+.rt-compacto .rt-tab td.rt-nome{font-size:12px}

@@ -10,6 +10,9 @@ Regras (conferidas com o histórico do payload.json):
     semana do mês anterior.
   - SEMANA_TIPO = "par" quando SEMANA_NUM é par, senão "ímpar".
   - DIA_ONTEM = dias úteis já fechados; PACE_ONTEM_PCT = round(DIA_ONTEM / TOTAL * 100).
+  - DATA_ONTEM = data do dia útil DIA_ONTEM (o último fechado) e DIA_ONTEM_NOME = o dia da semana dela
+    ("sexta-feira"): pelo calendário do Datasphere (1º dia de semana com NO_DIA_UTIL = DIA_ONTEM); sem a linha,
+    o último dia útil local (seg-sex menos feriados nacionais) antes de hoje. No fechamento, o do mês de referência.
 
 Fechamento do mês (em_fechamento / fechado): do dia 1 do mês M até o fim do 1º dia útil de M, e
 depois disso enquanto alguma gerência ainda não tiver as metas de M, o payload mostra o mês M-1
@@ -17,6 +20,7 @@ fechado (DIA_ONTEM = DIA_HOJE = TOTAL de M-1, PACE_ONTEM_PCT = 100, MES_LABEL de
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -94,6 +98,7 @@ def montar(hoje: date, total_dias_uteis: int, dia_util_hoje: int, eh_dia_util: b
     dia_ontem = dia_util_hoje - 1 if eh_dia_util else dia_util_hoje
     dia_ontem = max(0, min(dia_ontem, total_dias_uteis))
     semana = semana_do_mes(hoje)
+    anteriores = [d for d in dias_uteis_do_mes(hoje.year, hoje.month) if d < hoje]
     return Calendario(
         hoje=hoje,
         total_dias_uteis=total_dias_uteis,
@@ -103,7 +108,40 @@ def montar(hoje: date, total_dias_uteis: int, dia_util_hoje: int, eh_dia_util: b
         semana_tipo="par" if semana % 2 == 0 else "ímpar",
         dia_semana=DIAS_SEMANA[hoje.weekday()],
         mes_label=rotulo_mes(hoje),
+        data_ontem=anteriores[-1] if dia_ontem and anteriores else None,
     )
+
+
+def nome_dia(d: date | None) -> str | None:
+    """date(2026, 10, 16) -> 'sexta-feira' (DIA_ONTEM_NOME); None -> None."""
+    return DIAS_SEMANA[d.weekday()].lower() if d else None
+
+
+def data_do_dia_util(linhas: list[dict], ano: int, mes: int, n: int, ate: date | None = None) -> date | None:
+    """Data do n-ésimo dia útil do mês pelo calendário do Datasphere: o 1º dia de semana com NO_DIA_UTIL = n (fim de
+    semana e feriado repetem o nº do último dia útil, por isso o mais antigo). Sem essa linha (ou n <= 0), None."""
+    from .mapeamento import ColCalendario as C
+
+    if n <= 0:
+        return None
+    achadas = []
+    for l in linhas:
+        try:
+            d = date.fromisoformat(str(l.get(C.DATA) or "")[:10])
+            dia = int(float(l.get(C.DIA_UTIL) or 0))
+        except ValueError:
+            continue
+        if d.year == ano and d.month == mes and dia == n and d.weekday() < 5 and (ate is None or d < ate):
+            achadas.append(d)
+    return min(achadas) if achadas else None
+
+
+def com_data_ontem(cal: Calendario, linhas: list[dict]) -> Calendario:
+    """O calendário com a DATA_ONTEM do Datasphere (dia útil DIA_ONTEM do mês de referência), quando houver a linha;
+    senão fica a do cálculo local (montar/fechado)."""
+    ref = cal.ref or cal.hoje
+    d = data_do_dia_util(linhas, ref.year, ref.month, cal.dia_ontem, cal.hoje)
+    return replace(cal, data_ontem=d) if d else cal
 
 
 def rotulo_mes(d: date) -> str:
@@ -130,6 +168,7 @@ def fechado(hoje: date, ref: date, total_dias_uteis: int) -> Calendario:
         semana_num=semana, semana_tipo="par" if semana % 2 == 0 else "ímpar",
         dia_semana=DIAS_SEMANA[hoje.weekday()], mes_label=rotulo_mes(ref),
         fechamento=True, ref=date(ref.year, ref.month, 1),
+        data_ontem=(dias_uteis_do_mes(ref.year, ref.month) or [None])[-1],
     )
 
 
@@ -169,7 +208,7 @@ def do_datasphere(linhas: list[dict], hoje: date) -> Calendario | None:
     d, total, dia = ult
     if total <= 0 or dia <= 0:
         return None
-    return montar(hoje, total, dia, eh_dia_util=(d == hoje and hoje.weekday() < 5))
+    return com_data_ontem(montar(hoje, total, dia, eh_dia_util=(d == hoje and hoje.weekday() < 5)), linhas)
 
 
 def dia_util_hoje(linhas: list[dict], hoje: date) -> int:

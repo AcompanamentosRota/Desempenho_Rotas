@@ -23,6 +23,8 @@ class Calendario:
     # Fechamento do mês: o payload mostra o mês anterior (ref) já fechado, sem tendência nem meta do dia
     fechamento: bool = False
     ref: date | None = None    # 1º dia do mês de referência; None = mês de hoje
+    # data do último dia útil fechado (o dia útil DIA_ONTEM do mês de referência); None = nenhum ou desconhecida
+    data_ontem: date | None = None
 
     @property
     def pace_ontem_pct(self) -> int:

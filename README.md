@@ -9,8 +9,10 @@ desempenho/
 │   ├── index.html
 │   ├── css/app.css
 │   ├── js/config.js          URLs dos dados, intervalos, aviso de versão, placa ATENÇÃO, aba Todos a Bordo, linha Status, entrada (grupos, virada), CDN
+│   ├── js/nucleo.js          agregação pura dos cards (sem DOM nem online; usada pelo painel e pelo Painel de Ritmo)
 │   ├── js/app.js             painel (entrada por seleção, filtros, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
+│   ├── js/ritmo.js           "Painel de ritmo": PDF matinal só com dados reais
 │   ├── js/main.js            carga e atualização periódica dos JSONs
 │   ├── assets/ (ícones; fonts/ = Inter local + OFL), manifest.webmanifest
 │   ├── tests/                testes de front (Chromium headless, dado sintético)
@@ -289,6 +291,24 @@ seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa;
   gerências lado a lado; no perfil Supervisão, o da supervisão (e
   das rotas dela); no perfil Rota, sem o botão. A placa ATENÇÃO existe, mas está desligada
   (`CONFIG.LIMIAR_ATENCAO = null`). A folha do Resumo (tela e PDF) **não tem assinatura**: acaba no último bloco.
+- **Painel de Ritmo em PDF** (botão "Painel de ritmo", ao lado de "Gerar resumo de vendas"; relatório MATINAL): exporta
+  direto um PDF com páginas 16:9 (1280x720) **só com dados reais** do `payload.json` (Real fechado até o último dia
+  útil + metas); nada do online de hoje nem dos revertidos/oportunidades de hoje. **Escopo pelo filtro**: Diretoria em
+  "Todas as gerências" = as 16 (cada gerência: a página do GC e as das supervisões, em ordem; pede confirmação
+  "Exportar N páginas?"); uma gerência (filtro da Diretoria ou perfil Gerência) = GC + supervisões; grupo no Total = as
+  duas gerências (com uma escolhida, só ela); supervisão no filtro ou perfil Supervisão = só a página dela; perfil
+  Rota: sem o botão; fechamento do mês: botão desabilitado ("Indisponível durante o fechamento"). Cada página: título
+  ("Painel de Ritmo — SV.G1.1 · Nome" ou "— GC.G1 · Goiânia 01"), subtítulo com o mês, "dados reais até sexta-feira 16/10
+  (dia útil 11/21, 52%)" (payload com `DATA_ONTEM`/`DIA_ONTEM_NOME`; antigo: "até o dia útil N/T") e "faltas miram
+  <hoje> (dia N/T, %)", a linha vermelha "Puxando a média pra baixo" (a rota, ou no GC a supervisão, com menos
+  coberturas no ritmo; empate pelo menor código) e dois blocos com colunas = o nível + rotas (ou supervisões):
+  **Volume — tendência do mês** ("na tendência x / 5": % tendência, verde a partir de 100, e "Meta dia X" ou "Meta
+  batida!") e **Coberturas — ICS GC** ("no ritmo x / 10": % do mês, verde no ritmo de ontem, "Meta dia N" ou "faltam
+  N" como a caixa dos cards; Venda Zero com "reverter N", o pendente do mês). Neutraliza, virtuais, '-EV' e SV.G3.3
+  não viram coluna (os números delas ficam no total do GC). Sem assinatura. 7 colunas ou mais: modo compacto. O
+  PDF é gerado no navegador página a página (progresso no botão "Gerando 12/64"); sem conexão para as bibliotecas,
+  o botão avisa "Sem conexão para gerar o PDF". Arquivo `Painel_Ritmo_<BAND|G1|IT+MO|SV.G1.1>_AAAAMMDD.pdf`, baixado
+  ou compartilhado como o do Resumo. Tamanho típico: ~165 KB por página (uma gerência com 2 supervisões ≈ 0,5 MB).
 - **PDF do Resumo**: sempre a tabela do PC, em páginas deitadas (16:9) na largura da folha. A quebra é só entre
   blocos (Volume, ICS GC, Novos Negócios) e o cabeçalho (com a placa ATENÇÃO, quando houver) **nunca fica sozinho**:
   vai sempre junto do 1º bloco; se os dois não couberem numa página, a 1ª página fica mais alta (o mesmo vale para
@@ -315,7 +335,11 @@ A Parte P confere o script da versão (sem navegador, precisa de `bash` e `sha25
 mesmo hash duas vezes, igual com só `data/` mudado, diferente com um `.js` mudado, e o `--gravar`. A Parte Q confere o
 aviso de versão nova com o `versao.json` interceptado: versão igual, diferente, "Depois" (30 min no relógio simulado),
 "Atualizar" (cache reload, reload e `localStorage` intacto), sem conexão, meta `"dev"`, 404, checagens (online,
-`visibilitychange`, `pageshow`), "tela inicial" simulada, 390/1000/1280 px e os dois fundos.
+`visibilitychange`, `pageshow`), "tela inicial" simulada, 390/1000/1280 px e os dois fundos. A Parte R confere o Painel
+de Ritmo: `montaRitmo` sem navegador (vm com ONLINE e os campos de hoje lançando erro), escopo pelo filtro, colunas
+(sem Neutraliza/virtuais/-EV/SV.G3.3, que ficam no total), células e "Puxando a média", subtítulo com e sem
+`DIA_ONTEM_NOME`, botão (1280/390 px, Rota, fechamento), PDF simulado (páginas, progresso, confirmação, nome, sem
+conexão), desenho de 9 colunas sem texto cortado e, com as bibliotecas npm, o PDF real (páginas, 1280x720, tamanho).
 
 ### Visual (fonte, escala e cores)
 

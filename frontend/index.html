@@ -136,6 +136,9 @@
       <button data-rsb="nov" aria-pressed="false">Novos Neg.</button>
     </div>
     <button id="btnResumo">Gerar resumo de vendas</button>
+    <!-- Painel de Ritmo em PDF (relatório matinal, só dados reais; js/ritmo.js) -->
+    <button id="btnRitmo" type="button">Painel de ritmo</button>
+    <span id="rtAviso" class="sr-only" role="status" aria-live="polite"></span>
   </div>
 
   <footer class="rodape" id="rodape"></footer>
@@ -166,8 +169,10 @@
 </div>
 
 <script src="js/config.js" defer></script>
+<script src="js/nucleo.js" defer></script>
 <script src="js/app.js" defer></script>
 <script src="js/resumo.js" defer></script>
+<script src="js/ritmo.js" defer></script>
 <script src="js/main.js" defer></script>
 </body>
 </html>

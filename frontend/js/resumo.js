@@ -225,6 +225,18 @@ const RS = (()=>{
       s.onload = ok; s.onerror = erro; document.head.appendChild(s);
     });
   }
+  /* ---- entrega do PDF (Resumo e Painel de Ritmo): no celular, a folha de compartilhar com o arquivo; senão (ou se
+     ela falhar), o download. Devolve 'compartilhado', 'cancelado' (o usuário fechou a folha) ou 'salvo'. ---- */
+  async function salvaPdf(blob, nomeArq){
+    const arq = new File([blob], nomeArq, {type:'application/pdf'});
+    if(navigator.canShare && navigator.canShare({files:[arq]}) && matchMedia('(pointer:coarse)').matches){
+      try{ await navigator.share({files:[arq], title:nomeArq}); return 'compartilhado'; }
+      catch(e){ if(e && e.name==='AbortError') return 'cancelado'; }
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nomeArq;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+    return 'salvo';
+  }
   /* ---- divisão do PDF em páginas (função pura: sem DOM).
      atomos = [cabeçalho, bloco 1, bloco 2...], cada um {t, b} (topo e base em px dentro da folha); H0 = altura da
      página; altTotal = altura da folha. O cabeçalho (.rs-cab + .rs-atencao) nunca fica sozinho: vira um átomo só com
@@ -309,13 +321,7 @@ const RS = (()=>{
       });
       pdf.setProperties({title:'Resumo de vendas · '+colunas().titulo, author:'Comercial Bandeirantes'});
       const nomeArq = `Resumo_${colunas().titulo.replace(/[^\w.]+/g,'_')}_${P.DIA_HOJE}-${P.TOTAL_DIAS_UTEIS}.pdf`;
-      const blob = pdf.output('blob');
-      const arq = new File([blob], nomeArq, {type:'application/pdf'});
-      if(navigator.canShare && navigator.canShare({files:[arq]}) && matchMedia('(pointer:coarse)').matches){
-        try{ await navigator.share({files:[arq], title:nomeArq}); aviso(''); return; }catch(e){ if(e && e.name==='AbortError'){ aviso(''); return; } }
-      }
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nomeArq;
-      document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+      if(await salvaPdf(pdf.output('blob'), nomeArq) !== 'salvo'){ aviso(''); return; }
       aviso('PDF salvo: ' + nomeArq);
     }catch(e){ aviso('Não foi possível gerar o PDF agora. Tente de novo.'); }
     finally{ btn.disabled = false; }
@@ -374,5 +380,5 @@ const RS = (()=>{
     document.addEventListener('keydown', e=>{ if(e.key==='Escape' && aberto) fecha(); });
     let t; addEventListener('resize', ()=>{ clearTimeout(t); t = setTimeout(pinta, 150); });
   }
-  return {pinta, doLink, liga, fecha, paginas};
+  return {pinta, doLink, liga, fecha, paginas, carregaScript, salvaPdf};
 })();

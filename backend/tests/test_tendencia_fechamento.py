@@ -393,6 +393,8 @@ class TestPayloadFechamento(unittest.TestCase):
         self.assertEqual((self.p["MES_LABEL"], self.p["TOTAL_DIAS_UTEIS"], self.p["DIA_ONTEM"], self.p["DIA_HOJE"],
                           self.p["PACE_ONTEM_PCT"], self.p["DIA_SEMANA"]),
                          ("Outubro/26", 21, 21, 21, 100, "Terça-feira"))
+        # último dia útil fechado: o do mês de referência (30/10/2026, sexta)
+        self.assertEqual((self.p["DATA_ONTEM"], self.p["DIA_ONTEM_NOME"]), ("2026-10-30", "sexta-feira"))
 
     def test_volume_sem_tendencia_nem_meta_do_dia(self):
         v = self.d["indicators"]["VOL REFRIGERANTES"]
