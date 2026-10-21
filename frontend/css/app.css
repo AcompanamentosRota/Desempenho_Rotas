@@ -430,7 +430,6 @@ body.rs-travado{overflow:hidden}
 #rsFolha tr.rs-tot td{background:#fafafa;font-size:12px;font-weight:800}
 .rs-compacto .rs-k{min-width:34px;padding:2px 4px} .rs-compacto .rs-k strong{font-size:13.5px} .rs-compacto .rs-k small{font-size:8px} .rs-compacto .rs-sec{font-size:9px}
 #rsFolha.rs-compacto thead th{font-size:10.5px}
-.rs-rod{border-top:1px solid var(--linha);padding-top:7px;font-size:var(--fs-legenda);color:var(--cinza-fraco);text-align:center}
 
 /* resumo no celular: cartões por supervisor em vez de tabela larga */
 .rs-cards{display:none}
@@ -539,3 +538,27 @@ body.rs-travado{overflow:hidden}
   .rs-compacto .rs-k strong{font-size:20px}
 }
 @media(prefers-reduced-motion:reduce){.drw{transition:none!important}}
+
+/* ---------- PDF do Resumo (#rsFolha.rs-pdf, só durante a captura; a tela não muda) ----------
+   Tamanhos fixos, os da tela de PC de 1000-1599 px (o PDF sai igual em qualquer aparelho, e a medida feita na página
+   vale para a captura), e caixas com mais largura e menos folga interna, sem mudar a fonte (o número guarda 2 px de
+   cada lado, porque o html2canvas desenha o texto um pouco mais largo que o navegador). O número que ainda não
+   couber tem a fonte encaixada por resumo.js (encaixaPdf, mínimo 10 px); se nem assim couber, o PDF fica mais largo.
+   Vem no fim do arquivo para valer sobre as regras por largura de tela. */
+#rsFolha.rs-pdf{padding:18px 12px 12px;gap:18px}
+#rsFolha.rs-pdf th,#rsFolha.rs-pdf td{padding:7px 2px}
+#rsFolha.rs-pdf thead th{font-size:14px}
+#rsFolha.rs-pdf .rs-nome{font-size:15px;padding-left:10px}
+#rsFolha.rs-pdf .rs-par{gap:4px}
+#rsFolha.rs-pdf .rs-k{min-width:0;padding:4px 4px}
+#rsFolha.rs-pdf .rs-k small{font-size:10.5px}
+#rsFolha.rs-pdf .rs-k strong{font-size:23px;display:block;box-sizing:border-box;max-width:100%;padding:0 2px;overflow:hidden}
+#rsFolha.rs-pdf .rs-sec{font-size:12px}
+#rsFolha.rs-pdf.rs-compacto th,#rsFolha.rs-pdf.rs-compacto td{padding:5px 1px}
+#rsFolha.rs-pdf.rs-compacto thead th{font-size:12.5px}
+#rsFolha.rs-pdf.rs-compacto .rs-nome{font-size:12.5px;padding-left:6px}
+#rsFolha.rs-pdf.rs-compacto .rs-par{gap:2px}
+#rsFolha.rs-pdf.rs-compacto .rs-k{padding:2px 3px}
+#rsFolha.rs-pdf.rs-compacto .rs-k small{font-size:8.5px}
+#rsFolha.rs-pdf.rs-compacto .rs-k strong{font-size:15px}
+#rsFolha.rs-pdf.rs-compacto .rs-sec{font-size:9.5px}

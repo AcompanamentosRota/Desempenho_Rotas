@@ -105,6 +105,15 @@ before(async () => {
   fs.writeFileSync(path.join(seminc, 'payload.json'), JSON.stringify(si));
   fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(seminc, 'online.json'));
   DADOS.seminc = seminc;
+  // PDF do Resumo: 16 gerências e números grandes (montaGrande)
+  const grande = path.join(tmp, 'grande');
+  fs.mkdirSync(grande);
+  const pgr = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  const ogr = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'online.json'), 'utf-8'));
+  montaGrande(pgr, ogr);
+  fs.writeFileSync(path.join(grande, 'payload.json'), JSON.stringify(pgr));
+  fs.writeFileSync(path.join(grande, 'online.json'), JSON.stringify(ogr));
+  DADOS.grande = grande;
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -2106,6 +2115,37 @@ describe('Parte K — "Meta batida!"', {skip: pular}, () => {
   });
 });
 
+/* Cenário 'grande' (PDF do Resumo): as 16 gerências com dados (a DI ganha uma cópia da PA, rotas DI11..DI22 e
+   supervisões SV.DI.n, nomes fictícios como os do sintético), os 5 agrupadores de volume em todas as rotas e números
+   grandes: na Diretoria, Meta dia, Online e Faltam com 6-7 dígitos (até ~2,7 milhões) e Reverter com 6. */
+function montaGrande(p, o){
+  const PORROTA = ['CLIENT_ROSTER', 'CLIENTES_HOJE', 'OPORTUNIDADES_DIA', 'COBERTOS', 'SEM_COMPRA_HOJE', 'COMODATO_ATIVOS',
+    'REVERTIDO_HOJE', 'OPORTUNIDADE_HOJE', 'VOLUME_CLIENTE', 'REDES_CLIENTE', 'COMODATO_CLIENTE'];
+  const di = s => s.replace(/SV\.PA\./g, 'SV.DI.').replace(/\bPA(\d)/g, 'DI$1');
+  p.DATA.DI = JSON.parse(di(JSON.stringify(p.DATA.PA)));
+  for(const [sv, nome] of Object.entries(p.NOME_SUPERVISOR)) if(sv.startsWith('SV.PA.')) p.NOME_SUPERVISOR[di(sv)] = di(nome);
+  const rotasPa = Object.values(p.DATA.PA).flatMap(rs => Object.keys(rs));
+  for(const r of rotasPa){
+    for(const k of PORROTA) if(p[k] && r in p[k]) p[k][di(r)] = JSON.parse(JSON.stringify(p[k][r]));
+    for(const k of Object.keys(o)) if(o[k] && typeof o[k] === 'object' && r in o[k]) o[k][di(r)] = JSON.parse(JSON.stringify(o[k][r]));
+  }
+  p.GC_ATIVAS = Object.keys(p.GC_NOMES).filter(g => p.DATA[g]);
+  const VOL = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MINERAL', 'VOL DEST+ART+CND'];
+  o.volume = o.volume || {};
+  for(const svs of Object.values(p.DATA)) for(const rs of Object.values(svs)) for(const [r, d] of Object.entries(rs)){
+    const base = d.indicators['VOL REFRIGERANTES'];
+    if(base && !base.unavailable && base.meta){
+      for(const k of VOL){
+        const b = d.indicators[k] = JSON.parse(JSON.stringify(base));
+        for(const c of ['meta', 'real', 'tendencia', 'metaDia', 'negRestante', 'metaNegClientes']) if(b[c] != null) b[c] *= 600;
+        (o.volume[r] = o.volume[r] || {})[k] = Math.round((b.metaDia || 0) * 0.93);
+      }
+    }
+    for(const [k, b] of Object.entries(d.indicators)) if(!/^VOL /.test(k) && !b.unavailable && b.meta != null) b.meta *= 20000;
+  }
+  for(const k of ['REVERTIDO_HOJE', 'OPORTUNIDADE_HOJE']) for(const r in p[k]) p[k][r] = (p[k][r] || 1) * 50000;
+}
+
 /* ---------- Parte L: aba Todos a Bordo (campanha "Todos a Bordo 3.0", chave INCENTIVO) ---------- */
 /* Cenário sobre o sintético (os 5 itens com meta 2 em todas as rotas e Real 0): Heineken e Heineken - 600ml só nas
    gerências FULL (RV, SL, PO, IT, MO, UR, RI) e na G211 (G2 mista); Eisenbahn - 600ml sem meta na G3. Rotas de
@@ -2706,7 +2746,7 @@ describe('Parte M — visual', {skip: pular}, () => {
         '.card .x', '.puxa .s', '.sub', '.ritmo', '.rodape', '.rodape .fonte', '.creditos', '.rsBox .rsLbl'], `painel ${aba}`);
     }
     await page.click('#btnResumo');
-    await baixos(['.rs-sub', '.rs-bloco h3 small', '.rs-rod', '.rs-k:not(.rs-on) small'], 'Resumo');
+    await baixos(['.rs-sub', '.rs-bloco h3 small', '.rs-k:not(.rs-on) small'], 'Resumo');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -2884,6 +2924,329 @@ describe('Parte N — cascata como antes do ajuste visual, só com a Inter', {sk
                       'span.tagOnline', 'button.dchip', 'button.dchip.on', 'div.chips', 'div.vazio', 'div.bd'])
         assert.ok([...vistos].some(v => v === t || v.startsWith(t + '.')), `nenhum ${t} conferido`);
       if(cortes.size) console.log(`# ${largura} px: células com reticências (como antes): ${[...cortes].join(' | ')}`);
+    });
+  }
+});
+
+/* ---------- Parte O — Resumo e PDF: sem assinatura, cabeçalho junto do 1º bloco, números grandes ---------- */
+/* PDF com as bibliotecas simuladas: a "captura" é a própria folha (onclone recebe o documento real) e o jsPDF anota as
+   páginas ([largura, altura] de cada uma). */
+const SIMULA_PDF = () => {
+  window.__pdf = null;
+  // a "captura" pinta o cabeçalho de cinza e os blocos de preto (o resto branco): cada página do PDF diz o que levou
+  window.html2canvas = async (el, op) => {
+    const rod = !!el.querySelector('.rs-rod') || el.textContent.includes(CONFIG.CREDITOS);
+    window.__pdf = {pdf: el.classList.contains('rs-pdf'), rod, larg: el.getBoundingClientRect().width, paginas: [], imgs: [],
+                    cel: window.__celulas ? window.__celulas(el) : null};
+    if(op.onclone) op.onclone(document);
+    const c = document.createElement('canvas'); c.width = op.width * 2; c.height = el.scrollHeight * 2;
+    const cx = c.getContext('2d'), top = el.getBoundingClientRect().top;
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
+    const pinta = (sel, cor) => el.querySelectorAll(sel).forEach(b => { const r = b.getBoundingClientRect();
+      cx.fillStyle = cor; cx.fillRect(0, (r.top - top) * 2, c.width, r.height * 2); });
+    pinta('.rs-cab, .rs-atencao', '#888'); pinta('.rs-bloco', '#000');
+    return c;
+  };
+  window.jspdf = {jsPDF: function(o){ window.__pdf.paginas.push(o.format);
+    return {addPage(f){ window.__pdf.paginas.push(f); }, addImage(img){ window.__pdf.imgs.push(img); }, setProperties(){},
+            output: () => new Blob(['%PDF'])}; }};
+};
+/* conteúdo de cada imagem de página: fração de linhas com bloco (preto), com cabeçalho (cinza) e em branco */
+const CONTEUDO_PAGINAS = imgs => Promise.all(imgs.map(src => new Promise(ok => {
+  const im = new Image();
+  im.onload = () => {
+    const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+    const cx = c.getContext('2d'); cx.drawImage(im, 0, 0);
+    const d = cx.getImageData(Math.floor(im.width / 2), 0, 1, im.height).data;
+    let bloco = 0, cab = 0;
+    for(let y = 0; y < im.height; y++){ const v = d[y * 4]; if(v < 60) bloco++; else if(v > 100 && v < 170) cab++; }
+    ok({bloco: bloco / im.height, cab: cab / im.height});
+  };
+  im.src = src;
+})));
+async function pdfSimulado(page){
+  await page.evaluate(SIMULA_PDF);
+  await page.click('#rsImg');
+  await page.waitForFunction(() => /PDF salvo/.test(document.getElementById('rsToast').textContent));
+  return page.evaluate(() => window.__pdf);
+}
+
+describe('Parte O — Resumo e PDF', {skip: pular}, () => {
+  test('Resumo sem assinatura (tela e PDF); o rodapé do painel continua', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: 'dir'});
+    assert.match(await page.textContent('#rodape .creditos'), /^Karen Oliveira - Inteligência de Mercado$/);
+    for(const entrar of ['dir', 'gc', {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G2', sv: '1'}]){
+      await vaiPara(page, entrar);
+      await page.click('#btnResumo');
+      const r = await page.evaluate(() => {
+        const f = document.getElementById('rsFolha'), ult = f.lastElementChild;
+        return {rod: !!f.querySelector('.rs-rod'), cred: f.textContent.includes(CONFIG.CREDITOS), ult: ult.className,
+                // nada depois do último bloco: a folha acaba no bloco (só o padding de baixo)
+                folga: f.getBoundingClientRect().bottom - ult.getBoundingClientRect().bottom};
+      });
+      assert.deepEqual([r.rod, r.cred, r.ult], [false, false, 'rs-bloco'], JSON.stringify(entrar));
+      assert.ok(r.folga <= 16, `folga embaixo ${r.folga}`);
+      const pdf = await pdfSimulado(page);
+      assert.ok(pdf.pdf);
+      assert.equal(pdf.rod, false, `PDF ${JSON.stringify(entrar)}`);
+      await page.click('#rsVoltar');
+    }
+    assert.match(await page.textContent('#rodape .creditos'), /^Karen Oliveira - Inteligência de Mercado$/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});
+
+/* Paginação do PDF (RS.paginas) sem navegador: resumo.js roda num contexto vm (a função não usa o DOM). */
+describe('Parte O — paginação do PDF (função pura, sem navegador)', () => {
+  const vm = require('node:vm');
+  const ctxVm = vm.createContext({});
+  vm.runInContext(fs.readFileSync(path.join(FRONT, 'js', 'resumo.js'), 'utf-8') + '\n;globalThis.RS = RS;', ctxVm);
+  const paginas = (...a) => JSON.parse(JSON.stringify(ctxVm.RS.paginas(...a)));
+  const H0 = 675;                                    // 1200 x 9/16
+  // cada página: altura usada no PDF = max(H0, faixa); nenhuma página sem bloco (só cabeçalho) nem sobra só de rodapé
+  const confere = (pags, cab, blocos, alt) => {
+    for(const [y0, y1] of pags) assert.ok(blocos.some(b => b.t >= y0 && b.b <= y1), `página sem bloco [${y0}, ${y1}]`);
+    for(const b of blocos) assert.equal(pags.filter(([y0, y1]) => b.t >= y0 && b.b <= y1).length, 1, `bloco ${b.t}-${b.b}`);
+    assert.ok(pags[0][0] <= cab.t, 'o cabeçalho está na 1ª página');
+    assert.ok(pags[0][1] >= blocos[0].b, 'o 1º bloco está na 1ª página, junto do cabeçalho');
+    assert.ok(pags.at(-1)[1] <= alt, 'a última página não passa da folha');
+  };
+  const cab = {t: 16, b: 110};
+
+  test('cabeçalho sozinho vira junto com o bloco 1 (bloco 1 maior que o espaço que sobra)', () => {
+    const b1 = {t: 124, b: 760}, b2 = {t: 778, b: 1500}, alt = 1512;
+    const pags = paginas([cab, b1, b2], H0, alt);
+    assert.deepEqual(pags, [[0, 770], [770, 1510]]);
+    confere(pags, cab, [b1, b2], alt);
+    assert.ok(pags[0][1] - pags[0][0] > H0, 'a 1ª página fica mais alta que H0');
+  });
+  test('1 bloco: uma página; cabe na altura padrão ou cresce', () => {
+    assert.deepEqual(paginas([cab, {t: 124, b: 400}], H0, 412), [[0, 410]]);
+    assert.deepEqual(paginas([cab, {t: 124, b: 1400}], H0, 1412), [[0, 1410]]);
+  });
+  test('2 blocos que cabem juntos: uma página; 3 blocos: quebra só entre blocos', () => {
+    const b1 = {t: 124, b: 300}, b2 = {t: 318, b: 600}, b3 = {t: 618, b: 900};
+    assert.deepEqual(paginas([cab, b1, b2], H0, 612), [[0, 610]]);
+    const pags = paginas([cab, b1, b2, b3], H0, 912);
+    assert.deepEqual(pags, [[0, 610], [610, 910]]);
+    confere(pags, cab, [b1, b2, b3], 912);
+  });
+  test('Diretoria: Volume + ICS GC = 2 páginas; com Novos Negócios, 3 (blocos mais altos que a página)', () => {
+    const vol = {t: 124, b: 800}, ics = {t: 818, b: 2100}, nov = {t: 2118, b: 2900};
+    const p2 = paginas([cab, vol, ics], H0, 2112);
+    assert.equal(p2.length, 2);
+    confere(p2, cab, [vol, ics], 2112);
+    const p3 = paginas([cab, vol, ics, nov], H0, 2912);
+    assert.equal(p3.length, 3);
+    confere(p3, cab, [vol, ics, nov], 2912);
+  });
+  test('placa ATENÇÃO conta como cabeçalho; sem blocos não quebra', () => {
+    assert.deepEqual(paginas([{t: 16, b: 160}, {t: 174, b: 500}, {t: 518, b: 1000}], H0, 1012), [[0, 510], [510, 1010]]);
+    assert.deepEqual(paginas([cab], H0, 122), [[0, 120]]);
+    assert.deepEqual(paginas([], H0, 122), [[0, 122]]);
+  });
+});
+
+describe('Parte O — paginação do PDF no navegador', {skip: pular}, () => {
+  for(const largura of [1280, 390]){
+    test(`${largura} px: Diretoria = 2 páginas (3 com Novos Negócios); nenhuma página só de cabeçalho ou em branco`, async () => {
+      const {page, ctx, erros} = await abre('normal', {entrar: 'dir', largura, altura: 900});
+      for(const [entrar, esperado] of [['dir', [2, 3]], ['gc', null], [{perfil: 'gc', gc: 'IT+MO'}, null]]){
+        await vaiPara(page, entrar);
+        await page.click('#btnResumo');
+        for(const nov of [false, true]){
+          if(nov) await page.click('#rsOverlay [data-rsb="nov"]');
+          const pdf = await pdfSimulado(page);
+          const cont = await page.evaluate(CONTEUDO_PAGINAS, pdf.imgs);
+          const onde = `${JSON.stringify(entrar)}${nov ? ' + Novos Negócios' : ''}: ${JSON.stringify(cont)}`;
+          assert.equal(cont.length, pdf.paginas.length, onde);
+          if(esperado) assert.equal(pdf.paginas.length, esperado[nov ? 1 : 0], onde);
+          cont.forEach((c, i) => assert.ok(c.bloco > 0.2, `página ${i + 1} sem bloco: ${onde}`));
+          // (cinza na emenda preto/branco do JPEG: menos de 1% das linhas)
+          assert.ok(cont[0].cab > 0.05, `cabeçalho fora da 1ª página: ${onde}`);
+          cont.slice(1).forEach((c, i) => assert.ok(c.cab < 0.01, `cabeçalho repetido na página ${i + 2}: ${onde}`));
+          // páginas deitadas (16:9) na largura do PDF, ou mais altas quando o conteúdo pede
+          for(const [w, h] of pdf.paginas) assert.ok(h >= Math.round(w * 9 / 16), `${w}x${h} ${onde}`);
+        }
+        await page.click('#rsOverlay [data-rsb="nov"]');
+        await page.click('#rsVoltar');
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+});
+
+/* Células das tabelas do Resumo no PDF (folha com .rs-pdf, na página ou no clone do html2canvas): nenhuma célula, caixa
+   ou texto cortado (scrollWidth <= clientWidth), número dentro da própria caixa, caixas da célula (M.dia/Faltam/Reverter
+   e Online) sem interseção e fonte do número >= 10 px. */
+const INSTALA_CELULAS = () => {
+  window.__celulas = f => {
+    const prob = [], fontes = [], css = el => el.ownerDocument.defaultView.getComputedStyle(el);
+    const txt = el => `${el.className || el.tagName} "${el.textContent.trim().slice(0, 30)}"`;
+    f.querySelectorAll('.rs-tab th, .rs-tab td').forEach(c => { if(c.scrollWidth > c.clientWidth) prob.push(`${txt(c)} ${c.scrollWidth}>${c.clientWidth}`); });
+    f.querySelectorAll('.rs-tab .rs-k').forEach(k => {
+      for(const el of [k, ...k.children]) if(el.scrollWidth > el.clientWidth) prob.push(`${txt(el)} ${el.scrollWidth}>${el.clientWidth}`);
+      const s = k.querySelector('strong'), rk = k.getBoundingClientRect(), rs = s.getBoundingClientRect();
+      if(rs.left < rk.left - .5 || rs.right > rk.right + .5) prob.push(`${txt(s)} fora da caixa`);
+      fontes.push(parseFloat(css(s).fontSize));
+    });
+    f.querySelectorAll('.rs-tab .rs-par').forEach(p => {
+      const [a, b] = [...p.children].map(x => x.getBoundingClientRect());
+      if(a && b && a.right > b.left + .5) prob.push(`${txt(p)}: caixas se sobrepõem`);
+    });
+    return {prob, caixas: fontes.length, fonteMin: Math.min(...fontes), fonteMax: Math.max(...fontes),
+            largura: f.getBoundingClientRect().width};
+  };
+};
+// estilo computado e tamanho de cada elemento da folha do Resumo (tela)
+const FOTO_FOLHA = props => [...document.querySelectorAll('#rsFolha, #rsFolha *')].map(el => {
+  const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+  return [el.tagName + '.' + el.className, Math.round(r.width), Math.round(r.height), ...props.map(p => cs.getPropertyValue(p))].join('|');
+});
+// CSS do main antes deste ajuste (a tela do Resumo não pode mudar)
+const REF_RESUMO = '2d5419a';
+const CSS_ANTES = (() => {
+  try { return execSync(`git show ${REF_RESUMO}:frontend/css/app.css`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString(); }
+  catch(e) { return null; }
+})();
+const ENTRADAS_RS = [['Diretoria', 'dir'], ['G1', {perfil: 'gc', gc: 'G1'}], ['IT+MO', {perfil: 'gc', gc: 'IT+MO'}],
+                     ['SV.G2.1', {perfil: 'sv', gc: 'G2', sv: '1'}]];
+
+describe('Parte O — números grandes no PDF do Resumo', {skip: pular}, () => {
+  for(const largura of [1280, 390]){
+    test(`${largura} px: 16 gerências e números grandes; e o pior caso (2.665.000 em todas as caixas): nada cortado no PDF`, async () => {
+      const {page, ctx, erros} = await abre('grande', {entrar: 'dir', largura, altura: 900});
+      await page.evaluate(INSTALA_CELULAS);
+      for(const [nome, entrar] of ENTRADAS_RS){
+        await vaiPara(page, entrar);
+        await page.click('#btnResumo');
+        await page.click('#rsOverlay [data-rsb="nov"]');
+        if(nome === 'Diretoria'){
+          const r = await page.evaluate(() => ({cols: [...document.querySelector('#rsFolha .rs-bloco').querySelectorAll('.rs-tab thead th:not(.rs-nome)')]
+              .filter(th => th.textContent.trim()).length,
+            maior: Math.max(...[...document.querySelectorAll('#rsFolha .rs-k strong')].map(s => s.textContent.replace(/\D/g, '').length))}));
+          assert.equal(r.cols, 17, 'Diretoria: o total e as 16 gerências');
+          assert.ok(r.maior >= 7, `números grandes no cenário (${r.maior} dígitos)`);
+        }
+        for(const pior of [false, true]){
+          if(pior) await page.evaluate(() => document.querySelectorAll('#rsFolha .rs-tab .rs-k strong').forEach(s => { s.textContent = '2.665.000'; }));
+          const antes = await page.evaluate(() => document.getElementById('rsFolha').getBoundingClientRect().width);
+          const pdf = await pdfSimulado(page);
+          const onde = `${nome}${pior ? ' (pior caso)' : ''}`;
+          assert.ok(pdf.cel.caixas > 0, onde);
+          assert.deepEqual(pdf.cel.prob.slice(0, 5), [], `${onde}: ${JSON.stringify({...pdf.cel, prob: pdf.cel.prob.length})}`);
+          assert.ok(pdf.cel.fonteMin >= 10, `${onde}: fonte ${pdf.cel.fonteMin}`);
+          // a página do PDF tem a largura da folha capturada
+          assert.equal(pdf.paginas[0][0], Math.round(pdf.cel.largura), onde);
+          // depois do PDF a tela volta como estava (sem fonte encaixada nem largura do PDF)
+          const depois = await page.evaluate(() => ({larg: document.getElementById('rsFolha').getBoundingClientRect().width,
+            pdf: document.getElementById('rsFolha').classList.contains('rs-pdf'),
+            resto: [...document.querySelectorAll('#rsFolha [data-fit], #rsFolha [style*="font-size"]')].length}));
+          assert.deepEqual(depois, {larg: antes, pdf: false, resto: 0}, onde);
+        }
+        await page.click('#rsOverlay [data-rsb="nov"]');
+        await page.click('#rsVoltar');
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test('a tela do Resumo não muda (celular, tablet, PC): mesmo estilo e tamanho do CSS de antes, também depois do PDF',
+       {skip: !CSS_ANTES && `sem o commit ${REF_RESUMO}`}, async () => {
+    for(const largura of [390, 800, 1280, 1700]){
+      const atual = await abre('grande', {entrar: 'dir', largura, altura: 900});
+      const velho = await abre('grande', {entrar: 'dir', largura, altura: 900, troca: {'/css/app.css': () => CSS_ANTES}});
+      for(const [nome, entrar] of ENTRADAS_RS){
+        const fotos = [];
+        for(const {page} of [atual, velho]){
+          await vaiPara(page, entrar);
+          await page.click('#btnResumo');
+          await page.evaluate(() => document.fonts.ready);
+          fotos.push(await page.evaluate(FOTO_FOLHA, PROPS_CASCATA));
+        }
+        assert.equal(fotos[0].length, fotos[1].length, `${largura} ${nome}`);
+        const dif = fotos[0].map((f, i) => f === fotos[1][i] ? null : `${f}\n  antes: ${fotos[1][i]}`).filter(Boolean);
+        assert.deepEqual(dif.slice(0, 3), [], `${largura} px ${nome}`);
+        // depois de gerar o PDF a tela fica igual
+        await pdfSimulado(atual.page);
+        assert.deepEqual(await atual.page.evaluate(FOTO_FOLHA, PROPS_CASCATA), fotos[0], `${largura} px ${nome} depois do PDF`);
+        for(const {page} of [atual, velho]) await page.click('#rsVoltar');
+      }
+      assert.deepEqual(atual.erros, []);
+      await atual.ctx.close(); await velho.ctx.close();
+    }
+  });
+});
+
+/* PDF de verdade: html2canvas e jsPDF (as versões do CONFIG.CDN, mesmo hash SRI) vindos dos pacotes npm instalados
+   (local, NODE_PATH ou global), servidos no lugar do cdnjs. Sem os pacotes, o teste é pulado (os de cima simulam). */
+const LIBS_PDF = (() => {
+  const busca = [RAIZ, ...(process.env.NODE_PATH || '').split(path.delimiter).filter(Boolean)];
+  try { busca.push(execSync('npm root -g', {stdio: ['ignore', 'pipe', 'ignore']}).toString().trim()); } catch(e) { /* sem npm */ }
+  try {
+    return {html2canvas: require.resolve('html2canvas/dist/html2canvas.min.js', {paths: busca}),
+            jspdf: require.resolve('jspdf/dist/jspdf.umd.min.js', {paths: busca})};
+  } catch(e) { return null; }
+})();
+describe('Parte O — PDF real (html2canvas + jsPDF)', {skip: pular || (!LIBS_PDF && 'html2canvas/jspdf não instalados (npm)')}, () => {
+  for(const largura of [1280, 390]){
+    test(`${largura} px: nº de páginas, nenhuma página em branco, células sem corte no clone da captura`, async () => {
+      const {page, ctx, erros} = await abre('grande', {entrar: 'dir', largura, altura: 900});
+      await page.route(/cdnjs\.cloudflare\.com/, r => {
+        const arq = /html2canvas/.test(r.request().url()) ? LIBS_PDF.html2canvas : LIBS_PDF.jspdf;
+        r.fulfill({status: 200, contentType: 'text/javascript', body: fs.readFileSync(arq),
+                   headers: {'access-control-allow-origin': '*'}});
+      });
+      await page.evaluate(INSTALA_CELULAS);
+      // carrega as bibliotecas como o app (com SRI) e anota o que vai para o PDF: imagens das páginas e células no clone
+      await page.evaluate(async () => {
+        for(const lib of [CONFIG.CDN.html2canvas, CONFIG.CDN.jspdf]) await new Promise((ok, erro) => {
+          const s = document.createElement('script'); s.src = lib.src; s.integrity = lib.integrity; s.crossOrigin = 'anonymous';
+          s.onload = ok; s.onerror = erro; document.head.appendChild(s);
+        });
+        const h2c = window.html2canvas;
+        window.html2canvas = (el, op) => h2c(el, {...op, onclone: d => { op.onclone(d); window.__real.cel = window.__celulas(d.getElementById('rsFolha')); }});
+        const add = window.jspdf.jsPDF.API.addImage;
+        window.jspdf.jsPDF.API.addImage = function(img, ...r){ window.__real.imgs.push(img); return add.call(this, img, ...r); };
+      });
+      for(const [nome, entrar, esperado] of [['Diretoria', 'dir', [2, 3]], ['G1', {perfil: 'gc', gc: 'G1'}, null],
+                                             ['IT+MO', {perfil: 'gc', gc: 'IT+MO'}, null]]){
+        await vaiPara(page, entrar);
+        await page.click('#btnResumo');
+        for(const nov of [false, true]){
+          if(nov) await page.click('#rsOverlay [data-rsb="nov"]');
+          await page.evaluate(() => { window.__real = {imgs: [], cel: null}; });
+          const [baixado] = await Promise.all([page.waitForEvent('download'), page.click('#rsImg')]);
+          const bytes = fs.readFileSync(await baixado.path()).toString('latin1');
+          const onde = `${nome}${nov ? ' + Novos Negócios' : ''}`;
+          assert.match(bytes.slice(0, 5), /^%PDF-/, onde);
+          const pags = (bytes.match(/\/Type\s*\/Page\b(?!s)/g) || []).length;
+          const real = await page.evaluate(() => window.__real);
+          assert.equal(pags, real.imgs.length, onde);
+          if(esperado) assert.equal(pags, esperado[nov ? 1 : 0], onde);
+          // nenhuma página em branco: cada imagem tem uma fração razoável de pixels escuros (texto, linhas, caixas)
+          const tinta = await page.evaluate(imgs => Promise.all(imgs.map(src => new Promise(ok => {
+            const im = new Image();
+            im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+              const cx = c.getContext('2d'); cx.drawImage(im, 0, 0);
+              const d = cx.getImageData(0, 0, im.width, im.height).data; let n = 0;
+              for(let i = 0; i < d.length; i += 16) if(d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200) n++;
+              ok(n / (d.length / 16)); };
+            im.src = src;
+          }))), real.imgs);
+          tinta.forEach((t, i) => assert.ok(t > 0.02, `${onde}: página ${i + 1} quase em branco (${t})`));
+          assert.ok(real.cel && real.cel.caixas > 0, onde);
+          assert.deepEqual(real.cel.prob.slice(0, 5), [], `${onde}: ${real.cel.prob.length} problemas no clone ${JSON.stringify({...real.cel, prob: real.cel.prob.slice(0, 4)})}`);
+          assert.ok(real.cel.fonteMin >= 10, `${onde}: fonte ${real.cel.fonteMin}`);
+        }
+        await page.click('#rsOverlay [data-rsb="nov"]');
+        await page.click('#rsVoltar');
+      }
+      assert.deepEqual(erros.filter(e => !/net::ERR_FAILED|cdnjs/.test(e)), []);
+      await ctx.close();
     });
   }
 });
