@@ -14,7 +14,7 @@ desempenho/
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/ritmo.js           "Painel de ritmo": PDF matinal só com dados reais
 │   ├── js/main.js            carga e atualização periódica dos JSONs
-│   ├── assets/ (ícones; fonts/ = Inter local + OFL), manifest.webmanifest
+│   ├── assets/ (ícones, logos da entrada; fonts/ = Inter local + OFL), manifest.webmanifest
 │   ├── tests/                testes de front (Chromium headless, dado sintético)
 │   └── data/payload.json, data/online.json   ← gerados pelo back-end
 ├── backend/                  gerador Python (roda no GitHub Actions)
@@ -165,6 +165,15 @@ nomes em `backend/gerador/mapeamento.py`, `GC_NOMES`, enviados no payload). Não
 O painel abre na **entrada**, com quatro botões (o sol/lua troca só o fundo da entrada, preto ou branco, e o
 aparelho guarda a escolha em `drotas_entrada`). Nada é digitado: Gerência, Supervisão e Rota abrem uma **caixa de
 seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa; funciona no celular).
+
+**Logos** (desde 21/10/2026, Etapa 7): acima de "Desempenho de Rotas", a logo Coca-Cola Bandeirantes e o elmo com
+"COMERCIAL / BANDEIRANTES" embaixo, lado a lado, separados por uma linha vermelha fina. No fundo preto (padrão) vão a
+logo com "BANDEIRANTES" em branco, o elmo branco e o texto branco; no fundo branco, a logo original, o elmo preto e o
+texto preto. O sol/lua troca as duas imagens e a cor do texto junto com o fundo. Telas de até 380 px usam as imagens um
+pouco menores (logo 52 px de altura e elmo 34 px; nas demais, 62 e 40 px). Arquivos em `frontend/assets/`
+(`coca-bandeirantes-fundo-escuro.png`, `coca-bandeirantes-fundo-claro.png`, `elmo-branco.png`, `elmo-preto.png`; no
+tamanho original, 560x251 e 140x263 px, otimizados: ~95 KB os quatro, eram ~220 KB). Leitores de tela: "Coca-Cola
+Bandeirantes" (logo) e "Comercial Bandeirantes" (elmo e texto). A aba que abre ao entrar não mudou (ICS GC).
 
 | Perfil | Escolhe | Abre |
 |---|---|---|
@@ -360,6 +369,13 @@ expandir (76 px, só ícones, gaveta acompanhando, `drotas_lado` guardado e sem 
 escopo igual ao filtro em todos os perfis (também o grupo no Total) em 390 e 1440 px, topo compacto em 360 e 390 px
 (<= 221 px), ↻ (recarrega no mesmo acesso e painel) e casa nos dois layouts e a faixa de versão nova livre nos dois
 fundos.
+A Parte Y confere a entrada com logos (Etapa 7): em cada fundo, as duas imagens certas (arquivo, carregadas, as do
+outro fundo ocultas), `alt`/`aria-label`, o sol/lua trocando as duas imagens e a cor do texto, o fundo guardado já
+abrindo com as imagens dele e os PNG no tamanho original; em 360, 390 e 1440 px, nos dois fundos: alturas (62/40 px;
+52/34 px em <= 380 px), proporção sem distorção, logo | linha | elmo alinhados e centralizados acima do título, a linha
+(1,5 x 64 px, `--vermelho`), o texto (duas linhas, Inter 800, 9,5 px, line-height 1.08, .015em, centralizado embaixo do
+elmo), contraste AA, nada fora da tela nem cortado e sem rolagem lateral; e a entrada funcionando como antes nos dois
+fundos (Diretoria, Gerência, grupo, Supervisão e Rota; acesso guardado, recarregar, casa; aba inicial ICS GC).
 
 ### Layout (painel lateral no PC, topo compacto no celular)
 

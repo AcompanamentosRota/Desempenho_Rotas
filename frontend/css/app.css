@@ -53,6 +53,8 @@
   /* painel lateral do PC (>= 1000px): largura aberta e recolhida e a escala própria dele */
   --lado-aberto:272px; --lado-recolhido:76px;
   --fs-lado-tit:22px; --fs-lado-aba:14px; --fs-lado-sec:10.5px;
+  /* entrada: "COMERCIAL" / "BANDEIRANTES" embaixo do elmo (igual no PC e no celular) */
+  --fs-ent-marca:9.5px;
   --seguro-b:env(safe-area-inset-bottom,0px);
 }
 @media (max-width:640px){
@@ -83,9 +85,23 @@ body.na-entrada{overflow:hidden}
   background:var(--escuro-2);color:#fff;font-size:20px;line-height:1;cursor:pointer;font-family:inherit}
 .entrada.branca .entTema{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
 .entMeio{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;max-width:420px}
-.entMarca{display:flex;align-items:center;gap:9px;font-size:11.5px;letter-spacing:.16em;color:var(--topo-txt);text-transform:uppercase}
-.entrada.branca .entMarca{color:var(--cinza-escuro)}
-.entrada.branca .entMarca img{filter:invert(1)}
+/* logos lado a lado: Coca-Cola Bandeirantes | linha vermelha fina | elmo com "Comercial Bandeirantes" embaixo. Cada
+   imagem tem a versão do fundo preto e a do branco (data-tema); só a do fundo atual aparece (proporção pelo arquivo) */
+.entLogos{display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:14px}
+.entLogos img{display:block;width:auto;flex:none}
+.entCoca{height:62px}
+.entSep{flex:none;width:1.5px;height:64px;border-radius:1px;background:var(--vermelho)}
+.entElmo{display:flex;flex-direction:column;align-items:center;gap:5px}
+.entElmo img{height:40px}
+.entElmoTxt{font-size:var(--fs-ent-marca);font-weight:800;line-height:1.08;letter-spacing:.015em;text-align:center;
+  text-transform:uppercase;color:#fff}
+.entrada.branca .entElmoTxt{color:var(--preto)}
+.entrada:not(.branca) .entLogos img[data-tema="branca"],.entrada.branca .entLogos img[data-tema="preta"]{display:none}
+@media (max-width:380px){
+  .entLogos{gap:14px}
+  .entCoca{height:52px}
+  .entElmo img{height:34px}
+}
 .entMeio h1{font-size:var(--fs-titulo);font-weight:var(--fw-titulo);letter-spacing:-.02em;line-height:1.15;margin:4px 0 22px;text-align:center}
 .entBotoes{display:flex;flex-direction:column;gap:12px;width:100%}
 .entBotoes button{font:inherit;font-size:var(--fs-card);font-weight:700;letter-spacing:.08em;padding:18px;border-radius:14px;cursor:pointer;

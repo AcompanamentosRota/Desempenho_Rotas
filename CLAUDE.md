@@ -220,6 +220,15 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   no `visibilitychange` (`confereDia`); payload novo revalida (`confereAcesso`; no grupo, a escolha do seletor fica
   enquanto tiver dados). A casa apaga o acesso. Link `?resumo=` (também `gc=IT%2BMO`) não lê nem grava o acesso.
   Sol/lua só no fundo da entrada (`'drotas_entrada'`, à parte).
+  **Logos da entrada (Etapa 7, 21/10/2026; no lugar da linha `.entMarca`)**: `.entLogos` acima do `#entTit` = logo
+  Coca-Cola Bandeirantes (`.entCoca`, 62 px; 52 px em <= 380 px; `alt="Coca-Cola Bandeirantes"`) | `.entSep` (1,5 x 64 px,
+  `--vermelho`, `aria-hidden`) | `.entElmo` (`role="img"` + `aria-label="Comercial Bandeirantes"`: elmo 40/34 px com
+  `alt=""` e `.entElmoTxt` "COMERCIAL"/"BANDEIRANTES", Inter 800, `--fs-ent-marca` 9,5 px, line-height 1.08, .015em;
+  `#fff` no fundo preto, `--preto` no branco). Cada imagem tem as duas versões no HTML com `data-tema="preta"|"branca"`
+  (o valor de `temaEntrada()`) e o CSS esconde a do outro fundo: o sol/lua troca as imagens sem JavaScript novo (nunca
+  trocar `src` nem usar `filter` nas logos). PNG em `frontend/assets/` (do pacote, mesmas dimensões: 560x251 e 140x263;
+  coca em paleta de 256 cores, elmo sem perda). A aba inicial NÃO mudou (ICS GC em todos os perfis): "Executiva para
+  Diretoria/Gerência/Supervisão e Rota no Volume" entra com a Etapa 5 (a Parte Y trava o ICS GC; trocar lá). Testes: Parte Y.
 - **Aba Todos a Bordo ("Todos a Bordo 3.0", cobertura de cervejas; chave interna INCENTIVO, era "Incentivo" até
   21/10/2026)**: `M.GROUPS['INCENTIVO']` = CERVEJAS, INC HEINEKEN,
   INC EISENBAHN 600ML, INC HEINEKEN 600ML, CERVEJAS 600ML RETORNAVEL (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS,
