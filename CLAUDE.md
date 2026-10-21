@@ -75,15 +75,18 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Variantes do payload montadas no próprio teste: 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV), 'semdados'
   (G3 e PA sem dados), 'semsv', 'antigo', 'inc'/'incfech' (cenários da aba Todos a Bordo, `montaIncentivo`), 'seminc'
   (payload sem o grupo INCENTIVO), 'semscm' (payload sem SEM_COMPRA_MES; Parte S), 'grande' (16 gerências, a DI
-  copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`) e 'exec' (o 'inc' com clientes sem compra no
-  mês, `montaSemCompra`: o sintético compra tudo; Parte W). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
+  copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`), 'exec' (o 'inc' com clientes sem compra no
+  mês, `montaSemCompra`: o sintético compra tudo; Parte W) e 'dias'/'diasscm' (o 'exec' com dias de visita "Seg - Qui",
+  "Ter" e "Qua - Sex" por rota, `montaDias`; o 2º sem SEM_COMPRA_MES; Parte X e o cenário "barra de dias" da Parte N). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
   `require.resolve` (local, `NODE_PATH` ou global); sem eles, pulado. `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
   a Parte N serve o CSS e o app.js do 0a59eb4 assim).
 - Conferência da Executiva com DADO REAL (sob demanda, fora do CI): `PAYLOAD_REAL=/tmp/real/payload.json
   ONLINE_REAL=/tmp/real/online.json node --test frontend/tests/conferencia_real.test.js` (os JSONs = `git show
   origin/main:frontend/data/...` copiados FORA do repo; sem as variáveis, pula). Diretoria, cada gerência, cada grupo no
   Total e uma supervisão; invariantes em `frontend/tests/executiva_invariantes.js` (as mesmas da Parte W); imprime uma
-  tabela-resumo só de totais e códigos.
+  tabela-resumo só de totais e códigos. Gavetas com barra de dias (Etapa 6): Diretoria, G1, G2, AP, IT+MO e uma
+  supervisão (cada chip x recontagem e x cards, `frontend/tests/gavetas_invariantes.js`, as mesmas da Parte X) e cada
+  unidade dessas gerências (Hoje e Todos x cards); sem rolagem lateral nem erro em 360/390/1000/1440 px nos dois fundos.
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -103,8 +106,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (`sorted(pvs_roster - comprou)`, o mesmo `comprou` do `semCompra` e do `SEM_COMPRA_HOJE`; no fechamento, do mês
   fechado), `None` na rota sem dado; mesmas rotas e ordem do `SEM_COMPRA_HOJE` (`por_ordem`; Neutraliza, virtuais e as
   ocultas das EV* como ele; o front esconde). Chave opcional, a ÚLTIMA do payload, fora de `CHAVES_PAYLOAD`;
-  `validacao._sem_compra_mes` só AVISA (tamanho ≠ `semCompra` ou `SEM_COMPRA_HOJE` fora). O front ainda não lê
-  (gaveta "Sem compra" fora do "Hoje" só depois desta chave publicada); payload sem ela (antigo) = Parte S dos testes.
+  `validacao._sem_compra_mes` só AVISA (tamanho ≠ `semCompra` ou `SEM_COMPRA_HOJE` fora). O front lê `P.SEM_COMPRA_MES`
+  só na gaveta Sem compra fora do "Hoje" (Etapa 6, `abreSemCompra`); payload sem ela (antigo) = gaveta só no "Hoje", sem a
+  barra (Partes S e X dos testes).
   Peso no payload real de 21/10 (4.631 clientes em 231 rotas): +39 KB (6,60 → 6,63 MB); pior caso (base inteira, ~29 mil)
   ~+0,24 MB.
 - **Todo nome de coluna, filtro e agrupador fica em `backend/gerador/mapeamento.py`.** Valores conferidos em 13/10/2026:
@@ -385,11 +389,26 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `.dRow`/`.hRow` com `tabindex=0`; fecha a aberta ao redesenhar). Celular: as 5 abas rolam de lado (`.tabs`
   overflow-x, `mostraAbaAtiva`); só a coluna `.dv.sel` com os chips. Medidores 5 colunas >= 1200 px, 3 >= 700, 2;
   tabela `min-width` 1140 px (rola dentro do bloco, 1ª coluna sticky). Escala `--fs-ex-*`. Testes: Parte W.
+  **Gavetas com barra de dias (Etapa 6, 21/10/2026; README, "Gavetas com barra de dias")**: o `chipsHtml`/`DIAS_CHIP` das
+  coberturas e a regra única `noDia(c, chip)` (Todos; Hoje = `c[4]===1`; dia = `DIAS[c[3]].includes(chip)`: "Seg - Qui"
+  aparece na Seg e na Qui; `listaCobertura` usa a mesma). `listaVolume`: barra em `#dLista` acima do `.cCab`, padrão
+  'Todos' (a lista de antes; o template das linhas é o mesmo, byte a byte), "Ninguém neste filtro." com o dia vazio.
+  `gavetaDias(pinta)` (barra direto no `#dCorpo`, padrão 'Hoje'; cada chip troca `dTit`, `dSub` e a lista; ao reabrir,
+  o padrão) com `abreBase` (card `#cBase`, KPIs `#exBase`/`#exVis`; Hoje = `listaClientes` = CLIENTES_HOJE, "Visitas de
+  hoje"; dia/Todos = `doRoster` do CLIENT_ROSTER, "Clientes da base") e `abreSemCompra` (card `#cSem`, KPI `#exSem`; Hoje
+  = SEM_COMPRA_HOJE, "Sem compra hoje"; dia/Todos = `P.SEM_COMPRA_MES` pelo dia, "Sem compra"; sem a chave: só o Hoje com
+  `abre()`, sem barra; sem `FONTES.venda`: o aviso de sempre). Riscado + "Venda Online" = `onlineIds(r)` (QUALQUER) via
+  `itemHtml`; em nome (`porNome`); `rotasListas` (sem virtuais/EV* nem ocultas: na G3/Diretoria a lista fica abaixo do card
+  exatamente pela SV.G3.3). `itensGaveta`: Hoje inteiro (como antes); dia/Todos com `CONFIG.LIMITE_LISTA` + "+ N clientes —
+  filtre por rota para ver todos."; subtítulo com o total. Nenhum CSS novo. Testes: Parte X (+ conferencia_real).
   **Cascata (gaveta, `.drw` e tudo dentro) = aparência do commit 0a59eb4, só com a Inter** (o ajuste visual foi
   reprovado ali): bloco "drawer" do `app.css` copiado do 0a59eb4 (sem a serifa do `.cLin .cDir b`), cinzas antigos
   redefinidos em `.drw` (`--cinza`, `--cinza-escuro`), sem `var(--fs-*)`, alturas mínimas, `data-fit` nem `encaixa()`
   na gaveta. Não aplicar a escala/cores novas ali; se a Inter apertar uma célula, só `letter-spacing` (até -0.02em).
-  A Parte N dos testes compara a gaveta com o front do 0a59eb4 (`git show`) elemento a elemento.
+  A Parte N dos testes compara a gaveta com o front do 0a59eb4 (`git show`) elemento a elemento. Onde o atual tem a barra
+  de dias e o 0a59eb4 não (lista de volume, Base, Sem compra; Etapa 6): a marcação fora da barra = a de lá (no estado que
+  ele tem) e o `#dCorpo` do atual é posto na gaveta do 0a59eb4 (nós dele devolvidos depois) para comparar o estilo de cada
+  elemento, barra inclusive, com o CSS de lá; o teste exige que isso rode nas 3 listas (`espelhos`).
 - **Decisões aceitas** (diferem do arquivo antigo, montado à mão): visitas de hoje pelo campo `VISITA_HOJE` do SAP.
 - **Semana**: `SEMANA_NUM` conta a partir da 1ª segunda-feira do mês; dias antes dela são da última semana do mês anterior.
 - O gerador só grava quando o conteúdo muda (JSON compacto e determinístico) e não grava nada se `validacao.py` reprovar.

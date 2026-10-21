@@ -15,7 +15,7 @@ desempenho/
 │   ├── js/ritmo.js           "Painel de ritmo": PDF matinal só com dados reais
 │   ├── js/main.js            carga e atualização periódica dos JSONs
 │   ├── assets/ (ícones, logos da entrada; fonts/ = Inter local + OFL), manifest.webmanifest
-│   ├── tests/                testes de front (Chromium headless, dado sintético; conferência da Executiva com dado real sob demanda)
+│   ├── tests/                testes de front (Chromium headless, dado sintético; conferência da Executiva e das gavetas com dado real sob demanda)
 │   └── data/payload.json, data/online.json   ← gerados pelo back-end
 ├── backend/                  gerador Python (roda no GitHub Actions)
 │   ├── odata/                cliente OData (copiado do kit Teste_ODATA)
@@ -233,7 +233,8 @@ aba **Executiva**; a Rota, que não tem a Executiva, abre no **Volume**.
   111, 112...; A11, A12...; I11...), com a linha "Neutraliza" sempre por último; num grupo, as supervisões de uma
   gerência e depois as da outra (SV.UR.1, SV.UR.2, SV.RI.1...). Rotas virtuais e '-EV' nunca aparecem em lista.
   Na lista de clientes de volume: Meta, Real (faturado + online de hoje), diferença e %, do mais negativo para o
-  mais positivo; listas de cobertura e de Venda Zero como antes.
+  mais positivo, com a barra de dias de visita (abre em "Todos"; ver "Gavetas com barra de dias"); listas de cobertura
+  e de Venda Zero como antes.
 - **"Meta batida!"**: no card e nas linhas da cascata (gerência, supervisão, rota e "Neutraliza"), o rótulo da caixa
   do Online vira "Meta batida!" e a caixa fica verde quando, no nível (números já somados):
   - **volume** (os 5 agrupadores e Del Valle Frut): a meta do dia é zero ou negativa;
@@ -359,7 +360,8 @@ de Ritmo: `montaRitmo` sem navegador (vm com ONLINE e os campos de hoje lançand
 `DIA_ONTEM_NOME`, botão (1280/390 px, Rota, fechamento), PDF simulado (páginas, progresso, confirmação, nome, sem
 conexão), desenho de 9 colunas sem texto cortado e, com as bibliotecas npm, o PDF real (páginas, 1280x720, tamanho).
 A Parte S abre o painel com e sem `SEM_COMPRA_MES` (Diretoria, Gerência, Supervisão e Rota) e confere que as telas
-(cards, listas, cascata, gavetas Base e Sem compra, Resumo) são as mesmas e que não há erro. A Parte T confere a fonte
+(cards, listas, cascata, gavetas Base e Sem compra, Resumo) são as mesmas e que não há erro; desde a Etapa 6, a gaveta Sem
+compra tem a barra de dias só com a chave (sem ela, só o "Hoje"), e fora da barra continua igual. A Parte T confere a fonte
 dos números e os cards: Source Serif 4 local carregada (`document.fonts.check`, pedido só a `assets/fonts`, licença,
 `@font-face` com `swap`, pesos 200-900 e o unicode-range da Inter) e usada só em `.ind .big`, `.obox b` e `.card .n` (nas
 abas de indicadores; o `.gPct` dos medidores da Executiva é conferido na Parte W)
@@ -408,10 +410,26 @@ cabeçalho do celular <= 221 px); e, contra o front da main antes da etapa (comm
 cards, cascata, gavetas, Resumo e Painel de Ritmo iguais. Desde a Etapa 5, `abre()`/`entra()`/`vaiPara()` levam o painel
 para a aba `aba` depois de entrar (padrão ICS GC, a aba inicial de antes, de onde os testes anteriores partem; `null` = fica
 na aba inicial do perfil); a Parte L passa `'INCENTIVO'` ao entrar de novo (antes a aba ficava a mesma).
-As invariantes ficam em `frontend/tests/executiva_invariantes.js`, usadas também pela **conferência com dado real**
-(`frontend/tests/conferencia_real.test.js`, só roda com `PAYLOAD_REAL` e `ONLINE_REAL` apontando para os JSONs, uma cópia
-fora do repositório; sem elas, é pulada): Diretoria, cada gerência com dados, cada grupo no Total e uma supervisão, com uma
-tabela-resumo só de totais e códigos.
+A Parte X confere as gavetas com barra de dias (Etapa 6), com o cenário `dias` (o `exec` com dias de visita variados,
+`montaDias`: "Seg - Qui", "Ter" e "Qua - Sex"; e `diasscm`, o mesmo sem `SEM_COMPRA_MES`): padrões ("Todos" no Volume,
+"Hoje" na Base e no Sem compra, pelos cards e pelos KPIs da Executiva), títulos por chip e a volta ao padrão ao reabrir; a
+lista de volume filtrada por dia na mesma ordem; em 8 escopos (Diretoria, Gerência, "Neutraliza", G3 com a oculta, grupo no
+Total e uma gerência dele, Supervisão e Rota), cada chip contra a recontagem do payload e do online, riscado e "Venda
+Online", o cliente de dois dias em cada dia dele e uma vez no "Todos", e as contagens contra os cards (a diferença só pela
+SV.G3.3); o "Todos" do Sem compra contra o `semCompra` de cada rota, supervisão e gerência (G2 e IT+MO); payload sem
+`SEM_COMPRA_MES`; fechamento; o limite das listas (com `LIMITE_LISTA` trocado para 5); 360, 390, 1000 e 1440 px nos dois
+fundos (sem rolagem lateral nem texto cortado); e, contra a main antes da etapa (commit `aceacc4` via `git show`),
+cabeçalho, cards, cascata, Executiva, Resumo, Painel de Ritmo e as gavetas (sem a barra) iguais. Na Etapa 6, a Parte N
+passou a conferir também a barra nova (lista de volume, Base e Sem compra; o front do `0a59eb4` não tinha barra ali): fora
+dela a marcação é a de lá, e a marcação inteira do atual é posta na gaveta do `0a59eb4` para comparar o estilo de cada
+elemento, barra inclusive, com o CSS de lá; e os "antes x depois" das Partes S e W comparam as gavetas sem a barra.
+As invariantes ficam em `frontend/tests/executiva_invariantes.js` e `frontend/tests/gavetas_invariantes.js`, usadas também
+pela **conferência com dado real** (`frontend/tests/conferencia_real.test.js`, só roda com `PAYLOAD_REAL` e `ONLINE_REAL`
+apontando para os JSONs, uma cópia fora do repositório; sem elas, é pulada): Executiva na Diretoria, em cada gerência com
+dados, em cada grupo no Total e numa supervisão; gavetas na Diretoria, G1, G2, AP, IT+MO e numa supervisão (cada chip) e,
+em cada unidade dessas gerências (gerência, supervisões, "Neutraliza" e rotas), o "Hoje" e o "Todos" contra os cards; sem
+rolagem lateral nem erro no console em 360, 390, 1000 e 1440 px nos dois fundos. Imprime tabelas-resumo só de totais e
+códigos.
 
 ```bash
 git show origin/main:frontend/data/payload.json > /tmp/real/payload.json
@@ -451,8 +469,9 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
 - **4 KPIs** (cards brancos, número em Source Serif 4): **Base total de clientes**, **Sem compra** ("X% da base · sem compra
   no mês"), **Visitas hoje** e **Categorias na tendência** ("x / 5", verde ou vermelho pela mesma regra do card do Volume, e
   "Coberturas no ritmo: a / b" = os cards de ritmo do ICS GC e de Novos Negócios somados). Os números são os dos cards Base,
-  Sem compra e "visitas hoje" com o mesmo filtro. Base e Visitas abrem a gaveta "Visitas de hoje"; Sem compra, a "Sem compra
-  hoje" (as mesmas de sempre; a barra de dias vem na Etapa 6).
+  Sem compra e "visitas hoje" com o mesmo filtro. Base e Visitas abrem a gaveta Base; Sem compra, a gaveta Sem compra (as
+  mesmas dos cards, com a barra de dias, abrindo no "Hoje": "Visitas de hoje" e "Sem compra hoje"; ver "Gavetas com barra
+  de dias").
 - **Foco do fechamento** (categoria em análise): "Refrigerantes está em 92% de tendência; faltam 553.417 para a meta. A
   gerência GC.AT concentra 63% dessa falta (403.372)." Falta = Meta − Tendência; a maior falta entre as unidades fora da
   tendência (% de tendência abaixo de 100), em % da soma das faltas delas. Na tendência: "… no caminho da meta".
@@ -510,10 +529,39 @@ Desde a Etapa 4 (21/10/2026), o alto de cada aba é organizado assim (os número
   supervisão (ou "Neutraliza") ou uma rota no filtro (perfis Supervisão e Rota, ou a Gerência com uma supervisão/rota
   escolhida): ficam acima da linha de resumo. Na Diretoria e na Gerência eles saem das abas (a aba Executiva traz esses
   números). Sem o "puxa a média" (a Rota sempre), o card de ritmo vai para a linha deles: **três cards
-  lado a lado**, e a busca fica sozinha na linha de baixo. As gavetas "Visitas de hoje" e "Sem compra hoje" não mudaram.
+  lado a lado**, e a busca fica sozinha na linha de baixo. Os dois cards abrem as gavetas com barra de dias (abaixo).
 - **Filtro rápido dos cards**: acima da grade, "Todos N · Abaixo N · No ritmo N". Só mostra ou oculta os cards (a ordem e
   as cores não mudam); o card indisponível só aparece em "Todos"; um filtro sem card fica desabilitado; volta para
   "Todos" ao trocar de aba (e quando o filtro escolhido fica sem card numa atualização).
+
+### Gavetas com barra de dias (Volume, Base e Sem compra)
+
+Desde a Etapa 6 (21/10/2026), três listas de clientes ganharam a mesma barra de dias de visita das listas de cobertura
+("Hoje · Seg · Ter · Qua · Qui · Sex · Todos"), com a mesma regra e a mesma aparência (nenhum estilo novo na gaveta):
+
+- **"Hoje"** = quem tem visita hoje (o campo de visita de hoje do SAP, que respeita a semana par/ímpar); **um dia** = quem
+  tem esse dia no dia de visita: o cliente com mais de um dia ("Seg - Qui", "Ter - Sex"...) aparece em **cada um** dos dias
+  dele (na Seg e na Qui) e uma vez só no "Todos"; **"Todos"** = todos.
+- **Volume** (lista de clientes da cascata, o último nível): abre em **"Todos"** (a lista de antes: Meta, Real, Dif. Abs e
+  %, do mais negativo para o mais positivo); os chips só filtram, a ordem fica.
+- **Base** (card Base total de clientes; na Executiva, os KPIs Base e Visitas hoje): abre em **"Hoje"** = a lista "Visitas de
+  hoje" de sempre (riscado + "Venda Online" para quem já pediu online hoje). Um dia = os clientes da base com visita no dia;
+  "Todos" = a base. Título "Visitas de hoje" no Hoje e "Clientes da base" nos outros.
+- **Sem compra** (card Sem compra; na Executiva, o KPI Sem compra): abre em **"Hoje"** = a lista "Sem compra hoje" de
+  sempre (agendados de hoje sem compra no mês). Um dia e "Todos" = os clientes da base **sem compra no mês**
+  (`SEM_COMPRA_MES`) com visita no dia / todos. Título "Sem compra hoje" no Hoje e "Sem compra" nos outros; riscado +
+  "Venda Online" para quem pediu online hoje. Payload sem `SEM_COMPRA_MES` (o de antes da Etapa 1): só o "Hoje", sem a
+  barra.
+- **Números**: o "Hoje" da Base é o "visitas hoje" do card Base; o "Hoje" do Sem compra, o "sem compra hoje" do card; o
+  "Todos" do Sem compra, o Sem compra do card (o `semCompra` das rotas); o "Todos" da Base, a Base total. Como nas listas
+  de clientes de sempre, as rotas virtuais, as das eventuais (EV*) e a supervisão oculta (SV.G3.3) ficam fora das listas,
+  mas a SV.G3.3 está nos cards: na G3 e na Diretoria a lista fica abaixo do card exatamente pelos clientes dela (21/10:
+  295 na base, 63 visitas hoje e 23 sem compra). Quando alguma rota do filtro não tem venda no mês, o card mostra "sem
+  venda do dia" no lugar do "sem compra hoje" e a lista traz as rotas com dado.
+- O "Hoje" vem inteiro, como antes. Nos outros dias e no "Todos" (a base da Diretoria tem ~29 mil clientes) a lista mostra
+  os primeiros 400 (`CONFIG.LIMITE_LISTA`, o das listas da cascata) e "+ N clientes — filtre por rota para ver todos."; o
+  subtítulo traz sempre o total ("1.327 clientes na base", "182 de 1.327 clientes da base · nenhum faturamento no mês").
+- Cada vez que a gaveta abre, a barra volta ao padrão.
 
 ### Visual (fonte, escala e cores)
 
@@ -562,7 +610,9 @@ Desde a Etapa 4 (21/10/2026), o alto de cada aba é organizado assim (os número
 - **Cascata (gaveta que abre no card)**: mantém a aparência de antes do ajuste visual (commit `0a59eb4`) em todos os
   níveis (gerências, supervisões, rotas, clientes, Visitas de hoje, Sem compra, Venda Zero): tamanhos, pesos,
   espaçamentos, colunas, alturas, bordas e cores de antes, e os cinzas antigos (`--cinza`, `--cinza-escuro`
-  redefinidos em `.drw`). A única diferença é a fonte: Inter, herdada do body (o % da linha de grupo era serifado).
+  redefinidos em `.drw`). A única diferença é a fonte: Inter, herdada do body (o % da linha de grupo era serifado). A
+  barra de dias que entrou na lista de volume e nas gavetas Base e Sem compra (Etapa 6) é a mesma das listas de cobertura,
+  com o mesmo estilo.
   A escala tipográfica, as alturas mínimas e a regra do vermelho NÃO valem dentro dela. Em 390 px o nome do cliente
   na lista de volume (`.cCli .nm`, coluna estreita) corta com reticências, como antes.
 - **Cards de indicador**: grade `repeat(auto-fill, minmax(340px, 1fr))` a partir de 1000 px (3 colunas em 1280-1440
@@ -718,8 +768,8 @@ ocultas das EV* seguem a mesma regra; o painel as esconde como hoje). No fechame
   compra hoje" de alguma rota não estiver dentro dela.
 - Peso: no payload real de 21/10/2026 (4.631 clientes sem compra em 231 rotas), +39 KB (6,60 → 6,63 MB); no pior caso
   (começo do mês, a base inteira sem compra, ~29 mil clientes) cerca de +0,24 MB, abaixo do limite de atenção de 8 MB.
-- O painel ainda não usa a lista: ela vai alimentar a gaveta "Sem compra" com a barra de dias (fora do "Hoje"). Depois
-  do merge, rode **Atualizar dados** uma vez para o payload publicado trazer a chave.
+- Desde a Etapa 6 a lista alimenta a gaveta "Sem compra" fora do "Hoje" (os dias da barra e o "Todos"; ver "Gavetas com
+  barra de dias"). Sem a chave, a gaveta fica só no "Hoje".
 
 **Seção E9** do relatório "Conferir tendência": roda **depois** do `gerar.py`, sobre o `payload.json` que ele gravou
 (no workflow, o passo "E9"; local: `python scripts/conferir_tendencia.py --saida DIR --e9 DIR/payload.json`, sem rede,
