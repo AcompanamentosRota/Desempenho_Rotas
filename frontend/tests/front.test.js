@@ -113,7 +113,7 @@ after(async () => {
 });
 
 const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json',
-  '.png':'image/png', '.webmanifest':'application/manifest+json'};
+  '.png':'image/png', '.woff2':'font/woff2', '.webmanifest':'application/manifest+json'};
 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados');
    devolve {page, erros}.
@@ -2498,4 +2498,272 @@ describe('Parte L — aba Todos a Bordo', {skip: pular}, () => {
     assert.deepEqual(erros, []);
     await ctx.close();
   });
+});
+
+/* ---------- Parte M — visual: Inter local, escala, estouros, alturas, cabeçalho no celular, contraste ---------- */
+// cabeçalho (até o fim das abas) em 390 px: era 295 px antes do ajuste visual; meta: pelo menos 25% menor
+const CABECALHO_390_ANTES = 295, LIMITE_CABECALHO_390 = Math.floor(CABECALHO_390_ANTES * 0.75);
+// funções de medida injetadas na página (window.__vis)
+const INSTALA_MEDIDAS = () => {
+  if(window.__vis) return;
+  const rolavel = el => /auto|scroll/.test(getComputedStyle(el).overflowX);
+  // textos que passam da própria caixa (corte ou estouro): scrollWidth > clientWidth, fora das áreas com rolagem própria
+  const estouros = raiz => [...(typeof raiz === 'string' ? document.querySelectorAll(raiz) : [raiz])].flatMap(r =>
+    [r, ...r.querySelectorAll('*')]).filter(el => el.clientWidth > 0 && el.getClientRects().length && !rolavel(el) && !el.closest('.sr-only')
+      && el.scrollWidth > el.clientWidth + 1)
+    .map(el => `${el.className || el.tagName}: ${el.textContent.trim().slice(0, 40)} (${el.scrollWidth} > ${el.clientWidth})`);
+  const rgba = s => { const m = s.match(/[\d.]+/g).map(Number); return [m[0], m[1], m[2], m.length > 3 ? m[3] : 1]; };
+  const mistura = (c, fundo) => [0, 1, 2].map(i => c[i] * c[3] + fundo[i] * (1 - c[3]));
+  const lum = c => { const v = c.map(x => { x /= 255; return x <= .03928 ? x / 12.92 : Math.pow((x + .055) / 1.055, 2.4); });
+    return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };
+  // contraste do texto contra o fundo efetivo (camadas de fundo compostas de baixo para cima)
+  const contraste = el => {
+    const camadas = [];
+    for(let e = el; e; e = e.parentElement){
+      const b = rgba(getComputedStyle(e).backgroundColor);
+      if(b[3] > 0) camadas.push(b);
+      if(b[3] >= 1) break;
+    }
+    let fundo = [255, 255, 255];
+    for(const c of camadas.reverse()) fundo = mistura(c, fundo);
+    const txt = mistura(rgba(getComputedStyle(el).color), fundo);
+    const [a, b] = [lum(txt), lum(fundo)].sort((x, y) => y - x);
+    return (a + .05) / (b + .05);
+  };
+  const contrastes = sels => sels.flatMap(s => [...document.querySelectorAll(s)]
+    .filter(el => el.getClientRects().length && el.textContent.trim())
+    .map(el => [s, el.textContent.trim().slice(0, 30), Math.round(contraste(el) * 100) / 100]));
+  window.__vis = {estouros, contrastes};
+};
+const medidas = page => page.evaluate(INSTALA_MEDIDAS);
+const semRolagemLateral = page => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+
+describe('Parte M — visual', {skip: pular}, () => {
+  test('Inter local em todo o sistema (sem CDN de fonte), com fallback de sistema', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null});
+    const pedidos = [];
+    page.on('request', r => pedidos.push(r.url()));
+    const naEntrada = await page.evaluate(async () => { await document.fonts.ready;
+      return getComputedStyle(document.querySelector('#entTit')).fontFamily; });
+    assert.match(naEntrada, /^Inter,/);
+    await entra(page, 'gc');
+    await page.click('#btnResumo');
+    const r = await page.evaluate(async () => {
+      await document.fonts.ready;
+      const fam = s => getComputedStyle(document.querySelector(s)).fontFamily;
+      return {body: fam('body'), sels: ['h1', '.card .n', '.ind .big', '.ind .tit', '.obox b', '#rsFolha h2', '.rs-k strong', 'select', '.tab']
+                .map(s => [s, fam(s)]),
+              check: document.fonts.check('600 16px Inter') && document.fonts.check('700 30px Inter'),
+              carregadas: [...document.fonts].filter(f => f.family.replace(/["']/g, '') === 'Inter' && f.status === 'loaded').length,
+              folhas: [...document.querySelectorAll('link[rel=stylesheet]')].map(l => l.getAttribute('href'))};
+    });
+    assert.equal(r.body, "Inter, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif");
+    for(const [s, f] of r.sels) assert.match(f, /^Inter,/, s);
+    assert.ok(r.check, 'document.fonts.check');
+    assert.ok(r.carregadas >= 1, 'a Inter do próprio site carregou');
+    assert.deepEqual(r.folhas, ['css/app.css']);
+    assert.ok(pedidos.every(u => !/fonts\.(googleapis|gstatic)|fontsource|jsdelivr|unpkg/.test(u)), pedidos.join(' '));
+    assert.ok(fs.existsSync(path.join(FRONT, 'assets', 'fonts', 'OFL.txt')), 'licença OFL junto da fonte');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [1280, 390]){
+    test(`${largura} px: sem rolagem lateral, nenhum texto cortado nos cards, linhas e listas; alturas iguais por tipo`, async () => {
+      const {page, ctx, erros} = await abre('inc', {largura, altura: 900, entrar: {perfil: 'gc', gc: 'IT+MO'}});
+      await medidas(page);
+      await page.evaluate(() => document.fonts.ready);
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        await filtra(page, {aba});
+        assert.ok(await semRolagemLateral(page), `${aba}: rolagem lateral`);
+        assert.deepEqual(await page.evaluate(() => __vis.estouros('.cards .card, #lista .ind, #puxa, .rsBox, .topo, .barra')), [], aba);
+        const alt = await page.evaluate(() => {
+          const px = v => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v));
+          const cards = [...document.querySelectorAll('#lista .ind')].map(el => ({top: Math.round(el.getBoundingClientRect().top),
+            h: el.getBoundingClientRect().height, tipo: el.classList.contains('off') ? 'off' : el.classList.contains('vol') ? 'vol' : 'cob'}));
+          return {cards, minVol: px('--h-card-vol'), minCob: px('--h-card-cob'), minKpi: px('--h-kpi'),
+                  kpi: [...document.querySelectorAll('.cards .card')].map(el => el.getBoundingClientRect().height)};
+        });
+        // mesmo tipo na mesma linha da grade = mesma altura; nenhum card com conteúdo abaixo do mínimo do tipo
+        const porLinha = {};
+        for(const c of alt.cards) (porLinha[`${c.top}|${c.tipo}`] = porLinha[`${c.top}|${c.tipo}`] || []).push(c.h);
+        for(const [k, hs] of Object.entries(porLinha)) assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `${aba} ${k}: ${hs}`);
+        for(const c of alt.cards) if(c.tipo !== 'off') assert.ok(c.h >= (c.tipo === 'vol' ? alt.minVol : alt.minCob) - .5, `${aba} ${c.tipo} ${c.h}`);
+        assert.ok(Math.max(...alt.kpi) - Math.min(...alt.kpi) <= 1 && Math.min(...alt.kpi) >= alt.minKpi - .5, `${aba} KPIs ${alt.kpi}`);
+        // cascata do 1º card até os clientes: linhas e listas sem texto cortado, linhas com a altura mínima
+        const k = await page.$eval('#lista .ind[data-k]', el => el.dataset.k);
+        await page.click(`#lista .ind[data-k="${k}"]`);
+        for(let nivel = 0; nivel < 4; nivel++){
+          await page.waitForTimeout(50);
+          const m = await page.evaluate(() => ({est: __vis.estouros('#drw'), min: parseFloat(getComputedStyle(document.documentElement)
+            .getPropertyValue('--h-linha')), linhas: [...document.querySelectorAll('#dCorpo .cLin:not(.off)')].map(el => el.offsetHeight),
+            rola: document.getElementById('dCorpo').scrollWidth <= document.getElementById('dCorpo').clientWidth}));
+          assert.deepEqual(m.est, [], `${aba} cascata nível ${nivel}`);
+          assert.ok(m.rola, `${aba} cascata nível ${nivel}: rolagem lateral`);
+          assert.ok(m.linhas.every(h => h >= m.min - .5), `${aba} linhas ${m.linhas}`);
+          if(!(await page.$('#dCorpo .cLin[data-i]'))) break;
+          await page.click('#dCorpo .cLin[data-i]');
+        }
+        await page.keyboard.press('Escape');
+      }
+      // busca de cliente (quadrinhos)
+      await filtra(page, {aba: 'VOLUME'});
+      const pv = await page.evaluate(() => CLIENT_ROSTER[rotasDe(sel.gc, '').find(r => (CLIENT_ROSTER[r] || []).length)][0][0]);
+      await page.fill('#q', String(pv));
+      assert.deepEqual(await page.evaluate(() => __vis.estouros('#cli')), []);
+      assert.ok(await semRolagemLateral(page));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test('390 px: cabeçalho compacto (até o fim das abas) pelo menos 25% menor, com a mesma informação, e a barra sticky', async () => {
+    const {page, ctx, erros} = await abre('normal', {largura: 390, altura: 844});
+    await page.evaluate(() => document.fonts.ready);
+    const r = await page.evaluate(() => {
+      const b = s => document.querySelector(s).getBoundingClientRect();
+      const tabs = [...document.querySelectorAll('.tab')].filter(t => !t.hidden).map(t => t.getBoundingClientRect());
+      const sels = [...document.querySelectorAll('.filtros select')].filter(s => !s.hidden).map(s => Math.round(s.getBoundingClientRect().top));
+      const rit = document.getElementById('ritmo');
+      return {fim: b('.barra').bottom, h1: parseFloat(getComputedStyle(document.querySelector('.topo h1')).fontSize),
+              ritmo: rit.textContent, linhasRitmo: Math.round(rit.getBoundingClientRect().height / parseFloat(getComputedStyle(rit).lineHeight)),
+              tabsTop: new Set(tabs.map(t => Math.round(t.top))).size, nTabs: tabs.length, sels: new Set(sels).size,
+              sub: document.getElementById('sub').textContent, pos: getComputedStyle(document.querySelector('.barra')).position};
+    });
+    assert.ok(r.fim <= LIMITE_CABECALHO_390, `cabeçalho ${r.fim} px > ${LIMITE_CABECALHO_390}`);
+    assert.ok(r.h1 >= 23 && r.h1 <= 26, `título ${r.h1}`);
+    assert.match(r.ritmo, /Real até ontem: dia útil \d+\/\d+ .*para entrar no ritmo hoje: \d+%/);
+    assert.match(r.ritmo, /Hoje é o dia \d+ · .* · semana N°\d+/);
+    assert.ok(r.linhasRitmo <= 2, `bloco de datas em ${r.linhasRitmo} linhas`);
+    assert.equal(r.tabsTop, 1, 'abas numa linha');
+    assert.ok(r.nTabs >= 3);
+    assert.equal(r.sels, 1, 'seletores na mesma linha');
+    assert.match(r.sub, /Atualização|atualização|Atualizado|·/);
+    assert.equal(r.pos, 'sticky');
+    await page.mouse.wheel(0, 900);
+    await page.waitForFunction(() => scrollY > 300);
+    assert.ok(Math.abs(await page.evaluate(() => document.querySelector('.barra').getBoundingClientRect().top)) <= 1, 'barra presa no topo');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('vermelho só no % abaixo, na Diferença negativa e no "faltam"; Meta, Real e textos de apoio neutros', async () => {
+    const {page, ctx, erros} = await abre('normal');
+    const gc = await page.evaluate(() => sel.gc);
+    const rotas = await page.evaluate(() => rotasDe(sel.gc, ''));
+    await ritmo(page, gc, rotas, 0.2);
+    for(const aba of ['VOLUME', 'ICS_GC']){
+      await filtra(page, {aba});
+      const r = await page.evaluate(() => {
+        const cor = el => getComputedStyle(el).color;
+        const ref = v => { const s = document.createElement('span'); s.style.color = `var(${v})`; document.body.appendChild(s);
+          const c = getComputedStyle(s).color; s.remove(); return c; };
+        const vermelhos = ['--vermelho', '--vermelho2', '--ruim'].map(ref);
+        const card = [...document.querySelectorAll('#lista .ind[data-k]:not(.ok)')].find(el => !el.querySelector('.obox.ok')) ||
+          document.querySelector('#lista .ind[data-k]:not(.ok)');
+        const q = s => card.querySelector(s);
+        return {vermelhos, meta: cor(q('.cl > div:nth-child(1)')), real: cor(q('.cl > div:nth-child(2)')), dif: cor(q('.cl .dif')),
+                difNeg: q('.cl .dif').classList.contains('neg'), big: cor(q('.big')), acao: [q('.acao').textContent, cor(q('.acao'))],
+                opo: cor(q('.opo')), olab: cor(q('.olab')), txt: ref('--txt'), apoio: ref('--txt-apoio')};
+      });
+      const ehVermelho = c => r.vermelhos.includes(c);
+      assert.ok(!ehVermelho(r.meta) && !ehVermelho(r.real), `${aba}: Meta/Real ${r.meta} ${r.real}`);
+      assert.equal(r.meta, r.txt);
+      assert.ok(r.difNeg && ehVermelho(r.dif), `${aba}: Diferença negativa em vermelho`);
+      assert.ok(ehVermelho(r.big), `${aba}: % abaixo em vermelho`);
+      if(/^faltam/.test(r.acao[0])) assert.ok(ehVermelho(r.acao[1]), `${aba}: faltam`);
+      else assert.equal(r.acao[1], r.apoio, `${aba}: "${r.acao[0]}" neutro`);
+      assert.ok(!ehVermelho(r.opo) && !ehVermelho(r.olab), `${aba}: textos de apoio`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('contraste AA (4.5:1) dos textos neutros: painel, gaveta, listas e entrada nos dois fundos', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, largura: 390, altura: 844});
+    await medidas(page);
+    const baixos = async (sels, onde) => {
+      const r = await page.evaluate(s => __vis.contrastes(s), sels);
+      assert.ok(r.length > 0, `${onde}: nada medido`);
+      const ruins = r.filter(x => x[2] < 4.5);
+      assert.deepEqual(ruins, [], onde);
+    };
+    for(const tema of ['preta', 'branca']){
+      if(tema === 'branca') await page.click('#btnTema');
+      await baixos(['.entMarca', '.entRod'], `entrada ${tema}`);
+      await page.click('#entrada [data-perfil="sv"]');
+      await baixos(['.entSub', '.entCab h2', '.entOpcoes button:not(:disabled)'], `caixa ${tema}`);
+      await page.click('#entFechar');
+    }
+    await entra(page, 'gc');
+    await medidas(page);
+    const gc = await page.evaluate(() => sel.gc);
+    await ritmo(page, gc, await page.evaluate(() => rotasDe(sel.gc, '')), 0.2);
+    for(const aba of ['VOLUME', 'ICS_GC']){
+      await filtra(page, {aba});
+      await baixos(['.ind .cl > div:not(.dif)', '.ind .acao:not(.falta)', '.ind .opo', '.ind .olab', '.ind.off .semdado', '.card .l',
+        '.card .x', '.puxa .s', '.sub', '.ritmo', '.rodape', '.rodape .fonte', '.creditos', '.rsBox .rsLbl'], `painel ${aba}`);
+      await page.click('#lista .ind[data-k]');
+      await baixos(['.drwCab .s', '.cLin:not(.off) small', '.cLin .cEsq', '.cNota'], `cascata ${aba}`);
+      while(await page.$('#dCorpo .cLin[data-i]')) await page.click('#dCorpo .cLin[data-i]');
+      await baixos(aba === 'VOLUME' ? ['.cCab', '.cCli .sb', '.cCli > span:not(.neg):not(.pos)'] : ['.item .sb', '.item .bd', '.dchip'],
+        `clientes ${aba}`);
+      await page.keyboard.press('Escape');
+    }
+    await page.click('#btnResumo');
+    await baixos(['.rs-sub', '.rs-bloco h3 small', '.rs-rod', '.rs-k:not(.rs-on) small'], 'Resumo');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [1280, 390]){
+    test(`${largura} px: entrada, caixas, Resumo e PDF sem estouro (PDF espera a fonte)`, async () => {
+      const {page, ctx, erros} = await abre('normal', {entrar: null, largura, altura: 900});
+      await medidas(page);
+      await page.evaluate(() => document.fonts.ready);
+      for(const tema of ['preta', 'branca']){
+        if(tema === 'branca') await page.click('#btnTema');
+        assert.deepEqual(await page.evaluate(() => __vis.estouros('#entrada')), [], `entrada ${tema}`);
+        for(const perfil of ['gc', 'sv']){
+          await page.click(`#entrada [data-perfil="${perfil}"]`);
+          if(perfil === 'sv') await page.click('#entOpcoes [data-gc="IT+MO"]');
+          assert.deepEqual(await page.evaluate(() => __vis.estouros('#entCaixa')), [], `caixa ${perfil} ${tema}`);
+          assert.ok(await semRolagemLateral(page));
+          await page.click('#entFechar');
+        }
+      }
+      for(const entrar of ['dir', 'gc', {perfil: 'gc', gc: 'IT+MO'}]){
+        await entra(page, entrar);
+        await medidas(page);
+        await page.click('#btnResumo');
+        await page.waitForSelector('#rsFolha h2');
+        const r = await page.evaluate(() => ({est: __vis.estouros('#rsFolha'),
+          larg: [document.getElementById('rsOverlay').scrollWidth, document.getElementById('rsOverlay').clientWidth]}));
+        assert.deepEqual(r.est, [], `Resumo ${JSON.stringify(entrar)}`);
+        assert.ok(r.larg[0] <= r.larg[1], `Resumo: rolagem lateral ${r.larg}`);
+        // PDF: bibliotecas simuladas; a captura acontece com a fonte carregada, no formato do PC e sem estouro
+        await page.evaluate(() => {
+          window.__pdf = null;
+          window.html2canvas = async (el, op) => {
+            window.__pdf = {fonte: document.fonts.status, pdf: el.classList.contains('rs-pdf'), est: __vis.estouros(el),
+                            larg: [el.scrollWidth, el.clientWidth]};
+            if(op.onclone) op.onclone(document);
+            const c = document.createElement('canvas'); c.width = el.scrollWidth * 2; c.height = el.scrollHeight * 2; return c;
+          };
+          window.jspdf = {jsPDF: function(){ return {addPage(){}, addImage(){}, setProperties(){}, output: () => new Blob(['%PDF'])}; }};
+        });
+        await page.click('#rsImg');
+        await page.waitForFunction(() => /PDF salvo/.test(document.getElementById('rsToast').textContent));
+        const pdf = await page.evaluate(() => window.__pdf);
+        assert.equal(pdf.fonte, 'loaded');
+        assert.ok(pdf.pdf);
+        assert.deepEqual(pdf.est, [], `PDF ${JSON.stringify(entrar)}`);
+        assert.ok(pdf.larg[0] <= pdf.larg[1] + 1, `PDF largura ${pdf.larg}`);
+        await page.click('#rsVoltar');
+        await page.click('#btnCasa');
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
 });

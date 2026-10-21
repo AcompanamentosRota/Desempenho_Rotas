@@ -12,7 +12,7 @@ desempenho/
 │   ├── js/app.js             painel (entrada por seleção, filtros, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/main.js            carga e atualização periódica dos JSONs
-│   ├── assets/, manifest.webmanifest
+│   ├── assets/ (ícones; fonts/ = Inter local + OFL), manifest.webmanifest
 │   ├── tests/                testes de front (Chromium headless, dado sintético)
 │   └── data/payload.json, data/online.json   ← gerados pelo back-end
 ├── backend/                  gerador Python (roda no GitHub Actions)
@@ -264,7 +264,42 @@ seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa;
 
 Testes do front: `node --test frontend/tests/front.test.js` (Chromium headless com `playwright`; usa dado
 sintético gerado pelo próprio back-end em `frontend/tests/sintetico.py`; a virada diária é testada com o relógio
-simulado do Playwright, com o navegador em UTC e em America/Sao_Paulo).
+simulado do Playwright, com o navegador em UTC e em America/Sao_Paulo). A Parte M confere o visual em 1280 e
+390 px: Inter carregada, sem rolagem lateral, nenhum texto cortado, alturas por tipo, cabeçalho do celular,
+regra do vermelho, contraste AA e Resumo/PDF sem estouro.
+
+### Visual (fonte, escala e cores)
+
+- **Fonte**: Inter variável servida pelo próprio site, sem CDN nem Google Fonts:
+  `frontend/assets/fonts/inter-latin-wght-normal.woff2` (48 KB, carregado com `preload`) e
+  `inter-latin-ext-wght-normal.woff2` (85 KB, só baixado se a página usar um caractere fora do latin), do pacote
+  `@fontsource-variable/inter` 5.3.0, com a licença em `frontend/assets/fonts/OFL.txt` (SIL Open Font License 1.1).
+  `@font-face` com `font-display: swap`; fallback `system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`.
+  Como a fonte chega depois do 1º desenho, `encaixa()` mede de novo quando ela carrega, e o PDF do Resumo espera
+  `document.fonts.ready` antes da captura. Para trocar a versão: copiar os dois `*-wght-normal.woff2` e o LICENSE do
+  pacote para `assets/fonts/` (os nomes ficam iguais).
+- **Escala tipográfica** (variáveis em `:root` do `app.css`; o celular, até 640 px, redefine):
+
+  | Nível | PC | Celular | Peso | Onde |
+  |---|---|---|---|---|
+  | `--fs-titulo` | 30 px | 24 px | 700 | cabeçalho, entrada, título do Resumo |
+  | `--fs-card` | 19 px | 18 px | 600 | título do card, da gaveta, da caixa de seleção |
+  | `--fs-ind` | 30 px | 28 px | 700 | o % dos cards e das linhas de grupo; números dos cards do topo |
+  | `--fs-valor` | 15 px | 14 px | 500 | Meta e Real, nomes de linhas e clientes, opções |
+  | `--fs-legenda` | 12,5 px | 12 px | 400 | legendas, hora de atualização, seletores e abas |
+
+  O % de cards e linhas parte do `--fs-ind` e só diminui se não couber (`data-fit=""` + `encaixa()`). As tabelas do
+  Resumo mantêm os tamanhos próprios das caixas (`.rs-k`), que se ajustam ao número de colunas (16 gerências na
+  Diretoria, PDF). Alturas mínimas por tipo: `--h-card-vol`, `--h-card-cob` (cobertura e Todos a Bordo), `--h-kpi`,
+  `--h-linha` (linha de grupo), `--h-cliente`; cards da mesma linha da grade ficam com a mesma altura.
+  O indicador de ritmo (caixa Online) tem tamanho, raio e peso fixos (`--ritmo-*`) nos cards e nas linhas.
+- **Cores**: o fundo rosa (abaixo do ritmo/tendência) e o verde claro (no ritmo) dos cards são premissa. O **vermelho**
+  fica só para o % abaixo, o déficit ("Diferença" negativa e "faltam", classe `acao falta`) e os alertas ("puxa a
+  média", avisos e erros). Meta, Real, rótulos e textos de apoio ("abaixo da tendência", "oportunidades do dia",
+  "meta do dia", legendas) usam `--txt`/`--txt-apoio`, com contraste AA (4,5:1) nos fundos claros e escuros. O verde
+  do ritmo não muda. Divisórias: espaço (gap) e, onde separa, linha de 1 px de baixa opacidade (`--linha-suave`).
+- **Cabeçalho no celular** (até 640 px): mesma informação, mais baixo (em 390 px, 213 px até o fim das abas, eram
+  295 px): bloco de datas sem caixa em até 2 linhas, seletores e abas numa linha; a barra continua sticky.
 
 ## Volume: tendência pelo critério do SAC
 
