@@ -2635,6 +2635,7 @@ const medidas = page => page.evaluate(INSTALA_MEDIDAS);
 const semRolagemLateral = page => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
 describe('Parte M — visual', {skip: pular}, () => {
+  // os números grandes da tela principal (.ind .big, .obox b, .card .n) são em Source Serif 4 desde a Etapa 2 (Parte T)
   test('Inter local em todo o sistema (sem CDN de fonte), com fallback de sistema', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null});
     const pedidos = [];
@@ -2647,7 +2648,7 @@ describe('Parte M — visual', {skip: pular}, () => {
     const r = await page.evaluate(async () => {
       await document.fonts.ready;
       const fam = s => getComputedStyle(document.querySelector(s)).fontFamily;
-      return {body: fam('body'), sels: ['h1', '.card .n', '.ind .big', '.ind .tit', '.obox b', '#rsFolha h2', '.rs-k strong', 'select', '.tab']
+      return {body: fam('body'), sels: ['h1', '.card .l', '.ind .tit', '.ind .cl', '.obox span', '#rsFolha h2', '.rs-k strong', 'select', '.tab']
                 .map(s => [s, fam(s)]),
               check: document.fonts.check('600 16px Inter') && document.fonts.check('700 30px Inter'),
               carregadas: [...document.fonts].filter(f => f.family.replace(/["']/g, '') === 'Inter' && f.status === 'loaded').length,
@@ -2854,6 +2855,231 @@ describe('Parte M — visual', {skip: pular}, () => {
       }
       assert.deepEqual(erros, []);
       await ctx.close();
+    });
+  }
+});
+
+/* ---------- Parte T — fonte dos números e cards (Etapa 2): Source Serif 4 local só nos números grandes da tela
+   principal; cards com o fundo de antes, faixa lateral na cor do status, escala própria (~12% menor) e grade de 3
+   colunas no PC ---------- */
+// CSS da main antes da Etapa 2 (21/10/2026), para comparar o fundo dos cards; sem o histórico, o teste é pulado
+const REF_ETAPA2 = '2744537';
+const CSS_ANTES_ETAPA2 = (() => {
+  try { return execSync(`git show ${REF_ETAPA2}:frontend/css/app.css`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString(); }
+  catch(e){ return null; }
+})();
+const SERIF = /^"Source Serif 4", Georgia, "Times New Roman", serif$/;
+// estilo dos elementos de cada card (família, tamanho e algarismos) e da própria caixa
+const ESTILO_CARDS = () => [...document.querySelectorAll('#lista .ind')].map(el => {
+  const cs = e => e ? getComputedStyle(e) : null, c = cs(el);
+  const q = s => { const e = el.querySelector(s); if(!e) return null; const x = cs(e);
+    return {fam: x.fontFamily, px: parseFloat(x.fontSize), num: x.fontVariantNumeric}; };
+  return {k: el.dataset.k || '', off: el.classList.contains('off'), ok: el.classList.contains('ok'), bg: c.backgroundColor,
+          faixa: [c.borderLeftWidth, c.borderLeftStyle, c.borderLeftColor], padL: parseFloat(c.paddingLeft),
+          tit: q('.tit'), cl: q('.cl > div'), big: q('.big'), seta: q('.big .seta'), acao: q('.acao'), opo: q('.opo'),
+          olab: q('.olab'), on: q('.obox b'), onRot: q('.obox span')};
+});
+// fundos de antes da Etapa 2 (rosa abaixo, verde claro no ritmo, cinza indisponível) e as cores da faixa
+const COR = {rosa: 'rgb(251, 238, 238)', menta: 'rgb(233, 244, 239)', off: 'rgb(240, 240, 242)', ruim: 'rgb(156, 28, 28)',
+             verde: 'rgb(29, 158, 117)'};
+
+describe('Parte T — fonte dos números e cards (Etapa 2)', {skip: pular}, () => {
+  test('Source Serif 4 local (sem CDN), com a licença, e só nos números grandes da tela principal', async () => {
+    const pedidos = [];
+    const {page, ctx, erros} = await abre('normal', {antes: async p => p.on('request', r => pedidos.push(r.url()))});
+    for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG']){
+      await filtra(page, {aba});
+      const r = await page.evaluate(async () => {
+        await document.fonts.ready;
+        const fam = s => [...document.querySelectorAll(s)].map(e => getComputedStyle(e).fontFamily);
+        const num = s => [...document.querySelectorAll(s)].map(e => getComputedStyle(e).fontVariantNumeric);
+        return {check: document.fonts.check('700 25px "Source Serif 4"'),
+                carregada: [...document.fonts].some(f => f.family.replace(/["']/g, '') === 'Source Serif 4' && f.status === 'loaded'),
+                serif: ['.ind .big', '.obox b', '.card .n'].map(s => [s, fam(s)]),
+                inter: ['body', 'h1', '.sub', '.ritmo', 'select', '.tab', '.card .l', '.card .x', '.card .x b', '.ind .tit', '.ind .cl > div',
+                        '.ind .big .seta', '.ind .acao', '.ind .opo', '.ind .olab', '.obox span', '.puxa .t', '#q', '.rodape']
+                  .map(s => [s, fam(s)]),
+                num: ['.ind .big', '.obox b', '.card .n', '.ind .cl > div', '.card .x b', '.ind .acao'].map(s => [s, num(s)])};
+      });
+      assert.ok(r.check && r.carregada, `${aba}: Source Serif 4 carregada`);
+      for(const [s, fams] of r.serif){
+        assert.ok(fams.length > 0, `${aba}: nenhum ${s}`);
+        for(const f of fams) assert.match(f, SERIF, `${aba} ${s}`);
+      }
+      for(const [s, fams] of r.inter) for(const f of fams) assert.match(f, /^Inter,/, `${aba} ${s}`);
+      for(const [s, ns] of r.num) for(const n of ns) assert.match(n, /lining-nums tabular-nums/, `${aba} ${s}: ${n}`);
+    }
+    const serif = pedidos.filter(u => /source-serif/i.test(u));
+    assert.deepEqual(serif.map(u => new URL(u).pathname), ['/assets/fonts/source-serif-4-latin-wght-normal.woff2']);
+    assert.ok(pedidos.every(u => new URL(u).host === 'painel.test' || /cdnjs\.cloudflare\.com/.test(u)), 'nenhuma fonte de fora');
+    for(const f of ['source-serif-4-latin-wght-normal.woff2', 'OFL-source-serif-4.txt'])
+      assert.ok(fs.existsSync(path.join(FRONT, 'assets', 'fonts', f)), f);
+    const css = fs.readFileSync(path.join(FRONT, 'css', 'app.css'), 'utf-8');
+    const face = css.match(/@font-face\{font-family:'Source Serif 4';[^}]*\}/);
+    assert.ok(face, '@font-face da Source Serif 4');
+    assert.match(face[0], /font-display:swap/);
+    assert.match(face[0], /font-weight:200 900/);
+    const range = t => t.match(/unicode-range:([^;}]*)/)[1].replace(/\s+/g, '');
+    assert.equal(range(face[0]), range(css.match(/@font-face\{font-family:'Inter';[^}]*\}/)[0]), 'mesmo unicode-range latin da Inter');
+    // toda fonte do CSS vem de assets/fonts (nada de CDN nem Google Fonts)
+    const urls = (css.match(/@font-face\{[^}]*\}/g) || []).flatMap(f => f.match(/url\([^)]*\)/g));
+    assert.ok(urls.length >= 6 && urls.every(u => /^url\(\.\.\/assets\/fonts\/[\w-]+\.woff2\)$/.test(u)), urls.join(' '));
+    assert.ok(!/fonts\.(googleapis|gstatic)/.test(css + fs.readFileSync(path.join(FRONT, 'index.html'), 'utf-8')));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('entrada, gaveta, Resumo, PDF do Resumo e Painel de Ritmo continuam em Inter', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null});
+    const todasInter = sel => page.evaluate(s => [...new Set([...document.querySelectorAll(s)]
+      .map(e => getComputedStyle(e).fontFamily))].filter(f => !/^Inter,/.test(f)), sel);
+    assert.deepEqual(await todasInter('#entrada, #entrada *'), [], 'entrada');
+    await entra(page, 'gc');
+    // gaveta: todos os níveis da cascata do 1º card de volume e as listas Base e Sem compra
+    await filtra(page, {aba: 'VOLUME'});
+    await page.click('#lista .ind[data-k]');
+    for(let nivel = 0; nivel < 4; nivel++){
+      await page.waitForTimeout(40);
+      assert.deepEqual(await todasInter('#drw, #drw *'), [], `gaveta nível ${nivel}`);
+      if(!(await page.$('#dCorpo .cLin[data-i]'))) break;
+      await page.click('#dCorpo .cLin[data-i]');
+    }
+    await page.keyboard.press('Escape');
+    for(const id of ['cBase', 'cSem']){
+      await page.click('#' + id);
+      await page.waitForTimeout(40);
+      assert.deepEqual(await todasInter('#drw, #drw *'), [], id);
+      await page.keyboard.press('Escape');
+    }
+    // Resumo e o PDF dele (bibliotecas simuladas: a fonte de cada elemento capturado)
+    await page.click('#btnResumo');
+    await page.waitForSelector('#rsFolha h2');
+    assert.deepEqual(await todasInter('#rsFolha, #rsFolha *'), [], 'Resumo');
+    await page.evaluate(() => {
+      window.__fam = null;
+      window.html2canvas = async (el, op) => {
+        window.__fam = [...new Set([el, ...el.querySelectorAll('*')].map(e => getComputedStyle(e).fontFamily))];
+        if(op.onclone) op.onclone(document);
+        const c = document.createElement('canvas'); c.width = 10; c.height = 10; return c;
+      };
+      window.jspdf = {jsPDF: function(){ return {addPage(){}, addImage(){}, setProperties(){}, output: () => new Blob(['%PDF'])}; }};
+    });
+    await page.click('#rsImg');
+    await page.waitForFunction(() => /PDF salvo/.test(document.getElementById('rsToast').textContent));
+    assert.deepEqual((await page.evaluate(() => window.__fam)).filter(f => !/^Inter,/.test(f)), [], 'PDF do Resumo');
+    await page.click('#rsVoltar');
+    // Painel de Ritmo: a página desenhada fora da tela
+    await page.evaluate(() => {
+      window.__fam = [];
+      window.html2canvas = async el => {
+        window.__fam.push(...[el, ...el.querySelectorAll('*')].map(e => getComputedStyle(e).fontFamily));
+        const c = document.createElement('canvas'); c.width = 12; c.height = 7; return c;
+      };
+    });
+    await page.click('#btnRitmo');
+    await page.waitForFunction(() => !document.getElementById('btnRitmo').hasAttribute('aria-busy') &&
+      document.getElementById('rtAviso').textContent !== '');
+    const famRt = await page.evaluate(() => window.__fam);
+    assert.ok(famRt.length > 0, 'Painel de Ritmo capturado');
+    assert.deepEqual([...new Set(famRt)].filter(f => !/^Inter,/.test(f)), [], 'Painel de Ritmo');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [1440, 390]){
+    test(`${largura} px: fundo dos cards como antes, faixa lateral na cor do status, escala dos cards`, async () => {
+      const {page, ctx, erros} = await abre('normal', {largura, altura: 900});
+      const gc = await page.evaluate(() => sel.gc);
+      const rotas = await page.evaluate(() => rotasDe(sel.gc, ''));
+      const vistos = new Set();
+      for(const fator of [0.2, 1.5]){
+        await ritmo(page, gc, rotas, fator);
+        for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG']){
+          await filtra(page, {aba});
+          for(const c of await page.evaluate(ESTILO_CARDS)){
+            const onde = `${aba} ${c.k} x${fator}`;
+            if(c.off){
+              vistos.add('off');
+              assert.equal(c.bg, COR.off, onde);
+              assert.equal(c.faixa[0], '0px', `${onde}: card indisponível sem faixa`);
+              assert.equal(c.padL, largura >= 640 ? 15 : 12, onde);
+              continue;
+            }
+            vistos.add(c.ok ? 'ok' : 'no');
+            assert.equal(c.bg, c.ok ? COR.menta : COR.rosa, `${onde}: fundo`);
+            assert.deepEqual(c.faixa, ['5px', 'solid', c.ok ? COR.verde : COR.ruim], `${onde}: faixa`);
+            // o padding esquerdo desconta a faixa: o conteúdo começa onde começava
+            assert.equal(c.padL + 5, largura >= 640 ? 15 : 12, `${onde}: padding esquerdo`);
+            // escala dos cards (referência: título 15, Meta/Real/Diferença 11,5, % até 25, "no ritmo/faltam" 12,5,
+            // oportunidades 11, Online até 19 e rótulos do Online 9,5)
+            assert.equal(c.tit.px, 15, onde);
+            assert.equal(c.cl.px, 11.5, onde);
+            assert.ok(c.big.px <= 25 && c.big.px >= 18, `${onde}: % ${c.big.px}`);
+            assert.equal(c.acao.px, 12.5, onde);
+            if(c.opo) assert.equal(c.opo.px, 11, onde);
+            assert.equal(c.olab.px, 9.5, onde);
+            assert.ok(c.on.px <= 19 && c.on.px >= 10, `${onde}: Online ${c.on.px}`);
+            assert.equal(c.onRot.px, 9.5, onde);
+          }
+        }
+      }
+      assert.ok(vistos.has('ok') && vistos.has('no'), [...vistos].join());
+      // grade: 3 colunas em 1440 px; no celular, uma
+      const colunas = await page.evaluate(() => getComputedStyle(document.getElementById('lista')).display === 'grid'
+        ? getComputedStyle(document.getElementById('lista')).gridTemplateColumns.split(' ').length : 1);
+      assert.equal(colunas, largura === 1440 ? 3 : 1);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test('fundo dos cards igual ao do front de antes da Etapa 2 (mesmo cenário, CSS da main de 21/10)', {skip: !CSS_ANTES_ETAPA2 && `sem o commit ${REF_ETAPA2}`}, async () => {
+    const [novo, velho] = [await abre('normal'), await abre('normal', {troca: {'/css/app.css': () => CSS_ANTES_ETAPA2}})];
+    for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG']){
+      for(const {page} of [novo, velho]) await filtra(page, {aba});
+      const [a, b] = await Promise.all([novo.page.evaluate(ESTILO_CARDS), velho.page.evaluate(ESTILO_CARDS)]);
+      assert.deepEqual(a.map(c => [c.k, c.off, c.ok, c.bg]), b.map(c => [c.k, c.off, c.ok, c.bg]), aba);
+      const txt = p => p.$$eval('#lista .ind, .cards .card', els => els.map(e => e.innerText.replace(/\s+/g, ' ').trim()));
+      assert.deepEqual(await txt(novo.page), await txt(velho.page), `${aba}: textos dos cards`);
+    }
+    assert.deepEqual(novo.erros, []);
+    await novo.ctx.close(); await velho.ctx.close();
+  });
+
+  test('1440 px: Diretoria e grupo em 3 colunas, sem rolagem lateral', async () => {
+    for(const [dados, entrar] of [['normal', 'dir'], ['grupo', {perfil: 'gc', gc: 'IT+MO'}]]){
+      const {page, ctx, erros} = await abre(dados, {largura: 1440, altura: 900, entrar});
+      await medidas(page);
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG']){
+        await filtra(page, {aba});
+        const r = await page.evaluate(() => ({col: getComputedStyle(document.getElementById('lista')).gridTemplateColumns.split(' ').length,
+          tops: new Set([...document.querySelectorAll('#lista .ind')].slice(0, 3).map(e => Math.round(e.getBoundingClientRect().top))).size,
+          est: __vis.estouros('.cards .card, #lista .ind')}));
+        assert.equal(r.col, 3, `${aba}: colunas`);
+        assert.equal(r.tops, 1, `${aba}: os 3 primeiros cards na mesma linha`);
+        assert.deepEqual(r.est, [], aba);
+        assert.ok(await semRolagemLateral(page), aba);
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  for(const largura of [360, 390]){
+    test(`${largura} px: nenhum texto cortado nos cards e nos cards do topo, nos 4 painéis e com números grandes`, async () => {
+      for(const [dados, entrar] of [['inc', {perfil: 'gc', gc: 'IT+MO'}], ['grande', 'dir'], ['normal', {perfil: 'sv', gc: 'G2', sv: '1'}]]){
+        const {page, ctx, erros} = await abre(dados, {largura, altura: 900, entrar});
+        await medidas(page);
+        await page.evaluate(() => document.fonts.ready);
+        for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          if(!(await page.$(`.tab[data-g="${aba}"]:not([hidden])`))) continue;
+          await filtra(page, {aba});
+          assert.deepEqual(await page.evaluate(() => __vis.estouros('.cards .card, #lista .ind, #puxa')), [], `${dados} ${aba}`);
+          assert.ok(await semRolagemLateral(page), `${dados} ${aba}: rolagem lateral`);
+        }
+        assert.deepEqual(erros, []);
+        await ctx.close();
+      }
     });
   }
 });
