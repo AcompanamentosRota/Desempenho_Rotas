@@ -737,7 +737,7 @@ function linhaGrupo(g, m, k, i){
     <div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
     <div class="cEsq"><span>Meta ${f(b.meta)}</span><span>Real ${f(b.real)}</span></div>
     <div class="cMeio">${meio}</div>
-    <div class="cDir"><b data-fit="" data-fit-min="16">${dir==null?'—':dir+'%'}</b><small>${rot}</small></div></div>`;
+    <div class="cDir"><b>${dir==null?'—':dir+'%'}</b><small>${rot}</small></div></div>`;
 }
 
 // subtítulo da gaveta (número do card do nível)
@@ -783,7 +783,6 @@ function pintaCascata(){
     }));
   }
   if($('cVolta')) $('cVolta').onclick = () => { pilha.pop(); pintaCascata(); };
-  encaixa($('dCorpo'));
   $('dCorpo').scrollTop = 0;
 }
 
