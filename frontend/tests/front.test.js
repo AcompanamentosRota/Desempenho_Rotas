@@ -138,8 +138,10 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()). */
 async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entrar = 'gc', busca = '', fuso, antes,
-                           troca = {}} = {}){
-  const ctx = await browser.newContext({viewport: {width: largura, height: altura}, ...(fuso ? {timezoneId: fuso} : {})});
+                           troca = {}, toque = false} = {}){
+  // toque = tela de toque (page.tap; os ponteiros chegam como pointerType 'touch')
+  const ctx = await browser.newContext({viewport: {width: largura, height: altura}, ...(fuso ? {timezoneId: fuso} : {}),
+                                        ...(toque ? {hasTouch: true} : {})});
   const page = await ctx.newPage();
   const erros = [], fonte = {nome};     // fonte.nome pode mudar no meio do teste (payload novo)
   page.on('pageerror', e => erros.push(String(e)));
@@ -204,11 +206,18 @@ async function filtra(page, {gc, sv = '', rota = '', aba} = {}){
 }
 
 /* opções dos selects de supervisão e de rota */
+/* abre a gaveta de um card do topo (Base, Sem compra) pelo clique do próprio elemento: desde a Etapa 4 os dois só
+   aparecem com supervisão ou rota no filtro, mas a gaveta é a mesma em qualquer escopo */
+const abreCardTopo = (page, id) => page.evaluate(id => document.getElementById(id).click(), id.replace(/^#/, ''));
 const opcoes = page => page.evaluate(() => ({
   sv: [...document.querySelectorAll('#fsv option')].map(o => o.value).filter(Boolean),
   rota: [...document.querySelectorAll('#frota option')].map(o => o.value).filter(Boolean),
 }));
 /* Põe o real de todos os indicadores das rotas em `fator` x meta (cobertura e tendência de volume). */
+/* "puxa a média" (quadro de destaque desde a Etapa 4: título, nome em vermelho, "x de n indicadores no ritmo"): devolve
+   "<título>: <nome>" (o texto de antes) ou '' sem o quadro */
+const puxaTxt = page => page.evaluate(() => { const t = document.querySelector('#puxa .t'), b = document.querySelector('#puxa .s b');
+  return t ? `${t.textContent}: ${b.textContent}` : ''; });
 const ritmo = (page, gc, rotas, fator) => page.evaluate(([gc, rotas, fator]) => rotas.forEach(r => {
   for(const b of Object.values(nodo(gc, r).indicators)){
     if(b.unavailable || b.meta == null) continue;
@@ -302,12 +311,12 @@ describe('Parte B — Neutraliza e virtuais por rota, ocultas, AT e Del Valle Fr
     // controle: com uma supervisão abaixo, ela aparece
     await ritmo(page, 'G1', ['G111'], 0);
     await filtra(page, {gc: 'G1'});
-    assert.match(await page.textContent('#puxa'), /Supervisão que mais puxa a média para baixo: SV\.G1\.1/);
+    assert.match(await puxaTxt(page), /Supervisão que mais puxa a média para baixo: SV\.G1\.1/);
     // AT: a 411 entra na comparação das rotas da SV.AT.1
     await ritmo(page, 'AT', ['AT12'], 1);
     await ritmo(page, 'AT', ['411'], 0);
     await filtra(page, {gc: 'AT', sv: 'SV.AT.1'});
-    assert.match(await page.textContent('#puxa'), /Rota que mais puxa a média para baixo: Rota 411/);
+    assert.match(await puxaTxt(page), /Rota que mais puxa a média para baixo: Rota 411/);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -939,7 +948,7 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
       await ritmo(page, gc, rotas, gc === 'MO' ? 0 : 1);
     }
     await filtra(page, {});
-    assert.match(await page.textContent('#puxa'), /Gerência que mais puxa a média para baixo: GC\.MO · Morrinhos/);
+    assert.match(await puxaTxt(page), /Gerência que mais puxa a média para baixo: GC\.MO · Morrinhos/);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -989,7 +998,7 @@ describe('Parte G — sem regiões, nomes e ordem das gerências, filtro da Dire
     await ritmo(page, 'G2', await page.evaluate(() => rotasDe('G2', '')), 1);
     await ritmo(page, 'G2', ['G211', 'G212'], 0);
     await filtra(page, {});
-    assert.match(await page.textContent('#puxa'), /Supervisão que mais puxa a média para baixo: SV\.G2\.1/);
+    assert.match(await puxaTxt(page), /Supervisão que mais puxa a média para baixo: SV\.G2\.1/);
     // Resumo: o da G2 (gerência + supervisões)
     await page.click('#btnResumo');
     assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · GC.G2 · Goiânia 02');
@@ -1081,11 +1090,11 @@ describe('Parte S — SEM_COMPRA_MES (chave nova e opcional do payload)', {skip:
     for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
       if(await page.isHidden(`.tab[data-g="${aba}"]`)) continue;
       await filtra(page, {aba});
-      out.push(await page.evaluate(() => [document.querySelector('.cards').innerText, document.getElementById('puxa').innerText,
+      out.push(await page.evaluate(() => [document.getElementById('abaTopo').innerText, document.getElementById('puxa').innerText,
                                            document.getElementById('lista').innerText]));
     }
     for(const card of ['#cBase', '#cSem']){
-      await page.click(card);
+      await abreCardTopo(page, card);
       out.push(await page.evaluate(() => [document.getElementById('dTit').textContent, document.getElementById('dSub').textContent,
                                            document.getElementById('dCorpo').innerText]));
       await page.keyboard.press('Escape');
@@ -1397,7 +1406,7 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
     await ritmo(page, 'IT', await page.evaluate(() => rotasDe('IT+MO', '')), 1);
     await ritmo(page, 'MO', ['MO21', 'MO22'], 0);
     await filtra(page, {});
-    assert.match(await page.textContent('#puxa'), /Supervisão que mais puxa a média para baixo: SV\.MO\.2/);
+    assert.match(await puxaTxt(page), /Supervisão que mais puxa a média para baixo: SV\.MO\.2/);
     // uma das duas no seletor: tudo filtrado para ela (cards, filtros, cascata, cabeçalho)
     for(const [gc, svs, linhas, notas] of [
       ['MO', ['SV.MO.1', 'SV.MO.2', 'Neutraliza'], ['SV.MO.1 · Supervisor', 'SV.MO.2 · Supervisor', 'Neutraliza'],
@@ -1504,7 +1513,7 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
     await ritmo(page, 'G2', ['G212'], 1);
     await ritmo(page, 'G2', ['G211'], 0);
     await filtra(page, {});
-    assert.match(await page.textContent('#puxa'), /Rota que mais puxa a média para baixo: Rota G211/);
+    assert.match(await puxaTxt(page), /Rota que mais puxa a média para baixo: Rota G211/);
     await page.click('#btnResumo');
     assert.equal(await page.textContent('#rsFolha h2'), 'Resumo de vendas · SV.G2.1');
     assert.deepEqual((await colunasRs(page)).map(c => c[0]), ['Agrupador', 'SV.G2.1', 'G211', 'G212']);
@@ -2823,20 +2832,26 @@ describe('Parte M — visual', {skip: pular}, () => {
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         await filtra(page, {aba});
         assert.ok(await semRolagemLateral(page), `${aba}: rolagem lateral`);
-        assert.deepEqual(await page.evaluate(() => __vis.estouros('.cards .card, #lista .ind, #puxa, .rsBox, .topo, .barra')), [], aba);
+        assert.deepEqual(await page.evaluate(() => __vis.estouros('#abaTopo, #lista .ind, #puxa, .rsBox, .topo, .barra')), [], aba);
         const alt = await page.evaluate(() => {
           const px = v => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v));
           const cards = [...document.querySelectorAll('#lista .ind')].map(el => ({top: Math.round(el.getBoundingClientRect().top),
             h: el.getBoundingClientRect().height, tipo: el.classList.contains('off') ? 'off' : el.classList.contains('vol') ? 'vol' : 'cob'}));
           return {cards, minVol: px('--h-card-vol'), minCob: px('--h-card-cob'), minKpi: px('--h-kpi'),
-                  kpi: [...document.querySelectorAll('.cards .card')].map(el => el.getBoundingClientRect().height)};
+                  kpi: [...document.querySelectorAll('#abaTopo .card')].filter(el => el.getClientRects().length)
+                    .map(el => ({top: Math.round(el.getBoundingClientRect().top), h: el.getBoundingClientRect().height}))};
         });
         // mesmo tipo na mesma linha da grade = mesma altura; nenhum card com conteúdo abaixo do mínimo do tipo
         const porLinha = {};
         for(const c of alt.cards) (porLinha[`${c.top}|${c.tipo}`] = porLinha[`${c.top}|${c.tipo}`] || []).push(c.h);
         for(const [k, hs] of Object.entries(porLinha)) assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `${aba} ${k}: ${hs}`);
         for(const c of alt.cards) if(c.tipo !== 'off') assert.ok(c.h >= (c.tipo === 'vol' ? alt.minVol : alt.minCob) - .5, `${aba} ${c.tipo} ${c.h}`);
-        assert.ok(Math.max(...alt.kpi) - Math.min(...alt.kpi) <= 1 && Math.min(...alt.kpi) >= alt.minKpi - .5, `${aba} KPIs ${alt.kpi}`);
+        // cards do topo (o de ritmo; Base e Sem compra com supervisão ou rota): mesma altura na mesma linha, nenhum abaixo do mínimo
+        assert.ok(alt.kpi.length > 0, `${aba}: nenhum card do topo`);
+        const kpiLinha = {};
+        for(const c of alt.kpi) (kpiLinha[c.top] = kpiLinha[c.top] || []).push(c.h);
+        for(const [k, hs] of Object.entries(kpiLinha)) assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `${aba} KPIs ${k}: ${hs}`);
+        assert.ok(Math.min(...alt.kpi.map(c => c.h)) >= alt.minKpi - .5, `${aba} KPIs ${JSON.stringify(alt.kpi)}`);
         // cascata do 1º card até os clientes: linhas e listas sem texto cortado (a aparência é a de antes do ajuste
         // visual, conferida na Parte N)
         const k = await page.$eval('#lista .ind[data-k]', el => el.dataset.k);
@@ -3099,7 +3114,7 @@ describe('Parte T — fonte dos números e cards (Etapa 2)', {skip: pular}, () =
     }
     await page.keyboard.press('Escape');
     for(const id of ['cBase', 'cSem']){
-      await page.click('#' + id);
+      await abreCardTopo(page, id);
       await page.waitForTimeout(40);
       assert.deepEqual(await todasInter('#drw, #drw *'), [], id);
       await page.keyboard.press('Escape');
@@ -3192,7 +3207,7 @@ describe('Parte T — fonte dos números e cards (Etapa 2)', {skip: pular}, () =
       for(const {page} of [novo, velho]) await filtra(page, {aba});
       const [a, b] = await Promise.all([novo.page.evaluate(ESTILO_CARDS), velho.page.evaluate(ESTILO_CARDS)]);
       assert.deepEqual(a.map(c => [c.k, c.off, c.ok, c.bg]), b.map(c => [c.k, c.off, c.ok, c.bg]), aba);
-      const txt = p => p.$$eval('#lista .ind, .cards .card', els => els.map(e => e.innerText.replace(/\s+/g, ' ').trim()));
+      const txt = p => p.$$eval('#lista .ind', els => els.map(e => e.innerText.replace(/\s+/g, ' ').trim()));
       assert.deepEqual(await txt(novo.page), await txt(velho.page), `${aba}: textos dos cards`);
     }
     assert.deepEqual(novo.erros, []);
@@ -3207,7 +3222,7 @@ describe('Parte T — fonte dos números e cards (Etapa 2)', {skip: pular}, () =
         await filtra(page, {aba});
         const r = await page.evaluate(() => ({col: getComputedStyle(document.getElementById('lista')).gridTemplateColumns.split(' ').length,
           tops: new Set([...document.querySelectorAll('#lista .ind')].slice(0, 3).map(e => Math.round(e.getBoundingClientRect().top))).size,
-          est: __vis.estouros('.cards .card, #lista .ind')}));
+          est: __vis.estouros('#abaTopo, #lista .ind')}));
         assert.equal(r.col, 3, `${aba}: colunas`);
         assert.equal(r.tops, 1, `${aba}: os 3 primeiros cards na mesma linha`);
         assert.deepEqual(r.est, [], aba);
@@ -3227,7 +3242,7 @@ describe('Parte T — fonte dos números e cards (Etapa 2)', {skip: pular}, () =
         for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
           if(!(await page.$(`.tab[data-g="${aba}"]:not([hidden])`))) continue;
           await filtra(page, {aba});
-          assert.deepEqual(await page.evaluate(() => __vis.estouros('.cards .card, #lista .ind, #puxa')), [], `${dados} ${aba}`);
+          assert.deepEqual(await page.evaluate(() => __vis.estouros('#abaTopo, #lista .ind, #puxa')), [], `${dados} ${aba}`);
           assert.ok(await semRolagemLateral(page), `${dados} ${aba}: rolagem lateral`);
         }
         assert.deepEqual(erros, []);
@@ -3354,7 +3369,7 @@ describe('Parte N — cascata como antes do ajuste visual, só com a Inter', {sk
             const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))).slice(0, n);
             for(const k of ks) await desce(p => p.click(`#lista .ind[data-k="${k}"]`), `${c.nome} ${tema} ${aba} ${k}`);
           }
-          if(c.topo) for(const id of ['cBase', 'cSem']) await desce(p => p.click('#' + id), `${c.nome} ${tema} ${id}`);
+          if(c.topo) for(const id of ['cBase', 'cSem']) await desce(p => abreCardTopo(p, id), `${c.nome} ${tema} ${id}`);
           assert.deepEqual(novo.erros, []);
           await novo.ctx.close(); await velho.ctx.close();
         }
@@ -4137,7 +4152,8 @@ describe('Parte U — layout: painel lateral no PC e topo compacto no celular (E
         assert.equal(await page.evaluate(() => aba), aba);
         assert.ok(await semRolagemLateral(page), `${aba}: rolagem lateral`);
         // os cards não passam por baixo do painel
-        assert.ok(await page.evaluate(l => [...document.querySelectorAll('#lista .ind, .cards .card, .rsBox, .rodape')]
+        assert.ok(await page.evaluate(l => [...document.querySelectorAll('#lista .ind, #abaTopo .card, #abaTopo .busca, .rsBox, .rodape')]
+          .filter(el => el.getClientRects().length)
           .every(el => el.getBoundingClientRect().left >= l), LADO_ABERTO), `${aba}: conteúdo sob o painel`);
       }
       await medidas(page);
@@ -4364,6 +4380,339 @@ describe('Parte U — layout: painel lateral no PC e topo compacto no celular (E
         assert.equal(await page.evaluate(() => localStorage.getItem('drotas_sessao')), null, 'casa apaga o acesso');
         assert.equal(await page.evaluate(() => localStorage.getItem('drotas_lado')), antes.l, 'casa não mexe no painel lateral');
         assert.deepEqual(semErrosDeRede(erros), []);
+        await ctx.close();
+      }
+    });
+  }
+});
+
+/* ---------- Parte V — cabeçalho das abas (Etapa 4) ----------
+   Nome da aba + etiqueta do dia com a caixa de comentário (mouse, teclado e toque); linha de resumo com o card de ritmo,
+   o "puxa a média" (quadro de destaque) e a busca; Base e Sem compra só com supervisão (ou "Neutraliza") ou rota no
+   filtro, com três cards lado a lado sem o "puxa a média" (a Rota); filtro rápido dos cards. Os números do cabeçalho, os
+   cards e a ficha da busca são comparados com o front de antes da Etapa 4 (index.html, CSS e app.js do REF_ETAPA4,
+   servidos por `troca`; sem o histórico do git, esse teste é pulado). */
+const REF_ETAPA4 = 'a70a2c3';
+const FRONT_ETAPA3 = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_ETAPA4}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
+    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+  } catch(e) { return null; }
+})();
+// números do cabeçalho da aba, lidos do mesmo jeito nos dois fronts
+const CABECALHO = () => {
+  const $ = id => document.getElementById(id), txt = id => $(id).textContent.replace(/\s+/g, ' ').trim();
+  const t = document.querySelector('#puxa .t'), s = document.querySelector('#puxa .s');
+  let puxa = null;
+  if(t){
+    // antes: "<Nível> que mais puxa a média para baixo: <b>nome</b>" e "x de n indicadores na meta"; agora: o título, o
+    // nome em vermelho e "x de n indicadores no ritmo"
+    const m = s.textContent.match(/(\d+) de (\d+) indicadores/);
+    puxa = {quem: t.textContent.match(/^(\S+) que mais puxa a média para baixo/)[1],
+            nome: (s.querySelector('b') || t.querySelector('b')).textContent, ok: +m[1], tot: +m[2]};
+  }
+  const st = $('stRitmo'), semHoje = $('xSem').querySelector('b.no');
+  return {rotulo: txt('lRitmo'), n: txt('nRitmo'), cls: $('nRitmo').className.trim(), x: txt('xRitmo'),
+          status: st.hidden ? null : st.textContent.replace(/\s+/g, ' ').trim(), puxa,
+          base: txt('nBase'), lSem: txt('lSem'), sem: txt('nSem'), semCls: $('nSem').className.trim(),
+          visitas: ($('xBase').querySelector('b') || {}).textContent, semHoje: semHoje ? semHoje.textContent : txt('xSem'),
+          lista: [...document.querySelectorAll('#lista .ind')].map(e => e.innerText.replace(/\s+/g, ' ').trim())};
+};
+// mesma variedade de ritmo nos dois fronts: as rotas, em ordem, com 0, 50% e 150% da meta (coberturas e tendência)
+const variedade = page => page.evaluate(() => Object.keys(ROTA_IDX).sort().forEach((r, i) => {
+  for(const b of Object.values(nodo('', r).indicators)){
+    if(b.unavailable || b.meta == null) continue;
+    const f = [0, 0.5, 1.5][i % 3];
+    b.real = b.meta * f;
+    if(b.tendencia != null) b.tendencia = b.meta * f;
+  }
+}));
+const geometria = page => page.evaluate(() => {
+  const b = s => { const e = document.querySelector(s); return e && e.getClientRects().length ? e.getBoundingClientRect().toJSON() : null; };
+  return {base: b('#cBase'), sem: b('#cSem'), rit: b('#cRitmo'), puxa: b('#puxa'), busca: b('#abaTopo .busca'), cli: b('#cli'),
+          chips: b('#abFil'), lista: b('#lista'), sec: b('#abaTopo'), st: b('#stRitmo'), tit: document.getElementById('abTit').textContent,
+          aba: document.querySelector(`.tab[data-g="${aba}"]`).title, rotulo: document.getElementById('lRitmo').textContent};
+});
+const perto = (a, b, tol = 1) => Math.abs(a - b) <= tol;
+
+describe('Parte V — cabeçalho das abas (Etapa 4)', {skip: pular}, () => {
+  const PERFIS_V = [
+    {nome: 'Diretoria', entrar: 'dir', base: false},
+    {nome: 'Gerência G1', entrar: {perfil: 'gc', gc: 'G1'}, base: false},
+    {nome: 'grupo IT+MO', entrar: {perfil: 'gc', gc: 'IT+MO'}, base: false},
+    {nome: 'Gerência G1 · Neutraliza no filtro', entrar: {perfil: 'gc', gc: 'G1'}, sv: 'Neutraliza', base: true},
+    {nome: 'Gerência G2 · SV.G2.1 no filtro', entrar: {perfil: 'gc', gc: 'G2'}, sv: 'SV.G2.1', base: true},
+    {nome: 'Supervisão', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, base: true},
+    {nome: 'Rota', entrar: {perfil: 'rota', gc: 'G2', rota: 'G211'}, base: true},
+  ];
+
+  test('números do cabeçalho iguais aos do front de antes (ritmo x / n, "puxa a média", Base, Sem compra, visitas); cards e ficha da busca iguais', {skip: !FRONT_ETAPA3 && `sem o commit ${REF_ETAPA4}`}, async () => {
+    const vistos = new Set();
+    for(const c of PERFIS_V){
+      const [novo, velho] = [await abre('inc', {entrar: c.entrar, largura: 1280}),
+                             await abre('inc', {entrar: c.entrar, largura: 1280, troca: FRONT_ETAPA3})];
+      for(const {page} of [novo, velho]){
+        await variedade(page);
+        if(c.sv) await filtra(page, {gc: await page.evaluate(() => sel.gc), sv: c.sv});
+      }
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        const onde = `${c.nome} ${aba}`;
+        const [a, b] = [await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO)];
+        // só o rótulo do card de ritmo do Volume muda ("Categorias na tendência", mesma regra)
+        assert.deepEqual(a, {...b, rotulo: aba === 'VOLUME' ? 'Categorias na tendência' : b.rotulo}, onde);
+        if(a.puxa) vistos.add(a.puxa.quem);
+        if(a.status) vistos.add('status');
+        // Base e Sem compra só com supervisão (ou "Neutraliza") ou rota no filtro
+        assert.deepEqual([await novo.page.isVisible('#cBase'), await novo.page.isVisible('#cSem')], [c.base, c.base], onde);
+      }
+      // busca: a mesma ficha (a lógica não mudou), agora logo abaixo da linha de resumo
+      for(const aba of ['VOLUME', 'ICS_GC', 'INCENTIVO']){
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        const pv = await novo.page.evaluate(() => { const r = rotasVisiveis().find(x => (CLIENT_ROSTER[x] || []).length);
+          return r ? String(CLIENT_ROSTER[r][0][0]) : ''; });
+        for(const {page} of [novo, velho]) await page.fill('#q', pv);
+        const cli = p => p.evaluate(() => document.getElementById('cli').innerHTML.replace(/ style="[^"]*"/g, ''));
+        const [x, y] = [await cli(novo.page), await cli(velho.page)];
+        assert.match(x, /class="cli"/, `${c.nome} ${aba}: ficha`);
+        assert.equal(x, y, `${c.nome} ${aba}: ficha do cliente`);
+        for(const {page} of [novo, velho]) await page.fill('#q', '');
+      }
+      assert.deepEqual(novo.erros, [], c.nome);
+      await novo.ctx.close(); await velho.ctx.close();
+    }
+    for(const t of ['Gerência', 'Supervisão', 'Rota', 'status']) assert.ok(vistos.has(t), `nenhum caso com ${t}`);
+  });
+
+  for(const largura of [1440, 390]){
+    test(`${largura} px: título da aba, linha de resumo (ritmo | "puxa a média" | busca), Base e Sem compra só com supervisão ou rota, Rota com 3 cards, Todos a Bordo com Status, ficha logo abaixo`, async () => {
+      const pc = largura >= 1000;
+      for(const c of [{nome: 'Diretoria', entrar: 'dir', base: false, zera: () => rotasDe('G1', '')},
+                      {nome: 'Gerência', entrar: {perfil: 'gc', gc: 'G1'}, base: false, zera: () => rotasDe('G1', 'SV.G1.1')},
+                      {nome: 'Supervisão', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, base: true, zera: () => ['G211']},
+                      {nome: 'Rota', entrar: {perfil: 'rota', gc: 'G2', rota: 'G211'}, base: true, zera: () => []}]){
+        const {page, ctx, erros} = await abre('inc', {largura, altura: 900, entrar: c.entrar});
+        await medidas(page);
+        // todas as rotas no ritmo e uma unidade zerada: "puxa a média" nas abas de volume e coberturas (menos na Rota)
+        await ritmo(page, '', await page.evaluate(() => Object.keys(ROTA_IDX)), 1);
+        await ritmo(page, '', await page.evaluate(`(${c.zera})()`), 0);
+        for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          await filtra(page, {aba});
+          const onde = `${c.nome} ${aba}`, g = await geometria(page);
+          assert.equal(g.tit, g.aba, `${onde}: título`);
+          const temPuxa = aba !== 'INCENTIVO' && c.nome !== 'Rota';
+          assert.equal(!!g.puxa, temPuxa, `${onde}: "puxa a média"`);
+          assert.equal(!!g.base && !!g.sem, c.base, `${onde}: Base e Sem compra`);
+          if(!c.base) assert.ok(!g.base && !g.sem, `${onde}: sem Base e Sem compra`);
+          if(c.base && !temPuxa){
+            // três cards lado a lado (Base, Sem compra e o de ritmo) e a busca sozinha na linha de baixo
+            assert.ok(perto(g.base.top, g.rit.top) && perto(g.sem.top, g.rit.top), `${onde}: 3 cards na mesma linha`);
+            assert.ok(g.base.right <= g.sem.left && g.sem.right <= g.rit.left, `${onde}: Base | Sem compra | ritmo`);
+            assert.ok(perto(g.base.width, g.rit.width) && perto(g.sem.width, g.rit.width), `${onde}: mesma largura`);
+            assert.ok(g.busca.top >= g.rit.bottom && perto(g.busca.width, g.sec.width), `${onde}: busca na linha de baixo`);
+          } else {
+            if(c.base) assert.ok(g.base.bottom <= g.rit.top && perto(g.base.top, g.sem.top), `${onde}: Base e Sem compra acima da linha`);
+            if(temPuxa) assert.ok(perto(g.puxa.top, g.rit.top) && g.puxa.left >= g.rit.right, `${onde}: ritmo | puxa`);
+            if(pc){
+              // 260 px | 1fr | 1.1fr
+              assert.ok(perto(g.rit.width, 260), `${onde}: card de ritmo ${g.rit.width}`);
+              assert.ok(perto(g.busca.top, g.rit.top) && g.busca.left >= (temPuxa ? g.puxa : g.rit).right, `${onde}: busca na linha`);
+              if(temPuxa) assert.ok(g.busca.width > g.puxa.width, `${onde}: 1fr | 1.1fr`);
+            } else {
+              assert.ok(g.busca.top >= g.rit.bottom && perto(g.busca.width, g.sec.width), `${onde}: busca na linha inteira abaixo`);
+            }
+          }
+          if(temPuxa){
+            const p = await page.evaluate(() => { const b = document.querySelector('#puxa .s b'), ref = document.createElement('span');
+              ref.style.color = 'var(--vermelho2)'; document.body.appendChild(ref); const v = getComputedStyle(ref).color; ref.remove();
+              return {fi: document.querySelector('#puxa .fi').textContent, t: document.querySelector('#puxa .t').textContent,
+                      s: document.querySelector('#puxa .s').textContent, cor: getComputedStyle(b).color, vermelho: v}; });
+            assert.equal(p.fi, '!');
+            assert.match(p.t, /^(Gerência|Supervisão|Rota) que mais puxa a média para baixo$/, onde);
+            assert.match(p.s, /^.+ · \d+ de \d+ indicadores no ritmo$/, onde);
+            assert.equal(p.cor, p.vermelho, `${onde}: nome em vermelho`);
+          }
+          // Todos a Bordo: "Itens em 100%" com a linha Status (os itens com meta no escopo)
+          if(aba === 'INCENTIVO') assert.ok(g.rotulo === 'Itens em 100%' && g.st, `${onde}: Status`);
+          else assert.equal(g.rotulo, aba === 'VOLUME' ? 'Categorias na tendência' : 'Ritmo de coberturas', onde);
+          assert.ok(g.chips.top >= Math.max(g.busca.bottom, g.rit.bottom) && g.lista.top >= g.chips.bottom, `${onde}: filtro acima da grade`);
+          assert.deepEqual(await page.evaluate(() => __vis.estouros('#abaTopo')), [], onde);
+          assert.ok(await semRolagemLateral(page), `${onde}: rolagem lateral`);
+        }
+        // a ficha do cliente abre logo abaixo da linha de resumo (acima do filtro e da grade)
+        await filtra(page, {aba: 'VOLUME'});
+        const pv = await page.evaluate(() => String(CLIENT_ROSTER[rotasVisiveis().find(x => (CLIENT_ROSTER[x] || []).length)][0][0]));
+        await page.fill('#q', pv);
+        const g = await geometria(page);
+        assert.ok(g.cli && g.cli.top >= Math.max(g.busca.bottom, g.rit.bottom) && g.cli.bottom <= g.chips.top, `${c.nome}: ficha abaixo da linha`);
+        assert.deepEqual(await page.evaluate(() => __vis.estouros('#abaTopo')), [], `${c.nome}: ficha`);
+        assert.ok(await semRolagemLateral(page));
+        assert.deepEqual(erros, [], c.nome);
+        await ctx.close();
+      }
+    });
+  }
+
+  test('etiqueta do dia e caixa de comentário: PC (mouse acompanhando o cursor, teclado, ESC) e celular (toque, toque fora, rolar); um div.dica só', async () => {
+    let {page, ctx, erros} = await abre('normal', {largura: 1440, altura: 900});
+    const esperado = await page.evaluate(() => { const T = P.TOTAL_DIAS_UTEIS;
+      return {pc: `Dia útil ${P.DIA_HOJE} de ${T} · Semana ${P.SEMANA_NUM}`, cel: `${P.DIA_SEMANA} · Sem. ${P.SEMANA_NUM}`,
+        linhas: [`${P.DIA_SEMANA} · dia útil ${P.DIA_HOJE} de ${T}`, `Real até ontem: dia útil ${P.DIA_ONTEM}/${T} (${P.PACE_ONTEM_PCT}%)`,
+                 `Para entrar no ritmo hoje: ${Math.round(P.DIA_HOJE / T * 100)}%`, `Semana N°${P.SEMANA_NUM} (${P.SEMANA_TIPO})`,
+                 `Dias úteis pela frente, com hoje: ${T - P.DIA_HOJE + 1}`]}; });
+    const estado = () => page.evaluate(() => {
+      const ds = document.querySelectorAll('.dica'), d = ds[0], cs = d && getComputedStyle(d), r = d && d.getBoundingClientRect();
+      const pil = document.getElementById('pilDia'), vis = s => [...pil.querySelectorAll(s)].filter(e => e.getClientRects().length).map(e => e.textContent);
+      return {n: ds.length, on: !!d && d.classList.contains('on') && cs.visibility === 'visible',
+              linhas: d ? d.innerText.split('\n').map(x => x.trim()).filter(Boolean) : [],
+              emFoco: [...document.querySelectorAll('.emFoco')].map(e => e.id), foco: !!document.querySelector('#pilDia.foco, .dica.foco'),
+              desc: pil.getAttribute('aria-describedby'), etiqueta: vis('.pdL, .pdC'), i: vis('.pdI'),
+              css: d && {pos: cs.position, bg: cs.backgroundColor, cor: cs.color, fs: cs.fontSize, raio: cs.borderRadius,
+                         role: d.getAttribute('role'), id: d.id},
+              caixa: r && {l: r.left, t: r.top, r: r.right, b: r.bottom}, estilo: d && [parseFloat(d.style.left), parseFloat(d.style.top)],
+              pil: pil.getBoundingClientRect().toJSON(), vw: innerWidth, vh: innerHeight};
+    });
+    let e = await estado();
+    assert.deepEqual([e.etiqueta, e.i, e.on], [[esperado.pc], ['i'], false]);
+    // mouse: aparece com o cursor em cima e acompanha; some ao sair
+    const box = await page.locator('#pilDia').boundingBox();
+    await page.mouse.move(box.x + 12, box.y + box.height / 2);
+    e = await estado();
+    assert.ok(e.on, 'hover: dica aberta');
+    assert.deepEqual(e.linhas, esperado.linhas);
+    assert.deepEqual(e.css, {pos: 'fixed', bg: 'rgb(28, 28, 30)', cor: 'rgb(255, 255, 255)', fs: '12px', raio: '9px', role: 'tooltip', id: 'dica'});
+    assert.deepEqual([e.n, e.emFoco, e.foco, e.desc], [1, ['pilDia'], false, 'dica']);
+    assert.ok(e.caixa.l >= 8 && e.caixa.r <= e.vw - 8 && e.caixa.t >= 8 && e.caixa.b <= e.vh - 8, JSON.stringify(e.caixa));
+    // acompanha o cursor (16 px abaixo dele; a etiqueta fica no canto direito, então a caixa encosta na margem e anda na vertical)
+    const y0 = e.estilo[1];
+    assert.ok(perto(y0, box.y + box.height / 2 + 16), `16 px abaixo do cursor: ${y0}`);
+    await page.mouse.move(box.x + 12, box.y + box.height - 3);
+    e = await estado();
+    assert.ok(e.on && perto(e.estilo[1] - y0, box.height / 2 - 3), `acompanha o cursor: ${y0} -> ${e.estilo[1]}`);
+    // tons claros para o fundo escuro: vermelho (.v) e verde (.g)
+    const cores = await page.evaluate(() => { const d = document.querySelector('.dica'), g = document.createElement('b');
+      g.className = 'g'; d.appendChild(g); const c = [getComputedStyle(d.querySelector('.v')).color, getComputedStyle(g).color]; g.remove(); return c; });
+    assert.deepEqual(cores, ['rgb(255, 154, 154)', 'rgb(127, 224, 189)']);
+    await page.mouse.move(box.x - 300, box.y + 300);
+    e = await estado();
+    assert.deepEqual([e.on, e.emFoco, e.desc], [false, [], null], 'saiu: dica fechada');
+    // teclado: no foco (Shift+Tab a partir da busca), abaixo da etiqueta; ESC e blur fecham
+    await page.focus('#q');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'pilDia');
+    e = await estado();
+    assert.ok(e.on && e.caixa.t >= e.pil.bottom, 'foco: dica abaixo da etiqueta');
+    assert.deepEqual(e.linhas, esperado.linhas);
+    await page.keyboard.press('Escape');
+    assert.equal((await estado()).on, false, 'ESC');
+    await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+    assert.equal((await estado()).on, true, 'foco de novo');
+    await page.focus('#q');
+    assert.equal((await estado()).on, false, 'blur');
+    assert.equal((await estado()).n, 1, 'um div.dica só');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // celular (toque): "Quarta-feira · Sem. 3"; abre e fecha no toque; toque fora e rolar a página fecham
+    ({page, ctx, erros} = await abre('normal', {largura: 390, altura: 844, toque: true}));
+    e = await estado();
+    assert.deepEqual(e.etiqueta, [esperado.cel]);
+    await page.tap('#pilDia');
+    e = await estado();
+    assert.ok(e.on, 'toque: abre');
+    assert.deepEqual([e.linhas, e.emFoco], [esperado.linhas, ['pilDia']]);
+    assert.ok(e.caixa.l >= 8 && e.caixa.r <= e.vw - 8, `dentro da tela: ${JSON.stringify(e.caixa)}`);
+    await page.tap('#pilDia');
+    assert.equal((await estado()).on, false, 'toque de novo: fecha');
+    await page.tap('#pilDia');
+    assert.equal((await estado()).on, true);
+    await page.tap('#abTit');
+    assert.equal((await estado()).on, false, 'toque fora: fecha');
+    await page.tap('#pilDia');
+    assert.equal((await estado()).on, true);
+    await page.evaluate(() => scrollBy(0, 200));
+    await page.waitForFunction(() => !document.querySelector('.dica').classList.contains('on'));
+    assert.deepEqual((await estado()).emFoco, [], 'rolar: fecha');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // fechamento do mês: o calendário já está fechado, sem "dias úteis pela frente"
+    ({page, ctx, erros} = await abre('fech', {largura: 1440, altura: 900}));
+    await page.focus('#pilDia');
+    e = await estado();
+    assert.ok(e.on && e.linhas.length === 4 && !e.linhas.some(l => /pela frente/.test(l)), e.linhas.join(' | '));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('filtro rápido dos cards: Todos · Abaixo · No ritmo só mostram e ocultam (ordem e cores iguais), .off só em Todos, chip sem card desabilitado, volta para Todos ao trocar de aba', async () => {
+    const {page, ctx, erros} = await abre('normal', {largura: 1440, altura: 900, entrar: {perfil: 'gc', gc: 'G1'}});
+    const rotas = await page.evaluate(() => rotasDe('G1', ''));
+    await ritmo(page, 'G1', rotas, 1);
+    // quatro coberturas do ICS abaixo do ritmo e a KAPO indisponível em todas as rotas (card .off)
+    await page.evaluate(rotas => rotas.forEach(r => { const ind = nodo('', r).indicators;
+      for(const k of ['CCTM 2L PET', 'KS TT', 'REFRI SABORES ZERO', 'CERVEJAS']) if(ind[k] && !ind[k].unavailable) ind[k].real = 0;
+      ind.KAPO = {unavailable: true}; }), rotas);
+    await filtra(page, {aba: 'ICS_GC'});
+    const cards = () => page.evaluate(() => [...document.querySelectorAll('#lista .ind')].map(el => ({
+      k: el.dataset.k || el.querySelector('.tit').textContent, off: el.classList.contains('off'), ok: el.classList.contains('ok'),
+      vis: el.getClientRects().length > 0, bg: getComputedStyle(el).backgroundColor, faixa: getComputedStyle(el).borderLeftColor})));
+    const chips = () => page.$$eval('#abFil .fchip', bs => bs.map(b => [b.dataset.f, b.textContent.replace(/\s+/g, ' ').trim(),
+      b.getAttribute('aria-pressed'), b.disabled]));
+    const antes = await cards();
+    const abaixo = antes.filter(c => !c.off && !c.ok), noRitmo = antes.filter(c => c.ok);
+    assert.ok(antes.some(c => c.off) && abaixo.length && noRitmo.length, JSON.stringify(antes.map(c => [c.k, c.off, c.ok])));
+    assert.ok(antes.every(c => c.vis));
+    assert.deepEqual(await chips(), [['todos', `Todos ${antes.length}`, 'true', false], ['abaixo', `Abaixo ${abaixo.length}`, 'false', false],
+                                     ['ritmo', `No ritmo ${noRitmo.length}`, 'false', false]]);
+    // só mostra e oculta: mesmos cards, na mesma ordem, com as mesmas cores; o .off só em "Todos"
+    const confere = async (f, esperados) => {
+      const d = await cards();
+      assert.deepEqual(d.map(c => [c.k, c.off, c.ok, c.bg, c.faixa]), antes.map(c => [c.k, c.off, c.ok, c.bg, c.faixa]), `${f}: ordem e cores`);
+      assert.deepEqual(d.filter(c => c.vis).map(c => c.k), esperados.map(c => c.k), f);
+      assert.deepEqual((await chips()).map(c => c[2]), ['todos', 'abaixo', 'ritmo'].map(x => String(x === f)), `${f}: aria-pressed`);
+    };
+    await page.click('#abFil [data-f="abaixo"]');
+    await confere('abaixo', abaixo);
+    await page.click('#abFil [data-f="ritmo"]');
+    await confere('ritmo', noRitmo);
+    // uma atualização (online novo) mantém o filtro
+    await page.evaluate(() => render());
+    await confere('ritmo', noRitmo);
+    await page.click('#abFil [data-f="todos"]');
+    await confere('todos', antes);
+    // trocar de aba volta para "Todos" (também ao voltar para a aba de antes)
+    await page.click('#abFil [data-f="abaixo"]');
+    await page.click('.tab[data-g="VOLUME"]');
+    assert.equal((await chips())[0][2], 'true', 'Volume: Todos');
+    assert.ok((await cards()).every(c => c.vis));
+    await page.click('.tab[data-g="ICS_GC"]');
+    await confere('todos', antes);
+    // tudo no ritmo: "Abaixo" sem card fica desabilitado; o filtro escolhido sem card volta para "Todos"
+    await page.click('#abFil [data-f="abaixo"]');
+    await ritmo(page, 'G1', rotas, 1);
+    await filtra(page, {});
+    const ch = await chips();
+    assert.deepEqual(ch[1], ['abaixo', 'Abaixo 0', 'false', true]);
+    assert.equal(ch[0][2], 'true');
+    assert.ok((await cards()).every(c => c.vis));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [360, 1000]){
+    test(`${largura} px: cabeçalho da aba sem texto cortado nem rolagem lateral em todos os perfis e abas`, async () => {
+      for(const [dados, entrar] of [['inc', 'dir'], ['inc', {perfil: 'gc', gc: 'IT+MO'}], ['inc', {perfil: 'sv', gc: 'G2', sv: '1'}],
+                                    ['inc', {perfil: 'rota', gc: 'G2', rota: 'G211'}], ['grande', 'dir'], ['fech', 'gc']]){
+        const {page, ctx, erros} = await abre(dados, {largura, altura: 900, entrar});
+        await medidas(page);
+        for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          if(!(await page.$(`.tab[data-g="${aba}"]:not([hidden])`))) continue;
+          await filtra(page, {aba});
+          const onde = `${dados} ${JSON.stringify(entrar)} ${aba}`;
+          assert.deepEqual(await page.evaluate(() => __vis.estouros('#abaTopo')), [], onde);
+          assert.ok(await semRolagemLateral(page), `${onde}: rolagem lateral`);
+        }
+        assert.deepEqual(erros, []);
         await ctx.close();
       }
     });

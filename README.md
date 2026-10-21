@@ -369,6 +369,19 @@ expandir (76 px, só ícones, gaveta acompanhando, `drotas_lado` guardado e sem 
 escopo igual ao filtro em todos os perfis (também o grupo no Total) em 390 e 1440 px, topo compacto em 360 e 390 px
 (<= 221 px), ↻ (recarrega no mesmo acesso e painel) e casa nos dois layouts e a faixa de versão nova livre nos dois
 fundos.
+A Parte V confere o cabeçalho das abas (Etapa 4): em 7 cenários (Diretoria, Gerência, grupo, filtro "Neutraliza", uma
+supervisão no filtro, Supervisão e Rota) e nas quatro abas, os números do cabeçalho (card de ritmo "x / n", rótulo,
+legenda e Status, "puxa a média" com nome e "x de n", Base, Sem compra, visitas e sem compra hoje), os cards e a ficha
+da busca iguais aos do front de antes da Etapa 4 (index.html, CSS e app.js do commit `a70a2c3` via `git show`; sem o
+histórico, esse teste é pulado; só o rótulo do Volume muda); a linha de resumo em 1440 e 390 px (260 px | 1fr | 1,1fr,
+busca embaixo no celular, Base e Sem compra só com supervisão ou rota, três cards na Rota, Status no Todos a Bordo, ficha
+abaixo da linha); a etiqueta do dia e a caixa de comentário (mouse acompanhando o cursor, teclado com Shift+Tab e ESC,
+toque com abrir/fechar, toque fora e rolagem; um único `div.dica`, `emFoco`, cores; fechamento sem "dias pela frente");
+o filtro rápido (contagens, só mostra/oculta sem mudar ordem nem cores, `.off` só em "Todos", chip vazio desabilitado,
+volta para "Todos" ao trocar de aba); e o cabeçalho sem texto cortado nem rolagem lateral em 360 e 1000 px. Na Etapa 4,
+as Partes M, N, S, T e U passaram a abrir as gavetas Base e Sem compra pelo clique do próprio card (`abreCardTopo`; na
+Diretoria e na Gerência os cards ficam ocultos, mas a gaveta é a mesma) e a medir os cards do topo dentro de `#abaTopo`
+(mesma altura na mesma linha); o "puxa a média" é lido por `puxaTxt` ("título: nome").
 A Parte Y confere a entrada com logos (Etapa 7): em cada fundo, as duas imagens certas (arquivo, carregadas, as do
 outro fundo ocultas), `alt`/`aria-label`, o sol/lua trocando as duas imagens e a cor do texto, o fundo guardado já
 abrindo com as imagens dele e os PNG no tamanho original; em 360, 390 e 1440 px, nos dois fundos: alturas (62/40 px;
@@ -392,6 +405,31 @@ fundos (Diretoria, Gerência, grupo, Supervisão e Rota; acesso guardado, recarr
   "Dia útil 13/21 (62%) · ritmo hoje 67%" (dia útil do Real até ontem e o % do ritmo; o ritmo de hoje = dia de hoje ÷
   dias úteis). O escopo sai do topo só na Diretoria (o seletor logo abaixo mostra); nos perfis com o filtro travado
   (Gerência, Supervisão, Rota) ele continua, para o contexto não sumir.
+
+### Cabeçalho das abas (Volume, ICS GC, Novos Negócios, Todos a Bordo)
+
+Desde a Etapa 4 (21/10/2026), o alto de cada aba é organizado assim (os números são os mesmos de antes):
+
+- **Título e etiqueta do dia**: o nome da aba e, à direita, a etiqueta "Dia útil 14 de 21 · Semana 3" (no celular,
+  "Quarta-feira · Sem. 3") com um "i". Passando o mouse (ou com o foco do teclado, ou tocando no celular), abre uma caixa
+  de comentário com o dia da semana e o dia útil, "Real até ontem: dia útil 13/21 (62%)", "Para entrar no ritmo hoje:
+  67%", "Semana N°3 (ímpar)" e "Dias úteis pela frente, com hoje: 8" (no fechamento do mês, sem esta última linha). A
+  caixa some ao tirar o mouse, no ESC, tocando de novo, tocando fora ou rolando a página. Sem subtítulo.
+- **Linha de resumo**: o **card de ritmo** (card branco: rótulo, ícone, "x / n", legenda), com a mesma regra e as mesmas
+  cores de antes: no Volume, "Categorias na tendência" (era "Ritmo de coberturas"; só o nome mudou); no ICS GC e em Novos
+  Negócios, "Ritmo de coberturas"; no Todos a Bordo, "Itens em 100%" com a linha "Status". Ao lado, o **"puxa a média"**
+  (a mesma escolha de antes) num quadro de destaque: ícone "!", "Gerência / Supervisão / Rota que mais puxa a média para
+  baixo", o nome em vermelho e "x de n indicadores no ritmo" (antes, "na meta"); sem ele no Todos a Bordo e na Rota. Por
+  último, a **busca de clientes** (a mesma). No PC a linha é 260 px | 1fr | 1,1fr; no celular, a busca fica na linha de
+  baixo. A ficha do cliente abre logo abaixo da linha.
+- **Base total de clientes** ("visitas hoje N") e **Sem compra X%** ("sem compra hoje N"), no mesmo formato, só com uma
+  supervisão (ou "Neutraliza") ou uma rota no filtro (perfis Supervisão e Rota, ou a Gerência com uma supervisão/rota
+  escolhida): ficam acima da linha de resumo. Na Diretoria e na Gerência eles saem das abas (a aba Executiva, na próxima
+  etapa, traz esses números). Sem o "puxa a média" (a Rota sempre), o card de ritmo vai para a linha deles: **três cards
+  lado a lado**, e a busca fica sozinha na linha de baixo. As gavetas "Visitas de hoje" e "Sem compra hoje" não mudaram.
+- **Filtro rápido dos cards**: acima da grade, "Todos N · Abaixo N · No ritmo N". Só mostra ou oculta os cards (a ordem e
+  as cores não mudam); o card indisponível só aparece em "Todos"; um filtro sem card fica desabilitado; volta para
+  "Todos" ao trocar de aba (e quando o filtro escolhido fica sem card numa atualização).
 
 ### Visual (fonte, escala e cores)
 

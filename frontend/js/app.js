@@ -6,6 +6,7 @@ let DATA,LABELS,GROUPS,CLIENT_ROSTER,CLIENTES_HOJE,OPORTUNIDADES_DIA,VISITAS_DIA
 const KSTT_SEG = new Set(['LANCHONETE','RESTAURANTE','BOTECO','PADARIAS']);
 
 let ONLINE = null, aba='ICS_GC';
+let filtroCards = 'todos';     // filtro rápido dos cards da aba: 'todos' | 'abaixo' | 'ritmo' (ver filtraCards)
 
 /* ---------- utilitários ---------- */
 const $ = id => document.getElementById(id);
@@ -265,6 +266,7 @@ $('frota').onchange = e => {
   render();
 };
 function marcaAba(g){
+  if(g!==aba) filtroCards = 'todos';      // o filtro rápido dos cards volta para "Todos" ao trocar de aba
   aba = g;
   document.querySelectorAll('.tab').forEach(x=>{
     x.classList.toggle('on', x.dataset.g===g); x.setAttribute('aria-selected', x.dataset.g===g);
@@ -296,6 +298,9 @@ function render(){
     (sel.sv?` · ${esc(rotuloSv(sel.sv))}`:'') +
     (sel.rota?` · Rota ${esc(sel.rota)} — ${esc(titulo(nodo(sel.gc,sel.rota).consultor))}`:'') + '</span>';
   $('sub').classList.toggle('dir', sel.modo==='dir');
+  // cabeçalho da aba: o nome (o da aba na barra) e a etiqueta do dia, sem subtítulo
+  $('abTit').textContent = (document.querySelector(`.tab[data-g="${aba}"]`) || {}).title || '';
+  pintaEtiquetaDia($('pilDia'));
   const paceHoje = Math.round(P.DIA_HOJE / P.TOTAL_DIAS_UTEIS * 100);
   // caixa de ritmo de hoje (painel lateral) e a linha curta do topo do celular
   $('ritmo').innerHTML =
@@ -316,14 +321,15 @@ function render(){
     ? Math.round(tot.semCompra/tot.baseTotal*100) : null;
   $('nSem').textContent = tot.semCompra==null? '—' : tot.semCompra.toLocaleString('pt-BR');
   $('lSem').textContent = pctSem==null? 'Sem compra' : `Sem compra ${pctSem}%`;
-  $('xSem').innerHTML = scHoje==null ? 'sem venda do dia'
-    : `sem compra <b class="inl">hoje</b><b class="no">${scHoje}</b>`;
+  $('xSem').innerHTML = scHoje==null ? 'sem venda do dia' : `sem compra hoje <b class="no">${scHoje}</b>`;
 
+  // card de ritmo: "x / n" com o n menor (o texto continua "x / n")
+  const xDeN = (x, n) => `${x}<small> / ${n}</small>`;
   if(aba==='INCENTIVO'){
     // aba Todos a Bordo: no lugar do "ritmo de coberturas", os itens com meta no escopo que estão em 100%; sem "puxa a média"
     const st = itensEm100(itensInc().map(k=>[k, rotasInc(k, rotas)]));
     $('lRitmo').textContent = 'Itens em 100%';
-    $('nRitmo').textContent = `${st.nOk} / ${st.n}`;
+    $('nRitmo').innerHTML = xDeN(st.nOk, st.n);
     $('nRitmo').className = 'n ' + (st.n ? (st.nOk===st.n?'ok':'no') : '');
     $('xRitmo').textContent = !st.n ? 'sem meta' : st.nOk===st.n ? 'todos em 100%' : 'abaixo de 100%';
     linhaStatus(st);
@@ -334,8 +340,9 @@ function render(){
     const disp = P.COV_GRUPO[aba].filter(k=>ind[k] && !ind[k].unavailable);
     const noRitmo = disp.filter(k=>ind[k].onPace).length;
     const ritmoOk = noRitmo*2>=disp.length;
-    $('lRitmo').textContent = 'Ritmo de coberturas';
-    $('nRitmo').textContent = `${noRitmo} / ${disp.length}`;
+    // Volume: as categorias na tendência (mesma regra de antes, só o nome); coberturas: o ritmo de coberturas
+    $('lRitmo').textContent = aba==='VOLUME' ? 'Categorias na tendência' : 'Ritmo de coberturas';
+    $('nRitmo').innerHTML = xDeN(noRitmo, disp.length);
     $('nRitmo').className = 'n ' + (disp.length ? (ritmoOk?'ok':'no') : '');
     $('xRitmo').textContent = ritmoOk? 'dentro do ritmo' : 'abaixo do ritmo';
     // linha "Status" só em Novos Negócios (ICS GC e Volume sem ela)
@@ -352,8 +359,10 @@ function render(){
     $('lista').innerHTML = [...GROUPS[aba].filter(k=>!oculta(k)), ...extras].map(k=>linha(k, ind[k], rotas)).join('');
     document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k)));
   }
+  linhaResumo();
+  filtraCards();
   encaixa($('lista'));
-  encaixa(document.querySelector('.cards'));
+  encaixa($('abaTopo'));
   const upd = (ONLINE && ONLINE.updatedAt) ? ONLINE.updatedAt.replace('T',' ').slice(0,16).split(' ') : null;
   $('rodape').innerHTML =
     `${visiveis.length} rota${visiveis.length>1?'s':''} · ${esc(P.MES_LABEL)} · ${P.TOTAL_DIAS_UTEIS} dias úteis<br>`+
@@ -365,6 +374,12 @@ function render(){
   RS.pinta();
   RT.estado();                     // botão "Painel de ritmo": desabilitado no fechamento do mês
 }
+
+/* "Puxa a média" no formato de quadro de destaque (ícone "!", o nível que mais puxa a média para baixo, o nome em vermelho e
+   quantos indicadores estão no ritmo). A escolha é a de sempre (piorSv): a menor fração de indicadores no ritmo. */
+const quadroPuxa = (quem, p) => `<div class="foco puxa"><div class="fi" aria-hidden="true">!</div><div>`+
+  `<h3 class="t">${quem} que mais puxa a média para baixo</h3>`+
+  `<p class="s"><b class="no">${esc(p.rotulo)}</b> · ${p.ok} de ${p.tot} indicadores no ritmo</p></div></div>`;
 
 function piorSv(){
   if(sel.rota) return '';
@@ -382,8 +397,7 @@ function piorSv(){
       if(!pior || ok/disp.length < pior.razao) pior={rotulo:rotuloGc(g),ok,tot:disp.length,razao:ok/disp.length};
     });
     if(!pior || pior.ok===pior.tot) return '';
-    return `<div class="puxa"><div class="t">Gerência que mais puxa a média para baixo: <b>${esc(pior.rotulo)}</b></div>
-      <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
+    return quadroPuxa('Gerência', pior);
   }
   // Gerência (ou a gerência escolhida no filtro da Diretoria, sem supervisão)
   const gc = sel.modo==='dir' ? sel.dgc : sel.gc, sv = sel.modo==='dir' ? '' : sel.sv;
@@ -401,8 +415,7 @@ function piorSv(){
       if(!pior || ok/disp.length < pior.razao) pior={rotulo:rotuloSv(s),ok,tot:disp.length,razao:ok/disp.length};
     });
     if(!pior || pior.ok===pior.tot) return '';
-    return `<div class="puxa"><div class="t">Supervisão que mais puxa a média para baixo: <b>${esc(pior.rotulo)}</b></div>
-      <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
+    return quadroPuxa('Supervisão', pior);
   }
   // SV selecionado, sem rota: compara as rotas dentro do SV (a Neutraliza não entra na comparação)
   if(sv===SV_NEUTRA) return '';
@@ -417,9 +430,120 @@ function piorSv(){
     if(!pior || ok/disp.length < pior.razao) pior={rotulo:'Rota '+r,ok,tot:disp.length,razao:ok/disp.length};
   });
   if(!pior || pior.ok===pior.tot) return '';
-  return `<div class="puxa"><div class="t">Rota que mais puxa a média para baixo: <b>${esc(pior.rotulo)}</b></div>
-    <div class="s">${pior.ok} de ${pior.tot} indicadores na meta</div></div>`;
+  return quadroPuxa('Rota', pior);
 }
+
+/* Linha de resumo do cabeçalho da aba. Base e Sem compra só com supervisão (ou "Neutraliza") ou rota no filtro: na
+   Diretoria e na Gerência os números ficam na Executiva. Sem "puxa a média" (a Rota sempre; Todos a Bordo; todos no
+   ritmo), o card de ritmo vai para a linha da Base e do Sem compra (três cards lado a lado) e a busca fica sozinha na
+   linha de baixo; sem a Base, o card de ritmo e a busca dividem a linha. Só arruma os elementos: os números são os do
+   render(). */
+function linhaResumo(){
+  const temBase = sel.modo!=='dir' && !!(sel.sv || sel.rota);
+  const temPuxa = $('puxa').innerHTML!=='';
+  const tres = temBase && !temPuxa, card = $('cRitmo'), destino = tres ? $('abBase') : $('abRes');
+  $('abBase').hidden = !temBase;
+  $('abBase').classList.toggle('tres', tres);
+  if(card.parentNode!==destino){ if(tres) destino.appendChild(card); else destino.prepend(card); }
+  $('abRes').classList.toggle('semPuxa', !temPuxa && !tres);
+  $('abRes').classList.toggle('soBusca', tres);
+}
+
+/* ---------- filtro rápido dos cards (Todos · Abaixo · No ritmo) ----------
+   Só mostra ou oculta (classe "filtrado" no .ind): a ordem e as cores dos cards não mudam. "Abaixo" = cards fora do
+   ritmo (fundo rosa); "No ritmo" = cards verdes; o card indisponível (.off) só aparece em "Todos". Volta para "Todos" ao
+   trocar de aba (marcaAba) e quando o filtro escolhido fica sem card; chip sem card fica desabilitado. */
+const FILTROS_CARDS = [['todos', 'Todos'], ['abaixo', 'Abaixo'], ['ritmo', 'No ritmo']];
+function filtraCards(){
+  const cards = [...$('lista').querySelectorAll('.ind')], com = cards.filter(c=>!c.classList.contains('off'));
+  const n = {todos:cards.length, ritmo:com.filter(c=>c.classList.contains('ok')).length};
+  n.abaixo = com.length - n.ritmo;
+  if(!n[filtroCards]) filtroCards = 'todos';
+  $('abFil').innerHTML = FILTROS_CARDS.map(([v, rot]) =>
+    `<button type="button" class="fchip${v===filtroCards?' on':''}" data-f="${v}" aria-pressed="${v===filtroCards}"`+
+    `${n[v] || v==='todos' ? '' : ' disabled'}>${rot} <span class="fN">${n[v]}</span></button>`).join('');
+  cards.forEach(c=>c.classList.toggle('filtrado', filtroCards!=='todos' &&
+    (c.classList.contains('off') || c.classList.contains('ok')!==(filtroCards==='ritmo'))));
+}
+$('abFil').onclick = e => {
+  const b = e.target.closest('.fchip');
+  if(!b || b.disabled || b.dataset.f===filtroCards) return;
+  filtroCards = b.dataset.f;
+  filtraCards();
+  encaixa($('lista'));           // os cards que voltaram a aparecer medem de novo o % e o Online
+};
+
+/* ---------- etiqueta do dia (cabeçalho das abas) ----------
+   "Dia útil 14 de 21 · Semana 3" no PC e "Quarta-feira · Sem. 3" no celular, com o ícone "i"; a dica traz o dia útil de
+   hoje, o do Real até ontem (com o % do ritmo), o ritmo para hoje, a semana e os dias úteis pela frente contando hoje
+   (no fechamento do mês, o calendário já está fechado: sem essa linha). Os mesmos números da caixa de ritmo do painel. */
+function pintaEtiquetaDia(el){
+  const T = P.TOTAL_DIAS_UTEIS, paceHoje = Math.round(P.DIA_HOJE / T * 100);
+  el.innerHTML = `<span class="pdL">Dia útil ${P.DIA_HOJE} de ${T} · Semana ${P.SEMANA_NUM}</span>`+
+    `<span class="pdC">${esc(P.DIA_SEMANA)} · Sem. ${P.SEMANA_NUM}</span><span class="pdI" aria-hidden="true">i</span>`;
+  el.dataset.dica = `<div class="t">${esc(P.DIA_SEMANA)} · dia útil ${P.DIA_HOJE} de ${T}</div>`+
+    `Real até ontem: dia útil <b>${P.DIA_ONTEM}/${T}</b> (<b class="v">${P.PACE_ONTEM_PCT}%</b>)<br>`+
+    `Para entrar no ritmo hoje: <b class="v">${paceHoje}%</b><br>`+
+    `Semana N°${P.SEMANA_NUM} (${esc(P.SEMANA_TIPO)})`+
+    (P.FECHAMENTO ? '' : `<br>Dias úteis pela frente, com hoje: <b>${T - P.DIA_HOJE + 1}</b>`);
+  ativaDica(el);
+  if(_dicaEl===el) caixaDica().innerHTML = el.dataset.dica;      // aberta durante uma atualização: o texto novo
+}
+
+/* ---------- caixa de comentário (dica) ----------
+   Um div.dica único (role=tooltip, position:fixed) com o HTML de data-dica do elemento. PC: aparece com o mouse em cima,
+   acompanhando o cursor, e some ao sair; teclado: no foco (some no blur e no ESC); toque: abre e fecha no toque, e tocar
+   fora ou rolar a página fecha. O tipo de ponteiro vem do pointerdown (no celular o navegador simula um "mousemove"
+   antes do clique). O elemento com a dica aberta ganha a classe emFoco ("foco" é a dos quadros de destaque). Reutilizada
+   pelas linhas da Executiva: ativaDica(el) liga um elemento uma vez só. */
+let _dica = null, _dicaEl = null, _ponteiro = 'mouse';
+const _comDica = new WeakSet();
+function caixaDica(){
+  if(!_dica){
+    _dica = document.createElement('div');
+    _dica.className = 'dica'; _dica.id = 'dica'; _dica.setAttribute('role', 'tooltip');
+    document.body.appendChild(_dica);
+  }
+  return _dica;
+}
+const soltaDica = el => { el.classList.remove('emFoco'); el.removeAttribute('aria-describedby'); };
+// x, y = posição do cursor (mouse); sem eles (foco, toque), abaixo do elemento, alinhada à direita dele
+function mostraDica(el, x, y){
+  const d = caixaDica();
+  d.innerHTML = el.dataset.dica || '';
+  d.classList.add('on');
+  if(_dicaEl && _dicaEl!==el) soltaDica(_dicaEl);
+  _dicaEl = el;
+  el.classList.add('emFoco');
+  el.setAttribute('aria-describedby', 'dica');
+  const r = el.getBoundingClientRect(), caixa = d.getBoundingClientRect();
+  const w = Math.ceil(caixa.width), h = Math.ceil(caixa.height);
+  let left = x!=null ? x + 14 : r.right - w, top = y!=null ? y + 16 : r.bottom + 6;
+  left = Math.max(8, Math.min(left, innerWidth - w - 8));
+  if(top + h > innerHeight - 8) top = Math.max(8, (y!=null ? y : r.top) - h - 10);
+  d.style.left = left + 'px';
+  d.style.top = top + 'px';
+}
+function escondeDica(){
+  if(_dica) _dica.classList.remove('on');
+  if(_dicaEl) soltaDica(_dicaEl);
+  _dicaEl = null;
+}
+const toque = () => _ponteiro==='touch' || _ponteiro==='pen';
+function ativaDica(el){
+  if(_comDica.has(el)) return;
+  _comDica.add(el);
+  el.addEventListener('pointerdown', e => { _ponteiro = e.pointerType; });
+  el.addEventListener('pointermove', e => { if(e.pointerType==='mouse') mostraDica(el, e.clientX, e.clientY); });
+  el.addEventListener('pointerleave', e => { if(e.pointerType==='mouse' && _dicaEl===el) escondeDica(); });
+  el.addEventListener('focus', () => { if(!toque()) mostraDica(el); });
+  el.addEventListener('blur', () => { if(_dicaEl===el && !toque()) escondeDica(); });
+  el.addEventListener('click', () => { if(toque()){ if(_dicaEl===el) escondeDica(); else mostraDica(el); } });
+}
+// toque (ou clique) fora fecha; a página rolando fecha; ESC fecha
+document.addEventListener('pointerdown', e => { _ponteiro = e.pointerType; if(_dicaEl && !_dicaEl.contains(e.target)) escondeDica(); });
+document.addEventListener('keydown', e => { if(e.key==='Escape') escondeDica(); });
+addEventListener('scroll', () => { if(_dicaEl) escondeDica(); }, {passive:true});
 
 function linha(k, b, rotas){
   const nome = esc(rotuloInd(k));

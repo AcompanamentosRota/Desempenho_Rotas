@@ -123,20 +123,29 @@
 </aside>
 
 <main class="wrap">
-  <div class="topoGrid">
-    <div class="cards">
-      <div class="card" id="cBase" role="button" tabindex="0"><div><div class="n" id="nBase" data-fit="" data-fit-min="16" data-fit-quebra>—</div>
-        <div class="l">Base total de clientes</div></div>
-        <div><div class="div"></div><div class="x" id="xBase"></div></div></div>
-      <div class="card" id="cSem" role="button" tabindex="0"><div><div class="n no" id="nSem" data-fit="" data-fit-min="16" data-fit-quebra>—</div>
-        <div class="l" id="lSem">Sem compra</div></div>
-        <div><div class="div"></div><div class="x" id="xSem"></div></div></div>
-      <div class="card mudo" id="cRitmo"><div><div class="n" id="nRitmo" data-fit="" data-fit-min="16" data-fit-quebra>—</div>
-        <div class="l" id="lRitmo">Ritmo de coberturas</div>
-        <div class="st" id="stRitmo" hidden></div></div>
-        <div><div class="div"></div><div class="x" id="xRitmo"></div></div></div>
+  <!-- cabeçalho da aba: nome + etiqueta do dia (abre a dica); Base e Sem compra só com supervisão ou rota no filtro; a linha
+       de resumo (card de ritmo | "puxa a média" | busca); a ficha do cliente; o filtro rápido dos cards -->
+  <section class="abaTopo" id="abaTopo" aria-labelledby="abTit">
+    <div class="abCab">
+      <h2 id="abTit"></h2>
+      <button class="pilDia" id="pilDia" type="button" data-dica=""></button>
     </div>
-    <div class="ladoDir">
+    <div class="cards" id="abBase">
+      <div class="card kpi" id="cBase" role="button" tabindex="0"><div class="l">Base total de clientes</div>
+        <span class="ki"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM2 17c0-3 2.2-5 5-5s5 2 5 5M13.5 9a2.5 2.5 0 1 0 0-5M14 12c2.4.2 4 2 4 5"/></svg></span>
+        <div class="n" id="nBase" data-fit="" data-fit-min="16" data-fit-quebra>—</div>
+        <div class="x" id="xBase"></div></div>
+      <div class="card kpi" id="cSem" role="button" tabindex="0"><div class="l" id="lSem">Sem compra</div>
+        <span class="ki"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M5 15 15 5"/></svg></span>
+        <div class="n no" id="nSem" data-fit="" data-fit-min="16" data-fit-quebra>—</div>
+        <div class="x" id="xSem"></div></div>
+    </div>
+    <div class="abRes" id="abRes">
+      <div class="card kpi mudo" id="cRitmo"><div class="l" id="lRitmo">Ritmo de coberturas</div>
+        <span class="ki"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 15l5-5 3 3 6-7"/><path d="M13 6h4v4"/></svg></span>
+        <div class="n" id="nRitmo" data-fit="" data-fit-min="16" data-fit-quebra>—</div>
+        <div class="x" id="xRitmo"></div>
+        <div class="st" id="stRitmo" hidden></div></div>
       <div id="puxa"></div>
       <div class="busca">
         <div class="buscaWrap">
@@ -144,10 +153,11 @@
           <input id="q" type="search" placeholder="Buscar cliente por nome, código ou rede" autocomplete="off" enterkeyhint="search">
           <div id="qSugestoes" class="sugestoes" role="listbox"></div>
         </div>
-        <div id="cli"></div>
       </div>
     </div>
-  </div>
+    <div id="cli"></div>
+    <div class="fchips" id="abFil" role="group" aria-label="Filtrar os cards"></div>
+  </section>
 
   <div id="lista" class="lista"></div>
 

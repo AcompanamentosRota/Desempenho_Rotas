@@ -304,7 +304,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   espera `document.fonts.ready`. Números grandes em Source Serif 4 LOCAL (Etapa 2, 21/10/2026;
   `source-serif-4-latin-wght-normal.woff2`, 50 KB, `OFL-source-serif-4.txt`, mesmo unicode-range da Inter, sem preload):
   `--serif` SÓ em `.ind .big` (a `.seta` fica em `--sans`), `.obox b` e `.card .n` (a Executiva entra na Etapa 5); nunca na
-  gaveta, no Resumo, nos PDFs, no Painel de Ritmo nem na entrada. `lining-nums tabular-nums` em `.card, .ind, .topo,
+  gaveta, no Resumo, nos PDFs, no Painel de Ritmo nem na entrada. `lining-nums tabular-nums` em `.abaTopo, .card, .ind, .topo,
   .puxa, .cli, .rodape` (fora da gaveta: a Parte N compara `font-variant-numeric`). `.card .n` com `data-fit` (mín. 16,
   `data-fit-quebra`; `encaixa()` também em `.cards`); `numObox` com `data-fit=""` (parte do `--fs-online`).
   Cards `.ind`: fundo rosa/verde de sempre + faixa `border-left` 5 px `--ruim`/`--verde` (`.off` sem faixa; padding
@@ -329,6 +329,29 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   texto inteiro `.tLongo` no PC e no `title`); escopo `.subEsc` oculto só na Diretoria (`#sub.dir`: o seletor
   mostra); nos perfis travados ele fica; `#ritmo .ritCurto` "Dia útil x/n (p%) · ritmo hoje h%" (`.ritLongo` = as duas
   linhas do PC); sem a linha da marca. Escala do painel: `--fs-lado-tit/aba/sec` em `:root`. Testes: Parte U.
+  **Cabeçalho das abas (Etapa 4, 21/10/2026; README, "Cabeçalho das abas")**: `section#abaTopo` no lugar do `.topoGrid`:
+  `.abCab` (h2 `#abTit` = `title` da aba ativa; `button#pilDia` = etiqueta do dia, `pintaEtiquetaDia`: `.pdL` "Dia útil
+  DIA_HOJE de T · Semana N" no PC, `.pdC` "DIA_SEMANA · Sem. N" abaixo de 1000 px, `.pdI` "i"; `data-dica` com o dia,
+  DIA_ONTEM/T (PACE_ONTEM_PCT), ritmo hoje, semana e "dias úteis pela frente, com hoje" = T − DIA_HOJE + 1, esta fora no
+  fechamento), `.cards#abBase` (cBase, cSem) e `.abRes#abRes` (cRitmo | `#puxa` | `.busca`), `#cli` (ficha, fora da busca,
+  logo abaixo) e `.fchips#abFil`. Os ids e números de sempre (`nBase`, `xBase`, `lSem`, `nSem`, `xSem` "sem compra hoje N",
+  `nRitmo` = `x<small> / n</small>` com o className 'n ok|no', `lRitmo`, `xRitmo`, `stRitmo`); cards brancos `.card.kpi`
+  (`.l` rótulo, `.ki` ícone, `.n` número, `.x` legenda; `--borda-card`, `--sombra-card`). Volume: rótulo "Categorias na
+  tendência" (mesma regra). `linhaResumo()`: Base e Sem compra só com `sel.sv` (também "Neutraliza") ou `sel.rota` no modo
+  'gc' (a Diretoria e a Gerência sem eles; a gaveta continua, a Executiva da Etapa 5 a abre); sem "puxa a média"
+  (`#puxa` vazio: Rota, Todos a Bordo, todos no ritmo) o cRitmo vai para o `#abBase` (`.tres`, três cards; `.abRes.soBusca`),
+  sem a Base e sem o puxa `.abRes.semPuxa`. PC: 260px | 1fr | 1.1fr; celular: `clamp(120px,38%,200px) 1fr` e a busca
+  na linha de baixo. "Puxa a média" = mesmo `piorSv()`, saída `quadroPuxa(quem, p)`: `.foco.puxa` (quadro de destaque,
+  `.fi` "!", `h3.t` "<Nível> que mais puxa a média para baixo", `p.s` `<b class="no">nome</b> · x de n indicadores no
+  ritmo`; antes "na meta"). Filtro rápido `filtraCards()` (estado `filtroCards`, zerado em `marcaAba` ao trocar de aba;
+  `.ind.filtrado` = `display:none`; chip sem card desabilitado e o escolhido sem card volta para 'todos'; `encaixa` de
+  novo ao trocar). **Caixa de comentário** (reutilizar na Executiva): `ativaDica(el)` (uma vez por elemento, `WeakSet`),
+  `mostraDica`/`escondeDica`, um `div.dica#dica` (role=tooltip, criado na 1ª vez, `--fs-dica` 12 px, `--carvao`, raio 9,
+  `.v`/`.g` claros); mouse = `pointermove`/`pointerleave` com pointerType 'mouse' (acompanha o cursor), teclado = focus/blur
+  e ESC, toque/caneta = click alterna, `pointerdown` fora e `scroll` fecham; o tipo vem do `pointerdown` (`_ponteiro`).
+  Elemento aberto ganha `emFoco` (nunca `foco`: é a classe do quadro de destaque) e `aria-describedby="dica"`. Testes:
+  Parte V (compara com o front do `a70a2c3` via `git show`); helpers `abreCardTopo` (gaveta Base/Sem pelo `click()` do
+  elemento, também oculto), `puxaTxt` ("título: nome") e `abre(..., {toque: true})` (hasTouch, `page.tap`).
   **Cascata (gaveta, `.drw` e tudo dentro) = aparência do commit 0a59eb4, só com a Inter** (o ajuste visual foi
   reprovado ali): bloco "drawer" do `app.css` copiado do 0a59eb4 (sem a serifa do `.cLin .cDir b`), cinzas antigos
   redefinidos em `.drw` (`--cinza`, `--cinza-escuro`), sem `var(--fs-*)`, alturas mínimas, `data-fit` nem `encaixa()`
