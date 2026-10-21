@@ -556,7 +556,7 @@ class TestSecaoE7(unittest.TestCase):
             (Path(pasta) / "refri_2026-10-20.csv").write_text(TELA_E7, encoding="utf-8")
             cls.cons = ConsultaE7(_dados_e7())
             cls.txt = ct.conferir(cls.cons, date(2026, 10, 20), pasta_sac=Path(pasta))[0].texto("E7")
-        cls.e7 = cls.txt[cls.txt.index("## E7."):cls.txt.index("## 9.")]
+        cls.e7 = cls.txt[cls.txt.index("## E7."):cls.txt.index("## E10.")]   # E7 e E8 (a E10 lista códigos de rota)
 
     def test_aparece_sem_erro(self):
         self.assertNotIn("ERRO", self.txt)

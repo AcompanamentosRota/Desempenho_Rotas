@@ -28,7 +28,7 @@ desempenho/
 ├── .github/workflows/
 │   ├── atualizar-dados.yml   cron 15 min, seg-sex, 07h-18h45 (Brasília)
 │   ├── deploy-pages.yml      publica frontend/ no Pages (com a versão do código: scripts/versao-front.sh)
-│   ├── conferir-tendencia.yml  manual: relatório da tendência/fechamento e E9 (artifact, sem commit)
+│   ├── conferir-tendencia.yml  manual: relatório da tendência/fechamento, E9 e E10 (artifact, sem commit)
 │   └── testes.yml            testes do back-end
 └── index.html                redireciona links antigos para frontend/
 ```
@@ -505,7 +505,8 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   "Meta do dia" e "Agenda de hoje" (não há online nem agenda do mês fechado). O Foco do fechamento usa o realizado
   ("Refrigerantes fechou o mês em 95% da meta; faltaram …").
 - **Evolução contra o mês anterior**: fica para a Etapa 8 (consulta nova); até lá não aparece (`CONFIG.EVOLUCAO_ATIVA =
-  false`).
+  false`). A descoberta da consulta e do custo é a seção E10 do "Conferir tendência" (ver "Mês anterior no mesmo dia
+  útil").
 - **Layout**: KPIs em 4 colunas no PC e 2 no celular; os dois quadros lado a lado no PC; medidores 5 por linha a partir de
   1200 px, 3 entre 700 e 1199 px e 2 no celular; Sem compra e Agenda lado a lado no PC.
 
@@ -778,6 +779,69 @@ dos tamanhos das listas × soma de `semCompra`, rotas com divergência (com os c
 em que ele não está contido; quanto a chave acrescenta ao payload (KB e %) e o tempo (serializar, a seção e o
 `gerar.py` completo). Só contagens e códigos de rota: nunca nomes nem códigos de clientes. Sem o payload (o `gerar.py`
 reprovou) ou com um payload sem a chave, a seção diz isso.
+
+### Mês anterior no mesmo dia útil (seção E10)
+
+Descoberta da Etapa 8 da visão executiva (o bloco "Evolução contra o mês anterior" da aba Executiva, ainda oculto). A
+pergunta: dá para comparar onde estamos com onde estávamos no **mesmo dia útil do mês anterior** (calendário de vendas)?
+Quanto custa? A E10 sai sempre no relatório do "Conferir tendência" (antes da seção 9) e **só relata**: nada muda no
+gerador, no payload nem no painel. Só nomes de colunas, contagens, totais por gerência e códigos de rota.
+
+Para rodar com o dado real: **Actions → Conferir tendência → Run workflow**, com a branch em "Use workflow from" (o
+input `hoje` simula outra data, ex.: um dia de fechamento). Local (precisa do `backend/.env`):
+`python scripts/conferir_tendencia.py --saida DIR`. A E10 está no `relatorio_tendencia.md` do artifact.
+
+- **E10a. Calendário.** "Mesmo dia útil" = o nº de dias úteis já fechados no mês de referência (`DIA_ONTEM`; no
+  fechamento, o total do mês fechado), limitado ao total de dias úteis do mês anterior. A data vem do calendário do
+  Datasphere (o 1º dia de semana com aquele `NO_DIA_UTIL`, que considera os feriados regionais); sem as linhas do mês
+  anterior, do cálculo local (só feriados nacionais), e a linha diz qual valeu. O **corte** (inclusive) vai até a véspera
+  do dia útil seguinte: entram o sábado, o domingo e o feriado logo depois do dia útil N, como o Real do mês de
+  referência traz as NF desses dias. Exemplo: em 21/10/2026 o 13º dia útil fechado é 20/10; em setembro o 13º é sexta
+  18/09 e o corte vai até domingo 20/09. Bordas: mês anterior com menos dias úteis = ele inteiro; sem dia útil fechado =
+  nada a comparar (na prática o painel já está em fechamento); fechamento = o mês fechado contra o anterior no mesmo dia
+  útil. A tabela de variantes mostra, para a decisão, o dia proporcional (N ÷ dias do mês × dias do anterior) e o mês
+  anterior inteiro.
+- **E10b. Consultas.** Cada consulta como o gerador faria (agregada no servidor), com as linhas devolvidas, os segundos
+  e o resultado. A pergunta principal é se o filtro `DATA_MOVIMENTO <= corte` funciona em cada medida:
+  - Vol Real (`FX_VOL_PADRAO_FAT`, os 5 macros e os status do Vol Real), com e sem o corte, conferido com a curva diária
+    do mês anterior (BAND por dia);
+  - o mesmo pela rota da meta;
+  - META_NEG do mês e até o corte;
+  - cobertura (`FX_COBERTURA_REALIZADO`) por rota x cliente até o corte (todas as gerências) e no mês inteiro (amostra),
+    e também só por rota x agrupador (se a medida já contar clientes no servidor, a consulta fica pequena);
+  - a gerência da chave de meta por rota nos dois meses.
+
+  Resultados possíveis: "sim (bate com a curva diária)", "sim (menor que o mês inteiro)", "**não**: igual ao mês inteiro
+  (filtro ignorado?)", "**não**: veio vazio", "**a conferir**" e "**erro**". A seção diz também quanto do Real do mês de
+  referência tem `DATA_MOVIMENTO` >= hoje: se houver, o Real do painel não é só "até ontem".
+- **E10c. Amostra** (G1, AP e IT, `E10_AMOSTRA`; faltando dado, as próximas do painel; e a BAND). Por macro de volume:
+  - mês anterior: Real até o corte, Meta (META_VOLUME; sem ela, a META_NEG), % = Real ÷ Meta, e META_NEG até o corte
+    com Real ÷ META_NEG (o ritmo);
+  - mês de referência: Real (o Vol Real do painel), Meta e %;
+  - Δ p.p. e Δ Real.
+
+  Nas coberturas (os 13 itens do ICS GC e dos Novos Negócios): Real até o corte, Meta, %, o Real do mês anterior inteiro
+  e o mês de referência. As contas são as do card: só as rotas com o indicador; a rota oculta dos clientes em EV* entra
+  com meta 0; KS TT só nos segmentos elegíveis.
+- **E10d.** Refrigerantes em todas as gerências e na BAND.
+- **E10e. Custo.**
+  - Tempo: o que o gerador precisaria (Real até o corte, metas e META_NEG do mês anterior; cobertura até o corte), com o
+    nº de consultas, as linhas, a soma e o maior tempo. O `gerar.py` leva hoje ~64 s; com as consultas novas em
+    paralelo, o acréscimo fica perto da maior delas; em série, a soma.
+  - Peso: a chave proposta `MES_ANTERIOR` (opcional e a última do payload, fora da validação obrigatória) traz o
+    calendário do corte e, por rota, [Real até o corte, Meta] de cada item (null sem o indicador). A E10 mede o peso com
+    e sem as coberturas, somado ao payload publicado do checkout, e avisa acima de 8 MB. A chave **não existe** no
+    payload: é só a proposta.
+- **E10f. Riscos e dúvidas.**
+  - Rotas que mudaram de gerência (gerência da meta, `DS_GERENCIA_COM_Chave_Meta_SAP`, no mês anterior x hoje).
+  - Rotas com meta no mês anterior que saíram do painel, e rotas do painel sem meta no mês anterior (o card não soma o
+    Real delas).
+  - Real fora do painel (EV* e outras).
+  - Real pela rota do cliente x pela rota da meta, por gerência. `CD_ROTA_Clien` é a rota ATUAL do cliente: pela rota
+    do cliente, o mês anterior sai com a estrutura de hoje.
+  - Sete dúvidas para decisão: dia útil limitado ou proporcional; fechamento; estrutura de hoje ou a do mês anterior;
+    base do % (meta do mês ou META_NEG até o corte); coberturas sim ou não; o que fica fora (Todos a Bordo, Del Valle
+    Frut, Venda Zero); KS TT.
 
 Diferenças em relação ao arquivo que era montado à mão:
 - **Visitas de hoje**: vêm do campo `VISITA_HOJE` do SAP e incluem clientes com mais de um dia de
