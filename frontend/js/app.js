@@ -339,6 +339,7 @@ function render(){
     document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k)));
   }
   encaixa($('lista'));
+  encaixa(document.querySelector('.cards'));
   const upd = (ONLINE && ONLINE.updatedAt) ? ONLINE.updatedAt.replace('T',' ').slice(0,16).split(' ') : null;
   $('rodape').innerHTML =
     `${visiveis.length} rota${visiveis.length>1?'s':''} · ${esc(P.MES_LABEL)} · ${P.TOTAL_DIAS_UTEIS} dias úteis<br>`+
@@ -475,8 +476,8 @@ function linha(k, b, rotas){
     </div></div>`;
 }
 
-// número grande da caixa Online: a fonte é ajustada por encaixa() à largura real da caixa
-const numObox = txt => `<b data-fit="23" data-fit-min="10">${txt}</b>`;
+// número grande da caixa Online: parte do --fs-online do card e encaixa() ajusta à largura real da caixa
+const numObox = txt => `<b data-fit="" data-fit-min="10">${txt}</b>`;
 /* Volume: meta do dia do nível (já somada) <= 0 = "Meta batida!" e caixa do Online verde. Só o rótulo e a cor: o
    número do online e todos os valores seguem iguais. Resíduo de soma de decimais (ex.: 1e-14) conta como zero. */
 const META_BATIDA = 'Meta batida!';

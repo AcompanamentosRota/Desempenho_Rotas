@@ -346,7 +346,13 @@ de Ritmo: `montaRitmo` sem navegador (vm com ONLINE e os campos de hoje lançand
 `DIA_ONTEM_NOME`, botão (1280/390 px, Rota, fechamento), PDF simulado (páginas, progresso, confirmação, nome, sem
 conexão), desenho de 9 colunas sem texto cortado e, com as bibliotecas npm, o PDF real (páginas, 1280x720, tamanho).
 A Parte S abre o painel com e sem `SEM_COMPRA_MES` (Diretoria, Gerência, Supervisão e Rota) e confere que as telas
-(cards, listas, cascata, gavetas Base e Sem compra, Resumo) são as mesmas e que não há erro.
+(cards, listas, cascata, gavetas Base e Sem compra, Resumo) são as mesmas e que não há erro. A Parte T confere a fonte
+dos números e os cards: Source Serif 4 local carregada (`document.fonts.check`, pedido só a `assets/fonts`, licença,
+`@font-face` com `swap`, pesos 200-900 e o unicode-range da Inter) e usada só em `.ind .big`, `.obox b` e `.card .n`
+(estilo computado; o resto da tela, a entrada, a gaveta, o Resumo, o PDF do Resumo e o Painel de Ritmo em Inter),
+algarismos `lining-nums tabular-nums`, fundo dos cards igual ao do CSS da main antes da Etapa 2 (commit `2744537`),
+faixa lateral na cor do status (sem faixa no card indisponível), escala dos cards, 3 colunas em 1440 px e nenhum texto
+cortado em 360 e 390 px.
 
 ### Visual (fonte, escala e cores)
 
@@ -358,6 +364,16 @@ A Parte S abre o painel com e sem `SEM_COMPRA_MES` (Diretoria, Gerência, Superv
   Como a fonte chega depois do 1º desenho, `encaixa()` mede de novo quando ela carrega, e o PDF do Resumo espera
   `document.fonts.ready` antes da captura. Para trocar a versão: copiar os dois `*-wght-normal.woff2` e o LICENSE do
   pacote para `assets/fonts/` (os nomes ficam iguais).
+- **Números grandes em Source Serif 4** (desde a Etapa 2): `frontend/assets/fonts/source-serif-4-latin-wght-normal.woff2`
+  (50 KB, só o subset latin, mesmo `unicode-range` da Inter; `@fontsource-variable/source-serif-4` 5.3.0, licença em
+  `OFL-source-serif-4.txt`), `@font-face` local com `font-display: swap` e pesos 200-900, sem `preload` (só é baixada
+  quando a tela principal desenha um número). Variável `--serif` (`'Source Serif 4', Georgia, 'Times New Roman', serif`)
+  aplicada SÓ ao % dos cards (`.ind .big`; a seta ▲▼ fica na Inter), ao número da caixa Online (`.obox b`) e aos
+  números dos cards do topo (`.card .n`). A gaveta, o Resumo, o PDF do Resumo, o Painel de Ritmo, a entrada e os textos
+  continuam em Inter. Os números da tela principal (cards, cards do topo, cabeçalho, busca, rodapé) usam
+  `font-variant-numeric: lining-nums tabular-nums` (algarismos alinhados e de largura fixa); a gaveta, o Resumo e o
+  Painel de Ritmo ficam como estavam. Os números dos cards do topo também encaixam (`data-fit`, mínimo 16 px; se nem
+  assim couber, quebram como antes).
 - **Escala tipográfica** (variáveis em `:root` do `app.css`; o celular, até 640 px, redefine):
 
   | Nível | PC | Celular | Peso | Onde |
@@ -368,9 +384,14 @@ A Parte S abre o painel com e sem `SEM_COMPRA_MES` (Diretoria, Gerência, Superv
   | `--fs-valor` | 15 px | 14 px | 500 | Meta e Real dos cards, opções |
   | `--fs-legenda` | 12,5 px | 12 px | 400 | legendas, hora de atualização, seletores e abas |
 
-  O % dos cards parte do `--fs-ind` e só diminui se não couber (`data-fit=""` + `encaixa()`). As tabelas do
+  Os cards de indicador (`.ind`) redefinem a escala no próprio escopo, ~12% menor e igual no PC e no celular:
+  título 15 px (`--fs-card`), Meta/Real/Diferença 11,5 px (`--fs-valor`), % até 25 px (`--fs-ind`), oportunidades
+  11 px (`--fs-legenda`), "no ritmo"/"faltam" 12,5 px (`--fs-acao`), número do Online até 19 px (`--fs-online`) e
+  rótulos do Online 9,5 px (`--fs-online-rot`).
+  O % dos cards e o número do Online partem da escala e só diminuem se não couberem (`data-fit=""` + `encaixa()`). As tabelas do
   Resumo mantêm os tamanhos próprios das caixas (`.rs-k`), que se ajustam ao número de colunas (16 gerências na
-  Diretoria, PDF). Alturas mínimas por tipo: `--h-card-vol`, `--h-card-cob` (cobertura e Todos a Bordo), `--h-kpi`,
+  Diretoria, PDF). Alturas mínimas por tipo: `--h-card-vol`, `--h-card-cob` (cobertura e Todos a Bordo; 136 px no PC
+  e 134 px no celular, a altura natural dos cards com a escala menor), `--h-kpi`,
   cards da mesma linha da grade ficam com a mesma altura. O indicador de ritmo (caixa Online) dos cards tem tamanho,
   raio e peso fixos (`--ritmo-*`).
 - **Cascata (gaveta que abre no card)**: mantém a aparência de antes do ajuste visual (commit `0a59eb4`) em todos os
@@ -379,7 +400,12 @@ A Parte S abre o painel com e sem `SEM_COMPRA_MES` (Diretoria, Gerência, Superv
   redefinidos em `.drw`). A única diferença é a fonte: Inter, herdada do body (o % da linha de grupo era serifado).
   A escala tipográfica, as alturas mínimas e a regra do vermelho NÃO valem dentro dela. Em 390 px o nome do cliente
   na lista de volume (`.cCli .nm`, coluna estreita) corta com reticências, como antes.
-- **Cores**: o fundo rosa (abaixo do ritmo/tendência) e o verde claro (no ritmo) dos cards são premissa. O **vermelho**
+- **Cards de indicador**: grade `repeat(auto-fill, minmax(340px, 1fr))` a partir de 1000 px (3 colunas em 1280-1440
+  px, 2 em 1000 px); no celular, uma coluna. Faixa lateral de 5 px (`border-left`) na cor do status: `--ruim` abaixo,
+  `--verde` no ritmo; o padding esquerdo desconta a faixa (o conteúdo começa onde começava) e o card indisponível
+  (`.off`) não tem faixa.
+- **Cores**: o fundo rosa (abaixo do ritmo/tendência) e o verde claro (no ritmo) dos cards são premissa (não mudaram
+  com a faixa). O **vermelho**
   fica só para o % abaixo, o déficit ("Diferença" negativa e "faltam", classe `acao falta`) e os alertas ("puxa a
   média", avisos e erros). Meta, Real, rótulos e textos de apoio ("abaixo da tendência", "oportunidades do dia",
   "meta do dia", legendas) usam `--txt`/`--txt-apoio` (fora da cascata), com contraste AA (4,5:1) nos fundos claros e escuros. O verde

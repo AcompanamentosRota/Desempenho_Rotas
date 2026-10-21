@@ -291,7 +291,17 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - **Visual** (README, "Visual"): fonte Inter variável LOCAL em `frontend/assets/fonts/` (latin + latin-ext do
   `@fontsource-variable/inter` 5.3.0, licença `OFL.txt`; nunca CDN nem Google Fonts), `font-display: swap`, fallback
   `system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`; `encaixa()` remede no `loadingdone` das fontes e o PDF
-  espera `document.fonts.ready`. Escala só por variáveis de `:root` (`--fs-titulo/card/ind/valor/legenda`, celular até
+  espera `document.fonts.ready`. Números grandes em Source Serif 4 LOCAL (Etapa 2, 21/10/2026;
+  `source-serif-4-latin-wght-normal.woff2`, 50 KB, `OFL-source-serif-4.txt`, mesmo unicode-range da Inter, sem preload):
+  `--serif` SÓ em `.ind .big` (a `.seta` fica em `--sans`), `.obox b` e `.card .n` (a Executiva entra na Etapa 5); nunca na
+  gaveta, no Resumo, nos PDFs, no Painel de Ritmo nem na entrada. `lining-nums tabular-nums` em `.card, .ind, .topo,
+  .puxa, .cli, .rodape` (fora da gaveta: a Parte N compara `font-variant-numeric`). `.card .n` com `data-fit` (mín. 16,
+  `data-fit-quebra`; `encaixa()` também em `.cards`); `numObox` com `data-fit=""` (parte do `--fs-online`).
+  Cards `.ind`: fundo rosa/verde de sempre + faixa `border-left` 5 px `--ruim`/`--verde` (`.off` sem faixa; padding
+  esquerdo = `--pad-esq` − `--faixa`); escala própria no escopo `.ind` (~12% menor, igual no PC e no celular):
+  `--fs-card` 15, `--fs-valor` 11,5, `--fs-ind` 25, `--fs-legenda` 11, `--fs-acao` 12,5, `--fs-online` 19,
+  `--fs-online-rot` 9,5; `--h-card-*` 136 (PC) / 134 (celular). Grade da `.lista` no PC: `repeat(auto-fill,
+  minmax(340px, 1fr))` (3 colunas em 1440 px). Testes: Parte T. Escala só por variáveis de `:root` (`--fs-titulo/card/ind/valor/legenda`, celular até
   640 px): não pôr tamanho de letra solto fora dela (exceções: caixas `.rs-k` do Resumo/PDF e a página `.rt-*` do Painel de Ritmo). `%` de cards e linhas
   de grupo com `data-fit=""` (parte da escala, só reduz se não couber). Vermelho só no % abaixo, na Diferença
   negativa, no "faltam" (`.acao.falta`) e em alertas; Meta/Real/apoio em `--txt`/`--txt-apoio` (AA 4,5:1); rosa e verde
