@@ -3725,7 +3725,7 @@ describe('Parte R — Painel de Ritmo: montaRitmo (função pura, sem navegador)
     assert.equal(puxa(q, 'SV.G1.1'), 'Puxando a média pra baixo: Rota G111 — 2/10 no ritmo');
   });
 
-  test('células: x / 5 e x / 10, verde/vermelho (tendência >= 100; onPace), Meta dia, Meta batida!, faltam, reverter e "—"', () => {
+  test('células: x / 5 e x / 10, verde/vermelho (tendência >= 100; onPace), Meta dia, Meta batida! (volume e cobertura), faltam, reverter e "—"', () => {
     const p = payloadRitmo();
     const r = 'G111', d = noRitmo(p, r).indicators, base = d['VOL REFRIGERANTES'];
     // os 5 macros com meta: tendência 120, 100, 99, 150% e 50%; meta do dia 12.345,6 / 0 / -3 / null / 7
@@ -3746,7 +3746,14 @@ describe('Parte R — Painel de Ritmo: montaRitmo (função pura, sem navegador)
     assert.equal(p.PACE_ONTEM_PCT, 33);
     assert.deepEqual(cob('CCTM 2L PET'), {ok: true, seta: '▲', valor: '33%', sub: 'Meta dia 6', falta: false});
     assert.deepEqual(cob('REFRI SABORES ZERO'), {ok: false, seta: '▼', valor: '32%', sub: 'faltam 7', falta: true});
-    assert.deepEqual(cob('POWERADE'), {ok: true, seta: '▲', valor: '100%', sub: 'Meta dia 5', falta: false});   // teto(100 / 21)
+    // meta do mês alcançada (Real >= Meta): "Meta batida!", também acima de 100%
+    assert.deepEqual(cob('POWERADE'), {ok: true, seta: '▲', valor: '100%', sub: 'Meta batida!', falta: false});
+    // no ritmo sem a meta batida e sem gap: a fatia do mês, teto(100 / 21)
+    Object.assign(d['KAPO'], {meta: 100, real: 60});
+    const kapo = monta(p, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].colunas.find(x => x.codigo === 'Rota ' + r).cob[4];
+    assert.deepEqual(kapo, {ok: true, seta: '▲', valor: '60%', sub: 'Meta dia 5', falta: false});
+    Object.assign(d['KAPO'], {meta: 100, real: 130});
+    assert.equal(monta(p, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].colunas.find(x => x.codigo === 'Rota ' + r).cob[4].sub, 'Meta batida!');
     assert.equal(cob('KS TT'), null, 'sem meta: "—"');
     assert.deepEqual(cob('VENDAZERO'), {ok: false, seta: '▼', valor: '167%', sub: 'reverter 2', falta: true});
     assert.equal(c.contaCob.n, 9);

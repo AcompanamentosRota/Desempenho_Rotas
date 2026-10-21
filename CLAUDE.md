@@ -260,7 +260,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Colunas: o nível (NUCLEO.agrega das rotas, como os cards: no GC todas as rotas, com Neutraliza/virtuais/-EV/ocultas)
   + SVs visíveis sem as ocultas (página do GC) ou rotas normais (página da SV). Volume pela tendência (>= 100) e meta do
   dia ("Meta batida!" com <= 0); coberturas pelo `onPace` (PACE_ONTEM) com `NUCLEO.metaDiaCobertura` ("Meta dia N" /
-  "faltam N", a conta da caixa dos cards); Venda Zero pelo `gap` ("reverter N"). "Puxando a média": coluna com menos
+  "faltam N", a conta da caixa dos cards; "Meta batida!" com Real >= Meta do mês); Venda Zero pelo `gap` ("reverter N"). "Puxando a média": coluna com menos
   coberturas no ritmo (empate: menor código; sem linha se nenhuma ou se a pior está toda no ritmo). Página 1280x720,
   html2canvas escala 1.5, JPEG 0.85, uma por vez fora da tela (`.rt-palco`), progresso no botão ("Gerando i/n");
   bibliotecas e entrega por `RS.carregaScript`/`RS.salvaPdf`; arquivo `Painel_Ritmo_<BAND|G1|IT+MO|SV.G1.1>_AAAAMMDD.pdf`.

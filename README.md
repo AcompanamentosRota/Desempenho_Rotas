@@ -304,7 +304,7 @@ seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa;
   coberturas no ritmo; empate pelo menor código) e dois blocos com colunas = o nível + rotas (ou supervisões):
   **Volume — tendência do mês** ("na tendência x / 5": % tendência, verde a partir de 100, e "Meta dia X" ou "Meta
   batida!") e **Coberturas — ICS GC** ("no ritmo x / 10": % do mês, verde no ritmo de ontem, "Meta dia N" ou "faltam
-  N" como a caixa dos cards; Venda Zero com "reverter N", o pendente do mês). Neutraliza, virtuais, '-EV' e SV.G3.3
+  N" como a caixa dos cards, ou "Meta batida!" quando o Real do mês já alcançou a Meta; Venda Zero com "reverter N", o pendente do mês). Neutraliza, virtuais, '-EV' e SV.G3.3
   não viram coluna (os números delas ficam no total do GC). Sem assinatura. 7 colunas ou mais: modo compacto. O
   PDF é gerado no navegador página a página (progresso no botão "Gerando 12/64"); sem conexão para as bibliotecas,
   o botão avisa "Sem conexão para gerar o PDF". Arquivo `Painel_Ritmo_<BAND|G1|IT+MO|SV.G1.1>_AAAAMMDD.pdf`, baixado

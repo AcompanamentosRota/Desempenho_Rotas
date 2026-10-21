@@ -53,7 +53,7 @@ function montaRitmo(P, escopo){
   const subtitulo = nivel => [nivel, String(P.MES_LABEL || '').toLowerCase(), ate, mira].join(' · ');
 
   /* células: volume pela tendência (verde >= 100) com a meta do dia; cobertura pelo ritmo de ontem (onPace) com a meta do
-     dia ou o que falta (a conta da caixa dos cards ICS); Venda Zero pelo pendente do mês (gap) */
+     dia ou o que falta (a conta da caixa dos cards ICS) e "Meta batida!" com Real >= Meta; Venda Zero pelo pendente do mês (gap) */
   function celVol(b){
     if(!b || b.unavailable || !b.meta || b.pctTendencia==null) return null;
     const ok = !!b.onPace, md = b.metaDia;
@@ -67,6 +67,8 @@ function montaRitmo(P, escopo){
       return {ok, seta: ok ? '▲' : '▼', valor: b.pct==null ? '—' : b.pct + '%', sub: 'reverter ' + fmt0(b.gap), falta: !ok};
     }
     if(!b.meta || b.pct==null) return null;
+    // meta do mês alcançada (Real >= Meta, como o "Meta batida!" da caixa dos cards ICS): "Meta batida!"
+    if(b.real >= b.meta) return {ok: true, seta: '▲', valor: b.pct + '%', sub: 'Meta batida!', falta: false};
     const ok = !!b.onPace, n = N.metaDiaCobertura(b, T);
     return {ok, seta: ok ? '▲' : '▼', valor: b.pct + '%', sub: (ok ? 'Meta dia ' : 'faltam ') + fmt0(n), falta: !ok};
   }
