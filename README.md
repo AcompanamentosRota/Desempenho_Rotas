@@ -8,7 +8,7 @@ desempenho/
 ├── frontend/                 site estático (GitHub Pages)
 │   ├── index.html
 │   ├── css/app.css
-│   ├── js/config.js          URLs dos dados, intervalos, placa ATENÇÃO, aba Incentivo, entrada (grupos, virada), CDN
+│   ├── js/config.js          URLs dos dados, intervalos, placa ATENÇÃO, aba Todos a Bordo, linha Status, entrada (grupos, virada), CDN
 │   ├── js/app.js             painel (entrada por seleção, filtros, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/main.js            carga e atualização periódica dos JSONs
@@ -222,29 +222,32 @@ seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa;
 - Supervisão que só tem rotas Neutraliza ou virtuais (SV.G1.5, SV.AN.4...) não aparece; a que mistura soma só
   as rotas normais. SV.G3.3 continua oculta. Na gerência **AT** nenhuma supervisão é oculta (a 431 vai para a
   linha "Neutraliza"; a 411 é rota normal).
-- **Aba Incentivo** (campanha "Todos a Bordo 3.0", cobertura de cervejas; `CONFIG.INCENTIVO_ATIVO = false` esconde
-  a aba, e payload sem o grupo `INCENTIVO` também): ao lado de Novos Negócios, em todas as visões e perfis. Itens, na
-  ordem: Cervejas, Heineken, Eisenbahn - 600ml, Heineken - 600ml e Cervejas 600ml Retornável (Cervejas e Cervejas
-  600ml Retornável são os mesmos do ICS; os outros três só existem aqui, com as chaves `INC HEINEKEN`,
-  `INC EISENBAHN 600ML` e `INC HEINEKEN 600ML`, e não entram no ICS, nos Novos Negócios, no Resumo nem no "ritmo de
-  coberturas").
+- **Aba Todos a Bordo** (campanha "Todos a Bordo 3.0", cobertura de cervejas; chave interna `INCENTIVO`;
+  `CONFIG.INCENTIVO_ATIVO = false` esconde a aba, e payload sem o grupo `INCENTIVO` também): ao lado de Novos Negócios,
+  em todas as visões e perfis. Itens, na ordem: Cervejas, Heineken, Eisenbahn - 600ml, Heineken - 600ml e Cervejas
+  600ml Retornável (Cervejas e Cervejas 600ml Retornável são os mesmos do ICS; os outros três só existem aqui, com as
+  chaves `INC HEINEKEN`, `INC EISENBAHN 600ML` e `INC HEINEKEN 600ML`, e não entram no ICS, nos Novos Negócios, no
+  Resumo nem no "ritmo de coberturas").
   - Regras de dado do ICS: meta de cobertura por rota; Real = clientes distintos com cobertura no mês; online =
     clientes com compra hoje. Rota sem meta do item fica fora de todas as somas e listas dele (as rotas BARRACUDA não
     têm meta de Heineken). Neutraliza e virtuais entram no total da gerência, como nas coberturas.
-  - Card do item: Meta, Real e Diferença como no ICS; a caixa do Online como a do ICS; **% = EF / Meta**, com
-    **EF = clientes distintos no Real ou no online de hoje** (quem já está no Real e comprou de novo hoje conta uma
-    vez); verde com % >= 100, vermelho abaixo. O % mexe ao longo do dia (não usa a régua do ritmo do mês). Escopo sem
-    nenhuma rota com meta do item: **"Exclusivo portfólio Full"** (Heineken e Heineken - 600ml) ou **"Sem meta"**
-    (os outros). Escopo misto (ex.: G2, SV.G2.1): só as rotas com meta.
-  - Card **"Status Todos a Bordo 3.0"** (antes dos itens): soma dos itens com meta no escopo: Meta, Real, Hoje (os
-    clientes novos de hoje, EF − Real, pequeno), Diferença = (Real + Hoje) − Meta e % = EF / Meta. Verde só se todos
-    esses itens estão em 100% (o % agregado pode passar de 100% com o card vermelho). Sem nenhum item com meta:
-    "Sem meta". O terceiro card do topo vira **"Itens em 100%: x / n"**. Sem "puxa a média" nesta aba.
-  - Cascatas: o Status abre gerências → supervisões → rotas (com a linha "Neutraliza" e a nota das virtuais; termina
-    nas rotas; no perfil Rota não abre); cada item abre a mesma cascata do ICS até os clientes que faltam comprar.
-    Linhas + nota = card.
-  - Fechamento do mês: Meta e Real do mês anterior, sem o "Hoje" (o online já é do mês novo): % = Real / Meta e o
-    Status usa só o Real; a tag âmbar continua.
+  - **Os cinco cards são os do ICS GC** (mesma função, mesmas métricas): Meta, Real e Diferença; % = Real / Meta, verde
+    pela régua do ritmo (% >= o % do dia útil de ontem); "faltam X hoje" / "no ritmo"; oportunidades do dia; caixa do
+    Online com a meta do dia do ICS ("meta do dia X" / "no ritmo" / "Meta batida!"). Escopo sem nenhuma rota com meta do
+    item: **"Exclusivo portfólio Full"** (Heineken e Heineken - 600ml) ou **"Sem meta"** (os outros). Escopo misto
+    (ex.: G2, SV.G2.1): só as rotas com meta. A aba começa direto nos cinco cards (não há mais card de Status).
+  - Card do topo: **"x / n itens em 100%"** (n = itens com meta no escopo; x = os com Real >= Meta) e, embaixo, a
+    linha menor **"Status"**: "-" enquanto algum desses itens não está em 100%; "✓" verde quando todos estão. Sem item
+    com meta no escopo: "0 / 0", sem a linha. Sem "puxa a média" nesta aba.
+  - Cascatas: as do ICS (gerências → supervisões → rotas → clientes que faltam comprar, com os chips de dia de
+    visita), só com os grupos e rotas com meta do item ("· n com meta" no grupo misto); a linha "Neutraliza" e a nota
+    das virtuais como no ICS. Linhas + nota = card.
+  - Fechamento do mês: igual ao ICS (Meta e Real do mês anterior); o Status usa só o Real.
+- **Linha "Status" em Novos Negócios**: o card do topo "Ritmo de coberturas x / y" (contagem e texto iguais) ganha a
+  mesma linha "Status": "-" até todos os itens de Novos Negócios com meta no escopo terem Real >= Meta, então "✓" verde.
+  O ICS GC e o Volume não têm a linha. `CONFIG.STATUS_INCLUI_ONLINE` (padrão `false`): com `true`, um item conta como
+  100% também quando os clientes distintos no Real ou no online de hoje alcançam a Meta (quem já está no Real e comprou
+  de novo hoje conta uma vez); no fechamento, só o Real. Vale para Todos a Bordo e Novos Negócios.
 - **Del Valle Frut** (agrupador "Del Valle Frut"): card de volume só na G2 (inclusive por supervisor e rota), com
   as mesmas regras de volume e nunca somado aos 5 agrupadores; fora do Resumo e da Diretoria. Sem META_VOLUME
   nem META_NEG do agrupador na G2, o card não aparece e o gerador avisa no log.
@@ -359,13 +362,13 @@ Real ±0,1%; Meta exata (inteiros arredondados); Tendência ±0,2%; % ±0,1 p.p.
 
 ### Descoberta do incentivo Todos a Bordo 3.0 (seção E8)
 
-(Desde a aba Incentivo, os 5 itens estão no gerador: a E8 passa a mostrar "sim" na consulta e a chave INC de cada um.
+(Desde a aba Todos a Bordo (chamada "Incentivo" até 21/10/2026), os 5 itens estão no gerador: a E8 passa a mostrar "sim" na consulta e a chave INC de cada um.
 Na conferência de 20/10/2026 a meta do payload bateu com a E8c nos 5 itens: Cervejas 15.992 em 213 rotas, Heineken
 6.273 em 81, Eisenbahn - 600ml 460 em 182, Heineken - 600ml 2.871 em 81, Cervejas 600ml Retornável 4.732 em 182.)
 
 Campanha de cobertura de cervejas (itens: Cervejas, Heineken, Eisenbahn 600ml, Heineken 600ml e Cervejas 600ml
 Retornável). A E8 sai sempre no relatório, para o mês de hoje, e **só relata** o que existe no Datasphere antes da aba
-"Incentivo"; nada muda no painel. Gerência = a da rota no painel; `fora` = rota fora do painel (EV*, balcão...).
+Todos a Bordo; nada muda no painel. Gerência = a da rota no painel; `fora` = rota fora do painel (EV*, balcão...).
 
 - **E8a**: todos os agrupadores (da venda, `DS_AGRUPADOR_Agrupador_Prod`, e da meta, `AGRUPADOR_PRODU_Chave_Meta_SAP`)
   com HEINEKEN, EISENBAHN, CERVEJ ou 600 (sem acento e sem diferenciar caixa; o "600" traz também os refrigerantes
