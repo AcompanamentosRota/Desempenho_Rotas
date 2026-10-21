@@ -47,6 +47,17 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (`conferir_tendencia.py --saida DIR --e9 DIR/payload.json [--e9-duracao S]`, sem rede, acrescentada ao relatório; o
   workflow "Conferir tendência" já chama). Por gerência: Σ tamanho das listas x Σ `semCompra`, rotas com divergência,
   `SEM_COMPRA_HOJE` contido, KB que a chave acrescenta (limite de atenção 8 MB) e tempo. Só contagens e códigos de rota.
+- E10 do conferir (sempre, antes da seção 9; descoberta da Etapa 8, "Evolução contra o mês anterior"; `mes_anterior`):
+  o mesmo dia útil no mês anterior ao de referência (`corte_mes_anterior`: N = DIA_ONTEM, no fechamento o total;
+  limitado ao total do anterior; data pelo calendário do Datasphere, sem as linhas do mês anterior pelo cálculo local;
+  corte inclusive = véspera do dia útil N+1, com os dias não úteis logo depois do N). Até o corte (`DATA_MOVIMENTO le`,
+  só no `$filter`): Vol Real (5 macros, status do Vol Real; por rota do cliente e da meta), META_NEG e cobertura (rota x
+  cliente e só rota x agrupador), cada filtro conferido contra o mês inteiro e a curva diária BAND, com linhas e tempo.
+  Amostra `E10_AMOSTRA` (G1 AP IT) + BAND e Refrigerantes por gerência, como o card (rota oculta das EV* com meta 0 nos
+  macros com Real; cobertura só nas rotas com meta; KS TT). Custo no gerador (~64 s hoje) e peso da chave proposta
+  `MES_ANTERIOR` (opcional, a última; NÃO existe no payload), riscos (`DS_GERENCIA_COM_Chave_Meta_SAP` por mês;
+  `CD_ROTA_Clien` = rota ATUAL do cliente) e 7 dúvidas. Só relata. Como ler: README, "Mês anterior no mesmo dia útil";
+  testes: `test_mes_anterior.py` (Datasphere simulado `ConsultaE10`).
 - Front local: `cd frontend && python -m http.server 8765`.
 - **Versão do código e aviso de versão nova** (README, "Versão do código e aviso de versão nova"): versão = hash de 12
   caracteres de `frontend/` sem `frontend/data/**` (`.github/scripts/versao-front.sh`; nunca o SHA do commit: com só os
