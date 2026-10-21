@@ -192,6 +192,11 @@ class TestFontes(unittest.TestCase):
         cls.p = montar_payload(cls.f)
         cls.o = montar_online(cls.f.online)
 
+    def test_data_ontem(self):
+        # 13/10/2026 (terça): 12/10 é feriado, o último dia útil fechado é a sexta 09/10 (dia útil 7)
+        self.assertEqual((self.p["DIA_ONTEM"], self.p["DATA_ONTEM"], self.p["DIA_ONTEM_NOME"]),
+                         (7, "2026-10-09", "sexta-feira"))
+
     def test_clientes_normalizados(self):
         self.assertEqual(list(self.p["CLIENT_ROSTER"]), ["111"])     # balcão (Sv. Bl.) e rota EV ficam fora
         roster = self.p["CLIENT_ROSTER"]["111"]

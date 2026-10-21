@@ -34,6 +34,7 @@ async function iniciar(){
     $('lista').innerHTML = '<div class="vazio">Não foi possível carregar os dados. Atualize a página.</div>'; return;
   }
   RS.liga();
+  RT.liga();
   // a tela de carga fica até decidir: acesso guardado (painel direto, sem piscar a entrada) ou entrada; o link do
   // Resumo (?resumo=) abre direto e não mexe no acesso guardado
   const link = new URLSearchParams(location.search).has('resumo');

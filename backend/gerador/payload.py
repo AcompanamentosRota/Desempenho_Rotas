@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import replace
 
+from . import calendario as calmod
 from . import mapeamento as M
 from . import modelo
 from .texto import limpar, normalizar
@@ -308,4 +309,7 @@ def montar_payload(f: Fontes) -> dict:
         "GC_SEM_OCULTAS": M.GC_SEM_OCULTAS,
         "VOLUME_EXTRA": M.VOLUME_EXTRA,
         "COMODATO_CLIENTE": por_ordem(comodato_cliente),
+        # último dia útil fechado (o dia útil DIA_ONTEM do mês de referência): AAAA-MM-DD e "sexta-feira" (Painel de Ritmo)
+        "DATA_ONTEM": cal.data_ontem.isoformat() if cal.data_ontem else None,
+        "DIA_ONTEM_NOME": calmod.nome_dia(cal.data_ontem),
     }

@@ -46,5 +46,50 @@ class TestCalendario(unittest.TestCase):
                                           date(2026, 10, 13)))
 
 
+class TestDataOntem(unittest.TestCase):
+    """DATA_ONTEM / DIA_ONTEM_NOME: data do último dia útil fechado (o dia útil DIA_ONTEM do mês de referência)."""
+
+    def test_segunda_feira_aponta_a_sexta(self):
+        k = c.calcular_local(date(2026, 10, 19))
+        self.assertEqual((k.dia_ontem, k.data_ontem, c.nome_dia(k.data_ontem)), (11, date(2026, 10, 16), "sexta-feira"))
+
+    def test_dia_apos_feriado(self):
+        k = c.calcular_local(date(2026, 10, 13))         # 12/10 é feriado: o último fechado é a sexta 09/10
+        self.assertEqual((k.dia_ontem, k.data_ontem), (7, date(2026, 10, 9)))
+        self.assertEqual(c.nome_dia(k.data_ontem), "sexta-feira")
+
+    def test_fim_de_semana_e_meio_da_semana(self):
+        self.assertEqual(c.calcular_local(date(2026, 10, 10)).data_ontem, date(2026, 10, 9))    # sábado
+        k = c.calcular_local(date(2026, 10, 21))
+        self.assertEqual((k.data_ontem, c.nome_dia(k.data_ontem)), (date(2026, 10, 20), "terça-feira"))
+
+    def test_antes_do_primeiro_dia_util_sem_data(self):
+        k = c.calcular_local(date(2026, 11, 1))
+        self.assertEqual((k.dia_ontem, k.data_ontem, c.nome_dia(k.data_ontem)), (0, None, None))
+
+    def test_virada_do_mes_usa_o_mes_de_referencia(self):
+        k = c.fechado(date(2026, 11, 3), date(2026, 10, 1), 21)
+        self.assertEqual((k.dia_ontem, k.data_ontem, c.nome_dia(k.data_ontem)), (21, date(2026, 10, 30), "sexta-feira"))
+        # calendário do Datasphere do mês de referência: o dia útil 21 de outubro
+        linhas = [{"DATA": f"2026-10-{d:02d}", "NO_DIAS_UTEIS_MES": 21, "NO_DIA_UTIL": n}
+                  for d, n in ((29, 20), (30, 21), (31, 21))]
+        self.assertEqual(c.com_data_ontem(k, linhas).data_ontem, date(2026, 10, 30))
+
+    def test_do_datasphere(self):
+        # feriado (12/10) e fim de semana repetem o nº do último dia útil: vale o dia de semana mais antigo
+        linhas = [{"DATA": f"2026-10-{d:02d}", "NO_DIAS_UTEIS_MES": 21, "NO_DIA_UTIL": n}
+                  for d, n in ((8, 6), (9, 7), (10, 7), (11, 7), (12, 7), (13, 8))]
+        k = c.do_datasphere(linhas, date(2026, 10, 13))
+        self.assertEqual((k.dia_ontem, k.data_ontem), (7, date(2026, 10, 9)))
+        # só a linha de hoje (sem a do dia útil fechado): fica a do cálculo local
+        k = c.do_datasphere([linhas[-1]], date(2026, 10, 13))
+        self.assertEqual(k.data_ontem, date(2026, 10, 9))
+        # o calendário do Datasphere manda quando a linha existe (ex.: feriado municipal no dia 09)
+        linhas2 = [{"DATA": "2026-10-08", "NO_DIAS_UTEIS_MES": 20, "NO_DIA_UTIL": 6},
+                   {"DATA": "2026-10-09", "NO_DIAS_UTEIS_MES": 20, "NO_DIA_UTIL": 6},
+                   {"DATA": "2026-10-13", "NO_DIAS_UTEIS_MES": 20, "NO_DIA_UTIL": 7}]
+        self.assertEqual(c.do_datasphere(linhas2, date(2026, 10, 13)).data_ontem, date(2026, 10, 8))
+
+
 if __name__ == "__main__":
     unittest.main()

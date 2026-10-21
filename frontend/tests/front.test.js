@@ -3595,3 +3595,494 @@ describe('Parte Q — aviso de versão nova', {skip: pular}, () => {
     });
   }
 });
+
+/* ---------- Parte R — Painel de Ritmo em PDF (só dados reais) ---------- */
+/* montaRitmo(P, escopo) roda num contexto vm (sem DOM) em que ONLINE, puxaOnline e os campos de hoje (REVERTIDO_HOJE,
+   OPORTUNIDADE_HOJE, SEM_COMPRA_HOJE, revertidoHoje, oportunidadeHoje, semDadoHoje) lançam erro ao serem lidos. */
+const PROIBIDOS_RITMO = ['REVERTIDO_HOJE', 'OPORTUNIDADE_HOJE', 'SEM_COMPRA_HOJE', 'revertidoHoje', 'oportunidadeHoje', 'semDadoHoje'];
+function vigiaRitmo(o){
+  return new Proxy(o, {get(t, k, r){
+    if(PROIBIDOS_RITMO.includes(k)) throw new Error(`Painel de Ritmo leu ${String(k)}`);
+    const v = Reflect.get(t, k, r);
+    return v && typeof v === 'object' ? vigiaRitmo(v) : v;
+  }});
+}
+function contextoRitmo(){
+  const vm = require('node:vm');
+  const ctx = vm.createContext({console});
+  for(const k of ['ONLINE', 'puxaOnline', 'REVERTIDO_HOJE', 'OPORTUNIDADE_HOJE', 'SEM_COMPRA_HOJE', 'document', 'window', 'sel', 'ACESSO'])
+    Object.defineProperty(ctx, k, {get(){ throw new Error(`Painel de Ritmo leu ${k}`); }});
+  const js = ['config.js', 'nucleo.js', 'ritmo.js'].map(f => fs.readFileSync(path.join(FRONT, 'js', f), 'utf-8')).join('\n;\n');
+  vm.runInContext(js + '\n;globalThis.montaRitmo = montaRitmo; globalThis.NUCLEO = NUCLEO;', ctx);
+  return ctx;
+}
+// sintético normal (gerado aqui se o before() do arquivo não rodou: a Parte R sem navegador só precisa do Python)
+let _sinteticoRitmo = null;
+function payloadRitmo(){
+  if(!_sinteticoRitmo){
+    let dir = DADOS.normal;
+    if(!dir){
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drotas-ritmo-'));
+      execFileSync('python3', [path.join(FRONT, 'tests', 'sintetico.py'), dir], {cwd: RAIZ});
+    }
+    _sinteticoRitmo = fs.readFileSync(path.join(dir, 'payload.json'), 'utf-8');
+  }
+  return JSON.parse(_sinteticoRitmo);
+}
+const temPython = (() => { try { execFileSync('python3', ['-c', 'import zoneinfo'], {stdio: 'ignore'}); return true; } catch(e) { return false; } })();
+// nó de uma rota no payload
+const noRitmo = (p, r) => { for(const gc in p.DATA) for(const sv in p.DATA[gc]) if(r in p.DATA[gc][sv]) return p.DATA[gc][sv][r]; };
+const COB_RITMO = ['CCTM 2L PET', 'KS TT', 'REFRI SABORES ZERO', 'POWERADE', 'KAPO', 'CERVEJAS', 'CERVEJAS 600ML RETORNAVEL',
+  'EISENBAHN', 'ARTD KO', 'VENDAZERO'];
+const VOL_RITMO = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MINERAL', 'VOL DEST+ART+CND'];
+// páginas do escopo, só os códigos (título sem o "Painel de Ritmo — " e sem o nome)
+const codigos = m => m.paginas.map(pg => pg.titulo.replace('Painel de Ritmo — ', '').split(' · ')[0]);
+// esperado no sintético: GC + SV.X.1 + SV.X.2; AT com a SV.AT.3 (sem vendedor, rotas normais AT31/AT32); fora: SV.G1.5,
+// SV.G2.5, SV.IT.3, SV.MO.3 (só Neutraliza), SV.AN.4 e SV.RV.3 (Neutraliza + virtuais), SV.G3.3 (oculta), SV.SL.EV ('-EV')
+// escopo do filtro atual (ou o dado) -> nome e códigos das páginas, no navegador
+const modeloRitmo = (page, escopo) => page.evaluate(e => {
+  const m = montaRitmo(P, e || RT.escopoRitmo());
+  return {nome: m.nome, codigos: m.paginas.map(pg => pg.titulo.replace('Painel de Ritmo — ', '').split(' · ')[0])};
+}, escopo);
+const paginasEsperadas = gc => ['GC.' + gc, `SV.${gc}.1`, `SV.${gc}.2`, ...(gc === 'AT' ? ['SV.AT.3'] : [])];
+
+describe('Parte R — Painel de Ritmo: montaRitmo (função pura, sem navegador)', {skip: !temPython && 'sem Python'}, () => {
+  const monta = (p, escopo) => JSON.parse(JSON.stringify(contextoRitmo().montaRitmo(vigiaRitmo(p), escopo)));
+
+  test('não lê ONLINE nem os campos de hoje (getters que lançam) e não usa o DOM', () => {
+    const p = payloadRitmo();
+    const m = monta(p, {tipo: 'band', nome: 'BAND'});
+    assert.equal(m.nome, 'BAND');
+    assert.ok(m.paginas.length > 0);
+    // controle: o vigia de fato lança quando alguém lê um campo de hoje
+    assert.throws(() => vigiaRitmo(p).REVERTIDO_HOJE, /leu REVERTIDO_HOJE/);
+    assert.throws(() => contextoRitmo().ONLINE, /leu ONLINE/);
+  });
+
+  test('escopo: Todas = GC + supervisões de cada gerência na ordem de GC_ATIVAS; gerência; grupo; supervisão', () => {
+    const p = payloadRitmo();
+    assert.deepEqual(codigos(monta(p, {tipo: 'band'})), p.GC_ATIVAS.filter(g => p.DATA[g]).flatMap(paginasEsperadas));
+    assert.deepEqual(codigos(monta(p, {tipo: 'gc', gcs: ['G1'], nome: 'G1'})), ['GC.G1', 'SV.G1.1', 'SV.G1.2']);
+    assert.deepEqual(codigos(monta(p, {tipo: 'gc', gcs: ['IT', 'MO'], nome: 'IT+MO'})),
+                     ['GC.IT', 'SV.IT.1', 'SV.IT.2', 'GC.MO', 'SV.MO.1', 'SV.MO.2']);
+    assert.deepEqual(codigos(monta(p, {tipo: 'gc', gcs: ['IT'], nome: 'IT'})), ['GC.IT', 'SV.IT.1', 'SV.IT.2']);
+    assert.deepEqual(codigos(monta(p, {tipo: 'sv', gcs: ['G2'], sv: 'SV.G2.1', nome: 'SV.G2.1'})), ['SV.G2.1']);
+    assert.deepEqual(codigos(monta(p, {tipo: 'sv', gcs: ['IT', 'MO'], sv: 'SV.MO.2', nome: 'SV.MO.2'})), ['SV.MO.2']);
+    // gerência sem dados: ignorada
+    assert.deepEqual(codigos(monta(p, {tipo: 'gc', gcs: ['PA', 'DI'], nome: 'PA+DI'})), ['GC.PA', 'SV.PA.1', 'SV.PA.2']);
+    // SV.G3.3 (oculta) não tem página nem coluna
+    assert.deepEqual(codigos(monta(p, {tipo: 'sv', gcs: ['G3'], sv: 'SV.G3.3'})), []);
+  });
+
+  test('Neutraliza, virtuais, "-EV" e SV.G3.3 fora das colunas e dentro do total do GC (mesma agregação dos cards)', () => {
+    const p = payloadRitmo();
+    const m = monta(p, {tipo: 'band'});
+    const pag = t => m.paginas.find(pg => pg.titulo.includes('— ' + t));
+    const cols = t => pag(t).colunas.map(c => c.codigo);
+    assert.deepEqual(cols('GC.G3'), ['GC.G3', 'SV.G3.1', 'SV.G3.2']);
+    assert.deepEqual(cols('GC.AN'), ['GC.AN', 'SV.AN.1', 'SV.AN.2']);
+    assert.deepEqual(cols('GC.SL'), ['GC.SL', 'SV.SL.1', 'SV.SL.2']);
+    assert.deepEqual(cols('GC.AT'), ['GC.AT', 'SV.AT.1', 'SV.AT.2', 'SV.AT.3']);
+    assert.deepEqual(cols('SV.AT.3'), ['SV.AT.3', 'Rota AT31', 'Rota AT32']);          // a 431 (Neutraliza) fica fora
+    assert.deepEqual(cols('SV.PO.2'), ['SV.PO.2', 'Rota PO21', 'Rota PO22']);          // a O21 (Neutraliza) fica fora
+    assert.deepEqual(cols('SV.AT.1'), ['SV.AT.1', 'Rota 411', 'Rota AT12']);          // na AT a 411 é normal
+    // o total do GC soma todas as rotas da gerência (Neutraliza, virtuais, eventuais e ocultas incluídas)
+    const todas = gc => Object.values(p.DATA[gc]).flatMap(rs => Object.keys(rs));
+    for(const [gc, extras] of [['G3', ['331']], ['AN', ['A41', 'A42', 'A43', 'A44']], ['SL', ['SL-EV']], ['G1', ['151']]]){
+      const c0 = pag('GC.' + gc).colunas[0];
+      assert.deepEqual(c0.rotas, todas(gc));
+      for(const r of extras) assert.ok(c0.rotas.includes(r), `${gc}: ${r} no total`);
+      // números = os do card (NUCLEO.agrega das mesmas rotas): Refrigerantes pela tendência e CCTM 2L Pet pelo ritmo
+      let meta = 0, tend = 0, mc = 0, rc = 0;
+      for(const r of todas(gc)){ const b = noRitmo(p, r).indicators['VOL REFRIGERANTES']; if(b && !b.unavailable){ meta += b.meta; tend += b.tendencia; }
+        const c = noRitmo(p, r).indicators['CCTM 2L PET']; if(c && !c.unavailable){ mc += c.meta; rc += c.real; } }
+      assert.equal(c0.vol[0].valor, Math.round(tend / meta * 100) + '%', gc);
+      assert.equal(c0.cob[0].valor, Math.round(rc / mc * 100) + '%', gc);
+    }
+    // SL: o Real dos clientes em rota EV* (SL-EV) entra no total, não na soma das supervisões
+    const sl = pag('GC.SL').colunas, semEv = Object.values(p.DATA.SL).flatMap(rs => Object.keys(rs)).filter(r => r !== 'SL-EV');
+    let meta = 0, tend = 0;
+    for(const r of semEv){ const b = noRitmo(p, r).indicators['VOL REFRIGERANTES']; meta += b.meta; tend += b.tendencia; }
+    assert.notEqual(sl[0].vol[0].valor, Math.round(tend / meta * 100) + '%', 'SL-EV muda o total da SL');
+  });
+
+  test('"Puxando a média": a coluna com menos coberturas no ritmo; empate pelo menor código; sem linha se todas no ritmo', () => {
+    const p = payloadRitmo();
+    const puxa = (q, t) => monta(q, {tipo: 'gc', gcs: ['G1']}).paginas.find(pg => pg.titulo.includes('— ' + t)).puxa;
+    // sintético: todas as colunas com 2/10 -> empate, o menor código
+    assert.equal(puxa(p, 'GC.G1'), 'Puxando a média pra baixo: SV.G1.1 · Supervisor — 2/10 no ritmo');
+    assert.equal(puxa(p, 'SV.G1.1'), 'Puxando a média pra baixo: Rota G111 — 2/10 no ritmo');
+    // G111 com todas as coberturas no ritmo: puxa a G112; SV.G1.1 inteira no ritmo: o GC aponta a SV.G1.2
+    const bate = (q, r) => { for(const k of COB_RITMO){ const b = noRitmo(q, r).indicators[k]; if(b.unavailable) continue;
+      if(k === 'VENDAZERO') b.real = 0; else b.real = b.meta; } };
+    bate(p, 'G111');
+    assert.equal(puxa(p, 'SV.G1.1'), 'Puxando a média pra baixo: Rota G112 — 2/10 no ritmo');
+    bate(p, 'G112');
+    assert.equal(puxa(p, 'SV.G1.1'), '', 'todas no ritmo: sem a linha');
+    assert.equal(puxa(p, 'GC.G1'), 'Puxando a média pra baixo: SV.G1.2 · Supervisor — 2/10 no ritmo');
+    // supervisão com uma rota só: a coluna da rota existe e pode puxar a média
+    const q = payloadRitmo(); delete q.DATA.G1['SV.G1.1'].G112;
+    assert.equal(puxa(q, 'SV.G1.1'), 'Puxando a média pra baixo: Rota G111 — 2/10 no ritmo');
+  });
+
+  test('células: x / 5 e x / 10, verde/vermelho (tendência >= 100; onPace), Meta dia, Meta batida! (volume e cobertura), faltam, reverter e "—"', () => {
+    const p = payloadRitmo();
+    const r = 'G111', d = noRitmo(p, r).indicators, base = d['VOL REFRIGERANTES'];
+    // os 5 macros com meta: tendência 120, 100, 99, 150% e 50%; meta do dia 12.345,6 / 0 / -3 / null / 7
+    VOL_RITMO.forEach((k, i) => { d[k] = {...base, meta: 1000, real: 400, tendencia: [1200, 1000, 990, 1500, 500][i],
+      metaDia: [12345.6, 0, -3, null, 7][i], unavailable: false}; });
+    // coberturas: meta 100; Real 33 (= ritmo de ontem, 33%), 32, 100; KS TT sem meta (indisponível); Venda Zero 3/5
+    Object.assign(d['CCTM 2L PET'], {meta: 100, real: 33}); Object.assign(d['REFRI SABORES ZERO'], {meta: 100, real: 32});
+    Object.assign(d['POWERADE'], {meta: 100, real: 100}); d['KS TT'] = {unavailable: true};
+    Object.assign(d['VENDAZERO'], {meta: 3, real: 5, unavailable: false});
+    const pg = monta(p, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0];
+    const c = pg.colunas.find(x => x.codigo === 'Rota ' + r);
+    assert.deepEqual(c.vol.map(x => x && [x.ok, x.seta, x.valor, x.sub]), [
+      [true, '▲', '120%', 'Meta dia 12.346'], [true, '▲', '100%', 'Meta batida!'], [false, '▼', '99%', 'Meta batida!'],
+      [true, '▲', '150%', 'Meta dia —'], [false, '▼', '50%', 'Meta dia 7']]);
+    assert.deepEqual(c.contaVol, {ok: 3, n: 5});
+    const cob = k => c.cob[COB_RITMO.indexOf(k)];
+    // 33% = PACE_ONTEM_PCT: no ritmo; a meta do dia é a da caixa do card (o que falta para o ritmo de hoje: 39 - 33)
+    assert.equal(p.PACE_ONTEM_PCT, 33);
+    assert.deepEqual(cob('CCTM 2L PET'), {ok: true, seta: '▲', valor: '33%', sub: 'Meta dia 6', falta: false});
+    assert.deepEqual(cob('REFRI SABORES ZERO'), {ok: false, seta: '▼', valor: '32%', sub: 'faltam 7', falta: true});
+    // meta do mês alcançada (Real >= Meta): "Meta batida!", também acima de 100%
+    assert.deepEqual(cob('POWERADE'), {ok: true, seta: '▲', valor: '100%', sub: 'Meta batida!', falta: false});
+    // no ritmo sem a meta batida e sem gap: a fatia do mês, teto(100 / 21)
+    Object.assign(d['KAPO'], {meta: 100, real: 60});
+    const kapo = monta(p, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].colunas.find(x => x.codigo === 'Rota ' + r).cob[4];
+    assert.deepEqual(kapo, {ok: true, seta: '▲', valor: '60%', sub: 'Meta dia 5', falta: false});
+    Object.assign(d['KAPO'], {meta: 100, real: 130});
+    assert.equal(monta(p, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].colunas.find(x => x.codigo === 'Rota ' + r).cob[4].sub, 'Meta batida!');
+    assert.equal(cob('KS TT'), null, 'sem meta: "—"');
+    assert.deepEqual(cob('VENDAZERO'), {ok: false, seta: '▼', valor: '167%', sub: 'reverter 2', falta: true});
+    assert.equal(c.contaCob.n, 9);
+    // Venda Zero zerada: verde
+    Object.assign(d['VENDAZERO'], {meta: 3, real: 3});
+    const vz = monta(p, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].colunas.find(x => x.codigo === 'Rota ' + r).cob[9];
+    assert.deepEqual(vz, {ok: true, seta: '▲', valor: '100%', sub: 'reverter 0', falta: false});
+    // volume sem meta no escopo: "—"
+    const q = payloadRitmo();
+    assert.equal(monta(q, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].colunas[0].vol[1], null, 'Cervejas sem meta');
+  });
+
+  test('cabeçalho: título com o primeiro nome, subtítulo com DIA_ONTEM_NOME (e sem ele), formato pt-BR', () => {
+    const p = payloadRitmo();
+    p.NOME_SUPERVISOR['SV.G1.1'] = 'MARIA DAS DORES';
+    const m = monta(p, {tipo: 'gc', gcs: ['G1']});
+    assert.equal(m.paginas[0].titulo, 'Painel de Ritmo — GC.G1 · Goiânia 01');
+    assert.equal(m.paginas[1].titulo, 'Painel de Ritmo — SV.G1.1 · Maria');
+    assert.deepEqual([p.DATA_ONTEM, p.DIA_ONTEM_NOME], ['2026-10-09', 'sexta-feira']);
+    assert.equal(m.paginas[0].subtitulo, 'Gerência → Supervisões · outubro/26 · dados reais até sexta-feira 09/10 ' +
+      '(dia útil 7/21, 33%) · faltas miram terça-feira (dia 8/21, 38%)');
+    assert.equal(m.paginas[1].subtitulo, 'Supervisor → Rotas · outubro/26 · dados reais até sexta-feira 09/10 ' +
+      '(dia útil 7/21, 33%) · faltas miram terça-feira (dia 8/21, 38%)');
+    // payload antigo, sem DATA_ONTEM / DIA_ONTEM_NOME
+    delete p.DATA_ONTEM; delete p.DIA_ONTEM_NOME;
+    assert.equal(monta(p, {tipo: 'gc', gcs: ['G1']}).paginas[0].subtitulo, 'Gerência → Supervisões · outubro/26 · ' +
+      'dados reais até o dia útil 7/21 (33%) · faltas miram terça-feira (dia 8/21, 38%)');
+    // colunas: GC com o nome da praça, supervisão com o primeiro nome, rota com o primeiro nome do consultor
+    const c = m.paginas[1].colunas.map(x => [x.codigo, x.nome, !!x.foco]);
+    assert.deepEqual(c, [['SV.G1.1', 'Maria', true], ['Rota G111', 'Consultor', false], ['Rota G112', 'Consultor', false]]);
+    assert.ok(m.paginas.every(pg => !pg.compacto));
+  });
+});
+
+/* 9 colunas e números grandes: SV.G1.1 com 8 rotas (página da SV = 9 colunas) e a G2 com 8 supervisões (página do GC
+   = 9 colunas); nomes compridos e valores de 6-7 dígitos. */
+function montaRitmo9(p){
+  const copia = o => JSON.parse(JSON.stringify(o));
+  const g1 = p.DATA.G1['SV.G1.1'];
+  for(let i = 3; i <= 8; i++){
+    const d = copia(g1.G111); d.consultor = `MAXIMILIANO ALCÂNTARA ${i}`;
+    g1['G11' + i] = d;
+  }
+  const g2 = p.DATA.G2;
+  for(const n of [3, 4, 6, 7, 8, 9]){
+    g2[`SV.G2.${n}`] = {[`G2${n}1`]: copia(g2['SV.G2.1'].G211)};
+    p.NOME_SUPERVISOR[`SV.G2.${n}`] = 'BARTOLOMEU SILVA';
+  }
+  for(const svs of [p.DATA.G1, p.DATA.G2]) for(const rs of Object.values(svs)) for(const d of Object.values(rs)){
+    const base = d.indicators['VOL REFRIGERANTES'];
+    if(!base || base.unavailable) continue;
+    for(const k of VOL_RITMO){
+      const b = d.indicators[k] = copia(base);
+      for(const c of ['meta', 'real', 'tendencia', 'negRestante']) if(b[c] != null) b[c] *= 4000;
+      b.metaDia = 1234567.4;
+    }
+    for(const [k, b] of Object.entries(d.indicators)) if(!/^VOL /.test(k) && !b.unavailable && b.meta != null){ b.meta *= 50000; b.real *= 7; }
+  }
+}
+
+describe('Parte R — Painel de Ritmo no navegador', {skip: pular}, () => {
+  before(() => {
+    const dir = path.join(tmp, 'ritmo9');
+    fs.mkdirSync(dir, {recursive: true});
+    const p = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+    montaRitmo9(p);
+    fs.writeFileSync(path.join(dir, 'payload.json'), JSON.stringify(p));
+    fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(dir, 'online.json'));
+    DADOS.ritmo9 = dir;
+  });
+  // bibliotecas simuladas: anota as páginas, o texto do botão a cada página (progresso) e o tamanho do que foi capturado
+  const SIMULA_RITMO = () => {
+    window.__rt = {paginas: [], botao: [], capturas: [], props: null, imgs: 0};
+    window.html2canvas = async (el, op) => {
+      const r = el.getBoundingClientRect();
+      window.__rt.botao.push(document.getElementById('btnRitmo').textContent);
+      window.__rt.capturas.push({w: r.width, h: r.height, escala: op.scale, titulo: el.querySelector('h2').textContent,
+        assinatura: el.textContent.includes(CONFIG.CREDITOS) || !!el.querySelector('.rs-rod')});
+      const c = document.createElement('canvas'); c.width = 12; c.height = 7; return c;
+    };
+    window.jspdf = {jsPDF: function(o){ window.__rt.paginas.push(o.format);
+      return {addPage(f){ window.__rt.paginas.push(f); }, addImage(){ window.__rt.imgs++; },
+              setProperties(pr){ window.__rt.props = pr; }, output: () => new Blob(['%PDF'])}; }};
+  };
+  // durante a exportação, ONLINE e os campos de hoje lançam erro se lidos
+  const BLINDA = () => {
+    const erro = n => new Proxy({}, {get(){ throw new Error('Painel de Ritmo leu ' + n); }});
+    window.__guarda = {ONLINE, REVERTIDO_HOJE, OPORTUNIDADE_HOJE, SEM_COMPRA_HOJE};
+    ONLINE = erro('ONLINE'); REVERTIDO_HOJE = erro('REVERTIDO_HOJE'); OPORTUNIDADE_HOJE = erro('OPORTUNIDADE_HOJE');
+    SEM_COMPRA_HOJE = erro('SEM_COMPRA_HOJE');
+    for(const k of ['REVERTIDO_HOJE', 'OPORTUNIDADE_HOJE', 'SEM_COMPRA_HOJE'])
+      Object.defineProperty(P, k, {configurable: true, get(){ throw new Error('Painel de Ritmo leu P.' + k); }});
+  };
+  const DESBLINDA = () => {
+    ({ONLINE, REVERTIDO_HOJE, OPORTUNIDADE_HOJE, SEM_COMPRA_HOJE} = window.__guarda);
+    for(const k of ['REVERTIDO_HOJE', 'OPORTUNIDADE_HOJE', 'SEM_COMPRA_HOJE'])
+      Object.defineProperty(P, k, {configurable: true, writable: true, value: window.__guarda[k]});
+  };
+  const fimExport = page => page.waitForFunction(() => !document.getElementById('btnRitmo').hasAttribute('aria-busy') &&
+    document.getElementById('rtAviso').textContent !== '');
+  async function exportaSimulado(page, {aceita = true} = {}){
+    await page.evaluate(SIMULA_RITMO);
+    await page.evaluate(() => { document.getElementById('rtAviso').textContent = ''; });
+    let dialogo = null;
+    const responde = d => { dialogo = d.message(); aceita ? d.accept() : d.dismiss(); };
+    page.on('dialog', responde);
+    await page.evaluate(BLINDA);
+    const baixou = page.waitForEvent('download', {timeout: 60000}).catch(() => null);
+    await page.click('#btnRitmo');
+    if(aceita) await fimExport(page); else await page.waitForTimeout(200);
+    await page.evaluate(DESBLINDA);
+    page.off('dialog', responde);
+    const dl = aceita ? await baixou : null;
+    return {dialogo, arquivo: dl && dl.suggestedFilename(), rt: await page.evaluate(() => window.__rt),
+            aviso: await page.textContent('#rtAviso'), botao: await page.textContent('#btnRitmo')};
+  }
+  const modelo = modeloRitmo;
+
+  test('botão ao lado de "Gerar resumo de vendas"; perfil Rota sem botão; fechamento desabilitado com a dica', async () => {
+    for(const largura of [1280, 390]){
+      const {page, ctx, erros} = await abre('normal', {largura, altura: 900, entrar: 'gc'});
+      const r = await page.evaluate(() => {
+        const a = document.getElementById('btnResumo'), b = document.getElementById('btnRitmo'), box = document.querySelector('.rsBox');
+        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        return {irmao: a.nextElementSibling === b, texto: b.textContent, desab: b.disabled, ladoALado: Math.abs(ra.top - rb.top) < 2,
+                abaixo: rb.top >= ra.bottom - 1, estouro: box.scrollWidth - box.clientWidth, cortado: b.scrollWidth - b.clientWidth,
+                larguraPag: document.documentElement.scrollWidth - innerWidth, fs: getComputedStyle(b).fontSize,
+                fsResumo: getComputedStyle(a).fontSize, fam: getComputedStyle(b).fontFamily};
+      });
+      assert.equal(r.irmao, true);
+      assert.equal(r.texto, 'Painel de ritmo');
+      assert.equal(r.desab, false);
+      assert.ok(largura === 1280 ? r.ladoALado : r.abaixo, `${largura}: ${JSON.stringify(r)}`);
+      assert.ok(r.estouro <= 0 && r.cortado <= 0 && r.larguraPag <= 0, `${largura}: sem estouro ${JSON.stringify(r)}`);
+      assert.equal(r.fs, r.fsResumo, 'mesma escala do botão do Resumo (--fs-valor)');
+      assert.match(r.fam, /^Inter,/);
+      // fundo branco da entrada não muda a barra; perfil Rota: sem a barra (sem Resumo e sem o Painel de Ritmo)
+      await vaiPara(page, {perfil: 'rota', gc: 'G1', rota: 'G111'});
+      assert.equal(await page.isVisible('#btnRitmo'), false);
+      await vaiPara(page, {perfil: 'sv', gc: 'G2', sv: '1'});
+      assert.equal(await page.isVisible('#btnRitmo'), true);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+    const {page, ctx, erros} = await abre('fech', {entrar: 'dir'});
+    const f = await page.evaluate(() => { const b = document.getElementById('btnRitmo'); return {d: b.disabled, t: b.title, a: b.getAttribute('aria-label')}; });
+    assert.deepEqual(f, {d: true, t: 'Indisponível durante o fechamento', a: 'Painel de ritmo — Indisponível durante o fechamento'});
+    await page.evaluate(SIMULA_RITMO);
+    await page.evaluate(() => RT.exporta());          // nem pela função: nada é gerado
+    assert.deepEqual(await page.evaluate(() => window.__rt.paginas), []);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('escopo pelo filtro: Diretoria, gerência, grupo (Total e uma delas), supervisão, Neutraliza', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: 'dir'});
+    const p = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+    let m = await modelo(page);
+    assert.equal(m.nome, 'BAND');
+    assert.deepEqual(m.codigos, p.GC_ATIVAS.filter(g => p.DATA[g]).flatMap(paginasEsperadas));
+    await page.selectOption('#fgc', 'G3');
+    assert.deepEqual(await modelo(page), {nome: 'G3', codigos: ['GC.G3', 'SV.G3.1', 'SV.G3.2']});
+    await vaiPara(page, {perfil: 'gc', gc: 'G1'});
+    assert.deepEqual(await modelo(page), {nome: 'G1', codigos: ['GC.G1', 'SV.G1.1', 'SV.G1.2']});
+    await page.selectOption('#fsv', 'SV.G1.2');
+    assert.deepEqual(await modelo(page), {nome: 'SV.G1.2', codigos: ['SV.G1.2']});
+    await page.selectOption('#fsv', 'Neutraliza');      // a "Neutraliza" não tem página: vale a gerência
+    assert.deepEqual(await modelo(page), {nome: 'G1', codigos: ['GC.G1', 'SV.G1.1', 'SV.G1.2']});
+    await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
+    assert.deepEqual(await modelo(page), {nome: 'IT+MO', codigos: ['GC.IT', 'SV.IT.1', 'SV.IT.2', 'GC.MO', 'SV.MO.1', 'SV.MO.2']});
+    await page.selectOption('#fgc', 'MO');
+    assert.deepEqual(await modelo(page), {nome: 'MO', codigos: ['GC.MO', 'SV.MO.1', 'SV.MO.2']});
+    await vaiPara(page, {perfil: 'sv', gc: 'G2', sv: '1'});
+    assert.deepEqual(await modelo(page), {nome: 'SV.G2.1', codigos: ['SV.G2.1']});
+    await page.selectOption('#frota', 'G212');           // rota no filtro da supervisão: a página da supervisão
+    assert.deepEqual(await modelo(page), {nome: 'SV.G2.1', codigos: ['SV.G2.1']});
+    await vaiPara(page, {perfil: 'rota', gc: 'G1', rota: 'G111'});
+    assert.equal(await page.evaluate(() => RT.escopoRitmo()), null);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('PDF (bibliotecas simuladas): nº de páginas = escopo, progresso, confirmação na Diretoria, nome e propriedades, sem online', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}});
+    const hoje = await page.evaluate(() => { const a = agoraSP(); return `${a.ano}${String(a.mes).padStart(2, '0')}${String(a.dia).padStart(2, '0')}`; });
+    let r = await exportaSimulado(page);
+    assert.equal(r.dialogo, null, 'gerência: sem confirmação');
+    assert.equal(r.rt.paginas.length, 3);
+    assert.equal(r.rt.imgs, 3);
+    assert.deepEqual(r.rt.paginas, [[1280, 720], [1280, 720], [1280, 720]]);
+    assert.deepEqual(r.rt.botao, ['Gerando 1/3', 'Gerando 2/3', 'Gerando 3/3']);
+    assert.ok(r.rt.capturas.every(c => c.w === 1280 && c.h === 720 && c.escala === 1.5 && !c.assinatura), JSON.stringify(r.rt.capturas));
+    assert.deepEqual(r.rt.capturas.map(c => c.titulo), ['Painel de Ritmo — GC.G1 · Goiânia 01',
+      'Painel de Ritmo — SV.G1.1 · Supervisor', 'Painel de Ritmo — SV.G1.2 · Supervisor']);
+    assert.equal(r.arquivo, `Painel_Ritmo_G1_${hoje}.pdf`);
+    assert.deepEqual(r.rt.props, {title: 'Painel de Ritmo · G1', author: 'Comercial Bandeirantes'});
+    assert.equal(r.aviso, `PDF salvo: Painel_Ritmo_G1_${hoje}.pdf`);
+    assert.equal(r.botao, 'PDF salvo');
+    assert.equal(await page.isDisabled('#btnRitmo'), false);
+    assert.equal(await page.$('.rt-palco'), null, 'a página fora da tela é removida');
+    // supervisão: uma página, arquivo com o código dela
+    await page.selectOption('#fsv', 'SV.G1.2');
+    r = await exportaSimulado(page);
+    assert.deepEqual([r.rt.paginas.length, r.arquivo], [1, `Painel_Ritmo_SV.G1.2_${hoje}.pdf`]);
+    // grupo
+    await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
+    r = await exportaSimulado(page);
+    assert.deepEqual([r.rt.paginas.length, r.arquivo, r.rt.props.title], [6, `Painel_Ritmo_IT+MO_${hoje}.pdf`, 'Painel de Ritmo · IT+MO']);
+    // Diretoria "Todas": confirmação "Exportar N páginas?"; cancelar não gera nada
+    await vaiPara(page, 'dir');
+    const n = (await modelo(page)).codigos.length;
+    r = await exportaSimulado(page, {aceita: false});
+    assert.equal(r.dialogo, `Exportar ${n} páginas?`);
+    assert.deepEqual(r.rt.paginas, []);
+    r = await exportaSimulado(page);
+    assert.equal(r.dialogo, `Exportar ${n} páginas?`);
+    assert.equal(r.rt.paginas.length, n);
+    assert.equal(r.rt.botao.at(-1), `Gerando ${n}/${n}`);
+    assert.equal(r.arquivo, `Painel_Ritmo_BAND_${hoje}.pdf`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('sem conexão para as bibliotecas: mensagem clara, botão volta, nada trava', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}});
+    assert.equal(await page.evaluate(() => typeof window.html2canvas), 'undefined');
+    await page.click('#btnRitmo');           // o cdnjs é abortado em abre()
+    await fimExport(page);
+    assert.equal(await page.textContent('#rtAviso'), 'Sem conexão para gerar o PDF');
+    assert.equal(await page.textContent('#btnRitmo'), 'Sem conexão para gerar o PDF');
+    assert.equal(await page.isDisabled('#btnRitmo'), false);
+    assert.equal(await page.$('.rt-palco'), null);
+    // a mensagem some e o botão volta ao texto normal; o painel segue respondendo
+    await page.waitForFunction(() => document.getElementById('btnRitmo').textContent === 'Painel de ritmo', null, {timeout: 8000});
+    await page.click('#lista .ind[data-k]');
+    assert.ok(await page.isVisible('#drw.on'));
+    assert.deepEqual(erros.filter(e => !/net::ERR_FAILED|cdnjs/.test(e)), []);
+    await ctx.close();
+  });
+
+  test('desenho: páginas 1280x720, até 9 colunas sem texto cortado (modo compacto), números grandes, sem assinatura', async () => {
+    const {page, ctx, erros} = await abre('ritmo9', {entrar: 'dir'});
+    await page.evaluate(() => document.fonts.ready);
+    for(const [escopo, alvo, ncols] of [[{tipo: 'gc', gcs: ['G1'], nome: 'G1'}, 'SV.G1.1', 9], [{tipo: 'gc', gcs: ['G2'], nome: 'G2'}, 'GC.G2', 9],
+                                        [{tipo: 'gc', gcs: ['G1'], nome: 'G1'}, 'GC.G1', 3]]){
+      const r = await page.evaluate(([escopo, alvo]) => {
+        const pg = montaRitmo(P, escopo).paginas.find(x => x.titulo.includes('— ' + alvo));
+        const palco = document.createElement('div'); palco.className = 'rt-palco'; palco.style.left = '0';
+        palco.innerHTML = RT.desenhaPagina(pg); document.body.appendChild(palco); encaixa(palco);
+        const el = palco.firstElementChild, b = el.getBoundingClientRect(), tab = el.querySelector('.rt-tab').getBoundingClientRect();
+        const cortados = [...el.querySelectorAll('*')].filter(x => !/^(TR|TBODY|THEAD|TABLE|COLGROUP|COL)$/.test(x.tagName) &&
+          (x.scrollWidth > x.clientWidth + 0.5 || x.scrollHeight > x.clientHeight + 1)).map(x => `${x.className}: ${x.textContent.slice(0, 30)}`);
+        const fontes = [...el.querySelectorAll('[data-fit]')].map(x => parseFloat(getComputedStyle(x).fontSize));
+        const out = {w: b.width, h: b.height, base: tab.bottom - b.top, cols: Number(el.dataset.colunas), compacto: el.classList.contains('rt-compacto'),
+          cortados, fonteMin: Math.min(...fontes), texto: el.textContent, assinatura: el.textContent.includes(CONFIG.CREDITOS) || !!el.querySelector('.rs-rod'),
+          verdes: el.querySelectorAll('td.rt-ok').length, vermelhos: el.querySelectorAll('td.rt-no').length,
+          corPctNo: (el.querySelector('td.rt-no .rt-v') || {}).nodeType ? getComputedStyle(el.querySelector('td.rt-no .rt-v')).color : '',
+          corMeta: getComputedStyle(el.querySelector('td .rt-s:not(.rt-falta)')).color};
+        palco.remove();
+        return out;
+      }, [escopo, alvo]);
+      const onde = `${alvo} (${ncols} colunas)`;
+      assert.deepEqual([r.w, r.h], [1280, 720], onde);
+      assert.ok(r.base <= 720 - 8, `${onde}: a tabela cabe na página (${r.base})`);
+      assert.equal(r.cols, ncols, onde);
+      assert.equal(r.compacto, ncols >= 7, onde);
+      assert.deepEqual(r.cortados, [], `${onde}: texto cortado`);
+      assert.ok(r.fonteMin >= 7, `${onde}: fonte ${r.fonteMin}`);
+      assert.equal(r.assinatura, false, onde);
+      assert.ok(r.verdes > 0 && r.vermelhos > 0, onde);
+      assert.equal(r.corPctNo, 'rgb(198, 40, 40)', `${onde}: % abaixo em vermelho`);
+      assert.equal(r.corMeta, 'rgb(94, 94, 101)', `${onde}: meta sem cor de alerta`);
+      for(const t of ['VOLUME — TENDÊNCIA DO MÊS', 'NA TENDÊNCIA', 'COBERTURAS — ICS GC', 'NO RITMO', 'COMERCIAL BANDEIRANTES',
+                      'Refrigerantes', 'Dest+Art+Cnd', 'Refri Sab. Zero', 'Cerv. 600ml Ret.', 'Venda Zero (KO)'])
+        assert.ok(r.texto.includes(t), `${onde}: ${t}`);
+      if(ncols === 9) assert.ok(/Meta dia 1\.234\.567/.test(r.texto) && /5 \/ 5/.test(r.texto), `${onde}: números grandes e x / 5`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});
+
+describe('Parte R — Painel de Ritmo: PDF real (html2canvas + jsPDF)', {skip: pular || (!LIBS_PDF && 'html2canvas/jspdf não instalados (npm)')}, () => {
+  test('nº de páginas, nenhuma em branco, 1280x720, propriedades; tamanho típico (1 GC com SVs e as 16)', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}, altura: 900});
+    await page.route(/cdnjs\.cloudflare\.com/, r => {
+      const arq = /html2canvas/.test(r.request().url()) ? LIBS_PDF.html2canvas : LIBS_PDF.jspdf;
+      r.fulfill({status: 200, contentType: 'text/javascript', body: fs.readFileSync(arq), headers: {'access-control-allow-origin': '*'}});
+    });
+    await page.evaluate(async () => {
+      for(const lib of [CONFIG.CDN.html2canvas, CONFIG.CDN.jspdf]) await new Promise((ok, erro) => {
+        const s = document.createElement('script'); s.src = lib.src; s.integrity = lib.integrity; s.crossOrigin = 'anonymous';
+        s.onload = ok; s.onerror = erro; document.head.appendChild(s);
+      });
+      const add = window.jspdf.jsPDF.API.addImage;
+      window.__imgs = [];
+      window.jspdf.jsPDF.API.addImage = function(img, ...r){ window.__imgs.push(img); return add.call(this, img, ...r); };
+    });
+    for(const [nome, entrar] of [['G1', null], ['BAND', 'dir']]){
+      if(entrar) await vaiPara(page, entrar);
+      const n = (await modeloRitmo(page)).codigos.length;
+      await page.evaluate(() => { window.__imgs = []; });
+      if(nome === 'BAND') page.once('dialog', d => d.accept());     // só a Diretoria "Todas" confirma
+      const [baixado] = await Promise.all([page.waitForEvent('download', {timeout: 300000}), page.click('#btnRitmo')]);
+      const arq = await baixado.path(), bytes = fs.readFileSync(arq).toString('latin1');
+      assert.match(bytes.slice(0, 5), /^%PDF-/, nome);
+      assert.equal((bytes.match(/\/Type\s*\/Page\b(?!s)/g) || []).length, n, nome);
+      // 1280x720 px = 960x540 pt
+      const caixas = bytes.match(/\/MediaBox \[[^\]]*\]/g) || [];
+      assert.ok(caixas.length === n && caixas.every(c => /0 0 960\.?0* 540\.?0*\]/.test(c)), `${nome}: ${caixas.slice(0, 2)}`);
+      assert.match(bytes, /\/Title \(Painel de Ritmo/, nome);
+      assert.match(bytes, /\/Author \(Comercial Bandeirantes\)/, nome);
+      const tinta = await page.evaluate(imgs => Promise.all(imgs.map(src => new Promise(ok => {
+        const im = new Image();
+        im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+          const cx = c.getContext('2d'); cx.drawImage(im, 0, 0);
+          const d = cx.getImageData(0, 0, im.width, im.height).data; let k = 0;
+          for(let i = 0; i < d.length; i += 16) if(d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200) k++;
+          ok([im.width, im.height, k / (d.length / 16)]); };
+        im.src = src;
+      }))), await page.evaluate(() => window.__imgs));
+      assert.equal(tinta.length, n, nome);
+      tinta.forEach(([w, h, t], i) => { assert.deepEqual([w, h], [1920, 1080], `${nome} página ${i + 1}`);
+        assert.ok(t > 0.02, `${nome}: página ${i + 1} quase em branco (${t})`); });
+      const kb = Math.round(fs.statSync(arq).size / 1024);
+      console.log(`# Painel de Ritmo ${nome}: ${n} páginas, ${kb} KB (${Math.round(kb / n)} KB/página)`);
+      await page.waitForFunction(() => !document.getElementById('btnRitmo').hasAttribute('aria-busy'));
+    }
+    assert.deepEqual(erros.filter(e => !/net::ERR_FAILED|cdnjs/.test(e)), []);
+    await ctx.close();
+  });
+});
