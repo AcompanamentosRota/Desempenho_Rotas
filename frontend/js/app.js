@@ -980,6 +980,10 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')fecha()});
 const DIAS_CHIP=['Hoje','Seg','Ter','Qua','Qui','Sex','Todos'];
 const chipsHtml = chip => `<div class="chips" role="group" aria-label="Dia de visita">${DIAS_CHIP.map(d=>
   `<button class="dchip ${d===chip?'on':''}" data-d="${d}" aria-pressed="${d===chip}">${d}</button>`).join('')}</div>`;
+/* barra de dias das listas de clientes (linha do roster: c[3] = índice em DIAS, c[4] = visita hoje): "Hoje" respeita a
+   paridade da semana (c[4]); um dia = DIAS[c[3]] contém o dia, então o cliente com mais de um dia de visita ("Seg - Qui")
+   aparece em cada um deles; "Todos" = todos */
+const noDia = (c, chip) => chip==='Todos' || (chip==='Hoje' ? c[4]===1 : (DIAS[c[3]]||'').includes(chip));
 function listaClientes(rotas, filtro){
   const out=[];
   rotas.forEach(r=>(CLIENTES_HOJE[r]||[]).forEach(c=>{ if(!filtro||filtro(c)) out.push([r,c]); }));
@@ -994,13 +998,56 @@ function itemHtml(r,c,extra,online){
     <div class="bd">${extra||('PV '+esc(c[0]))}</div></div>`;
 }
 
-// gavetas dos cards Base e Sem compra (cabeçalho das abas) e dos KPIs da Executiva (Base e Visitas hoje -> Visitas de hoje;
-// Sem compra -> Sem compra hoje)
-function abreVisitas(){
+/* Gavetas dos cards Base e Sem compra (cabeçalho das abas) e dos KPIs da Executiva (Base e Visitas hoje -> Base; Sem compra
+   -> Sem compra), com a barra de dias das listas da cascata (padrão "Hoje"; o dia pela regra de noDia):
+   - Base: "Hoje" = a lista "Visitas de hoje" de sempre (CLIENTES_HOJE); um dia = os clientes da base com visita no dia;
+     "Todos" = a base (CLIENT_ROSTER). Título "Visitas de hoje" no Hoje e "Clientes da base" nos demais.
+   - Sem compra: "Hoje" = SEM_COMPRA_HOJE (a lista de sempre); um dia e "Todos" = SEM_COMPRA_MES (os clientes da base sem
+     compra no mês) pelo dia de visita. Título "Sem compra hoje" / "Sem compra". Payload sem SEM_COMPRA_MES (antigo): só o
+     "Hoje", sem a barra (a gaveta de antes).
+   Riscado + "Venda Online" para quem comprou online hoje (QUALQUER); ordem pelo nome; sem virtuais nem ocultas
+   (rotasListas). O "Hoje" vem inteiro, como antes; nos outros dias e no "Todos" (a base da Diretoria inteira), o limite
+   das listas da cascata (o subtítulo traz o número inteiro). */
+const porNome = l => l.sort((a,b)=>a[1][1].localeCompare(b[1][1]));
+function itensGaveta(l, vazio, limita){
+  const LIM = limita ? CONFIG.LIMITE_LISTA : Infinity;
+  return l.length ? l.slice(0, LIM).map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') +
+      (l.length>LIM ? `<div class="vazio">+ ${l.length-LIM} clientes — filtre por rota para ver todos.</div>` : '')
+    : `<div class="vazio">${vazio}</div>`;
+}
+// abre a gaveta com a barra de dias: pinta(chip) = {tit, sub, html}; cada chip troca o título, o subtítulo e a lista
+function gavetaDias(pinta){
+  abre('', '', '');
+  const vai = chip => {
+    const g = pinta(chip);
+    $('dTit').textContent = g.tit; $('dSub').textContent = g.sub;
+    $('dCorpo').innerHTML = chipsHtml(chip) + g.html;
+    $('dCorpo').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>vai(el.dataset.d));
+    $('dCorpo').scrollTop = 0;
+  };
+  vai('Hoje');
+}
+// clientes do roster das rotas com visita no dia (em nome); ids(r) = os PVs que entram (sem ids, todos)
+function doRoster(rotas, chip, ids){
+  const out = [];
+  rotas.forEach(r=>{
+    const s = ids ? new Set(ids(r)||[]) : null;
+    (CLIENT_ROSTER[r]||[]).forEach(c=>{ if((!s || s.has(c[0])) && noDia(c, chip)) out.push([r,c]); });
+  });
+  return porNome(out);
+}
+function abreBase(){
   const rotas = rotasListas();
-  const l = listaClientes(rotas);
-  abre('Visitas de hoje', `${l.length} clientes · ${P.DIA_SEMANA}, semana N°${P.SEMANA_NUM} (${P.SEMANA_TIPO})`,
-    l.length? l.map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') : `<div class="vazio">Nenhuma visita agendada.</div>`);
+  gavetaDias(chip => {
+    if(chip==='Hoje'){
+      const l = listaClientes(rotas);
+      return {tit:'Visitas de hoje', sub:`${l.length} clientes · ${P.DIA_SEMANA}, semana N°${P.SEMANA_NUM} (${P.SEMANA_TIPO})`,
+              html:itensGaveta(l, 'Nenhuma visita agendada.')};
+    }
+    const l = doRoster(rotas, chip);
+    return {tit:'Clientes da base', sub:`${l.length} clientes ${chip==='Todos' ? 'na base' : 'com visita na '+chip}`,
+            html:itensGaveta(l, 'Ninguém neste filtro.', true)};
+  });
 }
 function abreSemCompra(){
   const rotas = rotasListas();
@@ -1008,20 +1055,32 @@ function abreSemCompra(){
     abre('Sem compra hoje','',
       `<div class="vazio">Depende da planilha de venda do dia.</div>`); return;
   }
-  const out=[];
-  rotas.forEach(r=>{
-    const ids=new Set(SEM_COMPRA_HOJE[r]||[]);
-    (CLIENTES_HOJE[r]||[]).forEach(c=>{if(ids.has(c[0])) out.push([r,c]);});
+  const hoje = () => {
+    const out=[];
+    rotas.forEach(r=>{
+      const ids=new Set(SEM_COMPRA_HOJE[r]||[]);
+      (CLIENTES_HOJE[r]||[]).forEach(c=>{if(ids.has(c[0])) out.push([r,c]);});
+    });
+    porNome(out);
+    const vis = rotas.reduce((a,r)=>a+(VISITAS_DIA.geral[r]||0),0);
+    return {tit:'Sem compra hoje', sub:`${out.length} de ${vis} clientes agendados · nenhum faturamento no mês`,
+            html:itensGaveta(out, 'Todo mundo já comprou.')};
+  };
+  const MES = P.SEM_COMPRA_MES;
+  if(!MES){ const g = hoje(); abre(g.tit, g.sub, g.html); return; }     // payload antigo: só o "Hoje"
+  gavetaDias(chip => {
+    if(chip==='Hoje') return hoje();
+    const l = doRoster(rotas, chip, r => MES[r]);
+    const de = rotas.reduce((a,r)=>a+(CLIENT_ROSTER[r]||[]).filter(c=>noDia(c, chip)).length, 0);
+    return {tit:'Sem compra', sub:`${l.length} de ${de} clientes ${chip==='Todos' ? 'da base' : 'com visita na '+chip}`+
+              ' · nenhum faturamento no mês',
+            html:itensGaveta(l, chip==='Todos' ? 'Todo mundo já comprou.' : 'Ninguém neste filtro.', true)};
   });
-  out.sort((a,b)=>a[1][1].localeCompare(b[1][1]));
-  const vis = rotas.reduce((a,r)=>a+(VISITAS_DIA.geral[r]||0),0);
-  abre('Sem compra hoje', `${out.length} de ${vis} clientes agendados · nenhum faturamento no mês`,
-    out.length? out.map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') : `<div class="vazio">Todo mundo já comprou.</div>`);
 }
-clicavel($('cBase'), abreVisitas);
+clicavel($('cBase'), abreBase);
 clicavel($('cSem'), abreSemCompra);
-clicavel($('exBase'), abreVisitas);
-clicavel($('exVis'), abreVisitas);
+clicavel($('exBase'), abreBase);
+clicavel($('exVis'), abreBase);
 clicavel($('exSem'), abreSemCompra);
 
 /* ---------- cascata (gaveta dos cards) ----------
@@ -1179,7 +1238,8 @@ function pintaCascata(){
 }
 
 /* Clientes de volume: Meta (META_NEG do cliente), Real (faturado + online de hoje, fora do fechamento),
-   Dif. Abs (Real - Meta) e %, do mais negativo para o mais positivo; sem tendência; sem quem não tem meta. */
+   Dif. Abs (Real - Meta) e %, do mais negativo para o mais positivo; sem tendência; sem quem não tem meta.
+   Barra de dias das coberturas (noDia), padrão "Todos" (a lista inteira, como antes). */
 function listaVolume(k, rotas){
   const LIM = CONFIG.LIMITE_LISTA, lin = [];
   rotas.forEach(r=>{
@@ -1192,14 +1252,21 @@ function listaVolume(k, rotas){
   });
   lin.sort((a,b)=>a.dif-b.dif);
   const fmt1 = n => n.toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1});
-  $('dLista').innerHTML = lin.length ? `<div class="cCab"><span>Cliente</span><span>Meta</span><span>Real</span>
-      <span>Dif. Abs</span><span>%</span></div>` +
-    lin.slice(0, LIM).map(x=>`<div class="cCli" data-dif="${x.dif}"><div><div class="nm">${esc(x.c[1])}</div>
+  const cab = `<div class="cCab"><span>Cliente</span><span>Meta</span><span>Real</span>
+      <span>Dif. Abs</span><span>%</span></div>`;
+  const cli = x => `<div class="cCli" data-dif="${x.dif}"><div><div class="nm">${esc(x.c[1])}</div>
       <div class="sb">${esc(SEGS[x.c[2]]||'—')} · rota ${esc(x.r)}</div></div>
       <span>${fmt1(x.meta)}</span><span>${fmt1(x.real)}</span>
-      <span class="${x.dif>=0?'pos':'neg'}">${x.dif>0?'+':''}${fmt1(x.dif)}</span><span>${x.pct}%</span></div>`).join('') +
-    (lin.length>LIM ? `<div class="vazio">+ ${lin.length-LIM} clientes — filtre por rota para ver todos.</div>` : '')
-    : '<div class="vazio">Nenhum cliente com meta neste agrupador.</div>';
+      <span class="${x.dif>=0?'pos':'neg'}">${x.dif>0?'+':''}${fmt1(x.dif)}</span><span>${x.pct}%</span></div>`;
+  let chip = 'Todos';
+  const pinta = () => {
+    const vis = lin.filter(x=>noDia(x.c, chip));
+    $('dLista').innerHTML = chipsHtml(chip) + (vis.length ? cab + vis.slice(0, LIM).map(cli).join('') +
+      (vis.length>LIM ? `<div class="vazio">+ ${vis.length-LIM} clientes — filtre por rota para ver todos.</div>` : '')
+      : `<div class="vazio">${lin.length ? 'Ninguém neste filtro.' : 'Nenhum cliente com meta neste agrupador.'}</div>`);
+    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
+  };
+  pinta();
 }
 
 function listaVendaZero(rotas){
@@ -1235,11 +1302,7 @@ function listaCobertura(k, rotas){
   });
   let chip = 'Hoje';
   const pinta = () => {
-    const vis = todos.filter(([r,c]) => {
-      if(chip==='Todos') return true;
-      if(chip==='Hoje') return c[4]===1;          // respeita a paridade da semana
-      return (DIAS[c[3]]||'').includes(chip);
-    }).sort((a,b)=>a[1][1].localeCompare(b[1][1]));
+    const vis = porNome(todos.filter(([r,c]) => noDia(c, chip)));    // "Hoje" respeita a paridade da semana
     $('dLista').innerHTML = chipsHtml(chip) +
       (vis.length? vis.slice(0,LIM).map(([r,c])=>itemHtml(r,c,null,onlineIds(r,k).includes(c[0]))).join('')
                  : `<div class="vazio">Ninguém neste filtro.</div>`) +

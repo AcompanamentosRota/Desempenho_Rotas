@@ -122,6 +122,20 @@ before(async () => {
   fs.writeFileSync(path.join(exec, 'payload.json'), JSON.stringify(pex));
   fs.writeFileSync(path.join(exec, 'online.json'), JSON.stringify(oex));
   DADOS.exec = exec;
+  // gavetas com barra de dias (Parte X): o 'exec' com dias de visita variados (montaDias; no sintético todos são "Seg - Qui")
+  const dias = path.join(tmp, 'dias');
+  fs.mkdirSync(dias);
+  const pdi = JSON.parse(fs.readFileSync(path.join(DADOS.exec, 'payload.json'), 'utf-8'));
+  montaDias(pdi);
+  fs.writeFileSync(path.join(dias, 'payload.json'), JSON.stringify(pdi));
+  fs.copyFileSync(path.join(DADOS.exec, 'online.json'), path.join(dias, 'online.json'));
+  DADOS.dias = dias;
+  const diasscm = path.join(tmp, 'diasscm');      // o mesmo, sem SEM_COMPRA_MES (payload de antes da Etapa 1)
+  fs.mkdirSync(diasscm);
+  delete pdi.SEM_COMPRA_MES;
+  fs.writeFileSync(path.join(diasscm, 'payload.json'), JSON.stringify(pdi));
+  fs.copyFileSync(path.join(DADOS.exec, 'online.json'), path.join(diasscm, 'online.json'));
+  DADOS.diasscm = diasscm;
   // PDF do Resumo: 16 gerências e números grandes (montaGrande)
   const grande = path.join(tmp, 'grande');
   fs.mkdirSync(grande);
@@ -142,7 +156,7 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
   '.png':'image/png', '.woff2':'font/woff2', '.webmanifest':'application/manifest+json'};
 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' |
-   'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec');
+   'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
@@ -1105,7 +1119,9 @@ const linhasCor = page => page.$$eval('#dCorpo .cLin', ls => ls.map(l => [l.quer
   Number(l.dataset.meta), l.dataset.dir === '' ? null : Number(l.dataset.dir), l.classList.contains('ok') ? 'ok' : 'no']));
 
 describe('Parte S — SEM_COMPRA_MES (chave nova e opcional do payload)', {skip: pular}, () => {
-  /* textos dos cards e das gavetas Base / Sem compra em cada aba (a Etapa 1 não muda nada no front) */
+  /* textos dos cards e das gavetas Base / Sem compra em cada aba. Desde a Etapa 6 a chave só muda a gaveta Sem compra: com
+     ela, a barra de dias (os outros dias e o "Todos" vêm do SEM_COMPRA_MES); sem ela, só o "Hoje", sem a barra. As gavetas
+     abrem no "Hoje" e, fora da barra, são as mesmas nos dois payloads. */
   async function telas(page){
     const out = [];
     for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
@@ -1114,22 +1130,28 @@ describe('Parte S — SEM_COMPRA_MES (chave nova e opcional do payload)', {skip:
       out.push(await page.evaluate(() => [document.getElementById('abaTopo').innerText, document.getElementById('puxa').innerText,
                                            document.getElementById('lista').innerText]));
     }
+    const barras = [];
     for(const card of ['#cBase', '#cSem']){
       await abreCardTopo(page, card);
+      barras.push(await page.$$eval('#dCorpo .dchip', bs => bs.map(b => b.dataset.d + (b.classList.contains('on') ? '*' : '')).join(' ')));
       out.push(await page.evaluate(() => [document.getElementById('dTit').textContent, document.getElementById('dSub').textContent,
-                                           document.getElementById('dCorpo').innerText]));
+        [...document.getElementById('dCorpo').children].filter(x => !x.classList.contains('chips')).map(x => x.innerText).join('\n')]));
       await page.keyboard.press('Escape');
     }
-    return out;
+    return {out, barras};
   }
 
-  test('payload sem SEM_COMPRA_MES (antigo) abre sem erro e com as mesmas telas do payload com a chave', async () => {
+  test('payload sem SEM_COMPRA_MES (antigo) abre sem erro e com as mesmas telas do payload com a chave (Sem compra só no "Hoje")', async () => {
+    const BARRA = 'Hoje* Seg Ter Qua Qui Sex Todos';
     for(const entrar of ['dir', {perfil: 'gc', gc: 'G1'}, {perfil: 'sv', gc: 'G1', sv: '1'}, {perfil: 'rota', gc: 'G1', rota: 'G111'}]){
       const vistas = [];
       for(const nome of ['normal', 'semscm']){
         const {page, ctx, erros} = await abre(nome, {entrar});
         assert.equal(await page.evaluate(() => 'SEM_COMPRA_MES' in P), nome === 'normal', nome);
-        vistas.push(await telas(page));
+        const v = await telas(page);
+        // Base: barra nos dois; Sem compra: com a chave, a barra no "Hoje"; sem ela, nenhuma (só o "Hoje")
+        assert.deepEqual(v.barras, [BARRA, nome === 'normal' ? BARRA : ''], `${nome} ${JSON.stringify(entrar)}: barras`);
+        vistas.push(v.out);
         assert.deepEqual(erros, [], `${nome} ${JSON.stringify(entrar)}`);
         await ctx.close();
       }
@@ -3329,12 +3351,14 @@ const CENARIOS_CASCATA = [
   {nome: 'Supervisão', dados: 'normal', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, abas: {VOLUME: 1, ICS_GC: 1}},
   {nome: 'fechamento', dados: 'fech', entrar: 'gc', abas: {VOLUME: 1, ICS_GC: 1}},
   {nome: 'Todos a Bordo', dados: 'inc', entrar: {perfil: 'gc', gc: 'IT+MO'}, abas: {INCENTIVO: 5}},
+  // Etapa 6: barra de dias com clientes sem compra no mês e dias de visita variados (gavetas Base e Sem compra cheias)
+  {nome: 'barra de dias', dados: 'dias', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, abas: {VOLUME: 1}, topo: true},
 ];
 
 describe('Parte N — cascata como antes do ajuste visual, só com a Inter', {skip: pular || (!FRONT_ANTIGO && `sem o commit ${REF_CASCATA}`)}, () => {
   for(const largura of [1280, 390]){
     test(`${largura} px: todos os níveis da cascata com o estilo do ${REF_CASCATA} (só a família muda), sem texto cortado nem invadindo`, async () => {
-      const vistos = new Set(), cortes = new Set();
+      const vistos = new Set(), cortes = new Set(), espelhos = new Set();
       for(const c of CENARIOS_CASCATA){
         for(const tema of ['preta', 'branca']){
           if(tema === 'branca' && c.nome !== 'Gerência') continue;     // o fundo da entrada não muda a gaveta: um cenário basta
@@ -3353,8 +3377,26 @@ describe('Parte N — cascata como antes do ajuste visual, só com a Inter', {sk
           if(largura >= 1000) assert.equal(parseFloat(esq.drw), esq.lado, 'a gaveta começa à direita do painel lateral');
           else assert.equal(esq.drw, '0px');
           await velho.page.addStyleTag({content: `#drw{left:${esq.drw}!important}`});
-          const confere = async onde => {
-            const [a, b] = await Promise.all([novo.page.evaluate(ASSINA_GAVETA, PROPS_CASCATA), velho.page.evaluate(ASSINA_GAVETA, PROPS_CASCATA)]);
+          // Etapa 6: a barra de dias (o chipsHtml de sempre) entrou na lista de clientes de volume e nas gavetas Base e Sem
+          // compra, onde o front do 0a59eb4 não tinha barra. Nesses casos: (a) fora da barra, a marcação é a do 0a59eb4 (só no
+          // estado que o 0a59eb4 também tem: `soNovo` = um chip que ele não tinha); (b) a marcação inteira do atual vai para a
+          // gaveta do 0a59eb4 (com o CSS dele; os nós dele voltam depois, com os eventos) e o estilo de CADA elemento, barra
+          // inclusive, é comparado com o de lá, como no resto
+          const semBarraAntes = async () => !!(await novo.page.$('#dCorpo .chips')) && !(await velho.page.$('#dCorpo .chips'));
+          const confere = async (onde, soNovo = false) => {
+            const espelho = await semBarraAntes();
+            let [a, b] = await Promise.all([novo.page.evaluate(ASSINA_GAVETA, PROPS_CASCATA), velho.page.evaluate(ASSINA_GAVETA, PROPS_CASCATA)]);
+            if(espelho){
+              if(!soNovo) assert.deepEqual(a.map(x => x[0]).filter(n => !/^(div\.chips|button\.dchip)(\.|$)/.test(n)), b.map(x => x[0]),
+                                           `${onde}: mesma marcação do ${REF_CASCATA} fora da barra de dias`);
+              const html = await novo.page.$eval('#dCorpo', el => el.innerHTML);
+              await velho.page.evaluate(html => { const c = document.getElementById('dCorpo');
+                window.__nosAntes = [...c.childNodes]; c.innerHTML = html; }, html);
+              b = await velho.page.evaluate(ASSINA_GAVETA, PROPS_CASCATA);
+              await velho.page.evaluate(() => { document.getElementById('dCorpo').replaceChildren(...window.__nosAntes); });
+              espelhos.add(await novo.page.evaluate(() => document.querySelector('#dCorpo .cCli, #dCorpo .cCab') ? 'volume'
+                : document.getElementById('dTit').textContent));
+            }
             assert.deepEqual(a.map(x => x[0]), b.map(x => x[0]), `${onde}: mesma marcação`);
             a.forEach(([nome, v, fam, cortado, txt], i) => {
               vistos.add(nome);
@@ -3370,7 +3412,8 @@ describe('Parte N — cascata como antes do ajuste visual, só com a Inter', {sk
             });
             assert.deepEqual(await novo.page.evaluate(INVASOES), [], `${onde}: coluna invadindo a vizinha`);
           };
-          // percorre: card -> nível de cima -> ... -> clientes (e o chip "Todos" nas listas de cobertura)
+          // percorre: card -> nível de cima -> ... -> clientes (e os chips "Todos" e "Seg" das listas de clientes; no front do
+          // 0a59eb4 só onde ele já tinha a barra, a das coberturas)
           const desce = async (abrir, onde) => {
             for(const {page} of [novo, velho]) await abrir(page);
             for(let nivel = 0; nivel < 5; nivel++){
@@ -3380,9 +3423,13 @@ describe('Parte N — cascata como antes do ajuste visual, só com a Inter', {sk
               if(!prox) break;
               for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
             }
-            if(await novo.page.$('#dCorpo .dchip[data-d="Todos"]')){
-              for(const {page} of [novo, velho]) await page.click('#dCorpo .dchip[data-d="Todos"]');
-              await confere(`${onde} chip Todos`);
+            for(const d of ['Todos', 'Seg']){
+              const chip = `#dCorpo .dchip[data-d="${d}"]`;
+              if(!(await novo.page.$(chip))) continue;
+              const antes = !!(await velho.page.$(chip));
+              await novo.page.click(chip);
+              if(antes) await velho.page.click(chip);
+              await confere(`${onde} chip ${d}`, !antes);
             }
             if(await novo.page.$('#cVolta')){
               for(const {page} of [novo, velho]) await page.click('#cVolta');
@@ -3405,6 +3452,9 @@ describe('Parte N — cascata como antes do ajuste visual, só com a Inter', {sk
                       'span.cOn', 'span.cOn.nd', 'div.cNota', 'div.cCab', 'div.cCli', 'span.neg', 'span.pos', 'div.item', 'div.item.riscado',
                       'span.tagOnline', 'button.dchip', 'button.dchip.on', 'div.chips', 'div.vazio', 'div.bd'])
         assert.ok([...vistos].some(v => v === t || v.startsWith(t + '.')), `nenhum ${t} conferido`);
+      // a barra de dias nova (Etapa 6) foi conferida contra o CSS do 0a59eb4 nas três listas e nos estados de cada gaveta
+      for(const t of ['volume', 'Visitas de hoje', 'Clientes da base', 'Sem compra hoje', 'Sem compra'])
+        assert.ok(espelhos.has(t), `barra de dias de "${t}" não conferida`);
       if(cortes.size) console.log(`# ${largura} px: células com reticências (como antes): ${[...cortes].join(' | ')}`);
     });
   }
@@ -5855,18 +5905,349 @@ describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
         for(const {page} of [novo, velho]) await filtra(page, {aba});
         const [a, b] = [await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO)];
         assert.deepEqual(a, b, `${onde} ${aba}: cabeçalho e cards`);
-        // cascata do 1º card (1º nível) igual
+        // cascata do 1º card (1º nível) igual (na Rota, o 1º nível é a lista de clientes; a de volume tem, desde a Etapa 6, a
+        // barra de dias, que fica fora da comparação)
         const k = await novo.page.$eval('#lista .ind[data-k]', el => el.dataset.k);
-        const gav = async p => { await p.click(`#lista .ind[data-k="${k}"]`); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
+        const gav = async p => { await p.click(`#lista .ind[data-k="${k}"]`); const h = await p.evaluate(vol => { const d = document.getElementById('drw').cloneNode(true);
+          if(vol) d.querySelectorAll('#dLista > .chips').forEach(x => x.remove()); return d.innerHTML; }, aba === 'VOLUME'); await p.keyboard.press('Escape'); return h; };
         assert.equal(await gav(novo.page), await gav(velho.page), `${onde} ${aba}: cascata de ${k}`);
       }
-      // gavetas Base e Sem compra iguais
+      // gavetas Base e Sem compra iguais (desde a Etapa 6 com a barra de dias, que abre no "Hoje": sem a barra, a gaveta de antes)
       for(const id of ['cBase', 'cSem']){
-        const gav = async p => { await abreCardTopo(p, id); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
+        const gav = async p => { await abreCardTopo(p, id); const h = await p.evaluate(() => { const d = document.getElementById('drw').cloneNode(true);
+          d.querySelectorAll('#dCorpo > .chips').forEach(x => x.remove()); return d.innerHTML; }); await p.keyboard.press('Escape'); return h; };
         assert.equal(await gav(novo.page), await gav(velho.page), `${onde}: gaveta ${id}`);
       }
       if(entrar.perfil !== 'rota'){
         // Resumo de vendas (a folha) e Painel de Ritmo (escopo e o modelo das páginas, só payload) iguais
+        const rs = async p => { await p.click('#btnResumo'); await p.waitForSelector('#rsFolha h2'); const h = await p.innerHTML('#rsFolha');
+          await p.click('#rsVoltar'); return h; };
+        assert.equal(await rs(novo.page), await rs(velho.page), `${onde}: Resumo`);
+        const rt = p => p.evaluate(() => JSON.stringify(montaRitmo(P, RT.escopoRitmo())));
+        assert.equal(await rt(novo.page), await rt(velho.page), `${onde}: Painel de Ritmo`);
+      }
+      assert.deepEqual(novo.erros, [], onde);
+      await novo.ctx.close(); await velho.ctx.close();
+    }
+  });
+});
+
+/* ---------- Parte X — gavetas com barra de dias (Etapa 6) ----------
+   A lista de clientes de volume da cascata e as gavetas Base (card Base e KPIs Base e Visitas hoje da Executiva) e Sem
+   compra (card e KPI Sem compra) com a barra de dias das listas de cobertura (chipsHtml; a regra noDia): padrões "Todos"
+   (volume), "Hoje" (Base) e "Hoje" (Sem compra). "Hoje" = as listas de sempre (CLIENTES_HOJE e SEM_COMPRA_HOJE); um dia =
+   DIAS[c[3]] contém o dia, então o cliente com mais de um dia de visita ("Seg - Qui") aparece em cada um deles e uma vez
+   no "Todos"; "Todos" = a base / o SEM_COMPRA_MES; riscado + "Venda Online" para quem comprou online hoje (QUALQUER).
+   Contagens contra os cards: as listas de clientes não mostram as supervisões ocultas (SV.G3.3, regra de sempre), então
+   a diferença, quando há, é exatamente a delas. Cenários: 'dias' = o 'exec' (clientes sem compra no mês) com dias de
+   visita variados (montaDias); 'diasscm' = o mesmo sem SEM_COMPRA_MES. Antes x depois contra a main antes da Etapa 6
+   (REF_ETAPA6, servida por `troca`; sem o histórico do git, esse teste é pulado). */
+const REF_ETAPA6 = 'aceacc4';
+const FRONT_ETAPA5 = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_ETAPA6}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
+    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+  } catch(e) { return null; }
+})();
+/* Dias de visita variados (no sintético todos são "Seg - Qui"): em cada rota, os clientes na ordem do roster ficam "Seg -
+   Qui" (dois dias), "Ter" e "Qua - Sex"; DIAS só ganha valores no fim (tabela de índice). A visita de hoje (c[4]) não muda. */
+function montaDias(p){
+  const idx = d => { if(!p.DIAS.includes(d)) p.DIAS.push(d); return p.DIAS.indexOf(d); };
+  const dias = ['Seg - Qui', 'Ter', 'Qua - Sex'].map(idx);
+  for(const [r, cs] of Object.entries(p.CLIENT_ROSTER)){
+    const dia = {};
+    cs.forEach((c, j) => { c[3] = dias[j % 3]; dia[c[0]] = c[3]; });
+    for(const c of p.CLIENTES_HOJE[r] || []) c[3] = dia[c[0]];
+  }
+}
+/* leitura da gaveta (LE_GAV), recontagem do payload e do online (ESPERADO_X) e a leitura de cada chip (leChips): as mesmas
+   da conferência com dado real (gavetas_invariantes.js) */
+const {LE_GAV, ESPERADO: ESPERADO_X, leChips, CHIPS: CHIPS_X, semTag, numSub} = require('./gavetas_invariantes.js');
+// clientes de volume na gaveta: nome, rota e Dif. Abs (data-dif) de cada linha
+const LE_VOL = () => ({on: (document.querySelector('#dLista .dchip.on') || {dataset: {}}).dataset.d || null,
+  chips: [...document.querySelectorAll('#dLista .dchip')].map(b => b.dataset.d), cab: !!document.querySelector('#dLista .cCab'),
+  lin: [...document.querySelectorAll('#dLista .cCli')].map(el => ({nome: el.querySelector('.nm').textContent,
+    r: el.querySelector('.sb').textContent.match(/rota (\S+)/)[1], dif: Number(el.dataset.dif)})),
+  vazio: [...document.querySelectorAll('#dLista .vazio')].map(v => v.textContent)});
+// dia de visita e visita hoje de cada cliente pelo nome (roster da rota)
+const DIA_CLI = () => Object.fromEntries(Object.entries(CLIENT_ROSTER).flatMap(([r, cs]) => cs.map(c => [`${r}|${c[1]}`,
+  {dias: (DIAS[c[3]] || '').split(' - '), hoje: c[4] === 1}])));
+
+describe('Parte X — gavetas com barra de dias (Etapa 6)', {skip: pular}, () => {
+  test('padrões: Volume em "Todos"; Base e Sem compra em "Hoje" pelos cards e pelos KPIs da Executiva; títulos por chip', async () => {
+    const {page, ctx, erros} = await abre('dias', {entrar: 'dir', aba: null});
+    assert.equal(await page.evaluate(() => aba), 'EXEC');
+    const kpis = [['exBase', 'Visitas de hoje', 'Clientes da base'], ['exVis', 'Visitas de hoje', 'Clientes da base'],
+                  ['exSem', 'Sem compra hoje', 'Sem compra']];
+    const cards = [['cBase', 'Visitas de hoje', 'Clientes da base'], ['cSem', 'Sem compra hoje', 'Sem compra']];
+    const confere = async (id, hoje, outro, onde) => {
+      await page.click('#' + id);
+      let g = await page.evaluate(LE_GAV);
+      assert.deepEqual([g.tit, g.on, g.chips], [hoje, 'Hoje', CHIPS_X], `${onde} ${id}: padrão "Hoje"`);
+      for(const d of ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Todos', 'Hoje']){
+        await page.click(`#dCorpo .dchip[data-d="${d}"]`);
+        g = await page.evaluate(LE_GAV);
+        assert.deepEqual([g.tit, g.on], [d === 'Hoje' ? hoje : outro, d], `${onde} ${id} ${d}`);
+        assert.equal(await page.$$eval('#dCorpo .dchip[aria-pressed="true"]', bs => bs.map(b => b.dataset.d).join()), d, `${onde} ${id} ${d}: aria-pressed`);
+      }
+      await page.keyboard.press('Escape');
+      // ao reabrir, o padrão de novo
+      await page.click('#' + id);
+      assert.equal((await page.evaluate(LE_GAV)).on, 'Hoje', `${onde} ${id}: reaberta`);
+      await page.keyboard.press('Escape');
+    };
+    for(const [id, hoje, outro] of kpis) await confere(id, hoje, outro, 'Diretoria (Executiva)');
+    // cards do topo: com uma supervisão (perfil Supervisão) ficam à vista
+    await vaiPara(page, {perfil: 'sv', gc: 'G2', sv: '1'}, 'VOLUME');
+    for(const [id, hoje, outro] of cards){
+      assert.ok(await page.isVisible('#' + id), id);
+      await confere(id, hoje, outro, 'Supervisão (card)');
+    }
+    // Volume: clientes da cascata (supervisão -> rota -> clientes) em "Todos" = a lista inteira, como antes
+    await page.click('#lista .ind[data-k="VOL REFRIGERANTES"]');
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    const dia = await page.evaluate(DIA_CLI);
+    const todos = await page.evaluate(LE_VOL);
+    assert.deepEqual([todos.on, todos.chips, todos.cab], ['Todos', CHIPS_X, true]);
+    assert.ok(todos.lin.length > 1);
+    for(let i = 1; i < todos.lin.length; i++) assert.ok(todos.lin[i - 1].dif <= todos.lin[i].dif, 'Dif. Abs crescente');
+    for(const d of CHIPS_X){
+      await page.click(`#dLista .dchip[data-d="${d}"]`);
+      const v = await page.evaluate(LE_VOL);
+      assert.equal(v.on, d);
+      // a mesma lista, na mesma ordem, só com os clientes do dia
+      const esperado = todos.lin.filter(x => { const c = dia[`${x.r}|${x.nome}`]; return d === 'Todos' || (d === 'Hoje' ? c.hoje : c.dias.includes(d)); });
+      assert.deepEqual(v.lin, esperado, `volume ${d}`);
+      assert.deepEqual(v.vazio, esperado.length ? [] : ['Ninguém neste filtro.'], `volume ${d}: vazio`);
+    }
+    // voltar e abrir a rota de novo: a barra volta ao padrão "Todos"
+    await page.click('#cVolta');
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    assert.equal((await page.evaluate(LE_VOL)).on, 'Todos');
+    await page.keyboard.press('Escape');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  const ESCOPOS_X = [
+    {nome: 'Diretoria', entrar: 'dir', ocultas: true},
+    {nome: 'Gerência G1', entrar: {perfil: 'gc', gc: 'G1'}},
+    {nome: 'G1 · Neutraliza no filtro', entrar: {perfil: 'gc', gc: 'G1'}, sv: 'Neutraliza'},
+    {nome: 'Gerência G3 (com a oculta SV.G3.3)', entrar: {perfil: 'gc', gc: 'G3'}, ocultas: true},
+    {nome: 'grupo IT+MO no Total', entrar: {perfil: 'gc', gc: 'IT+MO'}},
+    {nome: 'grupo IT+MO · GC.MO', entrar: {perfil: 'gc', gc: 'IT+MO'}, gc: 'MO'},
+    {nome: 'Supervisão SV.G2.1', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}},
+    {nome: 'Rota G211', entrar: {perfil: 'rota', gc: 'G2', rota: 'G211'}},
+  ];
+  test('contagens = cards (Hoje = visitas hoje e sem compra hoje; Todos = base e semCompra), dias, riscado e "Venda Online" em 8 escopos', async () => {
+    const vistos = new Set();
+    for(const c of ESCOPOS_X){
+      const {page, ctx, erros} = await abre('dias', {entrar: c.entrar, aba: 'VOLUME'});
+      if(c.gc) await page.selectOption('#fgc', c.gc);
+      if(c.sv) await filtra(page, {gc: await page.evaluate(() => sel.gc), sv: c.sv});
+      const e = await page.evaluate(ESPERADO_X);
+      assert.equal(e.ocultas.n > 0, !!c.ocultas, `${c.nome}: supervisão oculta no escopo`);
+      const b = await leChips(page, () => abreCardTopo(page, 'cBase')), s = await leChips(page, () => abreCardTopo(page, 'cSem'));
+      assert.deepEqual([b.padrao.on, s.padrao.on], ['Hoje', 'Hoje'], c.nome);
+      for(const d of CHIPS_X){
+        const onde = `${c.nome} ${d}`;
+        assert.deepEqual(semTag(b[d].itens), e.base[d].map(({r, pv, risc}) => ({r, pv, risc})), `${onde}: Base`);
+        assert.deepEqual(semTag(s[d].itens), e.sem[d].map(({r, pv, risc}) => ({r, pv, risc})), `${onde}: Sem compra`);
+        // riscado <-> "Venda Online" (comprou online hoje, QUALQUER)
+        for(const x of [...b[d].itens, ...s[d].itens]){
+          assert.equal(x.tag, x.risc ? 'Venda Online' : '', `${onde}: tag de ${x.pv}`);
+          vistos.add(x.risc ? 'riscado' : 'normal');
+        }
+        // o subtítulo traz o número da lista
+        assert.equal(numSub(b[d].sub), b[d].itens.length, `${onde}: subtítulo Base "${b[d].sub}"`);
+        assert.equal(numSub(s[d].sub), s[d].itens.length, `${onde}: subtítulo Sem compra "${s[d].sub}"`);
+      }
+      // contagens x cards: a diferença é só a das rotas ocultas (fora das listas de clientes, dentro dos cards)
+      assert.equal(b.Hoje.itens.length, e.cards.vis - e.ocultas.vis, `${c.nome}: Hoje = visitas hoje do card Base`);
+      assert.equal(s.Hoje.itens.length, e.cards.semHoje - e.ocultas.semHoje, `${c.nome}: Hoje = sem compra hoje do card`);
+      assert.equal(s.Todos.itens.length, e.cards.sem - e.ocultas.sem, `${c.nome}: Todos = semCompra do card`);
+      assert.equal(s.Todos.itens.length, e.semRotas, `${c.nome}: Todos = soma do semCompra das rotas`);
+      assert.equal(b.Todos.itens.length, e.cards.base - e.ocultas.base, `${c.nome}: Todos = base do card`);
+      if(!c.ocultas) assert.deepEqual([b.Hoje.itens.length, s.Hoje.itens.length, s.Todos.itens.length, b.Todos.itens.length],
+                                      [e.cards.vis, e.cards.semHoje, e.cards.sem, e.cards.base], `${c.nome}: igual aos cards`);
+      else assert.ok(e.ocultas.base > 0 && e.ocultas.vis > 0, `${c.nome}: a oculta tem clientes`);
+      // cliente com mais de um dia de visita ("Seg - Qui"): em cada um dos dias dele, em nenhum outro, e uma vez no Todos
+      for(const [nome, g] of [['Base', b], ['Sem compra', s]]){
+        const multi = (nome === 'Base' ? e.base : e.sem).Todos.filter(x => x.dias === 'Seg - Qui');
+        // na Base toda rota tem um (o 1º cliente); no Sem compra, só onde ele ficou sem compra (montaSemCompra)
+        if(nome === 'Base') assert.ok(multi.length, `${c.nome} ${nome}: há cliente de dois dias`);
+        if(!multi.length) continue;
+        for(const m of multi){
+          const em = CHIPS_X.filter(d => d !== 'Hoje' && g[d].itens.some(x => x.r === m.r && x.pv === m.pv));
+          assert.deepEqual(em, ['Seg', 'Qui', 'Todos'], `${c.nome} ${nome}: ${m.r}/${m.pv}`);
+          assert.equal(g.Todos.itens.filter(x => x.r === m.r && x.pv === m.pv).length, 1);
+        }
+        vistos.add(`${nome} multi`);
+      }
+      // títulos e as listas vazias
+      assert.deepEqual([b.Hoje.tit, b.Seg.tit, b.Todos.tit, s.Hoje.tit, s.Seg.tit, s.Todos.tit],
+                       ['Visitas de hoje', 'Clientes da base', 'Clientes da base', 'Sem compra hoje', 'Sem compra', 'Sem compra']);
+      assert.match(s.Todos.sub, /^[\d.]+ de [\d.]+ clientes da base · nenhum faturamento no mês$/, c.nome);
+      assert.match(s.Seg.sub, /^[\d.]+ de [\d.]+ clientes com visita na Seg · nenhum faturamento no mês$/, c.nome);
+      assert.match(b.Seg.sub, /^[\d.]+ clientes com visita na Seg$/, c.nome);
+      assert.match(b.Todos.sub, /^[\d.]+ clientes na base$/, c.nome);
+      for(const d of CHIPS_X) for(const [g, vazio] of [[b, d === 'Hoje' ? 'Nenhuma visita agendada.' : 'Ninguém neste filtro.'],
+          [s, d === 'Hoje' || d === 'Todos' ? 'Todo mundo já comprou.' : 'Ninguém neste filtro.']])
+        assert.deepEqual(g[d].vazio, g[d].itens.length ? [] : [vazio], `${c.nome} ${d}: vazio`);
+      assert.deepEqual(erros, [], c.nome);
+      await ctx.close();
+    }
+    for(const t of ['riscado', 'normal', 'Base multi', 'Sem compra multi']) assert.ok(vistos.has(t), `nenhum caso ${t}`);
+  });
+
+  test('Todos do Sem compra = semCompra de cada rota, supervisão e gerência (G2 e o grupo IT+MO); a Executiva abre a mesma gaveta', async () => {
+    for(const gc of ['G2', 'IT+MO']){
+      const {page, ctx, erros} = await abre('dias', {entrar: {perfil: 'gc', gc}, aba: 'VOLUME'});
+      const escopos = await page.evaluate(gc => [{gc, sv: '', rota: ''}, ...membrosGc(gc).map(g => ({gc: g, sv: '', rota: ''})),
+        ...svsEmOrdem(gc).map(sv => ({gc, sv, rota: ''})), ...rotasDe(gc, '').filter(r => !ehVirtual(r)).map(rota => ({gc, sv: svDaRota(rota), rota}))], gc);
+      let comSem = 0;
+      for(const f of escopos){
+        await filtra(page, f);
+        const onde = `${f.gc} ${f.sv} ${f.rota}`;
+        const n = await page.evaluate(() => ({card: document.getElementById('nSem').textContent,
+          soma: rotasAtuais().filter(r => !ehVirtual(r)).reduce((a, r) => a + (nodo('', r).semCompra || 0), 0)}));
+        await abreCardTopo(page, 'cSem');
+        await page.click('#dCorpo .dchip[data-d="Todos"]');
+        const g = await page.evaluate(LE_GAV);
+        await page.keyboard.press('Escape');
+        assert.equal(String(g.itens.length), n.card.replace(/\./g, ''), `${onde}: Todos x card`);
+        assert.equal(g.itens.length, n.soma, `${onde}: Todos x semCompra`);
+        if(g.itens.length) comSem++;
+      }
+      assert.ok(comSem > 3, `${gc}: escopos com sem compra`);
+      // Executiva: o KPI Sem compra abre a mesma gaveta do card (com a barra), o KPI Base e o Visitas hoje, a da Base
+      await filtra(page, {gc, sv: '', rota: ''});
+      await vaiAba(page, 'EXEC');
+      for(const [kpi, card] of [['exSem', 'cSem'], ['exBase', 'cBase'], ['exVis', 'cBase']]){
+        const a = await leChips(page, () => page.click('#' + kpi)), b = await leChips(page, () => abreCardTopo(page, card));
+        assert.deepEqual(a, b, `${gc}: ${kpi} = ${card}`);
+      }
+      assert.deepEqual(erros, [], gc);
+      await ctx.close();
+    }
+  });
+
+  test('payload sem SEM_COMPRA_MES: Sem compra só no "Hoje" (sem a barra), a mesma lista; Base com a barra', async () => {
+    for(const entrar of ['dir', {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G2', sv: '1'}, {perfil: 'rota', gc: 'G2', rota: 'G211'}]){
+      const v = {};
+      for(const nome of ['dias', 'diasscm']){
+        const {page, ctx, erros} = await abre(nome, {entrar, aba: 'VOLUME'});
+        v[nome] = {b: await leChips(page, () => abreCardTopo(page, 'cBase')), s: await leChips(page, () => abreCardTopo(page, 'cSem'))};
+        assert.deepEqual(erros, [], `${nome} ${JSON.stringify(entrar)}`);
+        await ctx.close();
+      }
+      const {dias, diasscm} = v, onde = JSON.stringify(entrar);
+      assert.deepEqual(diasscm.s.padrao.chips, [], `${onde}: sem a barra`);
+      assert.deepEqual(Object.keys(diasscm.s), ['padrao']);
+      // o "Hoje" de sempre: título, subtítulo e itens iguais aos do payload com a chave
+      assert.deepEqual({...diasscm.s.padrao, chips: CHIPS_X, on: 'Hoje'}, dias.s.Hoje, `${onde}: Sem compra hoje`);
+      assert.deepEqual(diasscm.b, dias.b, `${onde}: Base igual`);
+    }
+  });
+
+  test('fechamento do mês: barra nas duas gavetas, "Hoje" de padrão; Todos = semCompra do card (mês fechado)', async () => {
+    const {page, ctx, erros} = await abre('fech', {entrar: {perfil: 'gc', gc: 'G1'}, aba: 'VOLUME'});
+    assert.ok(await page.evaluate(() => P.FECHAMENTO));
+    const b = await leChips(page, () => abreCardTopo(page, 'cBase')), s = await leChips(page, () => abreCardTopo(page, 'cSem'));
+    assert.deepEqual([b.padrao.on, s.padrao.on, b.padrao.tit, s.padrao.tit], ['Hoje', 'Hoje', 'Visitas de hoje', 'Sem compra hoje']);
+    const card = await page.evaluate(() => ({sem: document.getElementById('nSem').textContent, base: document.getElementById('nBase').textContent}));
+    assert.equal(String(s.Todos.itens.length), card.sem.replace(/\./g, ''));
+    assert.equal(String(b.Todos.itens.length), card.base.replace(/\./g, ''));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('limite das listas fora do "Hoje" (CONFIG.LIMITE_LISTA): "+ N clientes"; o "Hoje" vem inteiro; o subtítulo traz o total', async () => {
+    const troca = {'/js/config.js': t => t.replace(/LIMITE_LISTA: \d+/, 'LIMITE_LISTA: 5')};
+    const {page, ctx, erros} = await abre('dias', {entrar: 'dir', aba: 'VOLUME', troca});
+    assert.equal(await page.evaluate(() => CONFIG.LIMITE_LISTA), 5);
+    const e = await page.evaluate(ESPERADO_X);
+    const b = await leChips(page, () => abreCardTopo(page, 'cBase')), s = await leChips(page, () => abreCardTopo(page, 'cSem'));
+    assert.ok(e.base.Hoje.length > 5 && e.sem.Hoje.length > 5, 'listas maiores que o limite');
+    for(const [g, esp, nome] of [[b, e.base, 'Base'], [s, e.sem, 'Sem compra']]){
+      assert.equal(g.Hoje.itens.length, esp.Hoje.length, `${nome}: Hoje inteiro`);
+      assert.deepEqual(g.Hoje.vazio, []);
+      for(const d of CHIPS_X.slice(1)){
+        const n = esp[d].length, onde = `${nome} ${d}`;
+        assert.deepEqual(semTag(g[d].itens), esp[d].slice(0, 5).map(({r, pv, risc}) => ({r, pv, risc})), onde);
+        assert.deepEqual(g[d].vazio, n > 5 ? [`+ ${n - 5} clientes — filtre por rota para ver todos.`] : n ? [] : g[d].vazio, onde);
+        assert.equal(numSub(g[d].sub), n, `${onde}: subtítulo com o total`);
+      }
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [360, 390, 1000, 1440]){
+    test(`${largura} px: gavetas com a barra sem rolagem lateral nem texto cortado; a barra rola dentro dela`, async () => {
+      for(const tema of ['preta', 'branca']){
+        const {page, ctx, erros} = await abre('dias', {entrar: 'dir', aba: 'VOLUME', largura, altura: 800, armazenado: {drotas_entrada: tema}});
+        await medidas(page);
+        for(const [abrir, chip] of [[() => abreCardTopo(page, 'cBase'), 'Todos'], [() => abreCardTopo(page, 'cSem'), 'Seg'],
+                                    [() => abreCardTopo(page, 'cSem'), 'Hoje']]){
+          await abrir();
+          await page.click(`#dCorpo .dchip[data-d="${chip}"]`);
+          const onde = `${largura} ${tema} ${chip}`;
+          const m = await page.evaluate(() => {
+            const d = document.getElementById('drw').getBoundingClientRect(), b = document.querySelector('#dCorpo .chips').getBoundingClientRect();
+            return {d: d.toJSON(), b: b.toJSON(), rola: getComputedStyle(document.querySelector('#dCorpo .chips')).overflowX,
+                    estouros: __vis.estouros('#drw', true)};
+          });
+          assert.ok(await semRolagemLateral(page), `${onde}: rolagem lateral`);
+          assert.ok(m.b.left >= m.d.left - 0.5 && m.b.right <= m.d.right + 0.5, `${onde}: a barra dentro da gaveta`);
+          assert.equal(m.rola, 'auto', onde);
+          assert.deepEqual(m.estouros, [], onde);
+          await page.keyboard.press('Escape');
+        }
+        assert.deepEqual(erros, [], `${largura} ${tema}`);
+        await ctx.close();
+      }
+    });
+  }
+
+  test('antes x depois (main antes da Etapa 6): cabeçalho, cards, cascata, Executiva, Resumo e Painel de Ritmo iguais; gavetas sem a barra iguais', {skip: !FRONT_ETAPA5 && `sem o commit ${REF_ETAPA6}`}, async () => {
+    // HTML da gaveta, sem a barra de dias da lista de volume e das gavetas Base / Sem compra (as das coberturas ficam)
+    const gaveta = (p, semBarra) => p.evaluate(semBarra => { const d = document.getElementById('drw').cloneNode(true);
+      if(semBarra) d.querySelectorAll('#dCorpo > .chips, #dLista > .chips').forEach(x => x.remove()); return d.innerHTML; }, semBarra);
+    for(const entrar of ['dir', {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G2', sv: '1'},
+                         {perfil: 'rota', gc: 'G2', rota: 'G211'}]){
+      const onde = JSON.stringify(entrar);
+      const [novo, velho] = [await abre('dias', {entrar, largura: 1280, aba: null}), await abre('dias', {entrar, largura: 1280, aba: null, troca: FRONT_ETAPA5})];
+      for(const {page} of [novo, velho]) await variedade(page);
+      if(entrar.perfil !== 'rota'){
+        for(const {page} of [novo, velho]){ await vaiAba(page, 'VOLUME'); await vaiAba(page, 'EXEC'); }
+        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+      }
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        assert.deepEqual(await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO), `${onde} ${aba}: cabeçalho e cards`);
+        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${onde} ${aba}: cards`);
+        // cascata dos 2 primeiros cards, do 1º nível até os clientes
+        const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))).slice(0, 2);
+        for(const k of ks){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          for(let nivel = 0; nivel < 5; nivel++){
+            // a barra nova é só a da lista de volume; as das coberturas (ICS GC, Novos Negócios, Todos a Bordo) já existiam
+            const vol = aba === 'VOLUME';
+            assert.equal(await gaveta(novo.page, vol), await gaveta(velho.page, vol), `${onde} ${aba} ${k} nível ${nivel}`);
+            if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+          }
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+      }
+      // gavetas Base e Sem compra: no "Hoje" (padrão), sem a barra, as de antes
+      for(const id of ['cBase', 'cSem']){
+        const g = async p => { await abreCardTopo(p, id); const h = await gaveta(p, true); await p.keyboard.press('Escape'); return h; };
+        assert.equal(await g(novo.page), await g(velho.page), `${onde}: gaveta ${id}`);
+      }
+      if(entrar.perfil !== 'rota'){
         const rs = async p => { await p.click('#btnResumo'); await p.waitForSelector('#rsFolha h2'); const h = await p.innerHTML('#rsFolha');
           await p.click('#rsVoltar'); return h; };
         assert.equal(await rs(novo.page), await rs(velho.page), `${onde}: Resumo`);
