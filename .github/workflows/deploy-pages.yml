@@ -5,7 +5,7 @@ name: Publicar site
 on:
   push:
     branches: [main]
-    paths: ["frontend/**", ".github/workflows/deploy-pages.yml"]
+    paths: ["frontend/**", ".github/workflows/deploy-pages.yml", ".github/scripts/versao-front.sh"]
   workflow_dispatch:
   workflow_call:   # chamado pelo atualizar-dados.yml quando os JSONs mudam
 
@@ -29,6 +29,12 @@ jobs:
         with:
           ref: main   # quando chamado logo após o commit de dados, pega a versão nova
       - uses: actions/configure-pages@v5
+      # versão do código (hash de frontend/ sem frontend/data/**): grava frontend/versao.json e troca o marcador
+      # <meta name="versao" content="dev"> do index.html, só na pasta que vai para o artefato (nada é commitado).
+      # Os dois fluxos (push em frontend/** e workflow_call do atualizar-dados.yml) passam por aqui; com só os dados
+      # mudando, a versão fica igual e o painel aberto não mostra o aviso de versão nova.
+      - name: Versão do código
+        run: bash .github/scripts/versao-front.sh --gravar frontend
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend

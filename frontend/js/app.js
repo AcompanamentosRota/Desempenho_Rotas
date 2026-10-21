@@ -950,6 +950,7 @@ function temaEntrada(){
 function aplicaTemaEntrada(t){
   $('entrada').classList.toggle('branca', t==='branca');
   $('carga').classList.toggle('branca', t==='branca');
+  $('aviso').classList.toggle('branca', t==='branca');
   $('btnTema').textContent = t==='branca' ? '☾' : '☀';
   $('btnTema').setAttribute('aria-label', t==='branca' ? 'Entrada com fundo preto' : 'Entrada com fundo branco');
 }
@@ -1447,6 +1448,67 @@ $('q').oninput = () => { buscaSugestoes(); buscaCliente(); };
 // reencaixa os textos quando a largura muda (rotação do celular, janela redimensionada)
 { let t; addEventListener('resize', ()=>{ clearTimeout(t); t = setTimeout(()=>encaixa(), 150); }); }
 
+/* ---------- versão nova do código ----------
+   A versão do painel aberto é a <meta name="versao"> (o deploy troca "dev" pelo hash de frontend/ sem data/); a do
+   servidor vem de versao.json, sem cache. Diferente: faixa "Nova versão disponível" acima do cabeçalho (só com o
+   painel aberto; o CSS a esconde na entrada). "Atualizar" (e o ↻ do cabeçalho) baixa de novo, sem o cache do
+   navegador, a página, CSS, JS, manifest, versao.json e os dois JSONs, e só então recarrega; sem conexão, avisa e
+   não recarrega. Nenhuma chave do localStorage é apagada: o painel reabre no mesmo acesso. */
+const VERSAO = ((document.querySelector('meta[name="versao"]') || {}).content || '').trim() || 'dev';
+const versaoLigada = () => VERSAO !== 'dev';
+let versaoServidor = null, versaoAdiada = null, modoAviso = '';
+const MSG_AVISO = {nova:'Nova versão disponível', atualizando:'Atualizando o painel', erro:'Sem conexão. Tente de novo.'};
+
+// modo: '' (sem faixa) | 'nova' | 'atualizando' | 'erro'
+function mostraAviso(modo){
+  modoAviso = modo;
+  $('aviso').hidden = !modo;
+  const ocupado = modo==='atualizando';
+  $('avisoTxt').textContent = ocupado && versaoServidor && versaoServidor!==VERSAO ? MSG_AVISO.nova : (MSG_AVISO[modo] || '');
+  $('avisoAtualizar').textContent = ocupado ? 'Atualizando…' : 'Atualizar';
+  $('avisoAtualizar').disabled = $('avisoDepois').disabled = $('btnRecarga').disabled = ocupado;
+  $('btnRecarga').setAttribute('aria-busy', String(ocupado));
+}
+// falha de rede, 404 ou resposta estranha: silêncio (sem faixa, sem erro)
+async function confereVersao(){
+  if(!versaoLigada()) return;
+  let v;
+  try{
+    const r = await fetch(`${CONFIG.VERSAO_URL}?t=${Date.now()}`, {cache:'no-store'});
+    if(!r.ok) return;
+    v = (await r.json()).versao;
+  }catch(e){ return; }
+  if(typeof v!=='string' || !v) return;
+  versaoServidor = v;
+  if(modoAviso==='atualizando' || modoAviso==='erro') return;
+  if(v===VERSAO) return mostraAviso('');
+  if(versaoAdiada && versaoAdiada.versao===v && Date.now() < versaoAdiada.ate) return;
+  versaoAdiada = null;
+  mostraAviso('nova');
+}
+async function atualizaPainel(){
+  if(modoAviso==='atualizando') return;
+  mostraAviso('atualizando');
+  const urls = [location.origin + location.pathname,
+    ...[...document.querySelectorAll('link[rel=stylesheet], link[rel=manifest], script[src]')].map(e => e.href || e.src),
+    CONFIG.DATA_BASE + CONFIG.PAYLOAD_URL, CONFIG.DATA_BASE + CONFIG.ONLINE_URL];
+  if(versaoLigada()) urls.push(CONFIG.VERSAO_URL);      // em desenvolvimento não existe
+  try{
+    await Promise.all(urls.map(async u => {
+      const r = await fetch(u, {cache:'reload'});
+      if(!r.ok) throw new Error(`${u}: HTTP ${r.status}`);
+      await r.arrayBuffer();                            // até o fim: o cache do navegador fica com o arquivo novo
+    }));
+  }catch(e){ return mostraAviso('erro'); }
+  location.reload();
+}
+$('btnRecarga').onclick = atualizaPainel;
+$('avisoAtualizar').onclick = atualizaPainel;
+$('avisoDepois').onclick = () => {
+  if(versaoServidor && versaoServidor!==VERSAO) versaoAdiada = {versao:versaoServidor, ate:Date.now() + CONFIG.VERSAO_ADIA_MS};
+  mostraAviso('');
+};
+
 /* ---------- carga dos JSONs ---------- */
 // cache:'no-cache' revalida com ETag: só baixa de novo quando o arquivo mudou no servidor.
 async function buscaJson(nome){
@@ -1456,6 +1518,7 @@ async function buscaJson(nome){
 }
 async function puxaOnline(){
   confereDia();      // virou o dia de trabalho com o painel aberto: volta para a entrada
+  confereVersao();   // em paralelo; não atrasa o online
   try{
     ONLINE = await buscaJson(CONFIG.ONLINE_URL);
     render();

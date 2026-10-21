@@ -8,7 +8,7 @@ desempenho/
 ├── frontend/                 site estático (GitHub Pages)
 │   ├── index.html
 │   ├── css/app.css
-│   ├── js/config.js          URLs dos dados, intervalos, placa ATENÇÃO, aba Todos a Bordo, linha Status, entrada (grupos, virada), CDN
+│   ├── js/config.js          URLs dos dados, intervalos, aviso de versão, placa ATENÇÃO, aba Todos a Bordo, linha Status, entrada (grupos, virada), CDN
 │   ├── js/app.js             painel (entrada por seleção, filtros, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/main.js            carga e atualização periódica dos JSONs
@@ -25,7 +25,7 @@ desempenho/
 │   └── tests/                testes sem rede (unittest)
 ├── .github/workflows/
 │   ├── atualizar-dados.yml   cron 15 min, seg-sex, 07h-18h45 (Brasília)
-│   ├── deploy-pages.yml      publica frontend/ no Pages
+│   ├── deploy-pages.yml      publica frontend/ no Pages (com a versão do código: scripts/versao-front.sh)
 │   ├── conferir-tendencia.yml  manual: relatório da tendência/fechamento (artifact, sem commit)
 │   └── testes.yml            testes do back-end
 └── index.html                redireciona links antigos para frontend/
@@ -41,7 +41,36 @@ desempenho/
    Se a validação reprovar, nada é gravado, o site continua com a última versão boa e
    a execução aparece como falha no GitHub (com o log anexado).
 4. O navegador revalida o `online.json` a cada 5 min e o `payload.json` a cada 15 min
-   (com ETag, só baixa quando mudou).
+   (com ETag, só baixa quando mudou). Ao voltar para a aba ou reabrir o app da tela inicial, o online é
+   buscado na hora e o payload também, se o último tiver mais de 15 min (no iPhone os temporizadores param
+   com o app fechado).
+
+### Versão do código e aviso de versão nova
+
+Quem deixa o painel aberto (ou instalado na tela inicial do celular, onde não dá para puxar a tela para
+atualizar) vê quando há versão nova do **código** e atualiza com um toque.
+
+- **Versão** = hash curto (12 caracteres) do conteúdo de `frontend/` **sem `frontend/data/**`**
+  (`.github/scripts/versao-front.sh`: arquivos em ordem `LC_ALL=C`, `sha256sum` de cada um com o caminho relativo,
+  `sha256sum` da lista). Não é o SHA do commit: a atualização automática de dados faz commit a cada 15 min, mas
+  **mudança só de dados não muda a versão e não dispara o aviso**.
+- O `deploy-pages.yml` (push em `frontend/**` e `workflow_call` do "Atualizar dados", o mesmo passo) roda
+  `versao-front.sh --gravar frontend` antes de enviar o artefato do Pages: grava `frontend/versao.json`
+  (`{"versao": "<hash>", "gerado": "<UTC ISO>"}`) e troca o marcador do `index.html`
+  (`<meta name="versao" content="dev">`) pelo hash. Nada disso é commitado; em desenvolvimento e nos testes fica
+  `"dev"`, e com `"dev"` o aviso fica desligado (nem pede o `versao.json`).
+- O painel confere o `versao.json` (sem cache: `cache: 'no-store'` e `?t=` para furar o CDN) a cada atualização do
+  online (5 min), ao voltar para a aba/app e no `pageshow`. Falha de rede ou 404: silêncio.
+- Versão do servidor diferente da do painel: faixa discreta **acima do cabeçalho**, "Nova versão disponível" +
+  **Atualizar** + **Depois**. "Depois" esconde a faixa daquela versão até a 1ª verificação 30 min depois
+  (`CONFIG.VERSAO_ADIA_MS`); volta se a versão continuar diferente (outra versão nova aparece já). A faixa não
+  aparece na tela de entrada (a checagem roda em segundo plano e ela aparece ao abrir o painel) e segue o fundo da
+  entrada (preto ou branco).
+- **Ícone ↻** no canto do cabeçalho, ao lado da casa, sempre visível ("Atualizar o painel"): mesma ação do
+  "Atualizar" da faixa. A ação mostra "Atualizando…", baixa de novo sem o cache do navegador (`cache: 'reload'`) a
+  página, CSS, JS, manifest, `versao.json` e os dois JSONs de dados e só então recarrega; se algum falhar, mostra
+  "Sem conexão. Tente de novo." e não recarrega. Nenhuma chave do `localStorage` é apagada: o acesso guardado
+  (`drotas_sessao`) e o fundo da entrada (`drotas_entrada`) ficam, e o painel reabre no mesmo perfil e contexto.
 
 Fontes no Datasphere (nomes de colunas em `backend/gerador/mapeamento.py`):
 
@@ -282,6 +311,11 @@ caso com 2.665.000 em todas as caixas) sem célula cortada nem caixas sobreposta
 do CSS do commit `2d5419a` em 390, 800, 1280 e 1700 px. Com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1`
 instalados (local, `NODE_PATH` ou global; o hash é o mesmo do SRI do `config.js`), gera também o PDF de verdade e
 confere o nº de páginas e que nenhuma fica em branco; sem eles, esse teste é pulado (os outros simulam as bibliotecas).
+A Parte P confere o script da versão (sem navegador, precisa de `bash` e `sha256sum`): numa cópia de `frontend/`, o
+mesmo hash duas vezes, igual com só `data/` mudado, diferente com um `.js` mudado, e o `--gravar`. A Parte Q confere o
+aviso de versão nova com o `versao.json` interceptado: versão igual, diferente, "Depois" (30 min no relógio simulado),
+"Atualizar" (cache reload, reload e `localStorage` intacto), sem conexão, meta `"dev"`, 404, checagens (online,
+`visibilitychange`, `pageshow`), "tela inicial" simulada, 390/1000/1280 px e os dois fundos.
 
 ### Visual (fonte, escala e cores)
 
