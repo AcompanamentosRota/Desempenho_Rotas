@@ -53,6 +53,9 @@
   /* painel lateral do PC (>= 1000px): largura aberta e recolhida e a escala própria dele */
   --lado-aberto:272px; --lado-recolhido:76px;
   --fs-lado-tit:22px; --fs-lado-aba:14px; --fs-lado-sec:10.5px;
+  /* cards brancos do cabeçalho das abas (card de ritmo, Base, Sem compra) e quadros de destaque; caixa de comentário */
+  --borda-card:#ececf0; --sombra-card:0 1px 2px rgba(0,0,0,.03),0 6px 18px rgba(0,0,0,.04);
+  --fs-dica:12px;
   --seguro-b:env(safe-area-inset-bottom,0px);
 }
 @media (max-width:640px){
@@ -208,34 +211,80 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   background:var(--escuro-2);line-height:1.25}
 .tab.on{color:var(--preto);background:#fff}
 
-/* ---------- cards ---------- */
-.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:12px 0}
-.card{background:var(--card);border-radius:13px;padding:13px 8px 12px;text-align:center;cursor:pointer;
-  display:flex;flex-direction:column;justify-content:space-between;min-width:0;min-height:var(--h-kpi)}
+/* ---------- cabeçalho da aba (Volume, ICS GC, Novos Negócios, Todos a Bordo) ----------
+   Nome da aba + etiqueta do dia (abre a caixa de comentário); Base e Sem compra só com supervisão ou rota no filtro
+   (.cards); linha de resumo (.abRes): card de ritmo | "puxa a média" | busca (no celular, a busca na linha de baixo);
+   a ficha do cliente logo abaixo; o filtro rápido dos cards. Cards brancos: rótulo, ícone, número, legenda. */
+.abaTopo{margin:12px 0 10px}
+.abCab{display:flex;justify-content:space-between;align-items:center;gap:6px 10px;flex-wrap:wrap;margin-bottom:10px}
+.abCab h2{margin:0;font-size:var(--fs-card);font-weight:800;letter-spacing:-.01em;line-height:1.2;color:var(--preto)}
+.pilDia{flex:none;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:var(--fs-legenda);line-height:1.3;
+  color:var(--txt-apoio);background:var(--branco);border:1px solid var(--linha);border-radius:999px;padding:5px 7px 5px 12px;
+  white-space:nowrap;cursor:help;transition:border-color .12s}
+.pilDia.emFoco,.pilDia:focus-visible{border-color:var(--preto)}
+.pdC{display:none}
+.pdI{display:inline-grid;place-items:center;width:1.3em;height:1.3em;border-radius:50%;background:var(--fundo-k);
+  color:var(--cinza-escuro);font-size:.85em;font-weight:800;font-style:italic;flex:none}
+.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 10px}
+.cards[hidden]{display:none}
+.cards.tres{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{position:relative;background:var(--branco);border:1px solid var(--borda-card);border-radius:14px;box-shadow:var(--sombra-card);
+  padding:14px 14px 13px;cursor:pointer;display:flex;flex-direction:column;min-width:0;min-height:var(--h-kpi);text-align:left}
+.card .l{font-size:var(--fs-legenda);font-weight:var(--fw-legenda);color:var(--txt-apoio);line-height:1.3;padding-right:36px}
+.card .ki{position:absolute;top:12px;right:12px;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+  background:var(--fundo-k);color:var(--cinza-escuro)}
+.card .ki .ico{width:16px;height:16px}
 .card .n{font-family:var(--serif);font-size:clamp(22px,7.2vw,var(--fs-ind));font-weight:var(--fw-ind);letter-spacing:-.02em;
-  line-height:1.05;white-space:nowrap}
+  line-height:1.05;white-space:nowrap;margin:auto 0 3px;padding-top:10px}
+.card .n small{font-size:.55em;font-weight:700;letter-spacing:0;color:var(--txt-apoio)}
 .card .n.ok{color:var(--verde)} .card .n.no{color:var(--vermelho)}
-.card .l{font-size:var(--fs-legenda);font-weight:var(--fw-legenda);color:var(--txt-apoio);letter-spacing:.03em;margin-top:5px;line-height:1.25;text-transform:uppercase}
+.card .x{font-size:var(--fs-legenda);color:var(--txt-apoio);line-height:1.35}
+.card .x b{font-weight:700;color:var(--txt)}
+.card .x b.ok{color:var(--verde)} .card .x b.no{color:var(--ruim)}
 .card .st{font-size:10px;color:var(--txt-apoio);letter-spacing:.03em;margin-top:3px;line-height:1.2;text-transform:uppercase}
 .card .st[hidden]{display:none}
 .card .st .stMarca{font-weight:700;margin-left:3px} .card .st .stMarca.ok{color:var(--verde)}
-.card .div{border-top:1px solid var(--linha-suave);margin:9px 6px 8px}
-.card .x{font-size:var(--fs-legenda);color:var(--txt-apoio);line-height:1.3}
-.card .x b{font-size:var(--fs-card);display:block;margin-top:1px;font-weight:700;color:var(--txt)}
-.card .x b.inl{display:inline;font-size:inherit;font-weight:600}
-.card .x b.ok{color:var(--verde)} .card .x b.no{color:var(--ruim)}
 .card.mudo{cursor:default}
-@media (hover:hover){.card:not(.mudo):hover,.ind[data-k]:hover{filter:brightness(.97)}}
+.card:not(.mudo):focus-visible{outline:none;box-shadow:0 0 0 1.5px var(--preto)}
+@media (hover:hover){.card:not(.mudo):hover{box-shadow:0 0 0 1.5px var(--preto)} .ind[data-k]:hover{filter:brightness(.97)}}
+.abRes{display:grid;grid-template-columns:minmax(132px,180px) minmax(0,1fr);gap:10px;align-items:stretch}
+.abRes.semPuxa,.abRes.soBusca{grid-template-columns:minmax(0,1fr)}
+#puxa{display:flex;flex-direction:column;min-width:0}
+#puxa:empty{display:none}
 
-/* ---------- supervisão que puxa ---------- */
-.puxa{background:var(--rosa);border-left:5px solid var(--ruim);border-radius:0 11px 11px 0;
-  padding:12px 15px;margin-bottom:12px}
-.puxa .t{font-size:var(--fs-valor);color:var(--ruim)}
-.puxa .t b{font-weight:700}
-.puxa .s{font-size:var(--fs-legenda);color:var(--rosa-txt);margin-top:2px}
+/* ---------- quadro de destaque ("puxa a média"; também os da Executiva) ---------- */
+.foco{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;align-items:start;align-content:center;flex:1;
+  background:var(--branco);border:1px solid var(--borda-card);border-radius:14px;box-shadow:var(--sombra-card);padding:14px 16px}
+.foco .fi{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:var(--fundo-k);
+  color:var(--cinza-escuro);font-size:var(--fs-valor);font-weight:800}
+.foco h3{margin:0 0 3px;font-size:var(--fs-valor);font-weight:700;line-height:1.3;color:var(--txt)}
+.foco p{margin:0;font-size:var(--fs-legenda);line-height:1.5;color:var(--txt-apoio)}
+.foco p b.no{color:var(--vermelho2)}
+
+/* ---------- filtro rápido dos cards: só mostra/oculta (a ordem e as cores não mudam) ---------- */
+.fchips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-top:12px;padding-bottom:2px}
+.fchips::-webkit-scrollbar{display:none}
+.fchip{flex:none;font:inherit;font-size:var(--fs-legenda);line-height:1.3;padding:6px 12px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--linha);background:var(--branco);color:var(--preto)}
+.fchip.on{background:var(--preto);color:#fff;border-color:var(--preto)}
+.fchip .fN{margin-left:2px;font-weight:600;opacity:.7}
+.fchip:disabled{opacity:.45;cursor:not-allowed}
+.ind.filtrado{display:none!important}
+
+/* ---------- caixa de comentário (dica): mouse, foco do teclado ou toque ---------- */
+.dica{position:fixed;z-index:70;left:0;top:0;max-width:260px;background:var(--carvao);color:#fff;border-radius:9px;
+  padding:9px 11px;font-size:var(--fs-dica);line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.18);pointer-events:none;
+  opacity:0;visibility:hidden;transform:translateY(4px);transition:opacity .12s,transform .12s,visibility 0s linear .12s;
+  font-variant-numeric:lining-nums tabular-nums}
+.dica.on{opacity:1;visibility:visible;transform:none;transition:opacity .12s,transform .12s}
+.dica b{font-weight:700} .dica .t{font-weight:800;margin-bottom:3px}
+/* tons claros para o fundo escuro */
+.dica .v{color:#ff9a9a} .dica .g{color:#7fe0bd}
+@media(prefers-reduced-motion:reduce){.dica{transition:none}}
 
 /* ---------- busca ---------- */
-.busca{background:#fff;border:1px solid var(--linha);border-radius:11px;padding:11px;margin-bottom:12px}
+.busca{background:var(--branco);border:1px solid var(--borda-card);border-radius:14px;padding:12px;min-width:0}
+.abRes .busca{grid-column:1/-1}
 .buscaWrap{position:relative}
 .sugestoes{position:absolute;top:calc(100% + 2px);left:0;right:0;background:#fff;
   border:1px solid var(--linha);border-radius:10px;max-height:280px;overflow-y:auto;
@@ -249,7 +298,9 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .sugItem .meta{color:var(--txt-apoio);font-size:var(--fs-legenda);flex:none}
 .busca input{width:100%;border:1px solid var(--linha);border-radius:8px;padding:9px 10px;font-size:16px;
   font-family:inherit;-webkit-appearance:none;appearance:none}
-.cli{margin-top:11px;border-top:1px solid var(--linha);padding-top:10px}
+/* ficha do cliente: logo abaixo da linha de resumo, numa caixa própria */
+#cli{background:var(--branco);border:1px solid var(--borda-card);border-radius:14px;padding:12px 14px;margin-top:10px}
+#cli:empty{display:none}
 .cli h3{margin:0 0 1px;font-size:var(--fs-card);font-weight:var(--fw-card)}
 .cli .meta{font-size:var(--fs-legenda);color:var(--txt-apoio);margin-bottom:9px}
 .painel{background:var(--card);border-radius:13px;padding:13px;margin-top:11px}
@@ -334,7 +385,7 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .tab[hidden]{display:none}
 /* algarismos alinhados e de largura fixa em todo número da tela principal (cards, cards do topo, busca, cabeçalho);
    a gaveta, o Resumo e o Painel de Ritmo ficam como estão */
-.card,.ind,.topo,.puxa,.cli,.rodape{font-variant-numeric:lining-nums tabular-nums}
+.abaTopo,.card,.ind,.topo,.puxa,.cli,.rodape{font-variant-numeric:lining-nums tabular-nums}
 
 /* ---------- drawer ---------- */
 /* A cascata (gaveta) mantém a aparência de antes do ajuste visual (commit 0a59eb4), só com a Inter herdada do body:
@@ -530,6 +581,20 @@ body.rs-travado{overflow:hidden}
   .ritmo{display:block;background:none;border:0;border-top:1px solid rgba(255,255,255,.08);border-radius:0;
     padding:5px 0 0;line-height:1.3}
   .ritmo .ritLongo{display:none}
+  /* etiqueta do dia: "Quarta-feira · Sem. 3" */
+  .pdL{display:none} .pdC{display:inline}
+  /* linha de resumo: card de ritmo estreito e o "puxa a média" com o resto (a busca na linha de baixo) */
+  .abRes{grid-template-columns:clamp(120px,38%,200px) minmax(0,1fr)}
+  .card{padding:12px}
+  .card .ki{top:10px;right:10px;width:24px;height:24px}
+  .card .l{padding-right:28px}
+  .foco{grid-template-columns:28px minmax(0,1fr);gap:10px;padding:12px}
+  .foco .fi{width:28px;height:28px}
+  /* três cards lado a lado (sem "puxa a média"): mais compactos, sem o ícone, escala menor no próprio escopo */
+  .cards.tres{gap:8px;--fs-ind:24px;--fs-legenda:11px}
+  .cards.tres .card{padding:11px 10px 10px}
+  .cards.tres .ki{display:none}
+  .cards.tres .l{padding-right:0}
 }
 /* celular (até 640px): seletores numa linha; abas numa linha com a largura de cada rótulo */
 @media (max-width:640px){
@@ -612,8 +677,15 @@ body.rs-travado{overflow:hidden}
   /* conteúdo na largura da tela, à direita do painel; a faixa de versão nova no alto dele */
   .wrap{max-width:none;padding-left:clamp(20px,2.4vw,40px);padding-right:clamp(20px,2.4vw,40px)}
   .aviso .hd{max-width:none;padding:0 clamp(20px,2.4vw,40px)}
-  .topoGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:14px}
-  .topoGrid .cards{margin:0}
+  /* cabeçalho da aba: Base e Sem compra (ou os três cards) na largura toda; a linha de resumo em 260px | 1fr | 1.1fr */
+  .abaTopo{margin:16px 0 12px}
+  .abCab{margin-bottom:14px}
+  .cards{gap:16px;margin-bottom:16px}
+  .card{padding:18px 20px 16px}
+  .abRes{grid-template-columns:260px minmax(0,1fr) minmax(0,1.1fr);gap:16px}
+  .abRes.semPuxa{grid-template-columns:260px minmax(0,1fr)}
+  .abRes .busca{grid-column:auto;display:flex;flex-direction:column;justify-content:center}
+  #cli .grid13{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
   .lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-top:4px}
   .lista .ind{margin-bottom:0}
   .lista .vazio{grid-column:1/-1}
