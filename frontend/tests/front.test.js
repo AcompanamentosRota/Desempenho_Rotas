@@ -1918,6 +1918,156 @@ describe('Parte I — grupos: acesso guardado, virada diária e link do Resumo',
   });
 });
 
+/* ---------- Parte Y — entrada com logos (Etapa 7): Coca-Cola Bandeirantes | linha vermelha | elmo com "Comercial
+   Bandeirantes", uma versão de cada imagem para cada fundo (data-tema = o tema da entrada; o CSS mostra só a do fundo
+   atual). O comportamento da entrada não muda (Partes D e I). ---------- */
+const LOGOS = {preta: ['coca-bandeirantes-fundo-escuro.png', 'elmo-branco.png'],
+               branca: ['coca-bandeirantes-fundo-claro.png', 'elmo-preto.png']};
+// imagens, linha, texto e posições da faixa das logos (só o que está visível)
+const leLogos = page => page.evaluate(() => {
+  const ent = document.getElementById('entrada');
+  const vis = el => el.getClientRects().length > 0;
+  const caixa = el => { const b = el.getBoundingClientRect(); return {l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width, h: b.height}; };
+  const ref = v => { const s = document.createElement('span'); s.style.color = `var(${v})`; document.body.appendChild(s);
+    const c = getComputedStyle(s).color; s.remove(); return c; };
+  const txt = ent.querySelector('.entElmoTxt'), cs = getComputedStyle(txt), sep = ent.querySelector('.entSep');
+  return {
+    tema: ent.classList.contains('branca') ? 'branca' : 'preta',
+    imgs: [...ent.querySelectorAll('.entLogos img')].filter(vis).map(i => ({arq: new URL(i.currentSrc).pathname,
+      alt: i.getAttribute('alt'), tema: i.dataset.tema, coca: i.classList.contains('entCoca'), completa: i.complete,
+      nw: i.naturalWidth, nh: i.naturalHeight, ...caixa(i)})),
+    ocultas: [...ent.querySelectorAll('.entLogos img')].filter(i => !vis(i)).map(i => [i.dataset.tema, getComputedStyle(i).display]),
+    sep: {...caixa(sep), larg: getComputedStyle(sep).width, cor: getComputedStyle(sep).backgroundColor, vermelho: ref('--vermelho'),
+          aria: sep.getAttribute('aria-hidden')},
+    elmo: {...caixa(ent.querySelector('.entElmo')), role: ent.querySelector('.entElmo').getAttribute('role'),
+           label: ent.querySelector('.entElmo').getAttribute('aria-label')},
+    txt: {...caixa(txt), linhas: txt.innerText.split('\n'), cor: cs.color, preto: ref('--preto'), fam: cs.fontFamily,
+          peso: cs.fontWeight, tam: cs.fontSize, lh: cs.lineHeight, ls: cs.letterSpacing, alinh: cs.textAlign},
+    h1: caixa(ent.querySelector('h1')), botoes: caixa(document.getElementById('entBotoes')),
+    tela: [innerWidth, innerHeight], rolagem: [document.documentElement.scrollWidth, document.documentElement.clientWidth,
+      ent.scrollWidth, ent.clientWidth],
+    marcaAntiga: ent.querySelectorAll('.entMarca').length,
+  };
+});
+
+describe('Parte Y — entrada com logos (Etapa 7)', {skip: pular}, () => {
+  test('imagens certas em cada fundo (arquivo, carregada), alt e aria; o sol/lua troca as duas e a cor do texto', async () => {
+    const pedidos = [];
+    const {page, ctx, erros} = await abre('normal', {entrar: null, largura: 1440, antes: async p => p.on('request', r => pedidos.push(r.url()))});
+    for(const [i, tema] of ['preta', 'branca', 'preta'].entries()){
+      if(i) await page.click('#btnTema');
+      await page.waitForFunction(() => [...document.querySelectorAll('#entrada .entLogos img')]
+        .filter(i => i.getClientRects().length).every(i => i.complete && i.naturalWidth > 0));
+      const r = await leLogos(page);
+      assert.equal(r.tema, tema);
+      assert.deepEqual(r.imgs.map(i => i.arq), LOGOS[tema].map(a => `/assets/${a}`), `${tema}: imagens visíveis`);
+      assert.ok(r.imgs.every(i => i.completa && i.nw > 0 && i.nh > 0 && i.tema === tema), `${tema}: carregadas`);
+      assert.deepEqual(r.imgs.map(i => [i.coca, i.alt]), [[true, 'Coca-Cola Bandeirantes'], [false, '']], 'alt da logo; elmo decorativo');
+      assert.deepEqual(r.ocultas, [tema === 'preta' ? 'branca' : 'preta', tema === 'preta' ? 'branca' : 'preta'].map(t => [t, 'none']),
+                       `${tema}: as do outro fundo ficam ocultas`);
+      assert.deepEqual([r.elmo.role, r.elmo.label], ['img', 'Comercial Bandeirantes']);
+      assert.equal(r.sep.aria, 'true');
+      assert.equal(r.txt.cor, tema === 'preta' ? 'rgb(255, 255, 255)' : r.txt.preto, `${tema}: cor do texto`);
+      assert.equal(r.marcaAntiga, 0, 'sem a linha antiga (elmo pequeno + texto)');
+    }
+    // as quatro imagens vêm do próprio site (assets/), sem pedido para fora
+    const pngs = pedidos.filter(u => /\.png$/.test(new URL(u).pathname)).map(u => new URL(u).pathname);
+    for(const a of [...LOGOS.preta, ...LOGOS.branca]) assert.ok(pngs.includes(`/assets/${a}`), a);
+    assert.ok(pedidos.every(u => new URL(u).host === 'painel.test' || /cdnjs\.cloudflare\.com/.test(u)));
+    for(const a of [...LOGOS.preta, ...LOGOS.branca]){
+      const b = fs.readFileSync(path.join(FRONT, 'assets', a));
+      assert.equal(b.subarray(1, 4).toString('latin1'), 'PNG', a);
+      // proporção dos originais do pacote (560x251 e 140x263), sem redimensionar
+      assert.deepEqual([b.readUInt32BE(16), b.readUInt32BE(20)], a.startsWith('coca') ? [560, 251] : [140, 263], a);
+    }
+    // o fundo guardado (branca) já abre com as imagens do fundo branco
+    const outra = await abre('normal', {entrar: null, armazenado: {drotas_entrada: 'branca'}});
+    await outra.page.waitForFunction(() => [...document.querySelectorAll('#entrada .entLogos img')]
+      .filter(i => i.getClientRects().length).every(i => i.complete && i.naturalWidth > 0));
+    assert.deepEqual((await leLogos(outra.page)).imgs.map(i => i.arq), LOGOS.branca.map(a => `/assets/${a}`));
+    assert.deepEqual([...erros, ...outra.erros], []);
+    await outra.ctx.close();
+    await ctx.close();
+  });
+
+  for(const largura of [360, 390, 1440]){
+    test(`${largura} px: logos lado a lado sem distorção, linha vermelha, texto em duas linhas, tudo na tela, nos dois fundos`, async () => {
+      const {page, ctx, erros} = await abre('normal', {entrar: null, largura, altura: largura < 1000 ? 844 : 900});
+      await medidas(page);
+      const pequena = largura <= 380;
+      for(const tema of ['preta', 'branca']){
+        if(tema === 'branca') await page.click('#btnTema');
+        await page.waitForFunction(() => [...document.querySelectorAll('#entrada .entLogos img')]
+          .filter(i => i.getClientRects().length).every(i => i.complete && i.naturalWidth > 0));
+        await page.evaluate(() => document.fonts.ready);
+        const r = await leLogos(page), onde = `${largura} ${tema}`;
+        const [coca, elmo] = r.imgs;
+        // altura pedida (62/40 px; 52/34 px em <= 380 px) e a proporção do arquivo (sem distorção)
+        assert.ok(Math.abs(coca.h - (pequena ? 52 : 62)) < .5, `${onde}: logo com ${coca.h} px`);
+        assert.ok(Math.abs(elmo.h - (pequena ? 34 : 40)) < .5, `${onde}: elmo com ${elmo.h} px`);
+        for(const i of r.imgs) assert.ok(Math.abs((i.w / i.h) / (i.nw / i.nh) - 1) < .01, `${onde} ${i.arq}: ${i.w}x${i.h} de ${i.nw}x${i.nh}`);
+        // lado a lado: logo | linha | elmo, alinhados pelo meio, acima do título
+        assert.ok(coca.r <= r.sep.l && r.sep.r <= r.elmo.l, `${onde}: ordem ${coca.r} ${r.sep.l} ${r.sep.r} ${r.elmo.l}`);
+        const meio = c => (c.t + c.b) / 2;
+        assert.ok(Math.abs(meio(coca) - meio(r.sep)) < 1.5 && Math.abs(meio(r.elmo) - meio(r.sep)) < 1.5, `${onde}: alinhamento vertical`);
+        assert.ok(Math.max(coca.b, r.sep.b, r.elmo.b) <= r.h1.t, `${onde}: acima de "Desempenho de Rotas"`);
+        assert.ok(Math.abs((coca.l + r.elmo.r) / 2 - (r.h1.l + r.h1.r) / 2) < 1.5, `${onde}: centralizadas como o título`);
+        // linha vermelha fina: 1,5 px, --vermelho, ~64 px de altura
+        assert.equal(r.sep.larg, '1.5px');
+        assert.equal(r.sep.cor, r.sep.vermelho);
+        assert.ok(Math.abs(r.sep.h - 64) < .5, `${onde}: linha com ${r.sep.h} px`);
+        // "COMERCIAL" / "BANDEIRANTES" embaixo do elmo, centralizado: Inter 800, 9,5 px, line-height 1.08, .015em
+        assert.deepEqual(r.txt.linhas, ['COMERCIAL', 'BANDEIRANTES'], onde);
+        assert.match(r.txt.fam, /^Inter,/);
+        assert.deepEqual([r.txt.peso, r.txt.tam, r.txt.alinh], ['800', '9.5px', 'center'], onde);
+        assert.ok(Math.abs(parseFloat(r.txt.lh) - 9.5 * 1.08) < .01, `${onde}: line-height ${r.txt.lh}`);
+        assert.ok(Math.abs(parseFloat(r.txt.ls) - 9.5 * .015) < .01, `${onde}: letter-spacing ${r.txt.ls}`);
+        assert.ok(r.txt.t >= elmo.b - .5 && Math.abs((r.txt.l + r.txt.r) / 2 - (elmo.l + elmo.r) / 2) < 1, `${onde}: texto embaixo do elmo`);
+        // nada fora da tela, sem rolagem lateral e sem texto cortado
+        for(const c of [coca, elmo, r.sep, r.txt, r.h1, r.botoes]) assert.ok(c.l >= 0 && c.r <= r.tela[0], `${onde}: fora da tela`);
+        assert.ok(r.rolagem[0] <= r.rolagem[1] && r.rolagem[2] <= r.rolagem[3], `${onde}: rolagem lateral ${r.rolagem}`);
+        assert.deepEqual(await page.evaluate(() => __vis.estouros('#entrada')), [], onde);
+        // contraste do texto (AA 4,5:1) no fundo preto e no branco
+        const c = await page.evaluate(() => __vis.contrastes(['.entElmoTxt']));
+        assert.equal(c.length, 1);
+        assert.ok(c[0][2] >= 4.5, `${onde}: contraste ${c[0][2]}`);
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test('entrada funciona como antes nos dois fundos: os quatro perfis (e o grupo), acesso guardado, casa; aba inicial inalterada', async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre('grupo', {entrar: null, armazenado: {drotas_entrada: tema}, antes: fixo()});
+      for(const [entrar, acesso] of [['dir', ['dir', '', '', '']], [{perfil: 'gc', gc: 'G2'}, ['gc', 'G2', '', '']],
+          [{perfil: 'gc', gc: 'IT+MO'}, ['gc', 'IT+MO', '', '']], [{perfil: 'sv', gc: 'G2', sv: '1'}, ['sv', 'G2', 'SV.G2.1', '']],
+          [{perfil: 'rota', gc: 'G2', rota: 'G211'}, ['rota', 'G2', 'SV.G2.1', 'G211']]]){
+        await page.reload();
+        await esperaCarga(page);
+        assert.ok(await page.isVisible('#entrada'), `${tema}: na entrada`);
+        await entra(page, entrar);
+        const e = await estado(page);
+        assert.ok(!e.entrada, `${tema} ${acesso[0]}: entrou`);
+        assert.deepEqual(e.acesso, acesso, tema);
+        assert.deepEqual(e.guardado, {perfil: acesso[0], gc: acesso[1], sv: acesso[2], rota: acesso[3], dia: DIA});
+        // aba inicial como antes da etapa (Executiva/Volume dependem da Etapa 5)
+        assert.equal(await page.$eval('.tab.on', t => t.dataset.g), 'ICS_GC', `${tema} ${acesso[0]}: aba inicial`);
+        // recarregar reabre o mesmo acesso sem a entrada; a casa volta para ela com o fundo escolhido
+        await page.reload();
+        await esperaCarga(page);
+        assert.deepEqual((await estado(page)).acesso, acesso, `${tema}: acesso guardado`);
+        await page.click('#btnCasa');
+        const v = await estado(page);
+        assert.deepEqual([v.entrada, v.guardado], [true, null], `${tema}: casa`);
+        assert.equal((await leLogos(page)).tema, tema);
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+});
+
 describe('Parte H — ordem dentro de um grupo de gerências', {skip: pular}, () => {
   for(const nome of ['normal', 'fech']){
     test(`supervisões por gerência -> número, "Neutraliza" por último, rotas e clientes pelo código (${nome})`, async () => {
@@ -2804,7 +2954,8 @@ describe('Parte M — visual', {skip: pular}, () => {
     };
     for(const tema of ['preta', 'branca']){
       if(tema === 'branca') await page.click('#btnTema');
-      await baixos(['.entMarca', '.entRod'], `entrada ${tema}`);
+      // Etapa 7: a linha .entMarca virou as logos; o texto "Comercial Bandeirantes" é o .entElmoTxt
+      await baixos(['.entElmoTxt', '.entRod'], `entrada ${tema}`);
       await page.click('#entrada [data-perfil="sv"]');
       await baixos(['.entSub', '.entCab h2', '.entOpcoes button:not(:disabled)'], `caixa ${tema}`);
       await page.click('#entFechar');
