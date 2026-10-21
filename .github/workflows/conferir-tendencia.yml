@@ -1,6 +1,6 @@
 # Conferência da tendência de volume (critério do SAC) e do modo fechamento do mês, com os dados reais.
 # Só manual; não faz commit nem publica o site. Resultado no artifact "conferencia-tendencia":
-#   relatorio_tendencia.md  (só totais: sem nomes nem códigos de clientes)
+#   relatorio_tendencia.md  (só totais: sem nomes nem códigos de clientes; a E9 vem depois do gerar.py)
 #   payload.json, online.json  (gerados com gerar.py --saida, e --hoje se informado)
 #   logs/
 # Usa os mesmos Secrets/Variables do atualizar-dados.yml.
@@ -71,6 +71,7 @@ jobs:
           CODIGO=$?
           set -e
           DURACAO=$(( $(date +%s) - INICIO ))
+          echo "duracao=$DURACAO" >> "$GITHUB_OUTPUT"
           {
             echo ""
             echo "## 10. gerar.py completo"
@@ -89,6 +90,17 @@ jobs:
             echo "(limite de atenção do payload: 8 MB)"
           } >> saida/conferencia/relatorio_tendencia.md
           exit $CODIGO
+
+      - name: E9 (SEM_COMPRA_MES do payload gerado)
+        if: always()
+        continue-on-error: true
+        working-directory: backend
+        env:
+          DURACAO: ${{ steps.gerar.outputs.duracao }}
+        run: |
+          ARGS=(--saida saida/conferencia --e9 saida/conferencia/payload.json)
+          if [ -n "$DURACAO" ]; then ARGS+=(--e9-duracao "$DURACAO"); fi
+          python scripts/conferir_tendencia.py "${ARGS[@]}"
 
       - name: Guardar resultado
         if: always()

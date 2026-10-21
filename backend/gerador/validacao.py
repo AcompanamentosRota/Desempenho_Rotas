@@ -70,6 +70,29 @@ def _incentivo(p: dict) -> list[str]:
                        for b in ((d.get("indicators") or {}).get(k) or {"unavailable": True} for d in rotas.values()))]
 
 
+def _sem_compra_mes(p: dict) -> list[str]:
+    """SEM_COMPRA_MES (chave opcional): aviso, nunca erro, se o tamanho da lista da rota for diferente de semCompra ou
+    se o SEM_COMPRA_HOJE da rota não estiver contido nela. Payload sem a chave: nada."""
+    scm = p.get("SEM_COMPRA_MES")
+    if scm is None:
+        return []
+    tamanho, fora = [], []
+    for r, d in _rotas(p).items():
+        lista = scm.get(r)
+        if (None if lista is None else len(lista)) != d.get("semCompra"):
+            tamanho.append(r)
+        hoje = (p.get("SEM_COMPRA_HOJE") or {}).get(r) or []
+        if hoje and not set(hoje) <= set(lista or []):
+            fora.append(r)
+    avisos = []
+    if tamanho:
+        avisos.append(f"SEM_COMPRA_MES com tamanho diferente de semCompra em {len(tamanho)} rota(s): "
+                      f"{', '.join(tamanho[:20])}")
+    if fora:
+        avisos.append(f"SEM_COMPRA_HOJE fora do SEM_COMPRA_MES em {len(fora)} rota(s): {', '.join(fora[:20])}")
+    return avisos
+
+
 def _volume_real(rotas: dict) -> float:
     return sum((d.get("indicators", {}).get(k) or {}).get("real") or 0 for d in rotas.values() for k in M.INDICADORES_VOLUME)
 
@@ -153,6 +176,7 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
         avisos.append("meta do dia do volume indisponível (META_RECUPERAVEL_ROTA não veio): metaDia = null")
     avisos += _gerencias(novo)
     avisos += _incentivo(novo)
+    avisos += _sem_compra_mes(novo)
     if sum(novo["VISITAS_DIA"]["geral"].values()) == 0:
         avisos.append("nenhuma visita agendada hoje (fim de semana/feriado ou VISITA_HOJE mudou?)")
 

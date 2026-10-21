@@ -105,6 +105,14 @@ before(async () => {
   fs.writeFileSync(path.join(seminc, 'payload.json'), JSON.stringify(si));
   fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(seminc, 'online.json'));
   DADOS.seminc = seminc;
+  // payload de antes da Etapa 1, sem SEM_COMPRA_MES (o publicado até rodar o "Atualizar dados" com o gerador novo)
+  const semscm = path.join(tmp, 'semscm');
+  fs.mkdirSync(semscm);
+  const sc = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  delete sc.SEM_COMPRA_MES;
+  fs.writeFileSync(path.join(semscm, 'payload.json'), JSON.stringify(sc));
+  fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(semscm, 'online.json'));
+  DADOS.semscm = semscm;
   // PDF do Resumo: 16 gerências e números grandes (montaGrande)
   const grande = path.join(tmp, 'grande');
   fs.mkdirSync(grande);
@@ -124,7 +132,8 @@ after(async () => {
 const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json',
   '.png':'image/png', '.woff2':'font/woff2', '.webmanifest':'application/manifest+json'};
 
-/* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados');
+/* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' |
+   'semscm');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()). */
@@ -1064,6 +1073,52 @@ const embaralha = page => page.evaluate(() => {
 /* linhas da gaveta: [nome, meta, número da direita, cor] */
 const linhasCor = page => page.$$eval('#dCorpo .cLin', ls => ls.map(l => [l.querySelector('.cNome b').textContent,
   Number(l.dataset.meta), l.dataset.dir === '' ? null : Number(l.dataset.dir), l.classList.contains('ok') ? 'ok' : 'no']));
+
+describe('Parte S — SEM_COMPRA_MES (chave nova e opcional do payload)', {skip: pular}, () => {
+  /* textos dos cards e das gavetas Base / Sem compra em cada aba (a Etapa 1 não muda nada no front) */
+  async function telas(page){
+    const out = [];
+    for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+      if(await page.isHidden(`.tab[data-g="${aba}"]`)) continue;
+      await filtra(page, {aba});
+      out.push(await page.evaluate(() => [document.querySelector('.cards').innerText, document.getElementById('puxa').innerText,
+                                           document.getElementById('lista').innerText]));
+    }
+    for(const card of ['#cBase', '#cSem']){
+      await page.click(card);
+      out.push(await page.evaluate(() => [document.getElementById('dTit').textContent, document.getElementById('dSub').textContent,
+                                           document.getElementById('dCorpo').innerText]));
+      await page.keyboard.press('Escape');
+    }
+    return out;
+  }
+
+  test('payload sem SEM_COMPRA_MES (antigo) abre sem erro e com as mesmas telas do payload com a chave', async () => {
+    for(const entrar of ['dir', {perfil: 'gc', gc: 'G1'}, {perfil: 'sv', gc: 'G1', sv: '1'}, {perfil: 'rota', gc: 'G1', rota: 'G111'}]){
+      const vistas = [];
+      for(const nome of ['normal', 'semscm']){
+        const {page, ctx, erros} = await abre(nome, {entrar});
+        assert.equal(await page.evaluate(() => 'SEM_COMPRA_MES' in P), nome === 'normal', nome);
+        vistas.push(await telas(page));
+        assert.deepEqual(erros, [], `${nome} ${JSON.stringify(entrar)}`);
+        await ctx.close();
+      }
+      assert.ok(vistas[0].length >= 5);
+      assert.deepEqual(vistas[1], vistas[0], JSON.stringify(entrar));
+    }
+  });
+
+  test('o sintético traz a lista: tamanho = semCompra e contém o SEM_COMPRA_HOJE', () => {
+    const p = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+    assert.equal(Object.keys(p).at(-1), 'SEM_COMPRA_MES');
+    assert.deepEqual(Object.keys(p.SEM_COMPRA_MES), Object.keys(p.SEM_COMPRA_HOJE));
+    for(const svs of Object.values(p.DATA)) for(const rotas of Object.values(svs)) for(const [r, d] of Object.entries(rotas)){
+      const l = p.SEM_COMPRA_MES[r];
+      assert.equal(l == null ? null : l.length, d.semCompra, r);
+      for(const pv of p.SEM_COMPRA_HOJE[r] || []) assert.ok(l.includes(pv), r);
+    }
+  });
+});
 
 describe('Parte H — ordem das listas da cascata', {skip: pular}, () => {
   test('ordem natural dos códigos', async () => {

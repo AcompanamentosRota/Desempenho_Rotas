@@ -28,6 +28,9 @@ nomes ou códigos de clientes) com:
   E8. descoberta do incentivo Todos a Bordo 3.0 (cobertura de cervejas, mês atual): agrupadores com HEINEKEN,
      EISENBAHN, CERVEJ ou 600, os 5 itens da campanha, meta por gerência e rota (FULL x BARRACUDA pela meta de
      Heineken), online de hoje, realizado e uma proposta de mapeamento. Só relata.
+  E9. SEM_COMPRA_MES do payload que o gerar.py gravou (workflow: `--e9 PAYLOAD`, sem rede, acrescentada ao relatório):
+     por gerência, soma dos tamanhos das listas x soma de semCompra, rotas com divergência, SEM_COMPRA_HOJE contido,
+     tamanho que a chave acrescenta e tempo. Só contagens e códigos de rota.
 """
 from __future__ import annotations
 
@@ -1138,6 +1141,97 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
                linhas)
 
 
+# ------------------------------------------------------------------ E9: SEM_COMPRA_MES (do payload gerado)
+# Roda depois do gerar.py, sobre o payload.json que ele gravou (workflow: --e9 PAYLOAD). Só contagens e códigos de
+# rota e gerência: nunca nomes nem códigos de clientes.
+E9_MAX_ROTAS = 40           # rotas listadas por motivo (as demais só contadas)
+LIMITE_PAYLOAD_MB = 8.0     # limite de atenção do payload (E6)
+
+
+def conta_sem_compra_mes(payload: dict) -> dict:
+    """Por gerência (ordem do GC_ATIVAS) e no total: rotas, rotas com lista, soma dos tamanhos de SEM_COMPRA_MES, soma de
+    semCompra, rotas com tamanho diferente de semCompra e rotas com SEM_COMPRA_HOJE fora do SEM_COMPRA_MES.
+    Todas as rotas do DATA (Neutraliza, virtuais e as ocultas das EV* também: as listas seguem as do SEM_COMPRA_HOJE)."""
+    scm = payload.get("SEM_COMPRA_MES") or {}
+    sch = payload.get("SEM_COMPRA_HOJE") or {}
+    por_gc: dict[str, dict] = {}
+    for gc, svs in (payload.get("DATA") or {}).items():
+        g = por_gc.setdefault(gc, {"rotas": 0, "com_lista": 0, "lista": 0, "semCompra": 0, "hoje": 0,
+                                   "diverge": [], "fora": []})
+        for rotas in svs.values():
+            for r, d in rotas.items():
+                lista, hoje, n = scm.get(r), sch.get(r) or [], d.get("semCompra")
+                g["rotas"] += 1
+                g["com_lista"] += lista is not None
+                g["lista"] += len(lista or [])
+                g["semCompra"] += n or 0
+                g["hoje"] += len(hoje)
+                if (None if lista is None else len(lista)) != n:
+                    g["diverge"].append(r)
+                if not set(hoje) <= set(lista or []):
+                    g["fora"].append(r)
+    ordem = [gc for gc in payload.get("GC_ATIVAS") or [] if gc in por_gc] + sorted(set(por_gc) - set(payload.get("GC_ATIVAS") or []))
+    total = {"rotas": 0, "com_lista": 0, "lista": 0, "semCompra": 0, "hoje": 0, "diverge": [], "fora": []}
+    for gc in ordem:
+        for k, v in por_gc[gc].items():
+            total[k] += v
+    return {"ordem": ordem, "por_gc": por_gc, "total": total}
+
+
+def peso_sem_compra_mes(payload: dict) -> tuple[int, int, float, float]:
+    """(bytes do payload, bytes sem a chave SEM_COMPRA_MES, segundos para serializar com e sem a chave)."""
+    from gerador.saida import serializar
+    sem = {k: v for k, v in payload.items() if k != "SEM_COMPRA_MES"}
+    t0 = time.monotonic()
+    com_b = len(serializar(payload))
+    t1 = time.monotonic()
+    sem_b = len(serializar(sem))
+    t2 = time.monotonic()
+    return com_b, sem_b, t1 - t0, t2 - t1
+
+
+def secao_sem_compra_mes(rel: Relatorio, payload: dict | None, duracao_gerar: float | None = None) -> None:
+    """Seção E9: SEM_COMPRA_MES (clientes do roster sem compra no mês) do payload que o gerar.py gravou."""
+    inicio = time.monotonic()
+    if payload is None:
+        rel.p("payload.json não gerado (o gerar.py falhou ou reprovou na validação): E9 sem dados.")
+        return
+    if "SEM_COMPRA_MES" not in payload:
+        rel.p("payload.json sem a chave SEM_COMPRA_MES (gerado por uma versão anterior do gerador?).")
+        return
+    if payload.get("FECHAMENTO"):
+        rel.p(f"Fechamento do mês: as listas são de {payload.get('MES_LABEL')} (mês fechado), como semCompra.")
+    c = conta_sem_compra_mes(payload)
+
+    def linha(nome, g):
+        return [nome, g["rotas"], g["com_lista"], _n(g["lista"], 0), _n(g["semCompra"], 0),
+                _n(g["lista"] - g["semCompra"], 0), len(g["diverge"]), _n(g["hoje"], 0), len(g["fora"])]
+    rel.p("Por gerência (todas as rotas do payload, inclusive Neutraliza, virtuais e as ocultas das EV*):")
+    rel.tabela(["gerência", "rotas", "rotas com lista", "Σ tamanho das listas", "Σ semCompra", "diferença",
+                "rotas com divergência", "Σ SEM_COMPRA_HOJE", "rotas com SEM_COMPRA_HOJE fora"],
+               [linha(gc, c["por_gc"][gc]) for gc in c["ordem"]] + [linha("TOTAL BAND", c["total"])])
+    t = c["total"]
+    if t["diverge"]:
+        rel.p(f"\n**Divergência** (tamanho da lista ≠ semCompra) em {len(t['diverge'])} rota(s): "
+              + ", ".join(t["diverge"][:E9_MAX_ROTAS]) + (" …" if len(t["diverge"]) > E9_MAX_ROTAS else ""))
+    else:
+        rel.p("\nTamanho da lista = semCompra em todas as rotas (sem divergência).")
+    if t["fora"]:
+        rel.p(f"**SEM_COMPRA_HOJE fora do SEM_COMPRA_MES** em {len(t['fora'])} rota(s): "
+              + ", ".join(t["fora"][:E9_MAX_ROTAS]) + (" …" if len(t["fora"]) > E9_MAX_ROTAS else ""))
+    else:
+        rel.p("SEM_COMPRA_HOJE contido no SEM_COMPRA_MES em todas as rotas.")
+    com_b, sem_b, t_com, t_sem = peso_sem_compra_mes(payload)
+    rel.p(f"\nTamanho: payload {com_b / 1e6:.2f} MB; sem a chave {sem_b / 1e6:.2f} MB; a chave acrescenta "
+          f"{(com_b - sem_b) / 1e3:.1f} KB ({(com_b - sem_b) / max(1, sem_b) * 100:.2f}%)"
+          + (f". **Acima do limite de atenção de {LIMITE_PAYLOAD_MB:.0f} MB.**" if com_b / 1e6 > LIMITE_PAYLOAD_MB
+             else f" (limite de atenção: {LIMITE_PAYLOAD_MB:.0f} MB)."))
+    rel.p(f"Tempo: serializar o payload {t_com * 1000:.0f} ms com a chave e {t_sem * 1000:.0f} ms sem; esta seção "
+          f"{(time.monotonic() - inicio) * 1000:.0f} ms"
+          + (f"; gerar.py completo {duracao_gerar:.0f} s (antes da chave: 84 s em 20/10/2026)." if duracao_gerar
+             else "; gerar.py completo: ver a seção 10."))
+
+
 def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
              simulado: bool = False, pasta_sac: Path = PASTA_SAC) -> tuple[Relatorio, float]:
     inicio = time.monotonic()
@@ -1885,7 +1979,12 @@ def main() -> int:
     ap.add_argument("--hoje", help="simula a data (AAAA-MM-DD)")
     ap.add_argument("--saida", type=Path, default=PASTA_SAIDA / "conferencia", help="pasta do relatório")
     ap.add_argument("--rotas", default="", help="rotas extras de amostra, separadas por vírgula")
+    ap.add_argument("--e9", type=Path, metavar="PAYLOAD",
+                    help="só a seção E9 (SEM_COMPRA_MES) deste payload.json, acrescentada ao relatório (sem rede)")
+    ap.add_argument("--e9-duracao", type=float, help="segundos do gerar.py completo (para a E9)")
     args = ap.parse_args()
+    if args.e9:
+        return main_e9(args.e9, args.saida, args.e9_duracao)
     configurar_log("conferir")
     cfg = carregar_config()
     M.OBJ_META = cfg.objeto
@@ -1898,6 +1997,18 @@ def main() -> int:
     destino.write_text(rel.texto(f"Conferência da tendência de volume e do fechamento · {hoje:%d/%m/%Y} "
                                  f"(gerado {calmod.agora():%d/%m/%Y %H:%M})"), encoding="utf-8")
     print(f"\nRelatório: {destino}")
+    return 0
+
+
+def main_e9(caminho: Path, pasta: Path, duracao: float | None) -> int:
+    """Acrescenta a seção E9 ao relatório da pasta (o workflow roda depois do gerar.py)."""
+    payload = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else None
+    rel = Relatorio()
+    rel.h("E9. SEM_COMPRA_MES (clientes sem compra no mês, do payload gerado)")
+    secao_sem_compra_mes(rel, payload, duracao)
+    pasta.mkdir(parents=True, exist_ok=True)
+    with (pasta / "relatorio_tendencia.md").open("a", encoding="utf-8") as arq:
+        arq.write("\n".join(rel.linhas) + "\n")
     return 0
 
 

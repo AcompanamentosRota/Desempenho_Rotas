@@ -163,7 +163,7 @@ def montar_payload(f: Fontes) -> dict:
 
     # ---- nós por rota
     data: dict = {}
-    cobertos_out, oportunidades, sem_compra_hoje, visitas_sem = {}, {}, {}, {}
+    cobertos_out, oportunidades, sem_compra_hoje, sem_compra_mes, visitas_sem = {}, {}, {}, {}, {}
     volume_cliente, redes_out, comodato_out, comodato_cliente = {}, {}, {}, {}
     for gc in ordem_gc:
         data[gc] = {}
@@ -175,15 +175,18 @@ def montar_payload(f: Fontes) -> dict:
                 cob = _filtra_ks_tt(f.cobertos.get(r, {}), {c[0]: c[2] for c in lista_roster}, ks_tt,
                                     f.segmento_venda)
 
-                # compras do mês (rota sem nenhuma venda no mês = sem dado)
+                # compras do mês (rota sem nenhuma venda no mês = sem dado); sem compra no mês = roster - comprou
+                # (mesmo tamanho de semCompra; contém o SEM_COMPRA_HOJE)
                 if r in f.compraram:
                     comprou = f.compraram[r] & pvs_roster
                     n_comp = len(comprou)
                     sch = [c[0] for c in clientes_hoje[r] if c[0] not in comprou]
                     sem_compra_hoje[r], visitas_sem[r] = sch, len(sch)
+                    sem_compra_mes[r] = sorted(pvs_roster - comprou)
                 else:
                     n_comp = None
                     sem_compra_hoje[r], visitas_sem[r] = None, None
+                    sem_compra_mes[r] = None
 
                 ind = {}
                 metas_rota = f.metas.get(r, {})
@@ -312,4 +315,6 @@ def montar_payload(f: Fontes) -> dict:
         # último dia útil fechado (o dia útil DIA_ONTEM do mês de referência): AAAA-MM-DD e "sexta-feira" (Painel de Ritmo)
         "DATA_ONTEM": cal.data_ontem.isoformat() if cal.data_ontem else None,
         "DIA_ONTEM_NOME": calmod.nome_dia(cal.data_ontem),
+        # clientes do roster sem compra no mês (PVs em ordem crescente; None = rota sem dado), como o SEM_COMPRA_HOJE
+        "SEM_COMPRA_MES": por_ordem(sem_compra_mes),
     }

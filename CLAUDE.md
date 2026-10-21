@@ -43,6 +43,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   demais, todas as rotas normais têm meta, exceto R11, I19, C28 e as rotas T<nn>. Pela maioria (Heineken e Heineken
   600ml iguais): BARRACUDA AN AP AT G1 G2 G3 PA DI GU; FULL RV SL PO IT MO UR RI; única supervisão diferente da
   gerência: SV.G2.1 (FULL); sem empates; sem as T<nn>, nada muda.
+- E9 do conferir (`SEM_COMPRA_MES`): roda DEPOIS do gerar.py, sobre o payload.json que ele gravou
+  (`conferir_tendencia.py --saida DIR --e9 DIR/payload.json [--e9-duracao S]`, sem rede, acrescentada ao relatório; o
+  workflow "Conferir tendência" já chama). Por gerência: Σ tamanho das listas x Σ `semCompra`, rotas com divergência,
+  `SEM_COMPRA_HOJE` contido, KB que a chave acrescenta (limite de atenção 8 MB) e tempo. Só contagens e códigos de rota.
 - Front local: `cd frontend && python -m http.server 8765`.
 - **Versão do código e aviso de versão nova** (README, "Versão do código e aviso de versão nova"): versão = hash de 12
   caracteres de `frontend/` sem `frontend/data/**` (`.github/scripts/versao-front.sh`; nunca o SHA do commit: com só os
@@ -65,8 +69,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   agrupada escolhe o grupo); `vaiPara()` = casa + `entra()`; relógio simulado por `antes: p => p.clock...`.
   Variantes do payload montadas no próprio teste: 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV), 'semdados'
   (G3 e PA sem dados), 'semsv', 'antigo', 'inc'/'incfech' (cenários da aba Todos a Bordo, `montaIncentivo`), 'seminc'
-  (payload sem o grupo INCENTIVO) e 'grande' (16 gerências, a DI copiada da PA, e números de 6-7 dígitos; PDF do
-  Resumo, `montaGrande`). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
+  (payload sem o grupo INCENTIVO), 'semscm' (payload sem SEM_COMPRA_MES; Parte S) e 'grande' (16 gerências, a DI
+  copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
   `require.resolve` (local, `NODE_PATH` ou global); sem eles, pulado. `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
   a Parte N serve o CSS e o app.js do 0a59eb4 assim).
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
@@ -84,6 +88,14 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `DATA_ONTEM` (AAAA-MM-DD do último dia útil fechado, o dia útil DIA_ONTEM do mês de referência: calendário do
   Datasphere, 1º dia de semana com NO_DIA_UTIL = DIA_ONTEM; sem a linha, o último dia útil local antes de hoje) e
   `DIA_ONTEM_NOME` ("sexta-feira") são chaves novas opcionais no fim do payload (null se não houver; fora da validação).
+  `SEM_COMPRA_MES` (Etapa 1 do pacote da Executiva, 21/10/2026): `{rota: [PVs]}` = clientes do roster sem compra no mês
+  (`sorted(pvs_roster - comprou)`, o mesmo `comprou` do `semCompra` e do `SEM_COMPRA_HOJE`; no fechamento, do mês
+  fechado), `None` na rota sem dado; mesmas rotas e ordem do `SEM_COMPRA_HOJE` (`por_ordem`; Neutraliza, virtuais e as
+  ocultas das EV* como ele; o front esconde). Chave opcional, a ÚLTIMA do payload, fora de `CHAVES_PAYLOAD`;
+  `validacao._sem_compra_mes` só AVISA (tamanho ≠ `semCompra` ou `SEM_COMPRA_HOJE` fora). O front ainda não lê
+  (gaveta "Sem compra" fora do "Hoje" só depois desta chave publicada); payload sem ela (antigo) = Parte S dos testes.
+  Peso no payload real de 21/10 (4.631 clientes em 231 rotas): +39 KB (6,60 → 6,63 MB); pior caso (base inteira, ~29 mil)
+  ~+0,24 MB.
 - **Todo nome de coluna, filtro e agrupador fica em `backend/gerador/mapeamento.py`.** Valores conferidos em 13/10/2026:
   - Base de clientes guarda histórico: filtrar `FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'`.
   - Gerências do painel na fonte (`M.GC_ORIGEM`): `Gc. G1/G2/G3/Ap/It_Mo` conferidas; `Gc. At/An/Sl/Rv/Pa_Di/Ur_Ri/Gu_Po`
