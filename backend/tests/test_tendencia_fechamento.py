@@ -150,7 +150,8 @@ class TestNegRestantePelaRotaDaMeta(unittest.TestCase):
         self.assertEqual((st["meta"], st["negRestante"], st["metaNegClientes"]), (50.0, 12.5, 40.0))   # 50 x 10/40
         self.assertTrue(any("escalonado" in a and "111/Still" in a and "Refrigerantes" not in a for a in f.avisos),
                         f.avisos)
-        neg = [c for c in cons.chamadas if c[1] == (CM.META_ROTA, CM.AGRUPADOR, CM.META_NEG)]
+        # as do mês de referência (a META_NEG de setembro, da chave MES_ANTERIOR, tem o mesmo $select)
+        neg = [c for c in cons.chamadas if c[1] == (CM.META_ROTA, CM.AGRUPADOR, CM.META_NEG) and "'202610'" in c[2]]
         self.assertEqual(sorted(CM.DATA in c[2] for c in neg), [False, True])
 
     def test_sem_rota_da_meta_mantem_o_escalonado_pela_rota_do_cliente(self):

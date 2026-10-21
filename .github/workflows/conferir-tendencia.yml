@@ -1,6 +1,7 @@
 # Conferência da tendência de volume (critério do SAC) e do modo fechamento do mês, com os dados reais.
 # Só manual; não faz commit nem publica o site. Resultado no artifact "conferencia-tendencia":
-#   relatorio_tendencia.md  (só totais: sem nomes nem códigos de clientes; a E9 vem depois do gerar.py)
+#   relatorio_tendencia.md  (só totais: sem nomes nem códigos de clientes; a E9 e a E11 vêm depois do gerar.py)
+#   e10_mes_anterior.json   (resumo da E10 que a E11 confere contra a chave MES_ANTERIOR: totais e códigos de rota)
 #   payload.json, online.json  (gerados com gerar.py --saida, e --hoje se informado)
 #   logs/
 # Usa os mesmos Secrets/Variables do atualizar-dados.yml.
@@ -91,15 +92,19 @@ jobs:
           } >> saida/conferencia/relatorio_tendencia.md
           exit $CODIGO
 
-      - name: E9 (SEM_COMPRA_MES do payload gerado)
+      - name: E9 e E11 (SEM_COMPRA_MES e MES_ANTERIOR do payload gerado)
         if: always()
         continue-on-error: true
         working-directory: backend
         env:
           DURACAO: ${{ steps.gerar.outputs.duracao }}
+          MES_ANTERIOR_S: ${{ steps.gerar.outputs.mes_anterior_s }}
+          MES_ANTERIOR_ESPERA_S: ${{ steps.gerar.outputs.mes_anterior_espera_s }}
         run: |
-          ARGS=(--saida saida/conferencia --e9 saida/conferencia/payload.json)
+          ARGS=(--saida saida/conferencia --e9 saida/conferencia/payload.json --e11 saida/conferencia/payload.json)
           if [ -n "$DURACAO" ]; then ARGS+=(--e9-duracao "$DURACAO"); fi
+          if [ -n "$MES_ANTERIOR_S" ]; then ARGS+=(--e11-tempo "$MES_ANTERIOR_S"); fi
+          if [ -n "$MES_ANTERIOR_ESPERA_S" ]; then ARGS+=(--e11-espera "$MES_ANTERIOR_ESPERA_S"); fi
           python scripts/conferir_tendencia.py "${ARGS[@]}"
 
       - name: Guardar resultado

@@ -24,6 +24,9 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
                                                 (decide o fim do fechamento do mês)
   comodato    AM_FAT_BND_COMODATO               geladeiras Total Ko em contrato: giro zero (Venda Zero)
                                                 e ativas; meta de Venda Zero por gerência
+  mês anterior AM_FAT_BND_ANALISE_META          Vol Real até o corte, META_VOLUME e META_NEG do mês anterior
+                                                (chave MES_ANTERIOR, gerador/mes_anterior.py): threads daemon com
+                                                limite de 60 s; falhou ou demorou = chave fora, a rodada segue
 
 Todas agregam no servidor (modo analítico: o $select de dimensões é o groupby) e rodam em paralelo;
 DATA_MOVIMENTO só aparece no $filter, nunca no groupby (por dia seriam ~25 mil linhas e ~150 s).
@@ -38,6 +41,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -722,6 +726,10 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     gc_da_rota = {c.rota: c.gc for c in clientes}
     cal = decidir_fechamento(cons, hoje, linhas_cal, gc_da_rota) or cal
     anomes = cal.anomes
+    # mês anterior no mesmo dia útil (chave MES_ANTERIOR): threads daemon junto com as consultas do mês, com limite
+    # próprio; se falhar ou demorar, a chave fica fora e a rodada segue (import aqui: o módulo usa este)
+    from . import mes_anterior
+    carga_ant = mes_anterior.iniciar(cons, cal, linhas_cal, gcs, rota)
     if cal.fechamento:
         online.fechamento_mes = fechamento or cal.mes_label
         log.warning("Fechamento do mês: Venda Zero indisponível (o giro do comodato já é do mês novo).")
@@ -796,6 +804,13 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
             volume[r][k] = VolumeRota(meta=0.0, real=real, neg_restante=None if cal.fechamento else 0.0,
                                       meta_dia_hoje=None if meta_dia is None else 0.0)
     avisos = []
+    espera = time.monotonic()
+    dados_ant, aviso_ant = carga_ant.resultado() if carga_ant else (None, None)
+    tempos = {} if carga_ant is None else {"mes_anterior_s": round(carga_ant.segundos, 1),
+                                           "mes_anterior_espera_s": round(time.monotonic() - espera, 1)}
+    if carga_ant:
+        log.info("Mês anterior (%s): consultas em %.1f s; espera depois das do mês %.1f s.",
+                 M.CHAVE_MES_ANTERIOR, tempos["mes_anterior_s"], tempos["mes_anterior_espera_s"])
     if fonte_neg == ROTA_CLIENTE:
         avisos.append(f"META_NEG por {CM.META_ROTA} indisponível: Neg Restante escalonado pela curva da rota do cliente")
     elif casos[modelo.CURVA] and not cal.fechamento:
@@ -813,6 +828,8 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
             if rotas_gc and not any(volume.get(r, {}).get(k) and volume[r][k].meta is not None for r in rotas_gc):
                 avisos.append(f"{M.VOLUME_EXTRA[k]['label']}: {gc} sem meta (META_VOLUME e META_NEG de "
                               f"'{M.AGRUPADORES_VOLUME_EXTRA[k]}' zeradas ou ausentes): o card não aparece")
+    if aviso_ant:
+        avisos.append(aviso_ant)
     for a in avisos:
         log.warning(a)
     # barra por cliente: (Meta NEG do cliente, Vol Real do cliente) onde o cliente tem meta
@@ -835,4 +852,4 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                   vendazero=so_painel(vendazero) if vendazero is not None else None,
                   vz_meta=vz_meta, comodato_ativos=so_painel(ativos), segmento_venda=segmento, avisos=avisos,
                   comodato_cliente=so_painel(comodato_cliente(por_cli_comodato, vm.real_gdm_cliente, virtuais)),
-                  eventuais=eventuais)
+                  eventuais=eventuais, mes_anterior=dados_ant, tempos=tempos)

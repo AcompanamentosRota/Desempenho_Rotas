@@ -249,6 +249,15 @@ VOLUME_EXTRA = {"VOL DEL VALLE FRUT": {"label": "Del Valle Frut", "gcs": ["G2"]}
 INDICADORES_VOLUME_EXTRA = list(VOLUME_EXTRA)
 INDICADORES_VOLUME_TODOS = INDICADORES_VOLUME + INDICADORES_VOLUME_EXTRA
 
+# Mês anterior no mesmo dia útil (chave opcional MES_ANTERIOR, a última do payload; gerador/mes_anterior.py). Decisões
+# da Karen de 21/10/2026: só os 5 macros de volume (sem coberturas, Todos a Bordo, Del Valle Frut, Imperdoáveis e
+# Venda Zero); Real até o corte pela rota ATUAL do cliente (ColMeta.ROTA), as EV* na rota oculta da gerência
+# comercial; meta = a do mês anterior inteiro (META_VOLUME da rota da meta; sem ela, META_NEG). As consultas rodam
+# junto com as do mês; passou de MES_ANTERIOR_LIMITE_S ou falhou: a chave fica fora (aviso) e a rodada segue.
+CHAVE_MES_ANTERIOR = "MES_ANTERIOR"
+INDICADORES_MES_ANTERIOR = list(INDICADORES_VOLUME)
+MES_ANTERIOR_LIMITE_S = 60
+
 # Rotas Neutraliza e virtuais: listas POR ROTA (valem em qualquer gerência, inclusive na AT, e independem da
 # supervisão). ÚNICA fonte: vão para o payload (NEUTRALIZA_ROTAS, VIRTUAIS_ROTAS) e o front lê de lá.
 # Neutraliza: Meta e Real de Volume, ICS GC e Novos Negócios no total da gerência; na tela, uma linha "Neutraliza"

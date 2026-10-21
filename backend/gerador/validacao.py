@@ -10,6 +10,7 @@ painel). As quedas são medidas por gerência, só para as que já estavam na ve
 """
 from __future__ import annotations
 
+import math
 import re
 
 from . import mapeamento as M
@@ -91,6 +92,43 @@ def _sem_compra_mes(p: dict) -> list[str]:
     if fora:
         avisos.append(f"SEM_COMPRA_HOJE fora do SEM_COMPRA_MES em {len(fora)} rota(s): {', '.join(fora[:20])}")
     return avisos
+
+
+def _mes_anterior(p: dict) -> tuple[list[str], list[str]]:
+    """MES_ANTERIOR (chave opcional, só Volume): (erros, avisos). Aviso se faltar com dia útil fechado (DIA_ONTEM > 0),
+    se o Real BAND do mês anterior for 0 ou se alguma meta vier negativa; erro só para NaN/inf ou Real negativo (o
+    gerador já tira a chave nesses casos, então o erro só pega um payload montado por fora). Nenhuma chave obrigatória."""
+    ma = p.get(M.CHAVE_MES_ANTERIOR)
+    if ma is None:
+        return [], ([f"{M.CHAVE_MES_ANTERIOR} ausente (consulta do mês anterior falhou ou passou do limite?): a "
+                     "Executiva fica sem a comparação"] if (p.get("DIA_ONTEM") or 0) > 0 else [])
+    erros, ruins, negativos, metas_neg, real = [], [], [], [], 0.0
+    for r, vals in (ma.get("ROTAS") or {}).items():
+        for par in vals or []:
+            if par is None:
+                continue
+            v, m = par
+            for x in (v, m):
+                if x is not None and (not isinstance(x, (int, float)) or not math.isfinite(x)):
+                    ruins.append(r)
+            if isinstance(v, (int, float)) and math.isfinite(v):
+                real += v
+                if v < 0:
+                    negativos.append(r)
+            if isinstance(m, (int, float)) and math.isfinite(m) and m < 0:
+                metas_neg.append(r)
+    if ruins:
+        erros.append(f"{M.CHAVE_MES_ANTERIOR} com valor não finito (NaN/inf) em: {', '.join(sorted(set(ruins))[:20])}")
+    if negativos:
+        erros.append(f"{M.CHAVE_MES_ANTERIOR} com Real negativo em: {', '.join(sorted(set(negativos))[:20])}")
+    avisos = []
+    if not ruins and real == 0:
+        avisos.append(f"{M.CHAVE_MES_ANTERIOR}: Real BAND de {ma.get('MES_LABEL')} até {ma.get('DATA_CORTE')} = 0 "
+                      "(filtro de DATA_MOVIMENTO ou NF_STATUS?)")
+    if metas_neg:
+        avisos.append(f"{M.CHAVE_MES_ANTERIOR}: meta negativa em {len(set(metas_neg))} rota(s): "
+                      f"{', '.join(sorted(set(metas_neg))[:20])}")
+    return erros, avisos
 
 
 def _volume_real(rotas: dict) -> float:
@@ -177,6 +215,9 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
     avisos += _gerencias(novo)
     avisos += _incentivo(novo)
     avisos += _sem_compra_mes(novo)
+    e_ma, a_ma = _mes_anterior(novo)
+    erros += e_ma
+    avisos += a_ma
     if sum(novo["VISITAS_DIA"]["geral"].values()) == 0:
         avisos.append("nenhuma visita agendada hoje (fim de semana/feriado ou VISITA_HOJE mudou?)")
 

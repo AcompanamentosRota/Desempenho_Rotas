@@ -764,7 +764,8 @@ tamanho da lista é sempre o `semCompra` da rota, e a lista "Sem compra hoje" (`
 sem compra no mês) está sempre contida nela. Mesmas rotas e ordem do `SEM_COMPRA_HOJE` (Neutraliza, virtuais e as rotas
 ocultas das EV* seguem a mesma regra; o painel as esconde como hoje). No fechamento do mês, é do mês fechado.
 
-- Opcional e a última chave do payload: payload sem ela (o publicado antes desta versão) continua abrindo igual. A
+- Opcional e a última chave do payload antes da `MES_ANTERIOR` (opcional, Etapa 8b): payload sem ela (o publicado antes
+  desta versão) continua abrindo igual. A
   validação não reprova por ela; só **avisa** se o tamanho de alguma lista for diferente do `semCompra` ou se o "Sem
   compra hoje" de alguma rota não estiver dentro dela.
 - Peso: no payload real de 21/10/2026 (4.631 clientes sem compra em 231 rotas), +39 KB (6,60 → 6,63 MB); no pior caso
@@ -784,8 +785,10 @@ reprovou) ou com um payload sem a chave, a seção diz isso.
 
 Descoberta da Etapa 8 da visão executiva (o bloco "Evolução contra o mês anterior" da aba Executiva, ainda oculto). A
 pergunta: dá para comparar onde estamos com onde estávamos no **mesmo dia útil do mês anterior** (calendário de vendas)?
-Quanto custa? A E10 sai sempre no relatório do "Conferir tendência" (antes da seção 9) e **só relata**: nada muda no
-gerador, no payload nem no painel. Só nomes de colunas, contagens, totais por gerência e códigos de rota.
+Quanto custa? A E10 sai sempre no relatório do "Conferir tendência" (antes da seção 9) e **só relata**. Só nomes de
+colunas, contagens, totais por gerência e códigos de rota. Desde a Etapa 8b o corte, a consulta do Vol Real com corte e
+a meta por rota estão em `backend/gerador/mes_anterior.py` (a E10 importa de lá) e o gerador grava a chave
+`MES_ANTERIOR` (seção seguinte); a E10 grava também `e10_mes_anterior.json` ao lado do relatório, que a E11 usa.
 
 Para rodar com o dado real: **Actions → Conferir tendência → Run workflow**, com a branch em "Use workflow from" (o
 input `hoje` simula outra data, ex.: um dia de fechamento). Local (precisa do `backend/.env`):
@@ -799,8 +802,8 @@ input `hoje` simula outra data, ex.: um dia de fechamento). Local (precisa do `b
   referência traz as NF desses dias. Exemplo: em 21/10/2026 o 13º dia útil fechado é 20/10; em setembro o 13º é sexta
   18/09 e o corte vai até domingo 20/09. Bordas: mês anterior com menos dias úteis = ele inteiro; sem dia útil fechado =
   nada a comparar (na prática o painel já está em fechamento); fechamento = o mês fechado contra o anterior no mesmo dia
-  útil. A tabela de variantes mostra, para a decisão, o dia proporcional (N ÷ dias do mês × dias do anterior) e o mês
-  anterior inteiro.
+  útil (desde a decisão de 21/10/2026: contra o anterior **inteiro**). A tabela de variantes mostra o dia proporcional
+  (N ÷ dias do mês × dias do anterior) e o mês anterior inteiro.
 - **E10b. Consultas.** Cada consulta como o gerador faria (agregada no servidor), com as linhas devolvidas, os segundos
   e o resultado. A pergunta principal é se o filtro `DATA_MOVIMENTO <= corte` funciona em cada medida:
   - Vol Real (`FX_VOL_PADRAO_FAT`, os 5 macros e os status do Vol Real), com e sem o corte, conferido com a curva diária
@@ -830,8 +833,8 @@ input `hoje` simula outra data, ex.: um dia de fechamento). Local (precisa do `b
     paralelo, o acréscimo fica perto da maior delas; em série, a soma.
   - Peso: a chave proposta `MES_ANTERIOR` (opcional e a última do payload, fora da validação obrigatória) traz o
     calendário do corte e, por rota, [Real até o corte, Meta] de cada item (null sem o indicador). A E10 mede o peso com
-    e sem as coberturas, somado ao payload publicado do checkout, e avisa acima de 8 MB. A chave **não existe** no
-    payload: é só a proposta.
+    e sem as coberturas, somado ao payload publicado do checkout, e avisa acima de 8 MB. Desde a Etapa 8b a chave existe
+    (só Volume; seção seguinte).
 - **E10f. Riscos e dúvidas.**
   - Rotas que mudaram de gerência (gerência da meta, `DS_GERENCIA_COM_Chave_Meta_SAP`, no mês anterior x hoje).
   - Rotas com meta no mês anterior que saíram do painel, e rotas do painel sem meta no mês anterior (o card não soma o
@@ -839,9 +842,72 @@ input `hoje` simula outra data, ex.: um dia de fechamento). Local (precisa do `b
   - Real fora do painel (EV* e outras).
   - Real pela rota do cliente x pela rota da meta, por gerência. `CD_ROTA_Clien` é a rota ATUAL do cliente: pela rota
     do cliente, o mês anterior sai com a estrutura de hoje.
-  - Sete dúvidas para decisão: dia útil limitado ou proporcional; fechamento; estrutura de hoje ou a do mês anterior;
-    base do % (meta do mês ou META_NEG até o corte); coberturas sim ou não; o que fica fora (Todos a Bordo, Del Valle
-    Frut, Venda Zero); KS TT.
+  - As sete decisões da Karen (21/10/2026), que a chave `MES_ANTERIOR` segue (seção seguinte).
+
+### Chave `MES_ANTERIOR` (mês anterior no mesmo dia útil, só Volume; seção E11)
+
+Etapa 8b (21/10/2026): o gerador grava no fim do `payload.json` onde estávamos **no mesmo dia útil do mês anterior**, para
+o bloco "Evolução contra o mês anterior" da aba Executiva (o front ainda não lê a chave: `CONFIG.EVOLUCAO_ATIVA = false`).
+Código em `backend/gerador/mes_anterior.py`; nomes e constantes em `mapeamento.py` (`CHAVE_MES_ANTERIOR`,
+`INDICADORES_MES_ANTERIOR`, `MES_ANTERIOR_LIMITE_S`).
+
+```json
+"MES_ANTERIOR": {"MES_LABEL": "Setembro/26", "DIA_UTIL": 13, "TOTAL_DIAS_UTEIS": 21, "DATA_CORTE": "2026-09-20",
+  "FECHADO": false, "IND": ["VOL REFRIGERANTES", "VOL CERVEJAS", "VOL STILL", "VOL AGUA MINERAL", "VOL DEST+ART+CND"],
+  "ROTAS": {"111": [[real_ate_o_corte, meta_do_mes_anterior], null, ...]}}
+```
+
+Decisões da Karen (21/10/2026):
+
+1. **Dia útil**: N = `DIA_ONTEM` (dias úteis fechados), limitado ao total do mês anterior (com menos dias úteis, vale ele
+   inteiro). O corte (inclusive) vai até a véspera do dia útil N+1 (entram o sábado, o domingo e o feriado logo depois
+   do dia útil N), pelo calendário do Datasphere; sem as linhas do mês anterior, pelo cálculo local. Ex.: em 21/10/2026
+   (DIA_ONTEM 13) o corte é 20/09 (13º dia útil = sexta 18/09).
+2. **Fechamento x fechamento**: com o painel em fechamento (o mês de referência é o fechado), o mês anterior a ele entra
+   **inteiro**: `DATA_CORTE` = o último dia dele, `DIA_UTIL` = `TOTAL_DIAS_UTEIS` dele, `FECHADO: true`, com as metas dele.
+3. **Estrutura**: Real pela rota ATUAL do cliente (`CD_ROTA_Clien`), na gerência de hoje; o Real das rotas EV* vai para a
+   rota oculta "{GC}-EV" da gerência comercial, como o Real do mês de referência.
+4. **Base do %**: Real até o corte ÷ meta do mês anterior **inteiro** (META_VOLUME da rota da meta; sem ela, META_NEG do
+   mês), o mesmo "% real" dos medidores da Executiva. Δ p.p. = % do mês de referência − % do anterior; Δ Real = Real de
+   hoje ÷ Real do anterior até o corte − 1 (contas do front, quando o bloco entrar).
+5. **Só Volume**: os 5 macros (`IND`). Coberturas fora nesta rodada.
+6. Ficam fora: Todos a Bordo (chaves INC), Del Valle Frut, Imperdoáveis e Venda Zero.
+7. KS TT do mês anterior pelo segmento de hoje: só quando as coberturas entrarem.
+
+Regras da chave:
+- `ROTAS` tem todas as rotas do payload de hoje, na ordem dele (Neutraliza, virtuais e as ocultas "{GC}-EV" inclusive).
+  Por rota, um par `[Real até o corte, Meta]` por item de `IND` (1 casa), ou `null` onde a rota não tem o indicador no
+  mês anterior (sem META_VOLUME nem META_NEG): o Real dela não entra, como no card. A rota oculta "{GC}-EV" tem meta 0
+  nos macros com Real. Rota do mês anterior que não existe hoje fica fora (a E10 mediu 0 casos); Real de EV* de uma
+  gerência sem a rota oculta hoje também (vai para o log).
+- Consultas (agregadas no servidor, `DATA_MOVIMENTO` só no `$filter`): Vol Real até o corte por rota do cliente x
+  agrupador x NF_STATUS (os status do Vol Real; com a gerência comercial para as EV*), META_VOLUME por rota da meta e
+  META_NEG do mês inteiro por rota da meta. Rodam em threads daemon junto com as consultas do mês
+  (`fontes.carregar`); se alguma falhar ou o conjunto passar de **60 s**, a chave fica fora, vai um aviso para o log e a
+  rodada segue (nada disto reprova nem segura a publicação). Real negativo ou valor não finito: a chave também fica fora
+  (aviso).
+- **Sem dia útil fechado** (`DIA_ONTEM = 0`, fora do fechamento): sem corte e sem a chave.
+- **Validação** (`validacao._mes_anterior`, nenhuma chave obrigatória nova): aviso se a chave faltar com `DIA_ONTEM > 0`
+  (também no fechamento), se o Real BAND do mês anterior for 0 ou se alguma meta vier negativa; erro só para NaN/inf ou
+  Real negativo na chave (o gerador já a tira nesses casos).
+- Peso: a E10 estimou +19 KB (~250 rotas); tempo do `gerar.py` meta < 120 s (a E10 estimou +14 s em série; em paralelo,
+  perto da maior consulta nova). O `gerar.py` grava `mes_anterior_s` e `mes_anterior_espera_s` no `GITHUB_OUTPUT`.
+
+**Seção E11** do "Conferir tendência" (como a E9: depois do `gerar.py`, sobre o payload que ele gravou; no workflow, o
+passo "E9 e E11"; local: `python scripts/conferir_tendencia.py --saida DIR --e11 DIR/payload.json [--e9-duracao S]
+[--e11-tempo S] [--e11-espera S]`, sem rede, com o `e10_mes_anterior.json` que a E10 gravou na mesma pasta):
+- **E11a** Real de cada macro na chave (todas as rotas) x a consulta direta com o filtro de data (todas as linhas por
+  rota do cliente), com o que fica fora da chave (rotas sem o indicador, EV* fora da rota oculta, rotas fora do painel)
+  e o resíduo; e a consulta direta dos 5 macros x a curva diária até o corte;
+- **E11b/c** Refrigerantes por gerência: chave x E10d (Real e Meta do mês anterior) e Real de hoje do payload x E10d,
+  com %, Δ p.p. e Δ Real;
+- **E11d** tamanho da chave e do payload (limite de atenção 8 MB); **E11e** tempo das consultas do mês anterior, a espera
+  depois das do mês e o `gerar.py` completo (meta < 120 s);
+- **E11f** rotas: no payload x na chave, todas null, com algum null, as ocultas das EV*; **E11g** o caso (normal, mês
+  limitado ou fechamento).
+Só totais, contagens e códigos de rota e gerência: nunca nomes nem códigos de clientes.
+
+Depois do merge: rodar **"Atualizar dados"** uma vez para o payload publicado trazer a chave.
 
 Diferenças em relação ao arquivo que era montado à mão:
 - **Visitas de hoje**: vêm do campo `VISITA_HOJE` do SAP e incluem clientes com mais de um dia de

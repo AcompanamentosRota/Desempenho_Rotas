@@ -82,10 +82,11 @@ class TestCorteMesAnterior(unittest.TestCase):
         c = ct.corte_mes_anterior(calmod.fechado(date(2026, 11, 3), date(2026, 10, 1), 21), [])
         self.assertEqual((c.ref, c.anterior, c.n, c.n_ant, c.corte, c.caso),
                          (date(2026, 10, 1), date(2026, 9, 1), 21, 21, date(2026, 9, 30), ct.CASO_FECHAMENTO))
-        # fevereiro fechado (18) contra janeiro (21): o 18º dia útil de janeiro; os 3 últimos ficam fora
+        # fevereiro fechado (18) contra janeiro (21): decisão de 21/10/2026, fechamento x fechamento = janeiro inteiro
+        # (antes da decisão a E10 usava o 18º dia útil de janeiro, 27/01)
         c = ct.corte_mes_anterior(calmod.fechado(date(2026, 3, 2), date(2026, 2, 1), 18), [])
-        self.assertEqual((c.anterior, c.total_ant, c.n_ant, c.data_n, c.corte, c.limitado),
-                         (date(2026, 1, 1), 21, 18, date(2026, 1, 27), date(2026, 1, 27), False))
+        self.assertEqual((c.anterior, c.total_ant, c.n_ant, c.data_n, c.corte, c.limitado, c.fechado),
+                         (date(2026, 1, 1), 21, 21, date(2026, 1, 30), date(2026, 1, 31), False, True))
 
     def test_virada_do_ano(self):
         c = ct.corte_mes_anterior(calmod.calcular_local(date(2027, 1, 20)), [])
