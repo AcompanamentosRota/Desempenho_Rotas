@@ -56,6 +56,10 @@
   /* cards brancos do cabeçalho das abas (card de ritmo, Base, Sem compra) e quadros de destaque; caixa de comentário */
   --borda-card:#ececf0; --sombra-card:0 1px 2px rgba(0,0,0,.03),0 6px 18px rgba(0,0,0,.04);
   --fs-dica:12px;
+  /* aba Executiva: título dos blocos, medidores (título, % no centro, Meta/Real, tendência, desvio), linhas das barras e da
+     tabela de coberturas, rótulos pequenos e cabeçalho da tabela (igual no PC e no celular) */
+  --fs-ex-bloco:16px; --fs-ex-gtit:13px; --fs-ex-gpct:20px; --fs-ex-valor:13.5px; --fs-ex-tend:15px; --fs-ex-pill:12px;
+  --fs-ex-rot:11.5px; --fs-ex-cel:12px; --fs-ex-mini:10.5px; --fs-ex-th:10px;
   /* entrada: "COMERCIAL" / "BANDEIRANTES" embaixo do elmo (igual no PC e no celular) */
   --fs-ent-marca:9.5px;
   --seguro-b:env(safe-area-inset-bottom,0px);
@@ -297,6 +301,128 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 /* tons claros para o fundo escuro */
 .dica .v{color:#ff9a9a} .dica .g{color:#7fe0bd}
 @media(prefers-reduced-motion:reduce){.dica{transition:none}}
+
+/* ---------- aba Executiva: resumo executivo (KPIs e quadros) e blocos por unidade do filtro ----------
+   Cards brancos sóbrios (cinza no ícone, número em Source Serif 4 só nos KPIs e no % dos medidores); vermelho e verde só
+   nos desvios, nas faltas e nas barras. Do cabeçalho da aba ficam só o título e a etiqueta do dia. */
+.abaTopo.exec>:not(.abCab){display:none!important}
+.lista[hidden],.exec[hidden],.bloco[hidden],.foco[hidden]{display:none!important}
+.exec{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}
+.exec .cards{margin:0}
+.exFocos{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.foco p b.ok{color:var(--verdeE)}
+.foco .fi .ico{width:17px;height:17px}
+.bloco{background:var(--branco);border:1px solid var(--borda-card);border-radius:14px;box-shadow:var(--sombra-card);
+  padding:14px 14px 10px;min-width:0}
+.bCab{display:flex;flex-direction:column;gap:2px;margin-bottom:12px}
+.bCab h3{margin:0;font-size:var(--fs-ex-bloco);font-weight:800;letter-spacing:-.01em;line-height:1.25;color:var(--preto)}
+.bCab .s{font-size:var(--fs-legenda);color:var(--txt-apoio);line-height:1.4}
+.exVazio{font-size:var(--fs-legenda);color:var(--txt-apoio);padding:14px 4px;text-align:center}
+/* medidores (meia-lua com Real / Meta; clique escolhe a categoria em análise) */
+.gauges{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.gCard{border:1px solid var(--linha);border-radius:12px;padding:12px 10px 10px;text-align:center;cursor:pointer;min-width:0;
+  background:var(--branco)}
+.gCard.off{cursor:default}
+.gCard.sel{border-color:var(--preto);box-shadow:inset 0 0 0 1px var(--preto)}
+@media (hover:hover){.gCard[role="button"]:not(.sel):hover{border-color:var(--linha-forte)}}
+.gTit{font-size:var(--fs-ex-gtit);font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--preto);
+  overflow-wrap:anywhere;line-height:1.25}
+.gSvg{display:block;width:100%;max-width:150px;margin:6px auto 0}
+.gSvg path{fill:none;stroke-width:13}
+.gSvg .tr{stroke:#ececef}
+.gSvg .vl{stroke-opacity:.55}
+.gPct{font-family:var(--serif);font-size:var(--fs-ex-gpct);font-weight:700;line-height:1;margin-top:-30px;color:var(--preto)}
+.gPct small{display:block;font-family:var(--sans);font-size:var(--fs-ex-mini);font-weight:400;color:var(--txt-apoio);margin-top:2px}
+.gMR{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);margin-top:12px;border-top:1px solid var(--linha);
+  border-bottom:1px solid var(--linha)}
+.gMR>div{padding:7px 4px;min-width:0}
+.gMR>div+div{border-left:1px solid var(--linha)}
+.gMR small,.gTend small{display:block;font-size:var(--fs-ex-mini);color:var(--txt-apoio)}
+.gMR b{display:block;font-size:var(--fs-ex-valor);color:var(--txt);white-space:nowrap;overflow:hidden}
+.gTend{padding:8px 0 2px}
+.gTend b{display:block;font-size:var(--fs-ex-tend);color:var(--txt);white-space:nowrap;overflow:hidden}
+.pill{display:inline-block;margin-top:4px;border-radius:999px;padding:1px 8px;font-size:var(--fs-ex-pill);font-weight:700}
+.pill.neg{background:var(--rosa);color:var(--vermelho2)} .pill.pos{background:var(--menta);color:var(--verdeE)}
+.gDia{font-size:var(--fs-ex-mini);color:var(--txt-apoio);margin-top:6px;line-height:1.35}
+.gDia.gSem{margin:30px 0}
+/* Tendência x Meta: barras divergentes a partir do eixo (vermelho à esquerda, verde à direita); total destacado */
+.exChips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 0 10px;padding-bottom:2px}
+.exChips::-webkit-scrollbar{display:none}
+.divs{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.dv{min-width:0}
+.dv h4{margin:0 0 6px;font-size:var(--fs-ex-gtit);font-weight:800;letter-spacing:.04em;text-transform:uppercase;text-align:center;
+  color:var(--preto)}
+.dRow,.hRow{display:grid;align-items:center;outline:none;cursor:default;transition:background .12s}
+.dRow{grid-template-columns:66px minmax(0,1fr) 50px;gap:6px;padding:2px 4px;border-radius:5px}
+.hRow{grid-template-columns:70px minmax(0,1fr) 86px;gap:8px;padding:5px 6px;border-radius:6px}
+.dRow.tot,.hRow.tot{font-weight:800;background:var(--papel)}
+.dRow:hover,.dRow.emFoco,.dRow:focus-visible,.hRow:hover,.hRow.emFoco,.hRow:focus-visible{background:#ececef}
+.dRow.tot:hover,.dRow.tot.emFoco,.hRow.tot:hover,.hRow.tot.emFoco{background:#e6e6ea}
+.dRow:focus-visible,.hRow:focus-visible{box-shadow:inset 0 0 0 1.5px var(--preto)}
+.dNome,.hNome{font-size:var(--fs-ex-rot);text-align:right;white-space:nowrap;overflow:hidden;color:var(--txt)}
+.hNome{font-weight:700}
+.dEixo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);height:14px}
+.dEixo>div{position:relative}
+.dEixo .dN{border-right:1px solid var(--cinza-escuro)}
+.dEixo i{position:absolute;top:1px;bottom:1px}
+.dEixo .dN i{right:0;background:var(--vermelho2)} .dEixo .dP i{left:0;background:var(--verde)}
+.dRow.tot .dEixo i{opacity:.55}
+.dVal,.hVal{font-size:var(--fs-ex-rot);text-align:right;white-space:nowrap}
+.dVal.neg{color:var(--vermelho2)} .dVal.pos{color:var(--verdeE)}
+/* Sem compra (barra = % da base) e Agenda de hoje (100% dos agendados: restam | pediram online | já compraram) */
+.dupla{display:flex;flex-direction:column;gap:12px}
+.hTr{position:relative;height:14px;border-radius:3px;overflow:hidden;display:flex;background:#f1f1f3}
+.hTr.so{background:none}
+.hTr i{display:block;height:100%;flex:none}
+.hTr .sc,.lg.sc{background:rgba(198,40,40,.5)} .hTr .ph,.lg.ph{background:rgba(29,158,117,.5)} .hTr .jc,.lg.jc{background:#ececef}
+.hVal b{color:var(--vermelho2)}
+.legenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:var(--fs-ex-mini);color:var(--txt-apoio);padding:8px 2px 6px}
+.legenda span{display:inline-flex;align-items:center;gap:5px}
+.lg{display:inline-block;width:12px;height:10px;border-radius:3px;flex:none}
+/* Coberturas por unidade: tabela de colunas iguais, a 1ª fixa (70 px), rolagem lateral dentro do bloco. A largura mínima
+   (1140 px: 53,5 px por coluna) deixa a palavra mais longa do cabeçalho ("Powerade") inteira; com o painel lateral aberto,
+   abaixo de ~1520 px de tela a tabela rola dentro do bloco, com a 1ª coluna presa */
+.rolaX{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.tCob{border-collapse:collapse;table-layout:fixed;width:100%;min-width:1140px;font-size:var(--fs-ex-cel)}
+.tCob col.cu{width:70px}
+.tCob thead th{font-size:var(--fs-ex-th);font-weight:700;color:var(--txt-apoio);text-align:center;vertical-align:bottom;
+  padding:6px 2px 7px;line-height:1.25;border-bottom:1px solid var(--linha-forte);white-space:normal;hyphens:manual}
+.tCob thead tr.grupos th,.tCob thead tr.grupos td{padding:0 0 6px;border-bottom:0}
+.tCob th.grp{letter-spacing:.1em;text-transform:uppercase;color:var(--preto);font-weight:800}
+.tCob th.grp span{display:block;padding-bottom:5px;border-bottom:2px solid var(--preto);margin:0 6px}
+.tCob .un{text-align:left;position:sticky;left:0;z-index:1;background:var(--branco)}
+.tCob thead th.un{vertical-align:bottom}
+.tCob tbody th.un{font-weight:700;color:var(--txt);white-space:nowrap;overflow:hidden;padding:6px 4px}
+.tCob td{text-align:center;padding:6px 2px;border-bottom:1px solid var(--linha);white-space:nowrap;color:var(--txt)}
+.tCob tbody th{border-bottom:1px solid var(--linha)}
+.tCob tr.tot>*{font-weight:800;background:#fafafa}
+.tCob tbody tr>*{transition:background .12s}
+.tCob tbody tr:hover>*{background:#ececef}
+.tCob tbody tr.tot:hover>*{background:#e6e6ea}
+.tCob .baixo{color:var(--vermelho2);font-weight:700} .tCob .bateu{color:var(--verdeE);font-weight:700}
+.tCob .nd{color:var(--txt-apoio)}
+.exec{font-variant-numeric:lining-nums tabular-nums}
+@media (min-width:700px){ .gauges{grid-template-columns:repeat(3,minmax(0,1fr))} }
+/* abaixo de 1000 px: Tendência x Meta mostra só a categoria em análise (os chips trocam) */
+@media (max-width:999px){ .divs .dv:not(.sel){display:none} }
+@media (min-width:1000px){
+  .exec{gap:16px}
+  .exec .exKpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .exFocos{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  .exFocos .foco{padding:16px 20px}
+  .bloco{padding:18px 20px 12px}
+  .gauges{gap:14px}
+  .exChips{display:none}
+  .divs{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:18px}
+  .divs .dv{border-left:1px solid var(--linha);padding-left:14px}
+  .divs .dv:first-child{border-left:0;padding-left:0}
+  .divs .dRow{grid-template-columns:62px minmax(0,1fr) 46px}
+  .dupla{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+  .dupla.so1{grid-template-columns:minmax(0,1fr)}
+}
+/* a partir de 1200 px, as 5 categorias lado a lado (medidores e barras); entre 1000 e 1199 px o conteúdo (à direita do painel
+   lateral) não dá largura para Meta e Real de 7 dígitos em 5 colunas: 3 medidores por linha */
+@media (min-width:1200px){ .gauges,.divs{grid-template-columns:repeat(5,minmax(0,1fr))} }
 
 /* ---------- busca ---------- */
 .busca{background:var(--branco);border:1px solid var(--borda-card);border-radius:14px;padding:12px;min-width:0}
@@ -618,7 +744,9 @@ body.rs-travado{overflow:hidden}
   .barra{padding-bottom:7px}
   .filtros{gap:6px}
   select{padding:6px 24px 6px 8px;background-position:right 7px center}
-  .tabs{gap:5px;margin-top:6px}
+  /* as cinco abas não cabem numa linha: a faixa rola de lado (como os seletores), a aba ativa fica à vista (mostraAbaAtiva) */
+  .tabs{gap:5px;margin-top:6px;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
   .tab{flex:1 1 auto;padding:7px 8px;white-space:nowrap;border-radius:10px}
   /* card: menos espaço entre as colunas para o % caber */
   .ind{--pad-esq:12px;padding:13px 12px 12px calc(var(--pad-esq) - var(--faixa))}

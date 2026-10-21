@@ -5,7 +5,8 @@ let P = null;
 let DATA,LABELS,GROUPS,CLIENT_ROSTER,CLIENTES_HOJE,OPORTUNIDADES_DIA,VISITAS_DIA,SEGS,DIAS,COBERTOS,SEM_COMPRA_HOJE,VENDAZERO_CLIENTES,COMODATO_ATIVOS,REVERTIDO_HOJE,OPORTUNIDADE_HOJE;
 const KSTT_SEG = new Set(['LANCHONETE','RESTAURANTE','BOTECO','PADARIAS']);
 
-let ONLINE = null, aba='ICS_GC';
+// aba ativa: 'EXEC' (Executiva) | 'VOLUME' | 'ICS_GC' | 'NOVOS_NEG' | 'INCENTIVO'; ao entrar, Executiva (Rota: Volume)
+let ONLINE = null, aba='EXEC';
 let filtroCards = 'todos';     // filtro rápido dos cards da aba: 'todos' | 'abaixo' | 'ritmo' (ver filtraCards)
 
 /* ---------- utilitários ---------- */
@@ -210,6 +211,11 @@ const rotasListas = () => rotasVisiveis().filter(r=>!ehOculta(rotaSv(sel.gc, r))
 function agrega(rotas){
   return NUCLEO.agrega(P, rotas, r=>nodo(sel.gc,r), {revertido:REVERTIDO_HOJE, oportunidade:OPORTUNIDADE_HOJE});
 }
+// card de ritmo de um grupo (COV_GRUPO: VOLUME, ICS_GC, NOVOS_NEG): x no ritmo de n disponíveis; ok = pelo menos a metade
+function ritmoGrupo(ind, g){
+  const disp = P.COV_GRUPO[g].filter(k=>ind[k] && !ind[k].unavailable), x = disp.filter(k=>ind[k].onPace).length;
+  return {x, n:disp.length, ok:x*2>=disp.length};
+}
 
 /* ---------- filtros ---------- */
 // grupo de gerências do filtro: o do acesso Gerência (ou o do link do Resumo, sem acesso); '' = gerência individual
@@ -272,9 +278,19 @@ function marcaAba(g){
     x.classList.toggle('on', x.dataset.g===g); x.setAttribute('aria-selected', x.dataset.g===g);
   });
 }
+/* No celular as cinco abas não cabem numa linha: a faixa rola de lado (como os seletores) e a aba ativa fica à vista.
+   Só mexe na rolagem lateral da própria faixa (nunca na da página). */
+function mostraAbaAtiva(){
+  const t = document.querySelector('.tab.on'), box = t && t.parentNode;
+  if(!box || box.scrollWidth <= box.clientWidth + 1) return;
+  const rb = box.getBoundingClientRect(), rt = t.getBoundingClientRect();
+  if(rt.left < rb.left) box.scrollLeft -= rb.left - rt.left + 12;
+  else if(rt.right > rb.right) box.scrollLeft += rt.right - rb.right + 12;
+}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   marcaAba(t.dataset.g);
   render();
+  mostraAbaAtiva();
   if($('q').value.trim()) buscaCliente();
 });
 
@@ -285,6 +301,10 @@ function render(){
   const tabInc = document.querySelector('.tab[data-g="INCENTIVO"]');
   tabInc.hidden = !incentivoAtivo();
   if(aba==='INCENTIVO' && tabInc.hidden) marcaAba('ICS_GC');
+  // aba Executiva: Diretoria, Gerência e Supervisão; com uma rota no filtro (perfil Rota) não existe e o painel vai ao Volume
+  const tabExec = document.querySelector('.tab[data-g="EXEC"]');
+  tabExec.hidden = !temExecutiva();
+  if(aba===EXEC && tabExec.hidden) marcaAba('VOLUME');
   montaFiltros();
   const rotas = rotasAtuais();
   const {ind, tot} = agrega(rotas);
@@ -298,8 +318,8 @@ function render(){
     (sel.sv?` · ${esc(rotuloSv(sel.sv))}`:'') +
     (sel.rota?` · Rota ${esc(sel.rota)} — ${esc(titulo(nodo(sel.gc,sel.rota).consultor))}`:'') + '</span>';
   $('sub').classList.toggle('dir', sel.modo==='dir');
-  // cabeçalho da aba: o nome (o da aba na barra) e a etiqueta do dia, sem subtítulo
-  $('abTit').textContent = (document.querySelector(`.tab[data-g="${aba}"]`) || {}).title || '';
+  // cabeçalho da aba: o nome (o da aba na barra; na Executiva, "Resumo executivo") e a etiqueta do dia, sem subtítulo
+  $('abTit').textContent = aba===EXEC ? 'Resumo executivo' : (document.querySelector(`.tab[data-g="${aba}"]`) || {}).title || '';
   pintaEtiquetaDia($('pilDia'));
   const paceHoje = Math.round(P.DIA_HOJE / P.TOTAL_DIAS_UTEIS * 100);
   // caixa de ritmo de hoje (painel lateral) e a linha curta do topo do celular
@@ -325,7 +345,17 @@ function render(){
 
   // card de ritmo: "x / n" com o n menor (o texto continua "x / n")
   const xDeN = (x, n) => `${x}<small> / ${n}</small>`;
-  if(aba==='INCENTIVO'){
+  // Executiva: só o título e a etiqueta do cabeçalho da aba; no lugar dos cards, a seção #exec
+  const exec = aba===EXEC;
+  $('abaTopo').classList.toggle('exec', exec);
+  $('exec').hidden = !exec;
+  $('lista').hidden = exec;
+  if(exec){
+    $('lista').innerHTML = '';
+    $('puxa').innerHTML = '';
+    pintaExecutiva(rotas, {ind, tot}, visitas);
+    encaixa($('exec'));
+  } else if(aba==='INCENTIVO'){
     // aba Todos a Bordo: no lugar do "ritmo de coberturas", os itens com meta no escopo que estão em 100%; sem "puxa a média"
     const st = itensEm100(itensInc().map(k=>[k, rotasInc(k, rotas)]));
     $('lRitmo').textContent = 'Itens em 100%';
@@ -337,13 +367,11 @@ function render(){
     $('lista').innerHTML = itensInc().map(k=>cardIncItem(k, rotas)).join('');
     document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIncentivo(el.dataset.k)));
   } else {
-    const disp = P.COV_GRUPO[aba].filter(k=>ind[k] && !ind[k].unavailable);
-    const noRitmo = disp.filter(k=>ind[k].onPace).length;
-    const ritmoOk = noRitmo*2>=disp.length;
+    const {x:noRitmo, n:nDisp, ok:ritmoOk} = ritmoGrupo(ind, aba);
     // Volume: as categorias na tendência (mesma regra de antes, só o nome); coberturas: o ritmo de coberturas
     $('lRitmo').textContent = aba==='VOLUME' ? 'Categorias na tendência' : 'Ritmo de coberturas';
-    $('nRitmo').innerHTML = xDeN(noRitmo, disp.length);
-    $('nRitmo').className = 'n ' + (disp.length ? (ritmoOk?'ok':'no') : '');
+    $('nRitmo').innerHTML = xDeN(noRitmo, nDisp);
+    $('nRitmo').className = 'n ' + (nDisp ? (ritmoOk?'ok':'no') : '');
     $('xRitmo').textContent = ritmoOk? 'dentro do ritmo' : 'abaixo do ritmo';
     // linha "Status" só em Novos Negócios (ICS GC e Volume sem ela)
     linhaStatus(aba==='NOVOS_NEG' ? itensEm100(P.COV_GRUPO[aba].map(k=>[k, rotas])) : null);
@@ -359,9 +387,11 @@ function render(){
     $('lista').innerHTML = [...GROUPS[aba].filter(k=>!oculta(k)), ...extras].map(k=>linha(k, ind[k], rotas)).join('');
     document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k)));
   }
-  linhaResumo();
-  filtraCards();
-  encaixa($('lista'));
+  if(!exec){
+    linhaResumo();
+    filtraCards();
+    encaixa($('lista'));
+  }
   encaixa($('abaTopo'));
   const upd = (ONLINE && ONLINE.updatedAt) ? ONLINE.updatedAt.replace('T',' ').slice(0,16).split(' ') : null;
   $('rodape').innerHTML =
@@ -545,6 +575,283 @@ document.addEventListener('pointerdown', e => { _ponteiro = e.pointerType; if(_d
 document.addEventListener('keydown', e => { if(e.key==='Escape') escondeDica(); });
 addEventListener('scroll', () => { if(_dicaEl) escondeDica(); }, {passive:true});
 
+/* ---------- aba Executiva (Diretoria, Gerência e Supervisão; não existe com uma rota no filtro) ----------
+   Resumo do filtro: 4 KPIs, os quadros "Foco do fechamento" e "Meta do dia (SAP)" da categoria em análise, os medidores
+   das 5 categorias de volume, Tendência x Meta, Sem compra e Agenda de hoje por unidade e a tabela de coberturas.
+   Unidades = os grupos da cascata no 1º nível do filtro (gruposDo(ctxInicial())): Diretoria -> gerências; gerência (ou
+   grupo no Total) -> supervisões + a linha "Neutraliza"; supervisão -> rotas. Virtuais e EV* ficam fora das listas de
+   unidades e dentro dos totais (o total é o agrega() das rotas do filtro, o mesmo dos cards). Nada é recalculado por
+   fora: os números saem de agrega() (Meta, Real, Tendência, metaDia, pct, onPace, base e sem compra), do payload e do
+   online (os mesmos campos dos cards e das gavetas). Tendência x Meta = Tendência / Meta - 1 com o valor exato (o sinal
+   decide a cor, como no SAC). Fechamento do mês: medidores e barras pelo realizado (Real / Meta - 1, "Realizado x Meta");
+   sem "Meta do dia" e sem "Agenda de hoje". O bloco "Evolução contra o mês anterior" (CONFIG.EVOLUCAO_ATIVA) entra com a
+   Etapa 8: sem o dado no payload, não aparece. */
+const EXEC = 'EXEC';
+// cor de cada categoria: só o preenchimento do medidor (com 55% de opacidade)
+const COR_CAT = {'VOL REFRIGERANTES':'#e8231e', 'VOL CERVEJAS':'#1fc93a', 'VOL STILL':'#e2ec12', 'VOL AGUA MINERAL':'#4f86e8',
+                 'VOL DEST+ART+CND':'#9b6bdb'};
+// rótulos curtos das colunas da tabela de coberturas (o nome inteiro fica no title)
+const CURTO_COB = {'CCTM 2L PET':'CCTM 2L Pet', 'KS TT':'KS TT', 'REFRI SABORES ZERO':'Refri Sab. Zero',
+  'CERVEJAS 600ML RETORNAVEL':'Cerv. 600ml Ret.', 'CERVEJAS':'Cervejas', 'EISENBAHN':'Eisen\u00adbahn', 'KAPO':'Kapo',
+  'POWERADE':'Powerade', 'ARTD KO':'Artd KO', 'CAMPARI':'Campari', 'DREHER':'Dreher', 'PERFETTI TT':'Perfetti TT',
+  'APEROL':'Aperol', 'INC HEINEKEN':'Heineken', 'INC EISENBAHN 600ML':'Eisenb. 600ml', 'INC HEINEKEN 600ML':'Heinek. 600ml'};
+let catExec = '';      // categoria em análise (chave de GROUPS.VOLUME); '' = a primeira (Refrigerantes)
+const temExecutiva = () => !(sel.modo!=='dir' && sel.rota);
+const catAtual = () => GROUPS.VOLUME.includes(catExec) ? catExec : GROUPS.VOLUME[0];
+const comMeta = b => !!b && !b.unavailable && b.meta > 0;
+// desvio da categoria: Tendência / Meta - 1 (no fechamento, Real / Meta - 1), sem arredondar
+const desvioVol = b => (P.FECHAMENTO ? b.real : b.tendencia) / b.meta - 1;
+const pctBR = (v, casas) => v.toLocaleString('pt-BR', {minimumFractionDigits:casas, maximumFractionDigits:casas});
+const fmtDesvio = (d, casas) => `${d>=0 ? '+' : '−'}${pctBR(Math.abs(d*100), casas)}%`;
+// volume online de hoje das rotas (o mesmo número da caixa Online dos cards de volume)
+const onlineVol = (rotas, k) => rotas.reduce((a,r)=>a+((((ONLINE && ONLINE.volume) || {})[r] || {})[k] || 0), 0);
+// nível das unidades: [singular, plural, sujeito da frase] (o código da rota já diz "Rota 111")
+const NIVEL_EXEC = {gc:['gerência', 'gerências', 'A gerência'], sv:['supervisão', 'supervisões', 'A supervisão'],
+                    rota:['rota', 'rotas', 'A']};
+
+// unidades do 1º nível do filtro, cada uma com o agrega() das próprias rotas (gerências sem dados ficam fora);
+// cod = o código sem o nome (GC.AT, SV.AP.1, Neutraliza, Rota 111)
+function unidadesExec(ctx){
+  return gruposDo(ctx, null).filter(g=>!g.off)
+    .map(g=>({cod:g.nome.split(' · ')[0], nome:g.nome, rotas:g.rotas, a:agrega(g.rotas)}));
+}
+// linha de total: BAND na Diretoria; com filtro, o código da própria unidade (GC.AT, GC.IT+MO, SV.AP.1, Neutraliza)
+function totalExec(ctx, rotas, a){
+  const cod = ctx.nivel==='gc' ? 'BAND' : ctx.nivel==='sv' ? 'GC.' + membrosGc(ctx.gc).join('+') : ctx.chave;
+  return {cod, nome: ctx.nivel==='gc' ? 'BAND' : ctx.nome, rotas, a, tot:true};
+}
+
+function pintaExecutiva(rotas, a, visitas){
+  if(_dicaEl && $('exec').contains(_dicaEl)) escondeDica();      // a linha com a dica aberta vai ser redesenhada
+  const ctx = ctxInicial(), us = unidadesExec(ctx), tot = totalExec(ctx, rotas, a);
+  const niv = NIVEL_EXEC[ctx.nivel] || NIVEL_EXEC.rota, k = catAtual(), fech = !!P.FECHAMENTO;
+  pintaKpisExec(a, visitas);
+  $('exFocoTxt').innerHTML = textoFoco(k, a.ind[k], us, niv);
+  $('exDia').hidden = fech;
+  $('exDiaTxt').innerHTML = fech ? '' : textoMetaDia(k, a.ind[k], rotas, us, niv);
+  pintaMedidores(rotas, a.ind, k);
+  pintaDesvios(us, tot, niv, k);
+  pintaSemCompraExec(us, tot, niv);
+  $('exAg').hidden = fech;
+  $('exAg').parentNode.classList.toggle('so1', fech);
+  $('exAgenda').innerHTML = fech ? '' : agendaHtml(us, tot, niv);
+  pintaCoberturasExec(us, tot, niv);
+  $('exec').querySelectorAll('[data-dica]').forEach(ativaDica);
+}
+
+// KPIs: os mesmos números dos cards Base, Sem compra e "visitas hoje" e do card "Categorias na tendência" do Volume
+function pintaKpisExec({ind, tot}, visitas){
+  const pctSem = (tot.semCompra!=null && tot.baseTotal) ? Math.round(tot.semCompra/tot.baseTotal*100) : null;
+  $('exNBase').textContent = tot.baseTotal.toLocaleString('pt-BR');
+  $('exNSem').textContent = tot.semCompra==null ? '—' : tot.semCompra.toLocaleString('pt-BR');
+  $('exXSem').textContent = pctSem==null ? 'sem dado de compra no mês' : `${pctSem}% da base · sem compra no mês`;
+  $('exNVis').textContent = visitas.toLocaleString('pt-BR');
+  const v = ritmoGrupo(ind, 'VOLUME'), ics = ritmoGrupo(ind, 'ICS_GC'), nn = ritmoGrupo(ind, 'NOVOS_NEG');
+  $('exNCat').innerHTML = `${v.x}<small> / ${v.n}</small>`;
+  $('exNCat').className = 'n ' + (v.n ? (v.ok ? 'ok' : 'no') : '');
+  // coberturas no ritmo: os cards "Ritmo de coberturas" do ICS GC e de Novos Negócios somados
+  $('exXCat').innerHTML = `Coberturas no ritmo: <b>${ics.x + nn.x} / ${ics.n + nn.n}</b>`;
+}
+
+/* Foco do fechamento (categoria em análise): falta = Meta - Tendência; a maior falta entre as unidades fora da tendência
+   (pctTendencia < 100), em % da soma das faltas positivas delas. No fechamento do mês, pelo realizado (Meta - Real). */
+function textoFoco(k, b, us, niv){
+  const nome = esc(rotuloInd(k)), fech = !!P.FECHAMENTO;
+  if(!comMeta(b)) return `${nome}: sem meta neste escopo.`;
+  const pct = x => fech ? x.pctReal : x.pctTendencia, proj = x => fech ? x.real : x.tendencia;
+  if(b.onPace) return fech ? `${nome} fechou o mês em <b class="ok">${pct(b)}%</b> da meta: meta batida.`
+                           : `${nome} está em <b class="ok">${pct(b)}%</b> de tendência: no caminho da meta.`;
+  const fora = us.map(u=>({u, b:u.a.ind[k]})).filter(x=>comMeta(x.b) && pct(x.b) < 100)
+    .map(x=>({...x, f:x.b.meta - proj(x.b)})).filter(x=>x.f > 0);
+  const soma = fora.reduce((s,x)=>s+x.f, 0), top = fora.reduce((m,x)=>!m || x.f > m.f ? x : m, null);
+  let t = fech ? `${nome} fechou o mês em <b class="no">${pct(b)}%</b> da meta; faltaram <b class="no">${fmt0(b.meta - proj(b))}</b>.`
+    : `${nome} está em <b class="no">${pct(b)}%</b> de tendência; faltam <b class="no">${fmt0(b.meta - proj(b))}</b> para a meta.`;
+  if(top){
+    const quem = top.u.cod===SV_NEUTRA ? `A linha <b>${SV_NEUTRA}</b>` : `${niv[2]} <b>${esc(top.u.cod)}</b>`;
+    t += ` ${quem} concentra <b class="no">${Math.round(top.f/soma*100)}%</b> dessa falta (${fmt0(top.f)}).`;
+  }
+  return t;
+}
+
+/* Meta do dia (SAP): online de hoje x meta do dia (META_RECUPERAVEL_ROTA somada, como no card); a unidade "alcançou" com a
+   meta do dia batida (<= 0) ou com o online >= a meta do dia (a regra da caixa Online). */
+function textoMetaDia(k, b, rotas, us, niv){
+  const nome = esc(rotuloInd(k)), md = b && !b.unavailable ? b.metaDia : null;
+  if(md==null) return `${nome}: sem meta do dia do SAP neste escopo.`;
+  const onl = onlineVol(rotas, k);
+  if(metaBatida(md)) return `${nome}: meta do dia já batida neste escopo. Online de hoje: <b class="ok">${fmt0(onl)}</b>.`;
+  const com = us.map(u=>({md:(u.a.ind[k] || {}).metaDia, onl:onlineVol(u.rotas, k)})).filter(x=>x.md!=null);
+  const alc = com.filter(x=>metaBatida(x.md) || x.onl >= x.md).length;
+  return `${nome}: online de hoje <b class="${onl >= md ? 'ok' : 'no'}">${fmt0(onl)}</b> contra meta do dia de <b>${fmt0(md)}</b>`+
+    ` (${Math.round(onl/md*100)}%). ${alc} de ${com.length} ${com.length===1 ? niv[0] : niv[1]}`+
+    ` ${alc===1 ? 'já alcançou' : 'já alcançaram'} a meta do dia.`;
+}
+
+// troca a categoria em análise (medidor ou chip) e devolve o foco ao elemento escolhido
+function escolheCat(k, caixa){
+  catExec = k;
+  render();
+  const el = $(caixa).querySelector(`[data-k="${k}"]`);
+  if(el) el.focus({preventScroll:true});
+}
+
+/* Medidores: meia-lua com Real / Meta (até 100%); no centro o % real; Meta | Real; Tendência e o desvio com 2 casas
+   (↓ rosa abaixo de 0, ↑ verde a partir de 0, pelo valor exato); a linha da meta do dia do card. */
+function pintaMedidores(rotas, ind, k){
+  const fech = !!P.FECHAMENTO;
+  $('exSCat').textContent = fech ? 'Real do mês fechado contra a meta do mês'
+    : 'Real até ontem contra a meta do mês · tendência pelo critério do SAC';
+  $('exGauges').innerHTML = GROUPS.VOLUME.map(c=>{
+    const b = ind[c], nome = esc(rotuloInd(c));
+    if(!comMeta(b)) return `<div class="gCard off" data-k="${esc(c)}"><div class="gTit">${nome}</div>`+
+      `<div class="gDia gSem">sem meta neste escopo</div></div>`;
+    const v = Math.max(0, Math.min(100, b.real/b.meta*100)), d = desvioVol(b), on = c===k;
+    const dia = fech ? '' : `<div class="gDia">${b.metaDia==null ? 'meta do dia —' : metaBatida(b.metaDia) ? 'meta do dia batida'
+      : `meta do dia ${fmt0(b.metaDia)} · online ${fmt0(onlineVol(rotas, c))}`}</div>`;
+    const dif = b.real - b.meta;
+    return `<div class="gCard${on ? ' sel' : ''}" role="button" tabindex="0" aria-pressed="${on}" data-k="${esc(c)}" data-desvio="${d}">`+
+      `<div class="gTit">${nome}</div>`+
+      `<svg class="gSvg" viewBox="0 0 120 66" aria-hidden="true"><path class="tr" d="M10 60 A50 50 0 0 1 110 60"/>`+
+      `<path class="vl" d="M10 60 A50 50 0 0 1 110 60" style="stroke:${COR_CAT[c] || 'var(--cinza-escuro)'}" pathLength="100"`+
+      ` stroke-dasharray="${v.toFixed(2)} 100"/></svg>`+
+      `<div class="gPct">${b.pctReal}%<small>real</small></div>`+
+      `<div class="gMR"><div><small>Meta</small><b data-fit="" data-fit-min="9">${fmt0(b.meta)}</b></div>`+
+      `<div><small>Real</small><b data-fit="" data-fit-min="9">${fmt0(b.real)}</b></div></div>`+
+      `<div class="gTend"><small>${fech ? 'Realizado x Meta' : 'Tendência'}</small>`+
+      `<b data-fit="" data-fit-min="10">${fech ? (dif>0 ? '+' : '') + fmt0(dif) : fmt0(b.tendencia)}</b>`+
+      `<span class="pill ${d>=0 ? 'pos' : 'neg'}">${d>=0 ? '↑' : '↓'} ${pctBR(Math.abs(d*100), 2)}%</span></div>${dia}</div>`;
+  }).join('');
+  $('exGauges').querySelectorAll('.gCard[role="button"]').forEach(el=>clicavel(el, ()=>escolheCat(el.dataset.k, 'exGauges')));
+}
+
+/* Tendência x Meta por unidade: barras divergentes (desvio = Tendência / Meta - 1, 1 casa na tela), da maior para a
+   menor, com a linha de total no meio da ordenação; escala própria de cada categoria (maior |desvio|, mínimo 10%);
+   unidade sem meta na categoria fica fora dela. No celular, uma categoria por vez (chips). */
+function pintaDesvios(us, tot, niv, k){
+  const fech = !!P.FECHAMENTO;
+  $('exTDiv').textContent = `${fech ? 'Realizado x Meta' : 'Tendência x Meta'} por ${niv[0]}`;
+  $('exSDiv').textContent = fech ? 'Desvio do realizado em relação à meta (Real ÷ Meta − 1).'
+    : 'Desvio da tendência em relação à meta (Tendência ÷ Meta − 1).';
+  $('exChips').innerHTML = GROUPS.VOLUME.map(c=>`<button type="button" class="fchip${c===k ? ' on' : ''}" data-k="${esc(c)}"`+
+    ` aria-pressed="${c===k}">${esc(rotuloInd(c))}</button>`).join('');
+  $('exChips').querySelectorAll('.fchip').forEach(el=>el.onclick = ()=>escolheCat(el.dataset.k, 'exChips'));
+  $('exDivs').innerHTML = GROUPS.VOLUME.map(c=>{
+    const nome = rotuloInd(c);
+    const ls = [...us, tot].map(u=>({u, b:u.a.ind[c]})).filter(x=>comMeta(x.b));
+    ls.forEach(x=>{ x.d = desvioVol(x.b); });
+    ls.sort((p, q)=>q.d - p.d);
+    const max = Math.max(0.1, ...ls.map(x=>Math.abs(x.d)));
+    const linhas = ls.map(({u, b, d})=>{
+      const w = `${(Math.abs(d)/max*100).toFixed(2)}%`, pos = d >= 0;
+      const dica = `<div class="t">${esc(nome)} · ${esc(u.cod)}</div>Meta <b>${fmt0(b.meta)}</b><br>`+
+        `Real <b>${fmt0(b.real)}</b> (${b.pctReal}%)<br>${fech ? '' : `Tendência <b>${fmt0(b.tendencia)}</b><br>`}`+
+        `Desvio <b class="${pos ? 'g' : 'v'}">${fmtDesvio(d, 2)}</b>`;
+      return `<div class="dRow${u.tot ? ' tot' : ''}" tabindex="0" data-u="${esc(u.cod)}" data-desvio="${d}" data-meta="${b.meta}"`+
+        ` data-real="${b.real}" data-dica="${esc(dica)}">`+
+        `<span class="dNome">${esc(u.cod)}</span><div class="dEixo"><div class="dN">${pos ? '' : `<i style="width:${w}"></i>`}</div>`+
+        `<div class="dP">${pos ? `<i style="width:${w}"></i>` : ''}</div></div>`+
+        `<span class="dVal ${pos ? 'pos' : 'neg'}">${fmtDesvio(d, 1)}</span></div>`;
+    }).join('');
+    return `<div class="dv${c===k ? ' sel' : ''}" data-k="${esc(c)}"><h4>${esc(nome)}</h4>`+
+      `${linhas || '<div class="exVazio">Sem meta neste escopo.</div>'}</div>`;
+  }).join('');
+}
+
+// Sem compra por unidade: sem compra no mês / base (agrega(): o card Sem compra), do maior % para o menor
+function pintaSemCompraExec(us, tot, niv){
+  $('exTSem').textContent = `Sem compra por ${niv[0]}`;
+  const ls = [...us, tot].map(u=>({u, base:u.a.tot.baseTotal, sem:u.a.tot.semCompra, comp:u.a.tot.compraram}))
+    .filter(x=>x.base > 0 && x.sem!=null);
+  ls.forEach(x=>{ x.p = x.sem/x.base*100; });
+  ls.sort((p, q)=>q.p - p.p);
+  const max = Math.max(1, ...ls.map(x=>x.p)), n = v => (v || 0).toLocaleString('pt-BR');
+  $('exSemc').innerHTML = ls.map(x=>{
+    const dica = `<div class="t">${esc(x.u.cod)}</div><b class="v">${n(x.sem)}</b> sem compra de <b>${n(x.base)}</b> clientes na base`+
+      `<br>Compraram no mês: <b>${n(x.comp)}</b>`;
+    return `<div class="hRow${x.u.tot ? ' tot' : ''}" tabindex="0" data-u="${esc(x.u.cod)}" data-base="${x.base}" data-sem="${x.sem}"`+
+      ` data-dica="${esc(dica)}"><span class="hNome">${esc(x.u.cod)}</span>`+
+      `<div class="hTr so"><i class="sc" style="width:${(x.p/max*100).toFixed(2)}%"></i></div>`+
+      `<span class="hVal">${pctBR(x.p, 1)}%</span></div>`;
+  }).join('') || '<div class="exVazio">Sem dado de compra no mês neste escopo.</div>';
+}
+
+/* Agenda de hoje das rotas, como as listas de clientes (sem virtuais/EV* e sem ocultas) e só com as rotas com dado de
+   compra no mês: agendados = VISITAS_DIA.geral; sem compra hoje = |SEM_COMPRA_HOJE| (agendados sem compra no mês);
+   pediram online hoje = os do SEM_COMPRA_HOJE no QUALQUER do online; restam = sem compra hoje - pediram;
+   já compraram = agendados - sem compra hoje. */
+function agendaDe(rotas){
+  const o = {ag:0, sem:0, ped:0};
+  rotas.forEach(r=>{
+    const sch = SEM_COMPRA_HOJE[r];
+    if(sch==null || ehVirtual(r) || ehOculta(rotaSv(sel.gc, r))) return;
+    const on = new Set(onlineIds(r));
+    o.ag += VISITAS_DIA.geral[r] || 0;
+    o.sem += sch.length;
+    o.ped += sch.filter(pv=>on.has(pv)).length;
+  });
+  o.restam = o.sem - o.ped;
+  o.ja = o.ag - o.sem;
+  return o;
+}
+// barra 100% empilhada sobre os agendados (restam | pediram online | já compraram), da maior sobra para a menor
+function agendaHtml(us, tot, niv){
+  $('exTAg').textContent = `Agenda de hoje por ${niv[0]}`;
+  const ls = [...us, tot].map(u=>({u, ...agendaDe(u.rotas)})).filter(x=>x.ag > 0);
+  ls.sort((p, q)=>q.restam - p.restam);
+  const n = v => v.toLocaleString('pt-BR');
+  return ls.map(x=>{
+    const w = v => `${(v/x.ag*100).toFixed(2)}%`;
+    const dica = `<div class="t">${esc(x.u.cod)}</div><b>${n(x.ag)}</b> clientes agendados hoje<br>Já compraram no mês: <b>${n(x.ja)}</b>`+
+      `<br>Sem compra no mês: <b>${n(x.sem)}</b><br>Pediram online hoje: <b class="g">${n(x.ped)}</b><br>Restam: <b class="v">${n(x.restam)}</b>`;
+    return `<div class="hRow${x.u.tot ? ' tot' : ''}" tabindex="0" data-u="${esc(x.u.cod)}" data-ag="${x.ag}" data-sem="${x.sem}"`+
+      ` data-ped="${x.ped}" data-restam="${x.restam}" data-dica="${esc(dica)}"><span class="hNome">${esc(x.u.cod)}</span>`+
+      `<div class="hTr"><i class="sc" style="width:${w(x.restam)}"></i><i class="ph" style="width:${w(x.ped)}"></i>`+
+      `<i class="jc" style="width:${w(x.ja)}"></i></div><span class="hVal">restam <b>${n(x.restam)}</b></span></div>`;
+  }).join('') || '<div class="exVazio">Nenhuma visita agendada hoje neste escopo.</div>';
+}
+
+/* Coberturas por unidade: % real do mês (agrega().ind[k].pct, o % dos cards; o Real é o total das rotas da unidade),
+   vermelho abaixo do ritmo (PACE_ONTEM_PCT), verde a partir de 100%, "—" sem meta. Todos a Bordo 3.0 pela regra da aba:
+   cada item só nas rotas com meta dele (rotasInc); Status = itens em 100% (itensEm100), verde só com todos. */
+function pintaCoberturasExec(us, tot, niv){
+  const ics = P.COV_GRUPO.ICS_GC, nn = P.COV_GRUPO.NOVOS_NEG, inc = incentivoAtivo() ? itensInc() : [];
+  const pace = P.PACE_ONTEM_PCT;
+  $('exTCob').textContent = `Coberturas por ${niv[0]}`;
+  $('exSCob').textContent = `% real do mês: vermelho abaixo do ritmo (${pace}%), verde com 100% ou mais; “—” sem meta.` +
+    (inc.length ? ' Todos a Bordo 3.0 como na aba: só as rotas com meta do item; Status = itens em 100%.' : '');
+  // data-g: o grupo da coluna (o mesmo item pode estar em dois: Artd KO no ICS GC e em Novos Negócios; Cervejas e Cervejas
+  // 600ml Retornável no ICS GC e no Todos a Bordo, onde só contam as rotas com meta do item)
+  const cel = (g, k, b) => {
+    const at = `data-g="${g}" data-k="${esc(k)}"`;
+    if(!b || b.unavailable || b.pct==null) return `<td class="nd" ${at}>—</td>`;
+    const cls = b.pct < pace ? ' class="baixo"' : b.pct >= 100 ? ' class="bateu"' : '';
+    return `<td${cls} ${at} title="${esc(rotuloInd(k))}: Meta ${fmtN(b.meta)} · Real ${fmtN(b.real)}">${b.pct}%</td>`;
+  };
+  const linha = u => {
+    const doItem = k => { const rs = rotasInc(k, u.rotas); return rs.length ? agrega(rs).ind[k] : null; };
+    let st = '';
+    if(inc.length){
+      const s = itensEm100(inc.map(k=>[k, rotasInc(k, u.rotas)]));
+      st = s.n ? `<td class="${s.nOk===s.n ? 'bateu' : 'baixo'}" data-g="INCENTIVO" data-k="STATUS">${s.nOk}/${s.n}</td>`
+               : '<td class="nd" data-g="INCENTIVO" data-k="STATUS">—</td>';
+    }
+    return `<tr${u.tot ? ' class="tot"' : ''} data-u="${esc(u.cod)}"><th class="un" scope="row" title="${esc(u.nome)}">${esc(u.cod)}</th>`+
+      ics.map(k=>cel('ICS_GC', k, u.a.ind[k])).join('') + nn.map(k=>cel('NOVOS_NEG', k, u.a.ind[k])).join('') + st +
+      inc.map(k=>cel('INCENTIVO', k, doItem(k))).join('') + '</tr>';
+  };
+  const th = k => `<th scope="col" title="${esc(rotuloInd(k))}">${esc(CURTO_COB[k] || (P.LABELS_CURTO || {})[k] || rotuloInd(k))}</th>`;
+  const nCols = ics.length + nn.length + (inc.length ? inc.length + 1 : 0);
+  // dois níveis de cabeçalho: o grupo (centralizado, com a linha preta embaixo e um vão entre os grupos) e o item
+  $('exCob').innerHTML = `<colgroup><col class="cu">${'<col>'.repeat(nCols)}</colgroup><thead><tr class="grupos">`+
+    `<td class="un"></td><th scope="colgroup" class="grp" colspan="${ics.length}"><span>ICS GC</span></th>`+
+    `<th scope="colgroup" class="grp" colspan="${nn.length}"><span>Novos Negócios</span></th>`+
+    (inc.length ? `<th scope="colgroup" class="grp" colspan="${inc.length + 1}"><span>Todos a Bordo 3.0</span></th>` : '')+
+    `</tr><tr><th class="un" scope="col">${niv[0][0].toUpperCase() + niv[0].slice(1)}</th>`+
+    [...ics, ...nn].map(th).join('') +
+    (inc.length ? '<th scope="col" title="Todos a Bordo 3.0: itens em 100%">Status</th>' + inc.map(th).join('') : '')+
+    `</tr></thead><tbody>${[tot, ...us].map(linha).join('')}</tbody>`;
+}
+
 function linha(k, b, rotas){
   const nome = esc(rotuloInd(k));
   if(!b || b.unavailable)
@@ -687,13 +994,15 @@ function itemHtml(r,c,extra,online){
     <div class="bd">${extra||('PV '+esc(c[0]))}</div></div>`;
 }
 
-clicavel($('cBase'), ()=>{
+// gavetas dos cards Base e Sem compra (cabeçalho das abas) e dos KPIs da Executiva (Base e Visitas hoje -> Visitas de hoje;
+// Sem compra -> Sem compra hoje)
+function abreVisitas(){
   const rotas = rotasListas();
   const l = listaClientes(rotas);
   abre('Visitas de hoje', `${l.length} clientes · ${P.DIA_SEMANA}, semana N°${P.SEMANA_NUM} (${P.SEMANA_TIPO})`,
     l.length? l.map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') : `<div class="vazio">Nenhuma visita agendada.</div>`);
-});
-clicavel($('cSem'), ()=>{
+}
+function abreSemCompra(){
   const rotas = rotasListas();
   if(!P.FONTES.venda){
     abre('Sem compra hoje','',
@@ -708,7 +1017,12 @@ clicavel($('cSem'), ()=>{
   const vis = rotas.reduce((a,r)=>a+(VISITAS_DIA.geral[r]||0),0);
   abre('Sem compra hoje', `${out.length} de ${vis} clientes agendados · nenhum faturamento no mês`,
     out.length? out.map(([r,c])=>itemHtml(r,c,null,onlineIds(r).includes(c[0]))).join('') : `<div class="vazio">Todo mundo já comprou.</div>`);
-});
+}
+clicavel($('cBase'), abreVisitas);
+clicavel($('cSem'), abreSemCompra);
+clicavel($('exBase'), abreVisitas);
+clicavel($('exVis'), abreVisitas);
+clicavel($('exSem'), abreSemCompra);
 
 /* ---------- cascata (gaveta dos cards) ----------
    Uma função para todos os níveis: [gerências ->] supervisões -> rotas -> clientes. O primeiro nível depende do
@@ -1099,14 +1413,17 @@ function validaAcesso(a){
   return gc ? {perfil, gc, sv:svDaRota(a.rota), rota:a.rota} : null;
 }
 
-// abre o painel no perfil e contexto do acesso (demais filtros e a cascata no padrão; no grupo, o Total)
+// abre o painel no perfil e contexto do acesso (demais filtros e a cascata no padrão; no grupo, o Total), na aba inicial
+// do perfil: Executiva (Diretoria, Gerência e Supervisão) ou Volume (Rota, que não tem a Executiva)
 function aplicaAcesso(a){
   ACESSO = a;
   sel = a.perfil==='dir' ? {...sel, modo:'dir', dgc:'', sv:'', rota:''} : {...sel, modo:'gc', gc:a.gc, sv:a.sv, rota:a.rota};
+  marcaAba(a.perfil==='rota' ? 'VOLUME' : EXEC);
   fecha();
   $('entrada').hidden = true;
   document.body.classList.remove('na-entrada');
   render();
+  mostraAbaAtiva();
   if($('q').value.trim()) buscaCliente();
 }
 function mostraEntrada(msg){
@@ -1426,6 +1743,7 @@ function tileGdm(g){
 const blocoImperdoaveis = `<h4>Imperdoáveis</h4><div class="semim">Sem dado de Imperdoáveis pra essa rota.</div>`;
 
 function buscaCliente(){
+  if(aba===EXEC) return;            // a Executiva não tem busca: a ficha volta ao trocar para uma aba de indicadores
   const v=$('q').value.trim(); if(!v){$('cli').innerHTML='';return;}
   const id=parseInt(v,10);
   const rotas = rotasVisiveis();
