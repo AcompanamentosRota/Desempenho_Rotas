@@ -194,8 +194,7 @@ const RS = (()=>{
       ${placa}
       ${blocos.vol?`<div class="rs-bloco"><h3>Volume — ${P.FECHAMENTO?'realizado do mês (fechamento)':'tendência do mês'} <small>${P.FECHAMENTO?'Online de hoje, sem meta do dia':'Online verde ao bater a Meta dia'}</small></h3>${volT}</div>`:''}
       ${blocos.ics?`<div class="rs-bloco"><h3>Coberturas — ICS GC <small>Online verde ao bater o faltam</small></h3>${html(ics)}</div>`:''}
-      ${blocos.nov?`<div class="rs-bloco"><h3>Novos Negócios <small>Online verde ao bater o faltam</small></h3>${html(nov)}</div>`:''}
-      <div class="rs-rod">${esc(CONFIG.CREDITOS)}</div>`;
+      ${blocos.nov?`<div class="rs-bloco"><h3>Novos Negócios <small>Online verde ao bater o faltam</small></h3>${html(nov)}</div>`:''}`;
     document.querySelectorAll('[data-rsb]').forEach(b=>b.setAttribute('aria-pressed', blocos[b.dataset.rsb]));
   }
 
@@ -226,6 +225,44 @@ const RS = (()=>{
       s.onload = ok; s.onerror = erro; document.head.appendChild(s);
     });
   }
+  /* ---- divisão do PDF em páginas (função pura: sem DOM).
+     atomos = [cabeçalho, bloco 1, bloco 2...], cada um {t, b} (topo e base em px dentro da folha); H0 = altura da
+     página; altTotal = altura da folha. O cabeçalho (.rs-cab + .rs-atencao) nunca fica sozinho: vira um átomo só com
+     o 1º bloco (do topo do cabeçalho à base do bloco). Cada página leva os átomos seguintes enquanto couberem; um
+     átomo mais alto que H0 fica sozinho e a página cresce (altura = max(H0, faixa)). Saída: faixas [y0, y1]. ---- */
+  function paginas(atomos, H0, altTotal){
+    const at = atomos.length > 1 ? [{t:Math.min(atomos[0].t, atomos[1].t), b:Math.max(atomos[0].b, atomos[1].b)}, ...atomos.slice(2)]
+                                 : atomos.slice();
+    if(!at.length) return [[0, altTotal]];
+    const out = []; let i = 0, ini = 0;
+    while(i < at.length){
+      let j = i; while(j+1 < at.length && at[j+1].b - ini + 8 <= H0) j++;
+      out.push([ini, Math.min(altTotal, at[j].b + 10)]);
+      i = j + 1; if(i < at.length) ini = Math.max(0, at[i].t - 8);
+    }
+    return out;
+  }
+  /* ---- PDF: números que não cabem na caixa (a Inter é mais larga). (a) o CSS do .rs-pdf dá mais largura e menos folga
+     às caixas, sem mudar a fonte; (b) encaixa() reduz a fonte do número, só no PDF, até FONTE_MIN_PDF; (c) se ainda
+     faltar, a folha (W) fica mais larga. Mede na própria página: o CSS do .rs-pdf não depende da largura da tela. ---- */
+  const FONTE_MIN_PDF = 10;
+  const numsPdf = folha => folha.querySelectorAll('.rs-tab .rs-k strong');
+  // maior estouro (px) numa célula, caixa ou texto das tabelas
+  const excessoPdf = folha => Math.max(0, ...[...folha.querySelectorAll('.rs-tab th, .rs-tab td, .rs-tab .rs-k, .rs-tab .rs-k > *')]
+    .map(el => el.scrollWidth - el.clientWidth));
+  function encaixaPdf(folha, W){
+    const cols = Math.max(1, ...[...folha.querySelectorAll('.rs-tab thead tr')].map(tr => tr.children.length - 1));
+    for(let t = 0; ; t++){
+      folha.style.width = W+'px';
+      numsPdf(folha).forEach(s=>{ s.dataset.fit = ''; s.dataset.fitMin = FONTE_MIN_PDF; });
+      encaixa(folha);
+      const ex = excessoPdf(folha);
+      if(ex <= 0 || t === 7) break;              // a última tentativa fica com a largura que mediu
+      W += Math.ceil(2*ex + 4) * cols;           // as duas caixas da célula, em todas as colunas
+    }
+    return W;
+  }
+  const limpaPdf = folha => numsPdf(folha).forEach(s=>{ delete s.dataset.fit; delete s.dataset.fitMin; s.style.fontSize = ''; s.style.whiteSpace = ''; });
   async function baixarPdf(){
     const btn = document.getElementById('rsImg'); btn.disabled = true; aviso('Gerando PDF…');
     try{
@@ -239,11 +276,12 @@ const RS = (()=>{
       const minAntes = folha.style.minWidth, largAntes = folha.style.width;
       /* 08/10/26: PDF sempre no formato da visao PC (tabela), em paginas deitadas (16:9) que cabem na tela na horizontal.
          Bloco mais alto que a pagina ganha uma pagina mais alta (rolagem so na vertical). Vale p/ celular, tablet e PC. */
-      const W = innerWidth >= 1000 ? Math.ceil(folha.scrollWidth) : Math.max(1200, LARG_MIN);
+      let W = innerWidth >= 1000 ? Math.ceil(folha.scrollWidth) : Math.max(1200, LARG_MIN);
       folha.classList.add('rs-pdf'); folha.style.width = W+'px'; folha.style.minWidth = '0';
-      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
       let canvas, atomos = [], altTotal = 0;
       try{
+        W = encaixaPdf(folha, W);
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
         /* mede os blocos DENTRO da renderizacao (largura W, estilos do PC), nao na janela real do celular */
         const mede = (doc) => {
           const f = doc.getElementById('rsFolha'); if(!f) return;
@@ -253,22 +291,15 @@ const RS = (()=>{
           let cab = R(f.querySelector('.rs-cab')); const at = f.querySelector('.rs-atencao'); if(at) cab = uni(cab, R(at));
           atomos = [cab];
           f.querySelectorAll('.rs-bloco').forEach(bl=>atomos.push(R(bl)));
-          atomos.push(R(f.querySelector('.rs-rod')));
         };
         canvas = await html2canvas(folha, {scale:2, backgroundColor:'#ffffff', useCORS:true, windowWidth:W, width:W, onclone: mede});
         altTotal = canvas.height/2;
-      } finally { folha.classList.remove('rs-pdf'); folha.style.width = largAntes; folha.style.minWidth = minAntes; }
+      } finally { limpaPdf(folha); folha.classList.remove('rs-pdf'); folha.style.width = largAntes; folha.style.minWidth = minAntes; }
       const H0 = Math.round(W*9/16);
-      const paginas = []; let i = 0, ini = 0;
-      while(i < atomos.length){
-        let j = i; while(j+1 < atomos.length && atomos[j+1].b - ini + 8 <= H0) j++;
-        const fim = Math.min(altTotal, atomos[j].b + 10);
-        paginas.push([ini, fim]);
-        i = j + 1; if(i < atomos.length) ini = Math.max(0, atomos[i].t - 8);
-      }
+      const pags = paginas(atomos, H0, altTotal);
       const altP = ([y0,y1]) => Math.max(H0, Math.ceil(y1-y0));
-      let pdf = new window.jspdf.jsPDF({orientation:'landscape', unit:'px', format:[W, altP(paginas[0])], hotfixes:['px_scaling'], compress:true});
-      paginas.forEach((pg,n)=>{
+      let pdf = new window.jspdf.jsPDF({orientation:'landscape', unit:'px', format:[W, altP(pags[0])], hotfixes:['px_scaling'], compress:true});
+      pags.forEach((pg,n)=>{
         const [y0,y1] = pg, h = altP(pg);
         const pc = document.createElement('canvas'); pc.width = W*2; pc.height = h*2;
         const cx = pc.getContext('2d'); cx.fillStyle = '#ffffff'; cx.fillRect(0,0,pc.width,pc.height);
@@ -343,5 +374,5 @@ const RS = (()=>{
     document.addEventListener('keydown', e=>{ if(e.key==='Escape' && aberto) fecha(); });
     let t; addEventListener('resize', ()=>{ clearTimeout(t); t = setTimeout(pinta, 150); });
   }
-  return {pinta, doLink, liga, fecha};
+  return {pinta, doLink, liga, fecha, paginas};
 })();

@@ -259,8 +259,16 @@ seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa;
   com uma gerência no filtro, o resumo dela (gerência + supervisões); num grupo no Total, o total e as duas
   gerências lado a lado; no perfil Supervisão, o da supervisão (e
   das rotas dela); no perfil Rota, sem o botão. A placa ATENÇÃO existe, mas está desligada
-  (`CONFIG.LIMIAR_ATENCAO = null`).
-- Rodapé: "Karen Oliveira - Inteligência de Mercado".
+  (`CONFIG.LIMIAR_ATENCAO = null`). A folha do Resumo (tela e PDF) **não tem assinatura**: acaba no último bloco.
+- **PDF do Resumo**: sempre a tabela do PC, em páginas deitadas (16:9) na largura da folha. A quebra é só entre
+  blocos (Volume, ICS GC, Novos Negócios) e o cabeçalho (com a placa ATENÇÃO, quando houver) **nunca fica sozinho**:
+  vai sempre junto do 1º bloco; se os dois não couberem numa página, a 1ª página fica mais alta (o mesmo vale para
+  qualquer bloco mais alto que a página). Diretoria com Volume + ICS GC = 2 páginas (3 com Novos Negócios). A divisão
+  é a função pura `RS.paginas(atomos, H0, altTotal)` (`resumo.js`). Números grandes (até 7 dígitos, ex.: 2.665.000):
+  no PDF as caixas têm tamanhos fixos (os da tela de PC de 1000-1599 px, iguais em qualquer aparelho) e menos folga;
+  o número que ainda não couber tem a fonte reduzida só no PDF (`encaixa()`, mínimo 10 px) e, se nem assim couber, o
+  PDF fica mais largo. A tela do Resumo (celular e PC) não muda.
+- Rodapé (do painel, fora do Resumo): "Karen Oliveira - Inteligência de Mercado".
 
 Testes do front: `node --test frontend/tests/front.test.js` (Chromium headless com `playwright`; usa dado
 sintético gerado pelo próprio back-end em `frontend/tests/sintetico.py`; a virada diária é testada com o relógio
@@ -268,7 +276,12 @@ simulado do Playwright, com o navegador em UTC e em America/Sao_Paulo). A Parte 
 390 px: Inter carregada, sem rolagem lateral, nenhum texto cortado, alturas por tipo, cabeçalho do celular,
 regra do vermelho, contraste AA e Resumo/PDF sem estouro. A Parte N abre cada nível da cascata no front atual e no
 do commit `0a59eb4` (CSS e app.js de antes do ajuste visual, via `git show`; sem o histórico, é pulada) e compara o
-estilo computado elemento a elemento: só a família pode mudar.
+estilo computado elemento a elemento: só a família pode mudar. A Parte O confere o Resumo e o PDF: sem assinatura,
+paginação (`RS.paginas`, também sem navegador), cenário `grande` (16 gerências e números de 6-7 dígitos, e o pior
+caso com 2.665.000 em todas as caixas) sem célula cortada nem caixas sobrepostas no PDF, e a tela do Resumo igual à
+do CSS do commit `2d5419a` em 390, 800, 1280 e 1700 px. Com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1`
+instalados (local, `NODE_PATH` ou global; o hash é o mesmo do SRI do `config.js`), gera também o PDF de verdade e
+confere o nº de páginas e que nenhuma fica em branco; sem eles, esse teste é pulado (os outros simulam as bibliotecas).
 
 ### Visual (fonte, escala e cores)
 

@@ -51,8 +51,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   com dados, 'dir' = Diretoria, ou {perfil, gc, sv, rota}, com gc = sigla ou grupo 'IT+MO'; a sigla de uma gerência
   agrupada escolhe o grupo); `vaiPara()` = casa + `entra()`; relógio simulado por `antes: p => p.clock...`.
   Variantes do payload montadas no próprio teste: 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV), 'semdados'
-  (G3 e PA sem dados), 'semsv', 'antigo', 'inc'/'incfech' (cenários da aba Todos a Bordo, `montaIncentivo`) e 'seminc'
-  (payload sem o grupo INCENTIVO). `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
+  (G3 e PA sem dados), 'semsv', 'antigo', 'inc'/'incfech' (cenários da aba Todos a Bordo, `montaIncentivo`), 'seminc'
+  (payload sem o grupo INCENTIVO) e 'grande' (16 gerências, a DI copiada da PA, e números de 6-7 dígitos; PDF do
+  Resumo, `montaGrande`). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
+  `require.resolve` (local, `NODE_PATH` ou global); sem eles, pulado. `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
   a Parte N serve o CSS e o app.js do 0a59eb4 assim).
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
@@ -229,7 +231,15 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   valores seguem iguais; metaDia > 0/null, meta 0, Venda Zero, fechamento e o Resumo de vendas como antes.
   Resumo segue o filtro (Diretoria "Todas": as 16 em faixas de 8; uma gerência: gerência + supervisões; grupo no
   Total: total + as duas; sem seletor próprio); placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada). Del Valle Frut continua fora
-  da Diretoria, mesmo com uma gerência. Rodapé: "Karen Oliveira - Inteligência de Mercado".
+  da Diretoria, mesmo com uma gerência. Rodapé do painel: "Karen Oliveira - Inteligência de Mercado" (`CONFIG.CREDITOS`);
+  a folha do Resumo NÃO tem assinatura (sem `.rs-rod`, na tela e no PDF; desde 21/10/2026).
+  **PDF do Resumo**: páginas = `RS.paginas(atomos, H0, altTotal)` (função pura; átomos = [cabeçalho, blocos...]
+  medidos no clone do html2canvas). O cabeçalho (`.rs-cab` + `.rs-atencao`) nunca fica sozinho: é um átomo só com o
+  1º `.rs-bloco` (do topo do cabeçalho à base do bloco); átomo mais alto que a página = página mais alta. Diretoria
+  com Volume + ICS GC = 2 páginas (3 com Novos Negócios). Números no PDF: regras `#rsFolha.rs-pdf` no fim do
+  `app.css` fixam os tamanhos (os da tela de 1000-1599 px, em qualquer aparelho) com menos folga; `encaixaPdf`
+  (resumo.js) encaixa a fonte do número (`encaixa()`, mínimo 10 px) e, se ainda faltar, alarga W; `limpaPdf` desfaz.
+  Nada disso muda a tela do Resumo (Parte O dos testes compara com o CSS do 2d5419a).
 - **Visual** (README, "Visual"): fonte Inter variável LOCAL em `frontend/assets/fonts/` (latin + latin-ext do
   `@fontsource-variable/inter` 5.3.0, licença `OFL.txt`; nunca CDN nem Google Fonts), `font-display: swap`, fallback
   `system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`; `encaixa()` remede no `loadingdone` das fontes e o PDF
