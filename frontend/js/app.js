@@ -66,10 +66,12 @@ function clicavel(el, fn){
   el.onclick = fn;
   el.onkeydown = e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fn(e); } };
 }
-// reduz a fonte até o texto caber na largura real do elemento (mede no DOM, não em px fixos)
+// reduz a fonte até o texto caber na largura real do elemento (mede no DOM, não em px fixos);
+// data-fit vazio = parte do tamanho da escala tipográfica (o do CSS, que muda entre PC e celular)
 function encaixa(raiz){
   (raiz||document).querySelectorAll('[data-fit]').forEach(el=>{
-    const max = parseFloat(el.dataset.fit), min = parseFloat(el.dataset.fitMin||7);
+    if(!el.dataset.fit) el.style.fontSize = '';
+    const max = parseFloat(el.dataset.fit || getComputedStyle(el).fontSize), min = parseFloat(el.dataset.fitMin||7);
     let s = max; el.style.fontSize = s+'px';
     el.style.whiteSpace = '';
     while(el.scrollWidth > el.clientWidth + 0.5 && s > min){ s -= 0.5; el.style.fontSize = s+'px'; }
@@ -79,6 +81,8 @@ function encaixa(raiz){
     }
   });
 }
+// a Inter chega depois do 1º desenho (font-display: swap): mede de novo com a fonte certa
+if(document.fonts) document.fonts.addEventListener('loadingdone', () => encaixa());
 
 /* ---------- status "Online" ----------
    Janela de vendas (CONFIG.JANELA_VENDAS, horário de Brasília). Fora dela, ou se o
@@ -467,7 +471,7 @@ function linha(k, b, rotas){
     return `<div class="ind off"><div class="tit">${nome}</div>
       <div class="semdado">indisponível — falta a fonte deste indicador</div></div>`;
   const bom = b.onPace;
-  const ini = `<div class="ind ${bom?'ok':''}" data-k="${esc(k)}" role="button" tabindex="0">`;
+  const ini = `<div class="ind ${ehVolume(k)?'vol ':''}${bom?'ok':''}" data-k="${esc(k)}" role="button" tabindex="0">`;
   if(k==='VENDAZERO'){
     const dif = b.real - b.meta;                 // positivo = mais equip. zerado que a meta = ruim
     const oportHoje = rotas.reduce((a,r)=>a+((OPORTUNIDADE_HOJE||{})[r]||0),0);
@@ -480,7 +484,7 @@ function linha(k, b, rotas){
           <div class="dif ${dif<=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${dif.toLocaleString('pt-BR',{maximumFractionDigits:1})}</div>
         </div>
         <div class="cm">
-          <div class="big"><span class="seta">${bom?'▲':'▼'}</span>${oportHoje}</div>
+          <div class="big" data-fit="" data-fit-min="18"><span class="seta">${bom?'▲':'▼'}</span>${oportHoje}</div>
           <div class="acao">${bom? 'no ritmo' : 'para reverter'}</div>
           <div class="opo">oportunidades do dia</div>
         </div>
@@ -504,7 +508,7 @@ function linha(k, b, rotas){
           <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${Math.round(dif).toLocaleString('pt-BR')}</div>
         </div>
         <div class="cm">
-          <div class="big"><span class="seta">${bom?'▲':'▼'}</span>${big==null?'—':big+'%'}</div>
+          <div class="big" data-fit="" data-fit-min="18"><span class="seta">${bom?'▲':'▼'}</span>${big==null?'—':big+'%'}</div>
           <div class="acao">${fech ? (bom?'meta batida':'abaixo da meta') : (bom? 'no ritmo' : 'abaixo da tendência')}</div>
           <div class="opo">${fech ? 'realizado no mês' : `${b.pctReal==null?0:b.pctReal}% real`}</div>
         </div>
@@ -522,8 +526,8 @@ function linha(k, b, rotas){
         <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${dif.toLocaleString('pt-BR')}</div>
       </div>
       <div class="cm">
-        <div class="big"><span class="seta">${bom?'▲':'▼'}</span>${b.pct==null?'—':b.pct+'%'}</div>
-        <div class="acao">${b.gap>0? `faltam ${b.gap} hoje` : 'no ritmo'}</div>
+        <div class="big" data-fit="" data-fit-min="18"><span class="seta">${bom?'▲':'▼'}</span>${b.pct==null?'—':b.pct+'%'}</div>
+        <div class="acao ${b.gap>0?'falta':''}">${b.gap>0? `faltam ${b.gap} hoje` : 'no ritmo'}</div>
         ${opo? `<div class="opo">oportunidades do dia ${opo}</div>`:''}
       </div>
       <div class="cr"><div class="olab">Online</div>${caixaOnline(k, rotas, b)}</div>
@@ -733,7 +737,7 @@ function linhaGrupo(g, m, k, i){
     <div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
     <div class="cEsq"><span>Meta ${f(b.meta)}</span><span>Real ${f(b.real)}</span></div>
     <div class="cMeio">${meio}</div>
-    <div class="cDir"><b>${dir==null?'—':dir+'%'}</b><small>${rot}</small></div></div>`;
+    <div class="cDir"><b data-fit="" data-fit-min="16">${dir==null?'—':dir+'%'}</b><small>${rot}</small></div></div>`;
 }
 
 // subtítulo da gaveta (número do card do nível)
@@ -779,6 +783,7 @@ function pintaCascata(){
     }));
   }
   if($('cVolta')) $('cVolta').onclick = () => { pilha.pop(); pintaCascata(); };
+  encaixa($('dCorpo'));
   $('dCorpo').scrollTop = 0;
 }
 
@@ -1314,7 +1319,7 @@ function tileGdm(g){
   if(!g) return '';
   const pct = g.meta ? Math.round(g.real/g.meta*100) : 0;
   const fmt = n => n.toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1});
-  return `<div class="tileVol gdm ${corGdm(g)}"><div class="t" data-fit="13" data-fit-min="9.5">Desempenho GDM</div>
+  return `<div class="tileVol gdm ${corGdm(g)}"><div class="t" data-fit="13" data-fit-min="9.5" data-fit-quebra>Desempenho GDM</div>
     <div class="barraWrap"><div class="barra" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
     <div class="e" data-fit="10.5" data-fit-min="8.5" data-fit-quebra>${pct}%</div>
     <div class="nums" data-fit="12" data-fit-min="8">${fmt(g.real)} / ${fmt(g.meta)}</div></div>`;

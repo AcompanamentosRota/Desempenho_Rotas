@@ -233,6 +233,8 @@ const RS = (()=>{
         carregaScript(CONFIG.CDN.html2canvas, 'html2canvas'),
         carregaScript(CONFIG.CDN.jspdf, 'jspdf')
       ]);
+      // a captura usa a fonte do painel (Inter): espera ela carregar para nada sair com a fonte reserva
+      if(document.fonts) await document.fonts.ready;
       const folha = document.getElementById('rsFolha');
       const minAntes = folha.style.minWidth, largAntes = folha.style.width;
       /* 08/10/26: PDF sempre no formato da visao PC (tabela), em paginas deitadas (16:9) que cabem na tela na horizontal.
