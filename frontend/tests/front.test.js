@@ -2713,7 +2713,9 @@ describe('Parte M — visual', {skip: pular}, () => {
     });
   }
 
-  test('390 px: cabeçalho compacto (até o fim das abas) pelo menos 25% menor, com a mesma informação, e a barra sticky', async () => {
+  // Etapa 3: o topo compacto (abaixo de 1000 px) troca a caixa de ritmo de duas linhas pela linha "Dia útil x/n (p%) ·
+  // ritmo hoje h%" e tira a linha da marca (a caixa inteira fica no painel lateral do PC); o limite de altura é o mesmo
+  test('390 px: cabeçalho compacto (até o fim das abas) pelo menos 25% menor, com o ritmo numa linha, e a barra sticky', async () => {
     const {page, ctx, erros} = await abre('normal', {largura: 390, altura: 844});
     await page.evaluate(() => document.fonts.ready);
     const r = await page.evaluate(() => {
@@ -2722,15 +2724,15 @@ describe('Parte M — visual', {skip: pular}, () => {
       const sels = [...document.querySelectorAll('.filtros select')].filter(s => !s.hidden).map(s => Math.round(s.getBoundingClientRect().top));
       const rit = document.getElementById('ritmo');
       return {fim: b('.barra').bottom, h1: parseFloat(getComputedStyle(document.querySelector('.topo h1')).fontSize),
-              ritmo: rit.textContent, linhasRitmo: Math.round(rit.getBoundingClientRect().height / parseFloat(getComputedStyle(rit).lineHeight)),
+              ritmo: rit.innerText.trim(), marca: document.querySelector('.topo .marca').getClientRects().length, linhasRitmo: Math.round(rit.getBoundingClientRect().height / parseFloat(getComputedStyle(rit).lineHeight)),
               tabsTop: new Set(tabs.map(t => Math.round(t.top))).size, nTabs: tabs.length, sels: new Set(sels).size,
               sub: document.getElementById('sub').textContent, pos: getComputedStyle(document.querySelector('.barra')).position};
     });
     assert.ok(r.fim <= LIMITE_CABECALHO_390, `cabeçalho ${r.fim} px > ${LIMITE_CABECALHO_390}`);
     assert.ok(r.h1 >= 23 && r.h1 <= 26, `título ${r.h1}`);
-    assert.match(r.ritmo, /Real até ontem: dia útil \d+\/\d+ .*para entrar no ritmo hoje: \d+%/);
-    assert.match(r.ritmo, /Hoje é o dia \d+ · .* · semana N°\d+/);
-    assert.ok(r.linhasRitmo <= 2, `bloco de datas em ${r.linhasRitmo} linhas`);
+    assert.match(r.ritmo, /^Dia útil \d+\/\d+ \(\d+%\) · ritmo hoje \d+%$/);
+    assert.equal(r.linhasRitmo, 1, `ritmo em ${r.linhasRitmo} linhas`);
+    assert.equal(r.marca, 0, 'sem a linha da marca');
     assert.equal(r.tabsTop, 1, 'abas numa linha');
     assert.ok(r.nTabs >= 3);
     assert.equal(r.sels, 1, 'seletores na mesma linha');
@@ -3152,6 +3154,13 @@ describe('Parte N — cascata como antes do ajuste visual, só com a Inter', {sk
             await page.addStyleTag({content: '#dCorpo{overflow-y:scroll!important} *{transition:none!important}'});
             await page.evaluate(() => document.fonts.ready);
           }
+          // Etapa 3: no PC a gaveta começa à direita do painel lateral (left: var(--lado)). Só a POSIÇÃO muda: o front
+          // antigo recebe o mesmo `left` e todo o resto (margens, larguras, colunas, fontes, cores) é comparado igual
+          const esq = await novo.page.evaluate(() => ({drw: getComputedStyle(document.getElementById('drw')).left,
+            lado: document.querySelector('.lado').getBoundingClientRect().right}));
+          if(largura >= 1000) assert.equal(parseFloat(esq.drw), esq.lado, 'a gaveta começa à direita do painel lateral');
+          else assert.equal(esq.drw, '0px');
+          await velho.page.addStyleTag({content: `#drw{left:${esq.drw}!important}`});
           const confere = async onde => {
             const [a, b] = await Promise.all([novo.page.evaluate(ASSINA_GAVETA, PROPS_CASCATA), velho.page.evaluate(ASSINA_GAVETA, PROPS_CASCATA)]);
             assert.deepEqual(a.map(x => x[0]), b.map(x => x[0]), `${onde}: mesma marcação`);
@@ -3630,6 +3639,20 @@ const esperaPedido = (page, conta, nome, n) => page.waitForFunction(() => true).
 // erros de rede que o próprio Chromium registra no console (404 e fetch abortado de propósito); o resto é erro
 const semErrosDeRede = erros => erros.filter(e => !/Failed to load resource/.test(e));
 
+/* Etapa 3: abaixo de 1000 px a faixa fica acima do topo (.topo); no PC o cabeçalho é o painel lateral fixo (.topo sem
+   caixa) e a faixa fica no alto do conteúdo, à direita do painel, acima do .wrap. `faixaLivre` diz se ela não cobre
+   nem é coberta pelo cabeçalho do layout atual. */
+const faixaLivre = page => page.evaluate(() => {
+  const b = el => el.getBoundingClientRect();
+  const av = b(document.getElementById('aviso')), lado = getComputedStyle(document.querySelector('.lado')).position === 'fixed';
+  if(!lado) return {lado, ok: av.top >= 0 && av.bottom <= b(document.querySelector('.topo')).top + .5};
+  const ld = b(document.querySelector('.lado')), wrap = b(document.querySelector('.wrap'));
+  // o ponto do meio da faixa é a própria faixa (nada por cima)
+  const meio = document.elementFromPoint((av.left + av.right) / 2, (av.top + av.bottom) / 2);
+  return {lado, ok: av.top >= 0 && av.left >= ld.right - .5 && av.bottom <= wrap.top + .5 && av.width > 300 &&
+                    !!meio && !!meio.closest('#aviso')};
+});
+
 describe('Parte Q — aviso de versão nova', {skip: pular}, () => {
   test('versão igual: sem faixa, mas conferida; o ↻ fica sempre visível, ao lado da casa', async () => {
     const {page, ctx, erros, conta} = await abreVersao();
@@ -3659,10 +3682,8 @@ describe('Parte Q — aviso de versão nova', {skip: pular}, () => {
     await entra(page, 'gc');
     const f = await faixa(page);
     assert.deepEqual([f.visivel, f.txt, f.btn, f.des], [true, 'Nova versão disponível', 'Atualizar', false]);
-    const r = await page.evaluate(() => ({av: document.getElementById('aviso').getBoundingClientRect(),
-      topo: document.querySelector('.topo').getBoundingClientRect(), depois: document.getElementById('avisoDepois').textContent}));
-    assert.ok(r.av.top >= 0 && r.av.bottom <= r.topo.top + .5, 'acima do cabeçalho, sem cobrir');
-    assert.equal(r.depois, 'Depois');
+    assert.ok((await faixaLivre(page)).ok, 'acima do cabeçalho (no PC, à direita do painel lateral), sem cobrir');
+    assert.equal(await page.textContent('#avisoDepois'), 'Depois');
     // casa: volta para a entrada, faixa some com ela
     await page.click('#btnCasa');
     assert.equal((await faixa(page)).visivel, false);
@@ -3855,7 +3876,9 @@ describe('Parte Q — aviso de versão nova', {skip: pular}, () => {
                   branca: document.getElementById('aviso').classList.contains('branca'),
                   contraste: __vis.contrastes(['#avisoTxt', '#avisoAtualizar', '#avisoDepois'])};
         });
-        assert.ok(r.aviso.bottom <= r.topo.top + .5, `${tema}: faixa acima do cabeçalho`);
+        const livre = await faixaLivre(page);
+        assert.equal(livre.lado, largura >= 1000, 'painel lateral só a partir de 1000 px');
+        assert.ok(livre.ok, `${tema}: faixa acima do cabeçalho (no PC, à direita do painel lateral), sem cobrir`);
         assert.deepEqual(r.cruzaTexto, [], `${tema}: botões do canto sobre o texto do cabeçalho`);
         assert.deepEqual(r.fsAviso, [r.fsLegenda, r.fsLegenda], 'escala tipográfica (--fs-legenda)');
         assert.match(r.familia, /^Inter,/);
@@ -3871,6 +3894,325 @@ describe('Parte Q — aviso de versão nova', {skip: pular}, () => {
             return btns.left < c.right && c.left < btns.right && btns.top < c.bottom && c.top < btns.bottom; });
         }), [], tema);
         assert.deepEqual(erros, []);
+        await ctx.close();
+      }
+    });
+  }
+});
+
+/* ---------- Parte U — layout (Etapa 3): painel lateral no PC (>= 1000 px) e topo compacto no celular ----------
+   No PC o <aside class="lado"> é a coluna fixa à esquerda (272 px; recolhida 76 px, só ícones) com o cabeçalho e a
+   barra dentro (.topo, .barra e os .hd sem caixa; ordem por `order`); abaixo de 1000 px o aside não tem caixa e o topo
+   é o compacto. Nada do conteúdo muda. */
+const LADO_ABERTO = 272, LADO_RECOLHIDO = 76;
+// cenários de perfil: selects visíveis e o escopo (texto do .subEsc, sem o " · " inicial)
+const PERFIS_LAYOUT = [
+  {nome: 'Diretoria', dados: 'normal', entrar: 'dir', sels: ['fgc'], esc: /^Diretoria$/},
+  {nome: 'Gerência', dados: 'normal', entrar: {perfil: 'gc', gc: 'G2'}, sels: ['fsv', 'frota'], esc: /^Gerência · GC\.G2/},
+  {nome: 'grupo IT+MO (Total)', dados: 'grupo', entrar: {perfil: 'gc', gc: 'IT+MO'}, sels: ['fgc', 'fsv', 'frota'],
+   esc: /^Gerência · GC\.IT \+ GC\.MO/},
+  {nome: 'Supervisão', dados: 'normal', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, sels: ['frota'], esc: /^Supervisão · GC\.G2.* · SV\.G2\.1/},
+  {nome: 'Rota', dados: 'normal', entrar: {perfil: 'rota', gc: 'G2', rota: 'G211'}, sels: [], esc: /^Rota · GC\.G2.* · SV\.G2\.1.* · Rota G211 — /},
+];
+// estado do layout: selects visíveis, escopo e se ele bate com o filtro (o texto de cada select escolhido está no escopo)
+const estadoLayout = page => page.evaluate(() => {
+  const vis = el => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  const sels = ['fgc', 'fsv', 'frota'].filter(id => vis(document.getElementById(id)));
+  const esc = document.querySelector('#sub .subEsc');
+  const escopo = esc.textContent.replace(/^ · /, '');
+  const faltam = sels.map(id => document.getElementById(id)).filter(s => s.value).map(s => {
+    const t = s.selectedOptions[0].textContent.replace(/ · sem dados$/, '');
+    // grupo no Total: "Total (GC.IT + GC.MO)" -> "GC.IT + GC.MO"; rota: "Rota G211"
+    return (t.match(/^Total \((.*)\)$/) || [, t])[1];
+  }).filter(t => !escopo.includes(t));
+  return {sels, escopo, escVisivel: vis(esc), faltam, lado: getComputedStyle(document.querySelector('.lado')).position === 'fixed',
+          fim: document.querySelector('.barra').getBoundingClientRect().bottom,
+          rolagem: document.documentElement.scrollWidth > document.documentElement.clientWidth};
+});
+
+describe('Parte U — layout: painel lateral no PC e topo compacto no celular (Etapa 3)', {skip: pular}, () => {
+  for(const largura of [1000, 1440]){
+    test(`${largura} px: painel lateral fixo com os itens na ordem; conteúdo à direita na largura da tela; sem rolagem lateral`, async () => {
+      const {page, ctx, erros} = await abre('inc', {largura, altura: 900, entrar: {perfil: 'gc', gc: 'IT+MO'}});
+      await page.evaluate(() => document.fonts.ready);
+      const r = await page.evaluate(() => {
+        const b = s => document.querySelector(s).getBoundingClientRect();
+        const lado = document.querySelector('.lado'), cs = getComputedStyle(lado);
+        const vis = s => [...document.querySelectorAll(s)].filter(e => e.getClientRects().length > 0);
+        const tabs = vis('.tab');
+        const ref = v => { const s = document.createElement('span'); s.style.color = `var(${v})`; document.body.appendChild(s);
+          const c = getComputedStyle(s).color; s.remove(); return c; };
+        return {pos: cs.position, w: b('.lado').width, h: b('.lado').height, left: b('.lado').left, bg: cs.backgroundColor, preto: ref('--preto'),
+                padBody: getComputedStyle(document.body).paddingLeft, wrapL: b('.wrap').left, wrapMax: getComputedStyle(document.querySelector('.wrap')).maxWidth,
+                ordem: ['#ladoMenu', '.lado .marca', '.lado h1', '#sub', '.sFil', '#fgc', '.sTab', '.tabs', '#ritmo', '.topoBtns', '#ladoCred']
+                  .map(s => [s, Math.round(b(s).top), Math.round(b(s).bottom)]),
+                semCaixa: ['.topo', '.barra', '.topo .hd', '.barra .hd'].map(s => getComputedStyle(document.querySelector(s)).display),
+                tabs: tabs.map(t => ({g: t.dataset.g, top: Math.round(t.getBoundingClientRect().top), left: Math.round(t.getBoundingClientRect().left),
+                  ico: !!t.querySelector('svg.ico') && t.querySelector('svg.ico').getClientRects().length > 0, title: t.title,
+                  on: t.classList.contains('on'), bg: getComputedStyle(t).backgroundColor, txt: t.textContent})),
+                vermelho: ref('--vermelho'),
+                cred: document.getElementById('ladoCred').textContent, creditos: CONFIG.CREDITOS,
+                ritmo: vis('#ritmo .ritLongo').length, ritCurto: vis('#ritmo .ritCurto').length,
+                rotulos: vis('.lado .rotBtn').map(e => e.textContent), marca: vis('.lado .marca').length};
+      });
+      assert.equal(r.pos, 'fixed');
+      assert.equal(r.w, LADO_ABERTO);
+      assert.equal(r.h, 900, 'altura da tela');
+      assert.equal(r.left, 0);
+      assert.equal(r.bg, r.preto);
+      assert.equal(r.padBody, `${LADO_ABERTO}px`);
+      assert.ok(r.wrapL >= LADO_ABERTO, `conteúdo em ${r.wrapL}`);
+      assert.equal(r.wrapMax, 'none');
+      assert.deepEqual(r.semCaixa, ['contents', 'contents', 'contents', 'contents']);
+      // menu -> marca -> título -> mês/atualização/escopo -> Filtro -> seletores -> Painéis -> abas -> ritmo -> ↻ e casa -> créditos
+      for(let i = 1; i < r.ordem.length; i++)
+        assert.ok(r.ordem[i][1] >= r.ordem[i - 1][2] - .5, `${r.ordem[i - 1][0]} antes de ${r.ordem[i][0]}: ${JSON.stringify(r.ordem)}`);
+      assert.ok(r.tabs.length >= 4);
+      assert.equal(new Set(r.tabs.map(t => t.left)).size, 1, 'abas na vertical');
+      assert.equal(new Set(r.tabs.map(t => t.top)).size, r.tabs.length);
+      for(const t of r.tabs){
+        assert.ok(t.ico, `${t.g}: ícone`);
+        assert.equal(t.title, t.txt, `${t.g}: title`);
+        if(t.on) assert.equal(t.bg, r.vermelho, 'aba ativa em --vermelho');
+      }
+      assert.equal(r.tabs.filter(t => t.on).length, 1);
+      assert.equal(r.cred, r.creditos);
+      assert.equal(r.ritmo, 2, 'caixa de ritmo de hoje (as duas linhas)');
+      assert.equal(r.ritCurto, 0);
+      assert.deepEqual(r.rotulos, ['Atualizar', 'Entrada']);
+      assert.equal(r.marca, 1);
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        await page.click(`.tab[data-g="${aba}"]`);
+        assert.equal(await page.evaluate(() => aba), aba);
+        assert.ok(await semRolagemLateral(page), `${aba}: rolagem lateral`);
+        // os cards não passam por baixo do painel
+        assert.ok(await page.evaluate(l => [...document.querySelectorAll('#lista .ind, .cards .card, .rsBox, .rodape')]
+          .every(el => el.getBoundingClientRect().left >= l), LADO_ABERTO), `${aba}: conteúdo sob o painel`);
+      }
+      await medidas(page);
+      assert.deepEqual(await page.evaluate(() => __vis.estouros('.lado')), []);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test('recolher e expandir: só ícones com title, conteúdo e gaveta acompanham, estado guardado no aparelho', async () => {
+    const {page, ctx, erros} = await abre('normal', {largura: 1440, altura: 900});
+    const sessao = await page.evaluate(() => localStorage.getItem('drotas_sessao'));
+    assert.equal(await page.getAttribute('#ladoMenu', 'aria-expanded'), 'true');
+    await page.click('#ladoMenu');
+    const estado = () => page.evaluate(() => {
+      const vis = s => [...document.querySelectorAll(s)].filter(e => e.getClientRects().length > 0);
+      return {w: document.querySelector('.lado').getBoundingClientRect().width, pad: getComputedStyle(document.body).paddingLeft,
+              wrapL: document.querySelector('.wrap').getBoundingClientRect().left,
+              textos: ['.lado h1', '#sub', '.ladoSec', '.filtros', '#ritmo', '#ladoCred', '.tab > span', '.rotBtn', '.marca > span']
+                .filter(s => vis(s).length),
+              icones: vis('.tab svg.ico, #btnRecarga svg, #btnCasa svg, #ladoMenu svg').length,
+              titles: vis('.tab, #btnRecarga, #btnCasa, #ladoMenu').map(e => e.title),
+              exp: document.getElementById('ladoMenu').getAttribute('aria-expanded'),
+              label: document.getElementById('ladoMenu').getAttribute('aria-label'),
+              guardado: localStorage.getItem('drotas_lado'), sessao: localStorage.getItem('drotas_sessao'),
+              rolagem: document.documentElement.scrollWidth > document.documentElement.clientWidth};
+    });
+    let e = await estado();
+    assert.equal(e.w, LADO_RECOLHIDO);
+    assert.equal(e.pad, `${LADO_RECOLHIDO}px`);
+    assert.ok(e.wrapL >= LADO_RECOLHIDO && e.wrapL < LADO_RECOLHIDO + 50);
+    assert.deepEqual(e.textos, [], 'recolhido: só os ícones');
+    const nTabs = await page.$$eval('.tab', ts => ts.filter(t => !t.hidden).length);
+    assert.equal(e.icones, nTabs + 3);
+    assert.ok(e.titles.every(Boolean), `title em todos os ícones: ${e.titles}`);
+    assert.deepEqual([e.exp, e.label, e.guardado, e.sessao], ['false', 'Abrir o painel', 'recolhido', sessao]);
+    assert.equal(e.rolagem, false);
+    // as abas funcionam recolhidas; a gaveta começa à direita do painel recolhido
+    await page.click('.tab[data-g="VOLUME"]');
+    assert.equal(await page.evaluate(() => aba), 'VOLUME');
+    await page.click('#lista .ind[data-k]');
+    await page.waitForFunction(() => document.getElementById('drw').classList.contains('on'));
+    const drw = await page.evaluate(() => ({left: getComputedStyle(document.getElementById('drw')).left,
+      x: document.getElementById('drw').getBoundingClientRect().left}));
+    assert.equal(drw.left, `${LADO_RECOLHIDO}px`);
+    assert.ok(drw.x >= LADO_RECOLHIDO);
+    await page.keyboard.press('Escape');
+    // recarregou: continua recolhido, no mesmo acesso
+    await page.reload();
+    await esperaCarga(page);
+    e = await estado();
+    assert.deepEqual([e.w, e.exp, e.sessao], [LADO_RECOLHIDO, 'false', sessao]);
+    assert.equal(await page.evaluate(() => document.getElementById('entrada').hidden), true, 'mesmo acesso, sem entrada');
+    // expande
+    await page.click('#ladoMenu');
+    e = await estado();
+    assert.deepEqual([e.w, e.pad, e.exp, e.label, e.guardado, e.sessao], [LADO_ABERTO, `${LADO_ABERTO}px`, 'true', 'Recolher o painel', 'aberto', sessao]);
+    assert.ok(e.textos.includes('.lado h1') && e.textos.includes('.filtros'));
+    // sem armazenamento no aparelho: recolhe do mesmo jeito, sem erro
+    await page.evaluate(() => { Object.defineProperty(window, 'localStorage', {get(){ throw new Error('bloqueado'); }}); });
+    await page.click('#ladoMenu');
+    assert.equal((await page.evaluate(() => document.querySelector('.lado').getBoundingClientRect().width)), LADO_RECOLHIDO);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('390 px: o estado recolhido guardado não muda o topo do celular', async () => {
+    const {page, ctx, erros} = await abre('normal', {largura: 390, altura: 844, armazenado: {drotas_lado: 'recolhido'}});
+    const r = await page.evaluate(() => ({rec: document.body.classList.contains('recolhido'),
+      lado: getComputedStyle(document.querySelector('.lado')).display, menu: getComputedStyle(document.getElementById('ladoMenu')).display,
+      h1: document.querySelector('.topo h1').getClientRects().length, filtros: document.querySelector('.filtros').getClientRects().length,
+      pad: getComputedStyle(document.body).paddingLeft, fim: document.querySelector('.barra').getBoundingClientRect().bottom}));
+    assert.deepEqual([r.rec, r.lado, r.menu, r.h1, r.filtros, r.pad], [true, 'contents', 'none', 1, 1, '0px']);
+    assert.ok(r.fim <= LIMITE_CABECALHO_390);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('teclado: menu, seletores, abas, ↻ e casa recebem foco (aberto e recolhido); Enter recolhe e expande', async () => {
+    const {page, ctx, erros} = await abre('normal', {largura: 1440, altura: 900});
+    const percorre = async () => {
+      // começa do início da página (o ponto de partida do Tab fica no body)
+      await page.evaluate(() => { document.body.tabIndex = -1; document.body.focus(); document.body.removeAttribute('tabindex'); });
+      const vistos = [];
+      for(let i = 0; i < 40; i++){
+        await page.keyboard.press('Tab');
+        const a = await page.evaluate(() => { const el = document.activeElement;
+          return el ? (el.id || (el.classList.contains('tab') ? 'tab:' + el.dataset.g : el.tagName)) : ''; });
+        if(vistos.includes(a)) break;
+        vistos.push(a);
+        if(a === 'q') break;           // chegou à busca do conteúdo
+      }
+      return vistos;
+    };
+    let v = await percorre();
+    for(const id of ['ladoMenu', 'btnRecarga', 'btnCasa', 'fsv', 'frota', 'tab:VOLUME', 'tab:ICS_GC', 'tab:NOVOS_NEG'])
+      assert.ok(v.includes(id), `${id} no Tab: ${v}`);
+    // foco visível no painel escuro
+    await page.focus('.tab[data-g="VOLUME"]');
+    await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+    const contorno = await page.evaluate(() => { const cs = getComputedStyle(document.activeElement);
+      return [document.activeElement.dataset.g, cs.outlineStyle, cs.outlineWidth]; });
+    assert.deepEqual(contorno, ['VOLUME', 'solid', '2px']);
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => aba), 'VOLUME', 'Enter na aba');
+    // Enter no menu recolhe; recolhido, o Tab ainda chega às abas, ao ↻ e à casa; Enter de novo expande
+    await page.focus('#ladoMenu');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => document.body.classList.contains('recolhido')), true);
+    v = await percorre();
+    for(const id of ['ladoMenu', 'btnRecarga', 'btnCasa', 'tab:VOLUME', 'tab:ICS_GC'])
+      assert.ok(v.includes(id), `recolhido: ${id} no Tab: ${v}`);
+    assert.ok(!v.includes('fsv') && !v.includes('frota'), 'recolhido: seletores fora do Tab (ocultos)');
+    await page.focus('#ladoMenu');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => document.body.classList.contains('recolhido')), false);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [390, 1440]){
+    test(`${largura} px: escopo no ${largura < 1000 ? 'topo' : 'painel lateral'} igual ao filtro em cada perfil (com o grupo no Total); só os seletores do perfil`, async () => {
+      for(const c of PERFIS_LAYOUT){
+        const {page, ctx, erros} = await abre(c.dados, {largura, altura: 900, entrar: c.entrar});
+        await page.evaluate(() => document.fonts.ready);
+        const r = await estadoLayout(page);
+        assert.equal(r.lado, largura >= 1000);
+        assert.deepEqual(r.sels, c.sels, `${c.nome}: seletores`);
+        assert.match(r.escopo, c.esc, c.nome);
+        assert.deepEqual(r.faltam, [], `${c.nome}: escopo "${r.escopo}" diferente do filtro`);
+        // no celular o escopo da Diretoria sai do topo (o seletor logo abaixo mostra); nos perfis travados ele fica
+        assert.equal(r.escVisivel, largura >= 1000 || c.nome !== 'Diretoria', `${c.nome}: escopo visível`);
+        assert.equal(r.rolagem, false, `${c.nome}: rolagem lateral`);
+        if(largura < 1000) assert.ok(r.fim <= LIMITE_CABECALHO_390, `${c.nome}: topo ${r.fim} px > ${LIMITE_CABECALHO_390}`);
+        assert.equal(await page.isVisible('.rsBox'), c.nome !== 'Rota', `${c.nome}: Resumo`);
+        // mexendo no filtro, o escopo acompanha
+        if(c.sels.includes('fgc')){
+          const v = await page.$$eval('#fgc option', os => os.filter(o => !o.disabled).map(o => o.value).filter(Boolean)[1]);
+          await page.selectOption('#fgc', v);
+          const s = await estadoLayout(page);
+          assert.deepEqual(s.faltam, [], `${c.nome} -> ${v}: escopo "${s.escopo}"`);
+          assert.match(s.escopo, new RegExp(`GC\\.${v}\\b`));
+        }
+        if(c.sels.includes('fsv')){
+          const v = await page.$$eval('#fsv option', os => os.map(o => o.value).filter(Boolean)[0]);
+          await page.selectOption('#fsv', v);
+          assert.deepEqual((await estadoLayout(page)).faltam, [], `${c.nome} -> ${v}`);
+        }
+        if(c.sels.includes('frota')){
+          const v = await page.$$eval('#frota option', os => os.map(o => o.value).filter(Boolean)[0]);
+          await page.selectOption('#frota', v);
+          const s = await estadoLayout(page);
+          assert.deepEqual(s.faltam, [], `${c.nome} -> rota ${v}`);
+          if(largura < 1000) assert.ok(s.fim <= LIMITE_CABECALHO_390, `${c.nome} rota ${v}: topo ${s.fim} px`);
+        }
+        assert.deepEqual(erros, []);
+        await ctx.close();
+      }
+    });
+  }
+
+  for(const largura of [360, 390]){
+    test(`${largura} px: topo compacto (título + ↻ e casa; mês + "● dd/mm hh:mm"; "Dia útil x/n (p%) · ritmo hoje h%")`, async () => {
+      const {page, ctx, erros} = await abre('normal', {largura, altura: 844});
+      await page.evaluate(() => document.fonts.ready);
+      await medidas(page);
+      const r = await page.evaluate(() => {
+        const b = s => document.querySelector(s).getBoundingClientRect();
+        const vis = s => [...document.querySelectorAll(s)].filter(e => e.getClientRects().length > 0);
+        const tag = document.getElementById('tagUpdEl');
+        return {marca: vis('.topo .marca').length, h1: b('.topo h1'), btns: b('.topoBtns'), linhasH1: Math.round(b('.topo h1').height / 32),
+                ritmo: document.getElementById('ritmo').innerText.trim(), linhasRitmo: Math.round(b('#ritmo').height / parseFloat(getComputedStyle(document.getElementById('ritmo')).lineHeight)),
+                esperado: `Dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS} (${P.PACE_ONTEM_PCT}%) · ritmo hoje ${Math.round(P.DIA_HOJE / P.TOTAL_DIAS_UTEIS * 100)}%`,
+                tag: tag ? vis('#tagUpdEl > span:not(.pt)').map(e => e.textContent) : null, title: tag && tag.title,
+                upd: ONLINE.updatedAt, texto: (statusAtualizado() || {}).texto, mes: P.MES_LABEL,
+                sub: document.getElementById('sub').innerText.replace(/\s+/g, ' ').trim(),
+                ladoItens: vis('.ladoMenu, .ladoSec, .ladoCred, .tab .ico, .rotBtn').length,
+                est: __vis.estouros('.topo, .barra')};
+      });
+      assert.equal(r.marca, 0, 'sem a linha da marca');
+      assert.equal(r.linhasH1, 1);
+      assert.ok(Math.abs(r.btns.top - r.h1.top) < 1 && r.btns.left >= r.h1.left, '↻ e casa na linha do título');
+      assert.equal(r.ritmo, r.esperado);
+      assert.equal(r.linhasRitmo, 1);
+      const [d, h] = r.upd.split('T');
+      assert.deepEqual(r.tag, [`${d.slice(8, 10)}/${d.slice(5, 7)} ${h.slice(0, 5)}`], 'etiqueta curta');
+      assert.equal(r.title, r.texto, 'texto inteiro no title');
+      assert.ok(r.sub.startsWith(r.mes), r.sub);
+      assert.equal(r.ladoItens, 0, 'itens só do painel lateral ocultos');
+      assert.deepEqual(r.est, []);
+      assert.ok(await semRolagemLateral(page));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  for(const largura of [390, 1440]){
+    test(`${largura} px: ↻ atualiza mantendo o acesso e o painel; casa volta para a entrada; faixa de versão nova visível (os dois fundos)`, async () => {
+      for(const tema of ['preta', 'branca']){
+        const {page, ctx, erros} = await abreVersao({srv: {versao: 'bbbbbbbbbbbb'}, largura, altura: 844,
+          entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, armazenado: {drotas_entrada: tema, drotas_lado: 'recolhido'}});
+        await page.waitForFunction(() => !document.getElementById('aviso').hidden);
+        assert.ok((await faixaLivre(page)).ok, `${tema}: faixa visível e sem cobrir (recolhido)`);
+        assert.equal(await page.evaluate(() => document.getElementById('aviso').classList.contains('branca')), tema === 'branca');
+        if(largura >= 1000){
+          await page.click('#ladoMenu');                // aberto: a faixa continua livre
+          assert.ok((await faixaLivre(page)).ok, `${tema}: faixa visível e sem cobrir (aberto)`);
+        }
+        const antes = await page.evaluate(() => ({s: localStorage.getItem('drotas_sessao'), l: localStorage.getItem('drotas_lado'),
+          sel: JSON.stringify(sel)}));
+        await page.evaluate(() => { window.__marca = 1; });
+        const carregou = page.waitForEvent('load');
+        await page.click('#btnRecarga');
+        await carregou;
+        await esperaCarga(page);
+        const depois = await page.evaluate(() => ({s: localStorage.getItem('drotas_sessao'), l: localStorage.getItem('drotas_lado'),
+          sel: JSON.stringify(sel), marca: window.__marca, entrada: document.getElementById('entrada').hidden,
+          perfil: ACESSO && ACESSO.perfil}));
+        assert.equal(depois.marca, undefined, 'recarregou');
+        assert.deepEqual([depois.s, depois.l, depois.sel, depois.entrada, depois.perfil], [antes.s, antes.l, antes.sel, true, 'sv'],
+          `${tema}: mesmo acesso e mesmo painel`);
+        await page.click('#btnCasa');
+        assert.equal(await page.isVisible('#entrada'), true, 'casa: entrada');
+        assert.equal(await page.evaluate(() => localStorage.getItem('drotas_sessao')), null, 'casa apaga o acesso');
+        assert.equal(await page.evaluate(() => localStorage.getItem('drotas_lado')), antes.l, 'casa não mexe no painel lateral');
+        assert.deepEqual(semErrosDeRede(erros), []);
         await ctx.close();
       }
     });
