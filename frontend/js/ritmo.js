@@ -38,10 +38,12 @@ function montaRitmo(P, escopo){
   const rotasSv = (gc, sv) => Object.keys((D[gc] || {})[sv] || {}).filter(ehNormal).sort(N.ordemNatural);
   // supervisões com coluna/página: alguma rota normal, fora as ocultas; em ordem crescente do código
   const svsGc = gc => Object.keys(D[gc] || {}).filter(s => rotasSv(gc, s).length && !ehOculta(s)).sort(N.ordemNatural);
-  const nomeSv = sv => { const n = (P.NOME_SUPERVISOR || {})[sv]; if(!n) return '';
-    return /SEM VENDEDOR/i.test(n) ? 'sem vendedor' : N.titulo(n.split(/\s+/)[0]); };
+  // nome curto do supervisor ou do consultor: o primeiro nome capitalizado; "ROTA SEM VENDEDOR" (qualquer caixa) ou
+  // vazio = "Sem vendedor"
+  const primeiroNome = s => { const n = String(s||'').trim();
+    return !n || /SEM\s+VENDEDOR/i.test(n) ? 'Sem vendedor' : N.titulo(n.split(/\s+/)[0]); };
+  const nomeSv = sv => primeiroNome((P.NOME_SUPERVISOR || {})[sv]);
   const nomeGc = gc => (P.GC_NOMES || {})[gc] || '';
-  const primeiroNome = s => N.titulo(String(s||'').trim().split(/\s+/)[0] || '');
 
   // subtítulo: dados reais até o último dia útil fechado; as faltas miram o dia útil de hoje
   const pctDe = d => T ? Math.round(d / T * 100) : 0;
@@ -53,7 +55,8 @@ function montaRitmo(P, escopo){
   const subtitulo = nivel => [nivel, String(P.MES_LABEL || '').toLowerCase(), ate, mira].join(' · ');
 
   /* células: volume pela tendência (verde >= 100) com a meta do dia; cobertura pelo ritmo de ontem (onPace) com a meta do
-     dia ou o que falta (a conta da caixa dos cards ICS) e "Meta batida!" com Real >= Meta; Venda Zero pelo pendente do mês (gap) */
+     dia ou o que falta (a conta da caixa dos cards ICS) e "Meta batida!" com Real >= Meta; Venda Zero pelo pendente do mês
+     (gap: "N" grande + "reverter", sem %) */
   function celVol(b){
     if(!b || b.unavailable || !b.meta || b.pctTendencia==null) return null;
     const ok = !!b.onPace, md = b.metaDia;
@@ -62,9 +65,10 @@ function montaRitmo(P, escopo){
   }
   function celCob(k, b){
     if(!b || b.unavailable) return null;
+    // Venda Zero: o valor principal é o pendente do mês (gap), sem percentual; "reverter" embaixo, menor
     if(k==='VENDAZERO'){
       const ok = b.gap === 0;
-      return {ok, seta: ok ? '▲' : '▼', valor: b.pct==null ? '—' : b.pct + '%', sub: 'reverter ' + fmt0(b.gap), falta: !ok};
+      return {ok, seta: ok ? '▲' : '▼', valor: fmt0(b.gap), sub: 'reverter', falta: false};
     }
     if(!b.meta || b.pct==null) return null;
     // meta do mês alcançada (Real >= Meta, como o "Meta batida!" da caixa dos cards ICS): "Meta batida!"

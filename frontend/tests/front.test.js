@@ -3637,6 +3637,10 @@ const COB_RITMO = ['CCTM 2L PET', 'KS TT', 'REFRI SABORES ZERO', 'POWERADE', 'KA
 const VOL_RITMO = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MINERAL', 'VOL DEST+ART+CND'];
 // páginas do escopo, só os códigos (título sem o "Painel de Ritmo — " e sem o nome)
 const codigos = m => m.paginas.map(pg => pg.titulo.replace('Painel de Ritmo — ', '').split(' · ')[0]);
+// ritmo.js antes dos ajustes de Venda Zero e "Sem vendedor" (merge do PR #19), para conferir que o resto não mudou
+const REF_RITMO = '73a215e';
+const RITMO_ANTES = (() => { try { return execSync(`git show ${REF_RITMO}:frontend/js/ritmo.js`, {cwd: RAIZ,
+  stdio: ['ignore', 'pipe', 'ignore']}).toString(); } catch(e) { return null; } })();
 // esperado no sintético: GC + SV.X.1 + SV.X.2; AT com a SV.AT.3 (sem vendedor, rotas normais AT31/AT32); fora: SV.G1.5,
 // SV.G2.5, SV.IT.3, SV.MO.3 (só Neutraliza), SV.AN.4 e SV.RV.3 (Neutraliza + virtuais), SV.G3.3 (oculta), SV.SL.EV ('-EV')
 // escopo do filtro atual (ou o dado) -> nome e códigos das páginas, no navegador
@@ -3725,6 +3729,75 @@ describe('Parte R — Painel de Ritmo: montaRitmo (função pura, sem navegador)
     assert.equal(puxa(q, 'SV.G1.1'), 'Puxando a média pra baixo: Rota G111 — 2/10 no ritmo');
   });
 
+  test('"Puxando a média" pela QUANTIDADE no ritmo, não pela proporção: 7/8 aponta antes de 8/10 (rotas e supervisões)', () => {
+    // n itens com dado, os primeiros `ok` no ritmo (Real = Meta; Venda Zero zerada), os demais abaixo e o resto sem dado
+    const poe = (q, r, ok, n) => COB_RITMO.forEach((k, i) => {
+      const d = noRitmo(q, r).indicators;
+      if(i >= n){ d[k] = {unavailable: true}; return; }
+      const b = d[k] = {...d[k], meta: 10, unavailable: false};
+      b.real = k === 'VENDAZERO' ? (i < ok ? 0 : 20) : (i < ok ? 10 : 0);
+    });
+    // (a Venda Zero é o 10º item: sem dado em 7/8; abaixo do ritmo em 8/10)
+    const p = payloadRitmo();
+    poe(p, 'G112', 7, 8);          // 7/8 = 87,5%
+    poe(p, 'G111', 8, 10);         // 8/10 = 80%: proporção menor, mas mais itens no ritmo
+    const pg = monta(p, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0];
+    const cont = c => pg.colunas.find(x => x.codigo === 'Rota ' + c).contaCob;
+    assert.deepEqual([cont('G111'), cont('G112')], [{ok: 8, n: 10}, {ok: 7, n: 8}]);
+    assert.equal(pg.puxa, 'Puxando a média pra baixo: Rota G112 — 7/8 no ritmo');
+    // o mesmo entre supervisões, na página do GC: SV.G1.2 com 7/8 e SV.G1.1 com 8/10
+    const q = payloadRitmo();
+    for(const r of ['G111', 'G112']) poe(q, r, 8, 10);
+    for(const r of ['G121', 'G122']) poe(q, r, 7, 8);
+    const gc = monta(q, {tipo: 'gc', gcs: ['G1']}).paginas[0];
+    assert.deepEqual(gc.colunas.slice(1).map(c => [c.codigo, c.contaCob.ok, c.contaCob.n]), [['SV.G1.1', 8, 10], ['SV.G1.2', 7, 8]]);
+    assert.equal(gc.puxa, 'Puxando a média pra baixo: SV.G1.2 · Supervisor — 7/8 no ritmo');
+    // empate na quantidade (7/8 contra 7/10): o menor código, mesmo com a proporção pior no outro
+    const e = payloadRitmo();
+    poe(e, 'G111', 7, 8); poe(e, 'G112', 7, 10);
+    assert.equal(monta(e, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].puxa, 'Puxando a média pra baixo: Rota G111 — 7/8 no ritmo');
+  });
+
+  test('"Sem vendedor" no subtítulo da coluna e no título (maiúsculas, minúsculas, vazio); os demais nomes como antes', () => {
+    const p = payloadRitmo();
+    // sintético: SV.AT.3 = "ROTA SEM VENDEDOR"
+    assert.equal(p.NOME_SUPERVISOR['SV.AT.3'], 'ROTA SEM VENDEDOR');
+    const at = monta(p, {tipo: 'gc', gcs: ['AT']}).paginas;
+    assert.equal(at.find(pg => pg.sv === 'SV.AT.3').titulo, 'Painel de Ritmo — SV.AT.3 · Sem vendedor');
+    assert.deepEqual(at[0].colunas.find(c => c.codigo === 'SV.AT.3').nome, 'Sem vendedor');
+    p.NOME_SUPERVISOR['SV.G1.1'] = 'rota sem vendedor';
+    p.NOME_SUPERVISOR['SV.G1.2'] = '';
+    noRitmo(p, 'G111').consultor = 'ROTA SEM VENDEDOR';
+    noRitmo(p, 'G112').consultor = 'Rota Sem  Vendedor';
+    noRitmo(p, 'G121').consultor = '';
+    noRitmo(p, 'G122').consultor = 'JOSÉ CARLOS DA SILVA';
+    const m = monta(p, {tipo: 'gc', gcs: ['G1']}).paginas;
+    assert.deepEqual(m.map(pg => pg.titulo), ['Painel de Ritmo — GC.G1 · Goiânia 01', 'Painel de Ritmo — SV.G1.1 · Sem vendedor',
+      'Painel de Ritmo — SV.G1.2 · Sem vendedor']);
+    assert.deepEqual(m[0].colunas.map(c => c.nome), ['Goiânia 01', 'Sem vendedor', 'Sem vendedor']);
+    assert.deepEqual(m[1].colunas.map(c => [c.codigo, c.nome]), [['SV.G1.1', 'Sem vendedor'], ['Rota G111', 'Sem vendedor'],
+      ['Rota G112', 'Sem vendedor']]);
+    assert.deepEqual(m[2].colunas.map(c => [c.codigo, c.nome]), [['SV.G1.2', 'Sem vendedor'], ['Rota G121', 'Sem vendedor'],
+      ['Rota G122', 'José']]);
+    // supervisão sem entrada em NOME_SUPERVISOR: também "Sem vendedor"; "Puxando" de supervisão usa o mesmo nome
+    delete p.NOME_SUPERVISOR['SV.G1.1'];
+    const g = monta(p, {tipo: 'gc', gcs: ['G1']}).paginas;
+    assert.equal(g[1].titulo, 'Painel de Ritmo — SV.G1.1 · Sem vendedor');
+    assert.equal(g[0].puxa, 'Puxando a média pra baixo: SV.G1.1 · Sem vendedor — 2/10 no ritmo');
+  });
+
+  test('páginas de supervisão inalteradas em relação à versão anterior (fora Venda Zero e "Sem vendedor")', {skip: !RITMO_ANTES && `sem o commit ${REF_RITMO}`}, () => {
+    const vm = require('node:vm');
+    const ctx = vm.createContext({console});
+    vm.runInContext(['config.js', 'nucleo.js'].map(f => fs.readFileSync(path.join(FRONT, 'js', f), 'utf-8')).join('\n;\n') +
+      '\n;' + RITMO_ANTES + '\n;globalThis.montaRitmo = montaRitmo;', ctx);
+    const p = payloadRitmo();
+    const nv = t => t.replace(/sem vendedor/gi, 'Sem vendedor');
+    const limpa = m => m.paginas.map(pg => ({...pg, titulo: nv(pg.titulo), puxa: nv(pg.puxa), colunas: pg.colunas.map(c => ({...c, nome: undefined, cob: c.cob.slice(0, 9)}))}));
+    for(const escopo of [{tipo: 'band', nome: 'BAND'}, {tipo: 'sv', gcs: ['G2'], sv: 'SV.G2.1'}])
+      assert.deepEqual(JSON.parse(JSON.stringify(limpa(monta(p, escopo)))), JSON.parse(JSON.stringify(limpa(ctx.montaRitmo(p, escopo)))));
+  });
+
   test('células: x / 5 e x / 10, verde/vermelho (tendência >= 100; onPace), Meta dia, Meta batida! (volume e cobertura), faltam, reverter e "—"', () => {
     const p = payloadRitmo();
     const r = 'G111', d = noRitmo(p, r).indicators, base = d['VOL REFRIGERANTES'];
@@ -3755,12 +3828,26 @@ describe('Parte R — Painel de Ritmo: montaRitmo (função pura, sem navegador)
     Object.assign(d['KAPO'], {meta: 100, real: 130});
     assert.equal(monta(p, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].colunas.find(x => x.codigo === 'Rota ' + r).cob[4].sub, 'Meta batida!');
     assert.equal(cob('KS TT'), null, 'sem meta: "—"');
-    assert.deepEqual(cob('VENDAZERO'), {ok: false, seta: '▼', valor: '167%', sub: 'reverter 2', falta: true});
+    // Venda Zero: "reverter N" com N (o gap) como valor principal, sem percentual; ▼ vermelho com N > 0
+    assert.deepEqual(cob('VENDAZERO'), {ok: false, seta: '▼', valor: '2', sub: 'reverter', falta: false});
     assert.equal(c.contaCob.n, 9);
     // Venda Zero zerada: verde
     Object.assign(d['VENDAZERO'], {meta: 3, real: 3});
     const vz = monta(p, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].colunas.find(x => x.codigo === 'Rota ' + r).cob[9];
-    assert.deepEqual(vz, {ok: true, seta: '▲', valor: '100%', sub: 'reverter 0', falta: false});
+    assert.deepEqual(vz, {ok: true, seta: '▲', valor: '0', sub: 'reverter', falta: false});
+    // supervisão e GC: o gap da mesma agregação dos cards (a Neutraliza não tem Venda Zero); nunca percentual
+    Object.assign(d['VENDAZERO'], {meta: 3, real: 4300});
+    const pgs = monta(p, {tipo: 'gc', gcs: ['G1']}).paginas;
+    for(const pg of pgs) for(const col of pg.colunas){
+      const x = col.cob[9];
+      assert.ok(x && !/%/.test(x.valor) && x.sub === 'reverter' && /^\d{1,3}(\.\d{3})*$/.test(x.valor), `${pg.titulo} ${col.codigo}: ${JSON.stringify(x)}`);
+      assert.equal(x.seta, x.ok ? '▲' : '▼');
+      assert.equal(x.ok, x.valor === '0');
+    }
+    const g = pgs[0].colunas.find(x => x.codigo === 'SV.G1.1').cob[9];
+    assert.deepEqual([g.ok, g.seta], [false, '▼']);
+    const vz2 = noRitmo(p, 'G112').indicators.VENDAZERO;
+    assert.equal(g.valor, Math.ceil(4300 + vz2.real - 3 - vz2.meta).toLocaleString('pt-BR'));
     // volume sem meta no escopo: "—"
     const q = payloadRitmo();
     assert.equal(monta(q, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].colunas[0].vol[1], null, 'Cervejas sem meta');
@@ -3794,7 +3881,7 @@ function montaRitmo9(p){
   const copia = o => JSON.parse(JSON.stringify(o));
   const g1 = p.DATA.G1['SV.G1.1'];
   for(let i = 3; i <= 8; i++){
-    const d = copia(g1.G111); d.consultor = `MAXIMILIANO ALCÂNTARA ${i}`;
+    const d = copia(g1.G111); d.consultor = i === 8 ? 'ROTA SEM VENDEDOR' : `MAXIMILIANO ALCÂNTARA ${i}`;
     g1['G11' + i] = d;
   }
   const g2 = p.DATA.G2;
@@ -4011,7 +4098,11 @@ describe('Parte R — Painel de Ritmo no navegador', {skip: pular}, () => {
           cortados, fonteMin: Math.min(...fontes), texto: el.textContent, assinatura: el.textContent.includes(CONFIG.CREDITOS) || !!el.querySelector('.rs-rod'),
           verdes: el.querySelectorAll('td.rt-ok').length, vermelhos: el.querySelectorAll('td.rt-no').length,
           corPctNo: (el.querySelector('td.rt-no .rt-v') || {}).nodeType ? getComputedStyle(el.querySelector('td.rt-no .rt-v')).color : '',
-          corMeta: getComputedStyle(el.querySelector('td .rt-s:not(.rt-falta)')).color};
+          corMeta: getComputedStyle(el.querySelector('td .rt-s:not(.rt-falta)')).color,
+          // linha da Venda Zero: "N" + "reverter", sem percentual; ▲ verde com 0, ▼ vermelho com N > 0
+          vz: [...[...el.querySelectorAll('tbody tr')].find(tr => tr.firstElementChild.textContent === 'Venda Zero (KO)').children].slice(1)
+            .map(td => [td.className, td.querySelector('.rt-v').textContent, (td.querySelector('.rt-s') || {}).textContent,
+                        getComputedStyle(td.querySelector('.rt-v')).color])};
         palco.remove();
         return out;
       }, [escopo, alvo]);
@@ -4026,9 +4117,15 @@ describe('Parte R — Painel de Ritmo no navegador', {skip: pular}, () => {
       assert.ok(r.verdes > 0 && r.vermelhos > 0, onde);
       assert.equal(r.corPctNo, 'rgb(198, 40, 40)', `${onde}: % abaixo em vermelho`);
       assert.equal(r.corMeta, 'rgb(94, 94, 101)', `${onde}: meta sem cor de alerta`);
+      assert.equal(r.vz.length, ncols, onde);
+      for(const [cls, v, sub, cor] of r.vz){
+        assert.ok(!v.includes('%') && sub === 'reverter', `${onde}: Venda Zero ${v} ${sub}`);
+        assert.ok(cls === 'rt-ok' ? /^▲0$/.test(v) && cor === 'rgb(20, 107, 79)' : /^▼[\d.]+$/.test(v) && cor === 'rgb(198, 40, 40)', `${onde}: ${cls} ${v} ${cor}`);
+      }
       for(const t of ['VOLUME — TENDÊNCIA DO MÊS', 'NA TENDÊNCIA', 'COBERTURAS — ICS GC', 'NO RITMO', 'COMERCIAL BANDEIRANTES',
                       'Refrigerantes', 'Dest+Art+Cnd', 'Refri Sab. Zero', 'Cerv. 600ml Ret.', 'Venda Zero (KO)'])
         assert.ok(r.texto.includes(t), `${onde}: ${t}`);
+      if(alvo === 'SV.G1.1') assert.ok(r.texto.includes('Sem vendedor'), `${onde}: rota sem vendedor`);
       if(ncols === 9) assert.ok(/Meta dia 1\.234\.567/.test(r.texto) && /5 \/ 5/.test(r.texto), `${onde}: números grandes e x / 5`);
     }
     assert.deepEqual(erros, []);
