@@ -266,7 +266,9 @@ Testes do front: `node --test frontend/tests/front.test.js` (Chromium headless c
 sintético gerado pelo próprio back-end em `frontend/tests/sintetico.py`; a virada diária é testada com o relógio
 simulado do Playwright, com o navegador em UTC e em America/Sao_Paulo). A Parte M confere o visual em 1280 e
 390 px: Inter carregada, sem rolagem lateral, nenhum texto cortado, alturas por tipo, cabeçalho do celular,
-regra do vermelho, contraste AA e Resumo/PDF sem estouro.
+regra do vermelho, contraste AA e Resumo/PDF sem estouro. A Parte N abre cada nível da cascata no front atual e no
+do commit `0a59eb4` (CSS e app.js de antes do ajuste visual, via `git show`; sem o histórico, é pulada) e compara o
+estilo computado elemento a elemento: só a família pode mudar.
 
 ### Visual (fonte, escala e cores)
 
@@ -283,20 +285,26 @@ regra do vermelho, contraste AA e Resumo/PDF sem estouro.
   | Nível | PC | Celular | Peso | Onde |
   |---|---|---|---|---|
   | `--fs-titulo` | 30 px | 24 px | 700 | cabeçalho, entrada, título do Resumo |
-  | `--fs-card` | 19 px | 18 px | 600 | título do card, da gaveta, da caixa de seleção |
-  | `--fs-ind` | 30 px | 28 px | 700 | o % dos cards e das linhas de grupo; números dos cards do topo |
-  | `--fs-valor` | 15 px | 14 px | 500 | Meta e Real, nomes de linhas e clientes, opções |
+  | `--fs-card` | 19 px | 18 px | 600 | título do card e da caixa de seleção |
+  | `--fs-ind` | 30 px | 28 px | 700 | o % dos cards; números dos cards do topo |
+  | `--fs-valor` | 15 px | 14 px | 500 | Meta e Real dos cards, opções |
   | `--fs-legenda` | 12,5 px | 12 px | 400 | legendas, hora de atualização, seletores e abas |
 
-  O % de cards e linhas parte do `--fs-ind` e só diminui se não couber (`data-fit=""` + `encaixa()`). As tabelas do
+  O % dos cards parte do `--fs-ind` e só diminui se não couber (`data-fit=""` + `encaixa()`). As tabelas do
   Resumo mantêm os tamanhos próprios das caixas (`.rs-k`), que se ajustam ao número de colunas (16 gerências na
   Diretoria, PDF). Alturas mínimas por tipo: `--h-card-vol`, `--h-card-cob` (cobertura e Todos a Bordo), `--h-kpi`,
-  `--h-linha` (linha de grupo), `--h-cliente`; cards da mesma linha da grade ficam com a mesma altura.
-  O indicador de ritmo (caixa Online) tem tamanho, raio e peso fixos (`--ritmo-*`) nos cards e nas linhas.
+  cards da mesma linha da grade ficam com a mesma altura. O indicador de ritmo (caixa Online) dos cards tem tamanho,
+  raio e peso fixos (`--ritmo-*`).
+- **Cascata (gaveta que abre no card)**: mantém a aparência de antes do ajuste visual (commit `0a59eb4`) em todos os
+  níveis (gerências, supervisões, rotas, clientes, Visitas de hoje, Sem compra, Venda Zero): tamanhos, pesos,
+  espaçamentos, colunas, alturas, bordas e cores de antes, e os cinzas antigos (`--cinza`, `--cinza-escuro`
+  redefinidos em `.drw`). A única diferença é a fonte: Inter, herdada do body (o % da linha de grupo era serifado).
+  A escala tipográfica, as alturas mínimas e a regra do vermelho NÃO valem dentro dela. Em 390 px o nome do cliente
+  na lista de volume (`.cCli .nm`, coluna estreita) corta com reticências, como antes.
 - **Cores**: o fundo rosa (abaixo do ritmo/tendência) e o verde claro (no ritmo) dos cards são premissa. O **vermelho**
   fica só para o % abaixo, o déficit ("Diferença" negativa e "faltam", classe `acao falta`) e os alertas ("puxa a
   média", avisos e erros). Meta, Real, rótulos e textos de apoio ("abaixo da tendência", "oportunidades do dia",
-  "meta do dia", legendas) usam `--txt`/`--txt-apoio`, com contraste AA (4,5:1) nos fundos claros e escuros. O verde
+  "meta do dia", legendas) usam `--txt`/`--txt-apoio` (fora da cascata), com contraste AA (4,5:1) nos fundos claros e escuros. O verde
   do ritmo não muda. Divisórias: espaço (gap) e, onde separa, linha de 1 px de baixa opacidade (`--linha-suave`).
 - **Cabeçalho no celular** (até 640 px): mesma informação, mais baixo (em 390 px, 213 px até o fim das abas, eram
   295 px): bloco de datas sem caixa em até 2 linhas, seletores e abas numa linha; a barra continua sticky.

@@ -2507,10 +2507,11 @@ const CABECALHO_390_ANTES = 295, LIMITE_CABECALHO_390 = Math.floor(CABECALHO_390
 const INSTALA_MEDIDAS = () => {
   if(window.__vis) return;
   const rolavel = el => /auto|scroll/.test(getComputedStyle(el).overflowX);
-  // textos que passam da própria caixa (corte ou estouro): scrollWidth > clientWidth, fora das áreas com rolagem própria
-  const estouros = raiz => [...(typeof raiz === 'string' ? document.querySelectorAll(raiz) : [raiz])].flatMap(r =>
+  // textos que passam da própria caixa (corte ou estouro): scrollWidth > clientWidth, fora das áreas com rolagem própria;
+  // reticencias = aceita as células que cortam com reticências por desenho (nomes da gaveta, como antes do ajuste visual)
+  const estouros = (raiz, reticencias) => [...(typeof raiz === 'string' ? document.querySelectorAll(raiz) : [raiz])].flatMap(r =>
     [r, ...r.querySelectorAll('*')]).filter(el => el.clientWidth > 0 && el.getClientRects().length && !rolavel(el) && !el.closest('.sr-only')
-      && el.scrollWidth > el.clientWidth + 1)
+      && !(reticencias && getComputedStyle(el).textOverflow === 'ellipsis') && el.scrollWidth > el.clientWidth + 1)
     .map(el => `${el.className || el.tagName}: ${el.textContent.trim().slice(0, 40)} (${el.scrollWidth} > ${el.clientWidth})`);
   const rgba = s => { const m = s.match(/[\d.]+/g).map(Number); return [m[0], m[1], m[2], m.length > 3 ? m[3] : 1]; };
   const mistura = (c, fundo) => [0, 1, 2].map(i => c[i] * c[3] + fundo[i] * (1 - c[3]));
@@ -2590,17 +2591,16 @@ describe('Parte M — visual', {skip: pular}, () => {
         for(const [k, hs] of Object.entries(porLinha)) assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `${aba} ${k}: ${hs}`);
         for(const c of alt.cards) if(c.tipo !== 'off') assert.ok(c.h >= (c.tipo === 'vol' ? alt.minVol : alt.minCob) - .5, `${aba} ${c.tipo} ${c.h}`);
         assert.ok(Math.max(...alt.kpi) - Math.min(...alt.kpi) <= 1 && Math.min(...alt.kpi) >= alt.minKpi - .5, `${aba} KPIs ${alt.kpi}`);
-        // cascata do 1º card até os clientes: linhas e listas sem texto cortado, linhas com a altura mínima
+        // cascata do 1º card até os clientes: linhas e listas sem texto cortado (a aparência é a de antes do ajuste
+        // visual, conferida na Parte N)
         const k = await page.$eval('#lista .ind[data-k]', el => el.dataset.k);
         await page.click(`#lista .ind[data-k="${k}"]`);
         for(let nivel = 0; nivel < 4; nivel++){
           await page.waitForTimeout(50);
-          const m = await page.evaluate(() => ({est: __vis.estouros('#drw'), min: parseFloat(getComputedStyle(document.documentElement)
-            .getPropertyValue('--h-linha')), linhas: [...document.querySelectorAll('#dCorpo .cLin:not(.off)')].map(el => el.offsetHeight),
+          const m = await page.evaluate(() => ({est: __vis.estouros('#drw', true),
             rola: document.getElementById('dCorpo').scrollWidth <= document.getElementById('dCorpo').clientWidth}));
           assert.deepEqual(m.est, [], `${aba} cascata nível ${nivel}`);
           assert.ok(m.rola, `${aba} cascata nível ${nivel}: rolagem lateral`);
-          assert.ok(m.linhas.every(h => h >= m.min - .5), `${aba} linhas ${m.linhas}`);
           if(!(await page.$('#dCorpo .cLin[data-i]'))) break;
           await page.click('#dCorpo .cLin[data-i]');
         }
@@ -2679,7 +2679,8 @@ describe('Parte M — visual', {skip: pular}, () => {
     await ctx.close();
   });
 
-  test('contraste AA (4.5:1) dos textos neutros: painel, gaveta, listas e entrada nos dois fundos', async () => {
+  // a gaveta (cascata e listas de clientes) fica fora: mantém os cinzas de antes do ajuste visual (Parte N)
+  test('contraste AA (4.5:1) dos textos neutros: painel, Resumo e entrada nos dois fundos', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, largura: 390, altura: 844});
     await medidas(page);
     const baixos = async (sels, onde) => {
@@ -2703,12 +2704,6 @@ describe('Parte M — visual', {skip: pular}, () => {
       await filtra(page, {aba});
       await baixos(['.ind .cl > div:not(.dif)', '.ind .acao:not(.falta)', '.ind .opo', '.ind .olab', '.ind.off .semdado', '.card .l',
         '.card .x', '.puxa .s', '.sub', '.ritmo', '.rodape', '.rodape .fonte', '.creditos', '.rsBox .rsLbl'], `painel ${aba}`);
-      await page.click('#lista .ind[data-k]');
-      await baixos(['.drwCab .s', '.cLin:not(.off) small', '.cLin .cEsq', '.cNota'], `cascata ${aba}`);
-      while(await page.$('#dCorpo .cLin[data-i]')) await page.click('#dCorpo .cLin[data-i]');
-      await baixos(aba === 'VOLUME' ? ['.cCab', '.cCli .sb', '.cCli > span:not(.neg):not(.pos)'] : ['.item .sb', '.item .bd', '.dchip'],
-        `clientes ${aba}`);
-      await page.keyboard.press('Escape');
     }
     await page.click('#btnResumo');
     await baixos(['.rs-sub', '.rs-bloco h3 small', '.rs-rod', '.rs-k:not(.rs-on) small'], 'Resumo');
@@ -2764,6 +2759,131 @@ describe('Parte M — visual', {skip: pular}, () => {
       }
       assert.deepEqual(erros, []);
       await ctx.close();
+    });
+  }
+});
+
+/* ---------- Parte N — cascata (gaveta) com a aparência de antes do ajuste visual, só com a Inter ----------
+   Abre o mesmo cenário no front atual e no do commit REF_CASCATA (CSS e app.js de antes do ajuste visual, servidos por
+   `troca`) e compara, elemento a elemento dentro da gaveta, o estilo computado. A única diferença aceita é a família
+   (Inter no atual). Sem o histórico do git (clone raso), os testes são pulados. */
+const REF_CASCATA = '0a59eb4';
+const FRONT_ANTIGO = (() => {
+  try {
+    const css = execSync(`git show ${REF_CASCATA}:frontend/css/app.css`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const js = execSync(`git show ${REF_CASCATA}:frontend/js/app.js`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return {'/css/app.css': () => css, '/js/app.js': () => js};
+  } catch(e) { return null; }
+})();
+const PROPS_CASCATA = ['display', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'grid-template-columns', 'column-gap',
+  'row-gap', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'margin-top', 'margin-right', 'margin-bottom',
+  'margin-left', 'border-top', 'border-right', 'border-bottom', 'border-left', 'border-radius', 'color', 'background-color',
+  'min-height', 'min-width', 'white-space', 'overflow-x', 'text-overflow', 'opacity', 'text-transform', 'text-decoration-line',
+  'text-align', 'font-variant-numeric'];
+// estilo de cada elemento da gaveta, na ordem do DOM: [caminho, {prop: valor}, família, cortado?]
+const ASSINA_GAVETA = props => [...document.querySelectorAll('#drw, #drw *')].map(el => {
+  const cs = getComputedStyle(el), nome = el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ?
+    '.' + el.className.trim().split(/\s+/).join('.') : '');
+  const v = {};
+  for(const p of props) v[p] = cs.getPropertyValue(p);
+  // cortado: passa da própria caixa, fora das áreas com rolagem própria (os chips de dia rolam de lado)
+  return [nome, v, cs.fontFamily, el.clientWidth > 0 && el.getClientRects().length > 0 && !/auto|scroll/.test(cs.overflowX)
+          && el.scrollWidth > el.clientWidth + 1,
+          el.textContent.trim().slice(0, 30)];
+});
+// colunas da linha de grupo que se sobrepõem (texto invadindo a vizinha)
+const INVASOES = () => [...document.querySelectorAll('#dCorpo .cLin')].flatMap(l => {
+  const f = [...l.children].map(c => c.getBoundingClientRect()).filter(r => r.width);
+  const out = [];
+  for(let i = 0; i < f.length; i++) for(let j = i + 1; j < f.length; j++){
+    const [a, b] = [f[i], f[j]];
+    if(a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) out.push(l.textContent.trim().slice(0, 40));
+  }
+  return out;
+});
+// mesmo px com tolerância de arredondamento (grid-template-columns e demais medidas)
+const mesmoValor = (a, b) => a === b || (() => {
+  const na = a.match(/-?[\d.]+/g), nb = b.match(/-?[\d.]+/g);
+  return !!na && !!nb && na.length === nb.length && a.replace(/-?[\d.]+/g, '#') === b.replace(/-?[\d.]+/g, '#') &&
+    na.every((x, i) => Math.abs(Number(x) - Number(nb[i])) <= 0.5);
+})();
+const CENARIOS_CASCATA = [
+  {nome: 'Gerência', dados: 'normal', entrar: 'gc', abas: {VOLUME: 2, ICS_GC: 9, NOVOS_NEG: 1}, topo: true},
+  {nome: 'Diretoria', dados: 'normal', entrar: 'dir', abas: {VOLUME: 1, ICS_GC: 1}},
+  {nome: 'grupo IT+MO', dados: 'grupo', entrar: {perfil: 'gc', gc: 'IT+MO'}, abas: {VOLUME: 1, ICS_GC: 1}},
+  {nome: 'Supervisão', dados: 'normal', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, abas: {VOLUME: 1, ICS_GC: 1}},
+  {nome: 'fechamento', dados: 'fech', entrar: 'gc', abas: {VOLUME: 1, ICS_GC: 1}},
+  {nome: 'Todos a Bordo', dados: 'inc', entrar: {perfil: 'gc', gc: 'IT+MO'}, abas: {INCENTIVO: 5}},
+];
+
+describe('Parte N — cascata como antes do ajuste visual, só com a Inter', {skip: pular || (!FRONT_ANTIGO && `sem o commit ${REF_CASCATA}`)}, () => {
+  for(const largura of [1280, 390]){
+    test(`${largura} px: todos os níveis da cascata com o estilo do ${REF_CASCATA} (só a família muda), sem texto cortado nem invadindo`, async () => {
+      const vistos = new Set(), cortes = new Set();
+      for(const c of CENARIOS_CASCATA){
+        for(const tema of ['preta', 'branca']){
+          if(tema === 'branca' && c.nome !== 'Gerência') continue;     // o fundo da entrada não muda a gaveta: um cenário basta
+          const armazenado = {drotas_entrada: tema};
+          const [novo, velho] = [await abre(c.dados, {largura, altura: 900, entrar: c.entrar, armazenado}),
+                                 await abre(c.dados, {largura, altura: 900, entrar: c.entrar, armazenado, troca: FRONT_ANTIGO})];
+          for(const {page} of [novo, velho]){
+            // mesma largura útil nas duas versões (a barra de rolagem da gaveta não depende da altura do texto) e sem animação
+            await page.addStyleTag({content: '#dCorpo{overflow-y:scroll!important} *{transition:none!important}'});
+            await page.evaluate(() => document.fonts.ready);
+          }
+          const confere = async onde => {
+            const [a, b] = await Promise.all([novo.page.evaluate(ASSINA_GAVETA, PROPS_CASCATA), velho.page.evaluate(ASSINA_GAVETA, PROPS_CASCATA)]);
+            assert.deepEqual(a.map(x => x[0]), b.map(x => x[0]), `${onde}: mesma marcação`);
+            a.forEach(([nome, v, fam, cortado, txt], i) => {
+              vistos.add(nome);
+              assert.match(fam, /^Inter,/, `${onde} ${nome}: família`);
+              for(const p of PROPS_CASCATA)
+                assert.ok(mesmoValor(v[p], b[i][1][p]), `${onde} ${nome} "${txt}": ${p} = ${v[p]}, antes ${b[i][1][p]}`);
+              if(cortado){
+                // só as células que já cortavam com reticências antes (nome numa coluna estreita), e cortadas também lá
+                assert.equal(v['text-overflow'], 'ellipsis', `${onde} ${nome} "${txt}": texto cortado`);
+                assert.ok(b[i][3], `${onde} ${nome} "${txt}": corta com a Inter e não cortava antes`);
+                cortes.add(`${nome} "${txt}"`);
+              }
+            });
+            assert.deepEqual(await novo.page.evaluate(INVASOES), [], `${onde}: coluna invadindo a vizinha`);
+          };
+          // percorre: card -> nível de cima -> ... -> clientes (e o chip "Todos" nas listas de cobertura)
+          const desce = async (abrir, onde) => {
+            for(const {page} of [novo, velho]) await abrir(page);
+            for(let nivel = 0; nivel < 5; nivel++){
+              for(const {page} of [novo, velho]) await page.waitForTimeout(30);
+              await confere(`${onde} nível ${nivel}`);
+              const prox = await novo.page.$('#dCorpo .cLin[data-i]');
+              if(!prox) break;
+              for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+            }
+            if(await novo.page.$('#dCorpo .dchip[data-d="Todos"]')){
+              for(const {page} of [novo, velho]) await page.click('#dCorpo .dchip[data-d="Todos"]');
+              await confere(`${onde} chip Todos`);
+            }
+            if(await novo.page.$('#cVolta')){
+              for(const {page} of [novo, velho]) await page.click('#cVolta');
+              await confere(`${onde} voltar`);
+            }
+            for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+          };
+          for(const [aba, n] of Object.entries(c.abas)){
+            for(const {page} of [novo, velho]) await filtra(page, {aba});
+            const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))).slice(0, n);
+            for(const k of ks) await desce(p => p.click(`#lista .ind[data-k="${k}"]`), `${c.nome} ${tema} ${aba} ${k}`);
+          }
+          if(c.topo) for(const id of ['cBase', 'cSem']) await desce(p => p.click('#' + id), `${c.nome} ${tema} ${id}`);
+          assert.deepEqual(novo.erros, []);
+          await novo.ctx.close(); await velho.ctx.close();
+        }
+      }
+      // os tipos de linha e elemento da cascata apareceram na conferência
+      for(const t of ['h2', 'div.s', 'button.fechar', 'button.cVolta', 'div.cLin.ok', 'div.cLin.no', 'div.cLin.off', 'span.cOn.ok',
+                      'span.cOn', 'span.cOn.nd', 'div.cNota', 'div.cCab', 'div.cCli', 'span.neg', 'span.pos', 'div.item', 'div.item.riscado',
+                      'span.tagOnline', 'button.dchip', 'button.dchip.on', 'div.chips', 'div.vazio', 'div.bd'])
+        assert.ok([...vistos].some(v => v === t || v.startsWith(t + '.')), `nenhum ${t} conferido`);
+      if(cortes.size) console.log(`# ${largura} px: células com reticências (como antes): ${[...cortes].join(' | ')}`);
     });
   }
 });

@@ -31,14 +31,14 @@
   --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   /* escala tipográfica (PC; o celular, até 640px, redefine abaixo) */
   --fs-titulo:30px;  --fw-titulo:700;      /* título principal (cabeçalho, entrada, Resumo) */
-  --fs-card:19px;    --fw-card:600;        /* título do cartão, da gaveta e da caixa */
-  --fs-ind:30px;     --fw-ind:700;         /* indicador principal (o %) de cards e linhas de grupo; KPIs do topo */
+  --fs-card:19px;    --fw-card:600;        /* título do cartão e da caixa (a gaveta não usa a escala) */
+  --fs-ind:30px;     --fw-ind:700;         /* indicador principal (o %) dos cards; KPIs do topo */
   --fs-valor:15px;   --fw-valor:500;       /* meta e realizado */
   --fs-legenda:12.5px; --fw-legenda:400;   /* legendas e hora de atualização */
   /* alturas mínimas por tipo de conteúdo (o card não muda de altura por texto curto) */
-  --h-card-vol:150px; --h-card-cob:150px; --h-kpi:124px; --h-linha:62px; --h-cliente:50px;
-  /* indicador de ritmo (caixa Online do card e da linha de grupo) */
-  --ritmo-raio:10px; --ritmo-peso:700; --ritmo-h:62px; --ritmo-w:84px; --ritmo-lin-w:64px; --ritmo-lin-h:28px;
+  --h-card-vol:150px; --h-card-cob:150px; --h-kpi:124px;
+  /* indicador de ritmo (caixa Online dos cards) */
+  --ritmo-raio:10px; --ritmo-peso:700; --ritmo-h:62px; --ritmo-w:84px;
   --largura:760px;
   --seguro-b:env(safe-area-inset-bottom,0px);
 }
@@ -281,30 +281,33 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .tab[hidden]{display:none}
 
 /* ---------- drawer ---------- */
+/* A cascata (gaveta) mantém a aparência de antes do ajuste visual (commit 0a59eb4), só com a Inter herdada do body:
+   tamanhos, pesos, espaçamentos, colunas e cores daqui não seguem a escala tipográfica nem os cinzas novos. */
 .back{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:none}
 .back.on{display:block}
 .drw{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:var(--largura);
   max-height:86vh;max-height:86dvh;background:var(--papel);z-index:61;
   border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .22s ease,visibility 0s linear .22s;
   display:flex;flex-direction:column;visibility:hidden}
+/* cinzas de antes do ajuste visual, só dentro da gaveta */
+.drw{--cinza:#8a8a8f;--cinza-escuro:#6c6c72}
 .drw.on{transform:translateY(0);visibility:visible;transition:transform .22s ease,visibility 0s}
 @media(prefers-reduced-motion:reduce){.drw{transition:none}}
 .drwCab{background:#fff;border-radius:16px 16px 0 0;color:var(--preto);
   padding:13px 15px;border-bottom:1px solid var(--linha);display:flex;
   justify-content:space-between;align-items:center;gap:10px}
-.drwCab h2{margin:0;font-size:var(--fs-card);font-weight:var(--fw-card);line-height:1.25}
-.drwCab .s{font-size:var(--fs-legenda);color:var(--txt-apoio);margin-top:2px}
+.drwCab h2{margin:0;font-size:16px;font-weight:700}
+.drwCab .s{font-size:12px;color:var(--cinza);margin-top:1px}
 .fechar{background:var(--papel);border:1px solid var(--linha);border-radius:8px;width:34px;height:34px;
   font-size:18px;line-height:1;cursor:pointer;flex:none;font-family:inherit}
 .corpo{overflow-y:auto;padding:12px 15px calc(28px + var(--seguro-b));-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .item{background:#fff;border:1px solid var(--linha);border-radius:9px;padding:9px 11px;margin-bottom:6px;
-  display:flex;justify-content:space-between;gap:10px;align-items:center;min-height:var(--h-cliente)}
-.item>div:first-child{min-width:0}
-.item .nm{font-size:var(--fs-valor);font-weight:600;overflow-wrap:anywhere}
-.item .sb{font-size:var(--fs-legenda);color:var(--txt-apoio);margin-top:1px}
-.item .bd{font-size:var(--fs-legenda);color:var(--txt-apoio);flex:none;text-align:right}
+  display:flex;justify-content:space-between;gap:10px;align-items:center}
+.item .nm{font-size:13.5px;font-weight:600}
+.item .sb{font-size:11.5px;color:var(--cinza);margin-top:1px}
+.item .bd{font-size:11px;color:var(--cinza);flex:none;text-align:right}
 .item.riscado{opacity:.72}
-.item.riscado .nm{text-decoration:line-through;color:var(--txt-apoio)}
+.item.riscado .nm{text-decoration:line-through;color:var(--cinza)}
 .tagOnline{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;text-decoration:none;
   color:var(--verdeE);background:var(--menta);border-radius:6px;padding:1px 6px;vertical-align:middle;
   text-transform:uppercase;letter-spacing:.02em}
@@ -320,49 +323,41 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   text-transform:uppercase;letter-spacing:.03em}
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:4px}
 .dchip{flex:none;padding:7px 12px;border-radius:999px;border:1px solid var(--linha);background:#fff;
-  font-size:var(--fs-legenda);cursor:pointer;font-family:inherit;color:var(--preto)}
+  font-size:12px;cursor:pointer;font-family:inherit;color:var(--preto)}
 .dchip.on{background:var(--preto);color:#fff;border-color:var(--preto)}
-.vazio{text-align:center;color:var(--txt-apoio);font-size:var(--fs-valor);padding:26px 10px}
+.vazio{text-align:center;color:var(--cinza);font-size:13px;padding:26px 10px}
 /* cascata: linhas de gerência / supervisão / rota (Meta e Real | Online e meta do dia | tendência) */
-.cVolta{font:inherit;font-size:var(--fs-legenda);font-weight:600;border:1px solid var(--linha);background:#fff;border-radius:8px;
+.cVolta{font:inherit;font-size:12.5px;font-weight:700;border:1px solid var(--linha);background:#fff;border-radius:8px;
   padding:7px 11px;cursor:pointer;margin-bottom:9px}
-.cLin{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) 104px;gap:12px;align-items:center;
-  background:#fff;border:1px solid var(--linha);border-left:4px solid var(--ruim);border-radius:9px;padding:9px 12px;
-  margin-bottom:6px;cursor:pointer;font-variant-numeric:tabular-nums;min-height:var(--h-linha)}
+.cLin{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) 64px;gap:8px;align-items:center;
+  background:#fff;border:1px solid var(--linha);border-left:4px solid var(--ruim);border-radius:9px;padding:9px 10px;
+  margin-bottom:6px;cursor:pointer;font-variant-numeric:tabular-nums}
 .cLin.ok{border-left-color:var(--verde)}
 .cLin.off{cursor:default;opacity:.55;border-left-color:var(--linha-forte);grid-template-columns:minmax(0,1.3fr) minmax(0,2.2fr)}
-.cLin .cNome b{display:block;font-size:var(--fs-valor);font-weight:600;overflow-wrap:anywhere;line-height:1.25}
-.cLin small{display:block;font-size:var(--fs-legenda);color:var(--txt-apoio);line-height:1.25}
-.cLin .cEsq{display:flex;flex-direction:column;font-size:var(--fs-valor);font-weight:var(--fw-valor);color:var(--txt);
-  line-height:1.45;white-space:nowrap}
+.cLin .cNome b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cLin small{display:block;font-size:11px;color:var(--cinza);line-height:1.25}
+.cLin .cEsq{display:flex;flex-direction:column;font-size:12px;line-height:1.45;white-space:nowrap}
 .cLin .cMeio{text-align:center}
-.cOn{display:inline-flex;align-items:center;justify-content:center;min-width:var(--ritmo-lin-w);min-height:var(--ritmo-lin-h);
-  padding:3px 8px;border-radius:var(--ritmo-raio);font-weight:var(--ritmo-peso);font-size:var(--fs-valor);color:#fff;
-  background:var(--ruim);margin-bottom:2px}
-.cOn.ok{background:var(--verde)} .cOn.nd{background:var(--linha-forte);color:#3f3f45}
+.cOn{display:inline-block;min-width:54px;padding:3px 7px;border-radius:7px;font-weight:800;font-size:13.5px;color:#fff;background:var(--ruim)}
+.cOn.ok{background:var(--verde)} .cOn.nd{background:var(--linha-forte);color:var(--cinza-escuro)}
 .cLin .cDir{text-align:right}
-.cLin .cDir b{display:block;font-size:var(--fs-ind);font-weight:var(--fw-ind);letter-spacing:-.02em;line-height:1.05;white-space:nowrap}
+.cLin .cDir b{font-size:19px}
 .cLin.ok .cDir b{color:var(--verdeE)} .cLin.no .cDir b{color:var(--ruim)}
-.cLin .cInd{font-size:var(--fs-legenda);color:var(--txt-apoio)}
+.cLin .cInd{font-size:12px;color:var(--cinza)}
 /* nota das rotas virtuais no fim das supervisões: só os números, discreta */
-.cNota{font-size:var(--fs-legenda);color:var(--txt-apoio);padding:2px 10px 0;font-variant-numeric:tabular-nums}
+.cNota{font-size:11px;color:var(--cinza);padding:2px 10px 0;font-variant-numeric:tabular-nums}
 /* clientes de volume: Meta, Real, Dif. Abs, % */
-.cCab,.cCli{display:grid;grid-template-columns:minmax(0,1fr) 80px 80px 84px 56px;gap:8px;align-items:center;font-variant-numeric:tabular-nums}
-.cCab{font-size:var(--fs-legenda);font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--txt-apoio);padding:0 10px 5px}
+.cCab,.cCli{display:grid;grid-template-columns:minmax(0,1fr) 64px 64px 70px 44px;gap:6px;align-items:center;font-variant-numeric:tabular-nums}
+.cCab{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--cinza);padding:0 10px 5px}
 .cCab span:not(:first-child),.cCli>span{text-align:right}
-.cCli{background:#fff;border:1px solid var(--linha);border-radius:9px;padding:8px 10px;margin-bottom:5px;font-size:var(--fs-valor);
-  font-weight:var(--fw-valor);color:var(--txt);min-height:var(--h-cliente)}
-.cCli>span{white-space:nowrap}
-.cCli .nm{font-size:var(--fs-valor);font-weight:600;overflow-wrap:anywhere;line-height:1.25}
-.cCli .sb{font-size:var(--fs-legenda);font-weight:var(--fw-legenda);color:var(--txt-apoio)}
+.cCli{background:#fff;border:1px solid var(--linha);border-radius:9px;padding:8px 10px;margin-bottom:5px;font-size:12.5px}
+.cCli .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cCli .sb{font-size:11px;color:var(--cinza)}
 .cCli .pos{color:var(--verde);font-weight:700} .cCli .neg{color:var(--vermelho2);font-weight:700}
-@media (max-width:640px){
-  /* linha de grupo: nome em cima; Meta e Real | Online | % embaixo */
-  .cLin{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 88px;row-gap:6px;column-gap:10px}
+@media (max-width:480px){
+  .cLin{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 58px;row-gap:4px}
   .cLin .cNome{grid-column:1/-1}
-  /* linha de cliente: nome em cima; Meta, Real, Dif. Abs e % embaixo, cada um com a largura que precisa */
-  .cCab,.cCli{grid-template-columns:repeat(3,minmax(0,1fr)) 52px;row-gap:3px}
-  .cCab>:first-child,.cCli>div:first-child{grid-column:1/-1}
+  .cCab,.cCli{grid-template-columns:minmax(0,1fr) 54px 54px 60px 38px;font-size:11.5px}
 }
 .rodape{text-align:center;font-size:var(--fs-legenda);color:var(--txt-apoio);padding:20px 10px 0;line-height:1.6}
 .rodape .fonte{color:var(--cinza-fraco)}
