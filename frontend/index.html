@@ -2,6 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<!-- versão do código: "dev" aqui; o deploy-pages.yml troca pelo hash de frontend/ (sem data/) e grava versao.json -->
+<meta name="versao" content="dev">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Desempenho de Rotas · BAND</title>
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -52,11 +54,29 @@
   </div>
 </div>
 
-<header class="topo">
+<!-- versão nova do código: faixa acima do cabeçalho (só com o painel aberto; também mostra "Sem conexão") -->
+<div id="aviso" class="aviso" role="status" hidden>
   <div class="hd">
+    <span id="avisoTxt" class="avisoTxt">Nova versão disponível</span>
+    <span class="avisoBtns">
+      <button id="avisoAtualizar" class="avisoPri" type="button">Atualizar</button>
+      <button id="avisoDepois" type="button">Depois</button>
+    </span>
+  </div>
+</div>
+
+<header class="topo">
+  <div class="topoBtns">
+    <button id="btnRecarga" class="recarga" type="button" aria-label="Atualizar o painel" title="Atualizar o painel">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10a6 6 0 1 1-1.76-4.24" fill="none" stroke="#fff"
+        stroke-width="2" stroke-linecap="round"/><path d="M16.5 2.5v4.5H12" fill="none" stroke="#fff" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
     <button id="btnCasa" class="casa" type="button" aria-label="Voltar para a entrada" title="Entrada">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9.5 10 3.5l7 6V17h-4.5v-4.5h-5V17H3z" fill="#fff"/></svg>
     </button>
+  </div>
+  <div class="hd">
     <div class="marca"><img class="helm" src="assets/helm.png" alt="" width="11" height="19">Comercial Bandeirantes</div>
     <h1>Desempenho de Rotas</h1>
     <div class="sub" id="sub"></div>

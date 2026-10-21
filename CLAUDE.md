@@ -44,6 +44,19 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   600ml iguais): BARRACUDA AN AP AT G1 G2 G3 PA DI GU; FULL RV SL PO IT MO UR RI; única supervisão diferente da
   gerência: SV.G2.1 (FULL); sem empates; sem as T<nn>, nada muda.
 - Front local: `cd frontend && python -m http.server 8765`.
+- **Versão do código e aviso de versão nova** (README, "Versão do código e aviso de versão nova"): versão = hash de 12
+  caracteres de `frontend/` sem `frontend/data/**` (`.github/scripts/versao-front.sh`; nunca o SHA do commit: com só os
+  dados mudando, a versão não muda e o aviso não aparece). O `deploy-pages.yml` (push e `workflow_call`, mesmo passo)
+  roda `versao-front.sh --gravar frontend` antes do upload: grava `versao.json` e troca `<meta name="versao"
+  content="dev">` do index.html (nada commitado; local e testes = "dev" = aviso desligado, sem pedir o versao.json).
+  Front (`app.js`, seção "versão nova do código"; `aoVoltar` em main.js): `confereVersao` (no-store + `?t=`; falha/404
+  = silêncio) em todo `puxaOnline`, no `visibilitychange` visível e no `pageshow`; ao voltar também o online já e o
+  payload se `P._versao` tiver mais de `PAYLOAD_POLL_MS` (uma vez só se os dois eventos vierem juntos). Faixa `#aviso`
+  acima do `.topo` (no fluxo; escondida com `body.na-entrada`; `.branca` pelo fundo da entrada): "Depois" adia aquela
+  versão até a 1ª verificação após `CONFIG.VERSAO_ADIA_MS` (30 min). `#btnRecarga` (↻, "Atualizar o painel", em
+  `.topoBtns` com a casa, sempre visível) e "Atualizar" = `atualizaPainel`: fetch `cache:'reload'` da própria URL, CSS,
+  JS, manifest, versao.json e os dois JSONs; falha = "Sem conexão. Tente de novo." sem reload; sucesso = `location.reload()`;
+  nunca apaga `localStorage`. Testes: Partes P (script) e Q (`abreVersao`) do front.test.js.
 - Testes de front (Chromium headless + dado sintético gerado pelo próprio back-end): `node --test frontend/tests/front.test.js`
   (precisa de Python com as dependências do back-end e do pacote `playwright`; sem ele os testes são pulados; o CI não roda).
   O teste chama `python3` (no Windows, ponha um `python3.exe` do venv no PATH) e acha o `playwright` por `NODE_PATH`.

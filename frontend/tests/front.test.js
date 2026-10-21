@@ -3250,3 +3250,348 @@ describe('Parte O — PDF real (html2canvas + jsPDF)', {skip: pular || (!LIBS_PD
     });
   }
 });
+
+/* ---------- Parte P — versão do código (script do deploy-pages.yml, sem navegador) ---------- */
+const SCRIPT_VERSAO = path.join(RAIZ, '.github', 'scripts', 'versao-front.sh');
+const temBash = (() => { try { execFileSync('bash', ['-c', 'command -v sha256sum >/dev/null']); return true; } catch(e) { return false; } })();
+describe('Parte P — versão do código (hash de frontend/ sem data/)', {skip: !temBash && 'sem bash/sha256sum'}, () => {
+  const versao = (...args) => execFileSync('bash', [SCRIPT_VERSAO, ...args]).toString().trim();
+  test('cópia de frontend/: mesmo hash duas vezes; mudar só data/ não muda; mudar um .js muda; --gravar', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drotas-versao-'));
+    try {
+      const copia = path.join(dir, 'frontend');
+      fs.cpSync(FRONT, copia, {recursive: true});
+      fs.rmSync(path.join(copia, 'versao.json'), {force: true});
+      const v1 = versao(copia), v2 = versao(copia);
+      assert.match(v1, /^[0-9a-f]{12}$/);
+      assert.equal(v2, v1, 'determinístico');
+      assert.equal(versao(FRONT), v1, 'a cópia dá o mesmo hash do original (caminhos relativos)');
+      // só dados: o aviso não pode aparecer a cada atualização automática
+      fs.mkdirSync(path.join(copia, 'data'), {recursive: true});
+      fs.writeFileSync(path.join(copia, 'data', 'payload.json'), '{"outro":"payload"}');
+      fs.writeFileSync(path.join(copia, 'data', 'online.json'), '{"outro":"online"}');
+      assert.equal(versao(copia), v1, 'dados mudaram, código igual');
+      // código: muda
+      fs.appendFileSync(path.join(copia, 'js', 'app.js'), '\n// mudança\n');
+      const v3 = versao(copia);
+      assert.notEqual(v3, v1, 'um .js mudou');
+      // --gravar: versao.json e a meta do index.html (o próprio versao.json não entra no hash)
+      assert.equal(versao('--gravar', copia), v3);
+      const vj = JSON.parse(fs.readFileSync(path.join(copia, 'versao.json'), 'utf-8'));
+      assert.equal(vj.versao, v3);
+      assert.match(vj.gerado, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+      const html = fs.readFileSync(path.join(copia, 'index.html'), 'utf-8');
+      assert.ok(html.includes(`<meta name="versao" content="${v3}">`) && !html.includes('content="dev"'));
+      // sem o marcador (já gravado): falha em vez de publicar sem versão
+      assert.throws(() => execFileSync('bash', [SCRIPT_VERSAO, '--gravar', copia], {stdio: 'pipe'}));
+    } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+  });
+  test('index.html do repositório com o marcador "dev"; deploy-pages.yml grava a versão antes do upload', () => {
+    const html = fs.readFileSync(path.join(FRONT, 'index.html'), 'utf-8');
+    assert.equal(html.split('<meta name="versao" content="dev">').length, 2, 'um marcador');
+    const yml = fs.readFileSync(path.join(RAIZ, '.github', 'workflows', 'deploy-pages.yml'), 'utf-8');
+    const passo = yml.indexOf('versao-front.sh --gravar frontend'), upload = yml.indexOf('upload-pages-artifact');
+    assert.ok(passo > 0 && upload > passo, 'passo da versão antes do upload');
+    assert.match(yml, /workflow_call:/);
+    assert.ok(!fs.existsSync(path.join(FRONT, 'versao.json')), 'versao.json não é versionado');
+  });
+});
+
+/* ---------- Parte Q — aviso de versão nova do código ---------- */
+const VERSAO_LOCAL = 'aaaaaaaaaaaa';
+/* Abre o painel com a meta "versao" = `local` ('dev' = como no repositório) e o versao.json do servidor em `srv`
+   ({versao, status, atraso}; mutável no meio do teste). Conta os pedidos (versao.json, online, payload) e guarda em
+   sessionStorage (sobrevive ao reload) cada fetch com a opção cache. */
+async function abreVersao({local = VERSAO_LOCAL, srv = {versao: VERSAO_LOCAL}, antes, standalone, ...resto} = {}){
+  const pedidos = [];
+  const r = await abre('normal', {...resto,
+    troca: local === 'dev' ? {} : {'/index.html': t => t.replace('<meta name="versao" content="dev">', `<meta name="versao" content="${local}">`)},
+    antes: async page => {
+      page.on('request', q => pedidos.push(new URL(q.url()).pathname));
+      await page.route(/\/versao\.json/, async rota => {
+        if(srv.atraso) await new Promise(ok => setTimeout(ok, srv.atraso));
+        if(srv.status && srv.status !== 200) return rota.fulfill({status: srv.status, body: ''});
+        rota.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify({versao: srv.versao, gerado: '2026-10-21T12:00:00Z'})});
+      });
+      await page.addInitScript(() => {
+        const f = window.fetch;
+        window.fetch = (u, o) => {
+          try { const l = JSON.parse(sessionStorage.getItem('_fetches') || '[]');
+            l.push([new URL(String(u), location.href).pathname, (o && o.cache) || '']);
+            sessionStorage.setItem('_fetches', JSON.stringify(l)); } catch(e){}
+          return f(u, o);
+        };
+      });
+      // "tela inicial": o Chromium não emula display-mode; simula o que a página vê (matchMedia e o
+      // navigator.standalone do iPhone)
+      if(standalone) await page.addInitScript(() => {
+        const mm = window.matchMedia.bind(window);
+        window.matchMedia = q => /display-mode:\s*standalone/.test(q)
+          ? {matches: true, media: q, onchange: null, addListener(){}, removeListener(){}, addEventListener(){},
+             removeEventListener(){}, dispatchEvent(){ return false; }}
+          : mm(q);
+        Object.defineProperty(navigator, 'standalone', {get: () => true});
+      });
+      if(antes) await antes(page);
+    }});
+  const conta = nome => pedidos.filter(p => p.endsWith(nome)).length;
+  return {...r, pedidos, conta, srv};
+}
+const faixa = page => page.evaluate(() => {
+  const a = document.getElementById('aviso');
+  return {visivel: a.getClientRects().length > 0, txt: document.getElementById('avisoTxt').textContent,
+          btn: document.getElementById('avisoAtualizar').textContent, des: document.getElementById('avisoAtualizar').disabled};
+});
+const esperaPedido = (page, conta, nome, n) => page.waitForFunction(() => true).then(async () => {
+  for(let i = 0; i < 100 && conta(nome) < n; i++) await page.waitForTimeout(20);
+  assert.ok(conta(nome) >= n, `${nome}: ${conta(nome)} pedidos (esperado ${n})`);
+});
+// erros de rede que o próprio Chromium registra no console (404 e fetch abortado de propósito); o resto é erro
+const semErrosDeRede = erros => erros.filter(e => !/Failed to load resource/.test(e));
+
+describe('Parte Q — aviso de versão nova', {skip: pular}, () => {
+  test('versão igual: sem faixa, mas conferida; o ↻ fica sempre visível, ao lado da casa', async () => {
+    const {page, ctx, erros, conta} = await abreVersao();
+    await esperaPedido(page, conta, '/versao.json', 1);
+    assert.equal((await faixa(page)).visivel, false);
+    const r = await page.evaluate(() => {
+      const b = id => document.getElementById(id).getBoundingClientRect();
+      const ic = document.getElementById('btnRecarga');
+      return {vis: ic.getClientRects().length > 0, label: ic.getAttribute('aria-label'), ic: b('btnRecarga'), casa: b('btnCasa'),
+              mesmoPai: ic.parentElement === document.getElementById('btnCasa').parentElement};
+    });
+    assert.ok(r.vis && r.mesmoPai);
+    assert.equal(r.label, 'Atualizar o painel');
+    assert.ok(r.ic.right <= r.casa.left && Math.abs(r.ic.top - r.casa.top) < 1, 'ao lado (à esquerda) da casa');
+    // o pedido fura o cache: no-store e query de tempo
+    const f = await page.evaluate(() => JSON.parse(sessionStorage.getItem('_fetches')).filter(x => x[0] === '/versao.json'));
+    assert.ok(f.length && f.every(x => x[1] === 'no-store'));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('versão diferente: faixa acima do cabeçalho; não aparece na entrada (checagem em segundo plano)', async () => {
+    const {page, ctx, erros, conta} = await abreVersao({srv: {versao: 'bbbbbbbbbbbb'}, entrar: null});
+    await esperaPedido(page, conta, '/versao.json', 1);
+    await page.waitForTimeout(100);
+    assert.equal((await faixa(page)).visivel, false, 'na entrada, sem faixa');
+    await entra(page, 'gc');
+    const f = await faixa(page);
+    assert.deepEqual([f.visivel, f.txt, f.btn, f.des], [true, 'Nova versão disponível', 'Atualizar', false]);
+    const r = await page.evaluate(() => ({av: document.getElementById('aviso').getBoundingClientRect(),
+      topo: document.querySelector('.topo').getBoundingClientRect(), depois: document.getElementById('avisoDepois').textContent}));
+    assert.ok(r.av.top >= 0 && r.av.bottom <= r.topo.top + .5, 'acima do cabeçalho, sem cobrir');
+    assert.equal(r.depois, 'Depois');
+    // casa: volta para a entrada, faixa some com ela
+    await page.click('#btnCasa');
+    assert.equal((await faixa(page)).visivel, false);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('"Depois" esconde a faixa daquela versão; volta na 1ª verificação depois de 30 min se continuar diferente', async () => {
+    const {page, ctx, erros, conta, srv} = await abreVersao({srv: {versao: 'bbbbbbbbbbbb'},
+      antes: p => p.clock.install({time: new Date('2026-10-21T13:00:00Z')})});
+    await page.waitForFunction(() => !document.getElementById('aviso').hidden);
+    await page.click('#avisoDepois');
+    assert.equal((await faixa(page)).visivel, false);
+    const n = conta('/versao.json');
+    await page.clock.runFor('20:00');                  // 4 verificações (online a cada 5 min): continua escondida
+    await esperaPedido(page, conta, '/versao.json', n + 4);
+    assert.equal((await faixa(page)).visivel, false, 'antes dos 30 min');
+    await page.clock.runFor('10:00');                  // verificação dos 30 min (um pouco antes do fim do adiamento)
+    await esperaPedido(page, conta, '/versao.json', n + 6);
+    assert.equal((await faixa(page)).visivel, false, 'aos 30 min');
+    await page.clock.runFor('05:00');                  // a 1ª verificação depois dos 30 min mostra de novo
+    await page.waitForFunction(() => !document.getElementById('aviso').hidden);
+    // "Depois" de novo e o servidor publica OUTRA versão: aparece já na próxima verificação
+    await page.click('#avisoDepois');
+    srv.versao = 'cccccccccccc';
+    await page.clock.runFor('05:00');
+    await page.waitForFunction(() => !document.getElementById('aviso').hidden);
+    // servidor volta para a versão do painel: a faixa some sozinha
+    srv.versao = VERSAO_LOCAL;
+    await page.clock.runFor('05:00');
+    await page.waitForFunction(() => document.getElementById('aviso').hidden);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('"Atualizar": "Atualizando…", baixa tudo com cache reload e recarrega no mesmo acesso; localStorage intacto', async () => {
+    const {page, ctx, erros, srv} = await abreVersao({srv: {versao: 'bbbbbbbbbbbb'}, entrar: {perfil: 'sv', gc: 'G2', sv: '1'},
+      armazenado: {drotas_entrada: 'branca', outra_chave: 'x'}});
+    await page.waitForFunction(() => !document.getElementById('aviso').hidden);
+    const antes = await page.evaluate(() => ({...localStorage}));
+    assert.ok(antes.drotas_sessao && antes.drotas_entrada === 'branca');
+    await page.evaluate(() => { window.__marca = 1; sessionStorage.setItem('_fetches', '[]'); });
+    srv.atraso = 400;
+    const carregou = page.waitForEvent('load');
+    await page.click('#avisoAtualizar');
+    const f = await faixa(page);
+    assert.deepEqual([f.btn, f.des], ['Atualizando…', true]);
+    assert.equal(await page.$eval('#btnRecarga', b => b.disabled), true);
+    await carregou;
+    await esperaCarga(page);
+    srv.atraso = 0;
+    const r = await page.evaluate(() => ({marca: window.__marca, tipo: performance.getEntriesByType('navigation')[0].type,
+      ls: {...localStorage}, f: JSON.parse(sessionStorage.getItem('_fetches')), acesso: ACESSO && ACESSO.perfil, sv: sel.sv,
+      entrada: !document.getElementById('entrada').hidden}));
+    assert.equal(r.marca, undefined, 'recarregou');
+    assert.equal(r.tipo, 'reload');
+    assert.deepEqual(r.ls, antes, 'nenhuma chave do localStorage apagada ou mudada');
+    assert.deepEqual([r.entrada, r.acesso, r.sv], [false, 'sv', 'SV.G2.1'], 'reabre no mesmo perfil e contexto');
+    const recarregados = new Set(r.f.filter(x => x[1] === 'reload').map(x => x[0]));
+    for(const p of ['/index.html', '/css/app.css', '/js/config.js', '/js/app.js', '/js/resumo.js', '/js/main.js',
+                    '/manifest.webmanifest', '/versao.json', '/data/payload.json', '/data/online.json'])
+      assert.ok(recarregados.has(p), `${p} com cache: 'reload'`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('sem conexão ao atualizar: "Sem conexão. Tente de novo." e não recarrega; tentar de novo funciona', async () => {
+    const {page, ctx, erros} = await abreVersao({srv: {versao: 'bbbbbbbbbbbb'}});
+    await page.waitForFunction(() => !document.getElementById('aviso').hidden);
+    await page.evaluate(() => { window.__marca = 1; });
+    const corta = rota => rota.request().resourceType() === 'fetch' ? rota.abort('internetdisconnected') : rota.fallback();
+    await page.route('**/js/app.js', corta);
+    await page.click('#avisoAtualizar');
+    await page.waitForFunction(() => document.getElementById('avisoTxt').textContent === 'Sem conexão. Tente de novo.');
+    await page.waitForTimeout(300);
+    const f = await faixa(page);
+    assert.deepEqual([f.visivel, f.btn, f.des], [true, 'Atualizar', false]);
+    assert.equal(await page.evaluate(() => window.__marca), 1, 'não recarregou');
+    assert.equal(await page.$eval('#btnRecarga', b => b.disabled), false);
+    // a verificação seguinte não apaga a mensagem; "Depois" esconde
+    await page.evaluate(() => confereVersao());
+    assert.equal((await faixa(page)).txt, 'Sem conexão. Tente de novo.');
+    // conexão de volta: o ↻ do cabeçalho faz a mesma ação e recarrega
+    await page.unroute('**/js/app.js', corta);
+    const carregou = page.waitForEvent('load');
+    await page.click('#btnRecarga');
+    await carregou;
+    await esperaCarga(page);
+    assert.equal(await page.evaluate(() => window.__marca), undefined);
+    assert.deepEqual(semErrosDeRede(erros), []);
+    await ctx.close();
+  });
+
+  test('meta "dev" (desenvolvimento): aviso desligado, sem pedir versao.json; 404 e JSON inválido: silêncio', async () => {
+    let {page, ctx, erros, conta} = await abreVersao({local: 'dev', srv: {versao: 'bbbbbbbbbbbb'}});
+    await page.evaluate(() => { puxaOnline(); document.dispatchEvent(new Event('visibilitychange')); });
+    await page.waitForTimeout(300);
+    assert.equal(conta('/versao.json'), 0);
+    assert.equal((await faixa(page)).visivel, false);
+    assert.equal(await page.isVisible('#btnRecarga'), true, 'o ↻ existe também em desenvolvimento');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    for(const srv of [{status: 404}, {status: 500}, {versao: ''}]){
+      ({page, ctx, erros, conta} = await abreVersao({srv}));
+      await esperaPedido(page, conta, '/versao.json', 1);
+      await page.evaluate(() => confereVersao());
+      await page.waitForTimeout(100);
+      assert.equal((await faixa(page)).visivel, false, JSON.stringify(srv));
+      assert.deepEqual(semErrosDeRede(erros), [], JSON.stringify(srv));
+      await ctx.close();
+    }
+  });
+
+  test('checagem no puxaOnline (a cada 5 min), no visibilitychange e no pageshow; ao voltar, online já e payload se > 15 min', async () => {
+    const {page, ctx, erros, conta} = await abreVersao({antes: p => p.clock.install({time: new Date('2026-10-21T13:00:00Z')})});
+    await esperaPedido(page, conta, '/versao.json', 1);
+    let n = {v: conta('/versao.json'), o: conta('/online.json'), p: conta('/payload.json')};
+    await page.clock.fastForward('05:00');
+    await esperaPedido(page, conta, '/versao.json', n.v + 1);
+    n = {v: conta('/versao.json'), o: conta('/online.json'), p: conta('/payload.json')};
+    // de volta para a aba/app 1 min depois: online e versão já; payload recente (< 15 min) fica
+    await page.clock.setSystemTime(new Date('2026-10-21T13:06:00Z'));
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await esperaPedido(page, conta, '/versao.json', n.v + 1);
+    await esperaPedido(page, conta, '/online.json', n.o + 1);
+    await page.waitForTimeout(100);
+    assert.equal(conta('/payload.json'), n.p, 'payload com menos de 15 min não é recarregado');
+    // pageshow (volta do bfcache / app reaberto) 20 min depois, sem os temporizadores terem rodado: tudo, com o payload
+    n = {v: conta('/versao.json'), o: conta('/online.json'), p: conta('/payload.json')};
+    await page.clock.setSystemTime(new Date('2026-10-21T13:26:00Z'));
+    await page.evaluate(() => dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true})));
+    await esperaPedido(page, conta, '/versao.json', n.v + 1);
+    await esperaPedido(page, conta, '/online.json', n.o + 1);
+    await esperaPedido(page, conta, '/payload.json', n.p + 1);
+    // visibilitychange e pageshow juntos (iPhone): uma vez só
+    n = {v: conta('/versao.json'), o: conta('/online.json')};
+    await page.clock.setSystemTime(new Date('2026-10-21T13:30:00Z'));
+    await page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange'));
+      dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true})); });
+    await page.waitForTimeout(200);
+    assert.deepEqual([conta('/versao.json'), conta('/online.json')], [n.v + 1, n.o + 1]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('modo "tela inicial" (display-mode: standalone): faixa e ↻ funcionam', async () => {
+    const {page, ctx, erros} = await abreVersao({srv: {versao: 'bbbbbbbbbbbb'}, largura: 390, altura: 844, standalone: true});
+    assert.equal(await page.evaluate(() => matchMedia('(display-mode: standalone)').matches), true);
+    await page.waitForFunction(() => !document.getElementById('aviso').hidden);
+    assert.equal(await page.isVisible('#btnRecarga'), true);
+    await page.evaluate(() => { window.__marca = 1; });
+    const carregou = page.waitForEvent('load');
+    await page.click('#btnRecarga');
+    await carregou;
+    await esperaCarga(page);
+    assert.equal(await page.evaluate(() => window.__marca), undefined, 'o ↻ recarregou');
+    assert.equal(await page.evaluate(() => matchMedia('(display-mode: standalone)').matches), true);
+    await page.waitForFunction(() => !document.getElementById('aviso').hidden);
+    await page.evaluate(() => { window.__marca = 1; });
+    const carregou2 = page.waitForEvent('load');
+    await page.click('#avisoAtualizar');
+    await carregou2;
+    await esperaCarga(page);
+    assert.equal(await page.evaluate(() => window.__marca), undefined, 'o "Atualizar" da faixa recarregou');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [390, 1000, 1280]){
+    test(`${largura} px: faixa e ↻ sem rolagem lateral, sem cobrir o cabeçalho; escala tipográfica e contraste nos dois temas`, async () => {
+      for(const tema of ['preta', 'branca']){
+        const {page, ctx, erros} = await abreVersao({srv: {versao: 'bbbbbbbbbbbb'}, largura, altura: 844,
+          armazenado: tema === 'branca' ? {drotas_entrada: 'branca'} : {}});
+        await medidas(page);
+        await page.evaluate(() => document.fonts.ready);
+        await page.waitForFunction(() => !document.getElementById('aviso').hidden);
+        assert.ok(await semRolagemLateral(page), `${tema}: rolagem lateral`);
+        assert.deepEqual(await page.evaluate(() => __vis.estouros('#aviso, .topo')), [], tema);
+        const r = await page.evaluate(() => {
+          const b = el => el.getBoundingClientRect();
+          const texto = s => { const rg = document.createRange(); rg.selectNodeContents(document.querySelector(s)); return rg.getBoundingClientRect(); };
+          const cruza = (a, c) => a.left < c.right && c.left < a.right && a.top < c.bottom && c.top < a.bottom;
+          const btns = b(document.querySelector('.topoBtns'));
+          const fs = el => getComputedStyle(el).fontSize;
+          return {aviso: b(document.getElementById('aviso')), topo: b(document.querySelector('.topo')),
+                  cruzaTexto: ['.topo .marca', '.topo h1', '#sub', '#ritmo'].filter(s => cruza(btns, texto(s))),
+                  fsAviso: [fs(document.getElementById('avisoTxt')), fs(document.getElementById('avisoAtualizar'))],
+                  fsLegenda: getComputedStyle(document.documentElement).getPropertyValue('--fs-legenda').trim(),
+                  familia: getComputedStyle(document.getElementById('avisoAtualizar')).fontFamily,
+                  branca: document.getElementById('aviso').classList.contains('branca'),
+                  contraste: __vis.contrastes(['#avisoTxt', '#avisoAtualizar', '#avisoDepois'])};
+        });
+        assert.ok(r.aviso.bottom <= r.topo.top + .5, `${tema}: faixa acima do cabeçalho`);
+        assert.deepEqual(r.cruzaTexto, [], `${tema}: botões do canto sobre o texto do cabeçalho`);
+        assert.deepEqual(r.fsAviso, [r.fsLegenda, r.fsLegenda], 'escala tipográfica (--fs-legenda)');
+        assert.match(r.familia, /^Inter,/);
+        assert.equal(r.branca, tema === 'branca');
+        for(const [s, t, c] of r.contraste) assert.ok(c >= 4.5, `${tema} ${s} "${t}": ${c}`);
+        assert.equal(r.contraste.length, 3);
+        // sem a faixa, os botões do canto também não cobrem o texto
+        await page.click('#avisoDepois');
+        assert.deepEqual(await page.evaluate(() => {
+          const btns = document.querySelector('.topoBtns').getBoundingClientRect();
+          return ['.topo .marca', '.topo h1', '#sub', '#ritmo'].filter(s => { const rg = document.createRange();
+            rg.selectNodeContents(document.querySelector(s)); const c = rg.getBoundingClientRect();
+            return btns.left < c.right && c.left < btns.right && btns.top < c.bottom && c.top < btns.bottom; });
+        }), [], tema);
+        assert.deepEqual(erros, []);
+        await ctx.close();
+      }
+    });
+  }
+});

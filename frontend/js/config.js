@@ -9,6 +9,12 @@ const CONFIG = Object.freeze({
   ONLINE_POLL_MS: 5 * 60 * 1000,      // busca online.json a cada 5 min
   PAYLOAD_POLL_MS: 15 * 60 * 1000,    // revalida payload.json a cada 15 min (mesmo ritmo do back-end)
   STATUS_TICK_MS: 60 * 1000,          // reavalia a tag "Online" a cada 1 min
+  /* Aviso de versão nova do código: a versão do painel aberto é a <meta name="versao"> do index.html ("dev" = aviso
+     desligado); a do servidor é VERSAO_URL, gravado pelo deploy-pages.yml (hash de frontend/ sem data/). Conferida a
+     cada online, ao voltar para a aba/app e no pageshow. "Depois" esconde a faixa até a 1ª verificação após
+     VERSAO_ADIA_MS. Ao voltar do segundo plano, o payload é recarregado se o último tiver mais de PAYLOAD_POLL_MS. */
+  VERSAO_URL: 'versao.json',
+  VERSAO_ADIA_MS: 30 * 60 * 1000,
   JANELA_VENDAS: { inicio: '07:30', fim: '17:29' },   // horário de Brasília
   // Neutraliza, virtuais e ocultas vêm do payload (NEUTRALIZA_ROTAS/VIRTUAIS_ROTAS/OCULTAS, listas únicas no
   // back-end). Esta lista só vale para um payload antigo, sem essas chaves: fora do "puxa a média" (além de

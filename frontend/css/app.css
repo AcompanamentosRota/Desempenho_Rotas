@@ -117,10 +117,36 @@ body.na-entrada{overflow:hidden}
 .entrada.branca .entOpcoes button{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
 /* casa: volta para a entrada */
 .topo{position:relative}
-.casa{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:max(12px,env(safe-area-inset-right));
-  width:34px;height:34px;border-radius:8px;border:0;background:var(--vermelho);cursor:pointer;
-  display:flex;align-items:center;justify-content:center;padding:0;z-index:2}
-.casa svg{width:18px;height:18px}
+/* botões do canto do cabeçalho: ↻ atualizar o painel (sempre visível) e a casa */
+.topoBtns{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:max(12px,env(safe-area-inset-right));
+  display:flex;gap:6px;z-index:2}
+.casa,.recarga{width:34px;height:34px;border-radius:8px;border:0;background:var(--vermelho);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;padding:0}
+.casa svg,.recarga svg{width:18px;height:18px}
+.recarga{background:var(--escuro-2);border:1px solid var(--escuro-borda2)}
+.recarga:disabled{cursor:default;opacity:.7}
+.recarga:disabled svg{animation:gira 1s linear infinite}
+@keyframes gira{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.recarga:disabled svg{animation:none}}
+
+/* ---------- versão nova do código: faixa discreta acima do cabeçalho (no fluxo, não cobre nada; segue o fundo da
+   entrada, preto ou branco; escondida enquanto a entrada está aberta) ---------- */
+.aviso{background:var(--escuro-2);color:#fff;border-bottom:1px solid var(--escuro-borda2);
+  padding:calc(6px + env(safe-area-inset-top,0px)) 0 6px;font-size:var(--fs-legenda)}
+.aviso[hidden],body.na-entrada .aviso{display:none}
+.aviso .hd{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px}
+.avisoTxt{font-weight:500;min-width:0}
+.avisoBtns{display:flex;gap:6px;flex:none}
+.avisoBtns button{font:inherit;font-weight:600;border-radius:7px;padding:5px 12px;cursor:pointer;
+  background:transparent;color:var(--topo-sub);border:1px solid var(--escuro-borda2)}
+.avisoBtns .avisoPri{background:#fff;color:var(--preto);border-color:#fff}
+.avisoBtns button:disabled{cursor:default;opacity:.75}
+.aviso.branca{background:var(--papel);color:var(--txt);border-bottom-color:var(--linha-forte)}
+.aviso.branca .avisoBtns button{color:var(--txt-apoio);border-color:var(--linha-forte)}
+.aviso.branca .avisoBtns .avisoPri{background:var(--preto);color:#fff;border-color:var(--preto)}
+/* com a faixa, a área segura do topo fica nela */
+.aviso:not([hidden])+.topo{padding-top:12px}
+.aviso:not([hidden])+.topo .topoBtns{top:10px}
 select[hidden]{display:none}
 
 /* ---------- cabeçalho (rola com a página) ---------- */
@@ -457,9 +483,12 @@ body.rs-travado{overflow:hidden}
    numa linha; abas numa linha com a largura de cada rótulo. A barra (seletores e abas) continua sticky. */
 @media (max-width:640px){
   .topo{padding:calc(8px + env(safe-area-inset-top,0px)) 0 6px}
-  .casa{top:calc(8px + env(safe-area-inset-top,0px));width:32px;height:32px}
-  .marca{font-size:10px;padding-right:40px}
-  .topo h1{margin:2px 0 1px;line-height:1.1;padding-right:40px}
+  .topoBtns{top:calc(8px + env(safe-area-inset-top,0px))}
+  .casa,.recarga{width:32px;height:32px}
+  .marca{font-size:10px;padding-right:78px}
+  .topo h1{margin:2px 0 1px;line-height:1.1;padding-right:78px}
+  .aviso:not([hidden])+.topo{padding-top:8px}
+  .aviso:not([hidden])+.topo .topoBtns{top:8px}
   .sub{margin-bottom:5px;line-height:1.3}
   .tagUpd{margin-left:4px;padding:1px 7px 1px 6px}
   .ritmo{display:block;background:none;border:0;border-top:1px solid rgba(255,255,255,.08);border-radius:0;
@@ -492,6 +521,9 @@ body.rs-travado{overflow:hidden}
 @media (min-width:1000px){
   :root{--largura:1180px}
   .topo{padding:16px 0 12px}
+  /* o bloco de datas (à direita) não passa por baixo dos botões do canto quando a tela é pouco mais larga que o painel */
+  .topo .hd{padding-right:max(12px, calc(96px - max(0px, (100vw - var(--largura)) / 2)))}
+  .aviso:not([hidden])+.topo{padding-top:16px}
   .topo .hd{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"marca ritmo" "h1 ritmo" "sub ritmo";column-gap:28px;align-items:center}
   .topo .marca{grid-area:marca} .topo h1{grid-area:h1} .topo .sub{grid-area:sub;margin-bottom:0}
   .topo .ritmo{grid-area:ritmo;justify-self:end;max-width:640px;flex-direction:column;align-items:flex-start}

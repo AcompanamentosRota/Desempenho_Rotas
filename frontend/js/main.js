@@ -44,5 +44,18 @@ async function iniciar(){
   if(link){ RS.doLink(); $('carga').hidden = true; }
   setInterval(puxaOnline, CONFIG.ONLINE_POLL_MS);
   setInterval(recarregaPayload, CONFIG.PAYLOAD_POLL_MS);
+  iniciado = true;
 }
+/* De volta do segundo plano (aba ou app da tela inicial; no iPhone os temporizadores param com o app fechado): online
+   já (com a checagem de versão) e o payload se o último tiver mais de PAYLOAD_POLL_MS. visibilitychange e pageshow
+   costumam vir juntos: uma vez só. */
+let iniciado = false, ultimaVolta = 0;
+function aoVoltar(){
+  if(!iniciado || Date.now() - ultimaVolta < 2000) return;
+  ultimaVolta = Date.now();
+  puxaOnline();
+  if(Date.now() - P._versao > CONFIG.PAYLOAD_POLL_MS) recarregaPayload();
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') aoVoltar(); });
+addEventListener('pageshow', aoVoltar);
 iniciar();
