@@ -301,7 +301,9 @@ seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa;
   ("Painel de Ritmo — SV.G1.1 · Nome" ou "— GC.G1 · Goiânia 01"), subtítulo com o mês, "dados reais até sexta-feira 16/10
   (dia útil 11/21, 52%)" (payload com `DATA_ONTEM`/`DIA_ONTEM_NOME`; antigo: "até o dia útil N/T") e "faltas miram
   <hoje> (dia N/T, %)", a linha vermelha "Puxando a média pra baixo" (a rota, ou no GC a supervisão, com menos
-  coberturas no ritmo, pela quantidade e não pela proporção: 7/8 vem antes de 8/10; empate pelo menor código) e dois blocos com colunas = o nível + rotas (ou supervisões):
+  coberturas no ritmo, pela quantidade e não pela proporção: 7/8 vem antes de 8/10; com o mesmo número no ritmo, a
+  que tem mais itens fora do ritmo (8/10 antes de 8/8); persistindo o empate, o menor código; sem a linha quando todas
+  as colunas estão com todos os itens no ritmo) e dois blocos com colunas = o nível + rotas (ou supervisões):
   **Volume — tendência do mês** ("na tendência x / 5": % tendência, verde a partir de 100, e "Meta dia X" ou "Meta
   batida!") e **Coberturas — ICS GC** ("no ritmo x / 10": % do mês, verde no ritmo de ontem, "Meta dia N" ou "faltam
   N" como a caixa dos cards, ou "Meta batida!" quando o Real do mês já alcançou a Meta; Venda Zero com "reverter N": o

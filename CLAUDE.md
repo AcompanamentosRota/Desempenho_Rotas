@@ -263,8 +263,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   "faltam N", a conta da caixa dos cards; "Meta batida!" com Real >= Meta do mês); Venda Zero pelo `gap`: o N é o valor principal (seta + N, "reverter" embaixo, sem
   percentual; ▲ verde com 0, ▼ vermelho com N > 0; na SV/GC, o gap da agregação dos cards). Nome de coluna/título:
   primeiro nome capitalizado; "ROTA SEM VENDEDOR" (qualquer caixa) ou vazio = "Sem vendedor" (supervisor e consultor). "Puxando a média": coluna com menos
-  coberturas no ritmo (pela QUANTIDADE x do "x / n", nunca pela proporção: 7/8 aponta antes de 8/10; empate: menor código; sem linha se
-  nenhuma ou se a pior está toda no ritmo; travado na Parte R). Página 1280x720,
+  coberturas no ritmo (pela QUANTIDADE x do "x / n", nunca pela proporção: 7/8 aponta antes de 8/10; empate no x: mais itens fora do ritmo,
+  n - x, depois o menor código; sem linha se nenhuma coluna tem cobertura ou se todas têm x = n; travado na Parte R;
+  caso real: SV.PA.1 com P11 8/8, P12 8/10, P15 8/10 aponta a P12). Página 1280x720,
   html2canvas escala 1.5, JPEG 0.85, uma por vez fora da tela (`.rt-palco`), progresso no botão ("Gerando i/n");
   bibliotecas e entrega por `RS.carregaScript`/`RS.salvaPdf`; arquivo `Painel_Ritmo_<BAND|G1|IT+MO|SV.G1.1>_AAAAMMDD.pdf`.
   Fechamento: botão desabilitado ("Indisponível durante o fechamento"). ~165 KB por página.

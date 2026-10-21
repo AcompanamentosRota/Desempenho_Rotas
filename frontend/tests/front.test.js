@@ -3729,14 +3729,16 @@ describe('Parte R — Painel de Ritmo: montaRitmo (função pura, sem navegador)
     assert.equal(puxa(q, 'SV.G1.1'), 'Puxando a média pra baixo: Rota G111 — 2/10 no ritmo');
   });
 
+  // n itens de cobertura com dado na rota, os primeiros `ok` no ritmo (Real = Meta; Venda Zero zerada), os demais abaixo
+  // e o resto sem dado
+  const poe = (q, r, ok, n) => COB_RITMO.forEach((k, i) => {
+    const d = noRitmo(q, r).indicators;
+    if(i >= n){ d[k] = {unavailable: true}; return; }
+    const b = d[k] = {...d[k], meta: 10, unavailable: false};
+    b.real = k === 'VENDAZERO' ? (i < ok ? 0 : 20) : (i < ok ? 10 : 0);
+  });
+
   test('"Puxando a média" pela QUANTIDADE no ritmo, não pela proporção: 7/8 aponta antes de 8/10 (rotas e supervisões)', () => {
-    // n itens com dado, os primeiros `ok` no ritmo (Real = Meta; Venda Zero zerada), os demais abaixo e o resto sem dado
-    const poe = (q, r, ok, n) => COB_RITMO.forEach((k, i) => {
-      const d = noRitmo(q, r).indicators;
-      if(i >= n){ d[k] = {unavailable: true}; return; }
-      const b = d[k] = {...d[k], meta: 10, unavailable: false};
-      b.real = k === 'VENDAZERO' ? (i < ok ? 0 : 20) : (i < ok ? 10 : 0);
-    });
     // (a Venda Zero é o 10º item: sem dado em 7/8; abaixo do ritmo em 8/10)
     const p = payloadRitmo();
     poe(p, 'G112', 7, 8);          // 7/8 = 87,5%
@@ -3752,10 +3754,51 @@ describe('Parte R — Painel de Ritmo: montaRitmo (função pura, sem navegador)
     const gc = monta(q, {tipo: 'gc', gcs: ['G1']}).paginas[0];
     assert.deepEqual(gc.colunas.slice(1).map(c => [c.codigo, c.contaCob.ok, c.contaCob.n]), [['SV.G1.1', 8, 10], ['SV.G1.2', 7, 8]]);
     assert.equal(gc.puxa, 'Puxando a média pra baixo: SV.G1.2 · Supervisor — 7/8 no ritmo');
-    // empate na quantidade (7/8 contra 7/10): o menor código, mesmo com a proporção pior no outro
+    // empate na quantidade (7/8 contra 7/10): desempata quem tem mais itens fora do ritmo (7/10: 3 fora), não o código
     const e = payloadRitmo();
     poe(e, 'G111', 7, 8); poe(e, 'G112', 7, 10);
-    assert.equal(monta(e, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].puxa, 'Puxando a média pra baixo: Rota G111 — 7/8 no ritmo');
+    assert.equal(monta(e, {tipo: 'sv', gcs: ['G1'], sv: 'SV.G1.1'}).paginas[0].puxa, 'Puxando a média pra baixo: Rota G112 — 7/10 no ritmo');
+  });
+
+  test('"Puxando a média": desempate pelo nº fora do ritmo (n - x), depois pelo código; sem linha só com todos em x = n', () => {
+    // SV.PA.1 com 5 rotas (PA11..PA15; cópias da PA11 no sintético)
+    const sv5 = () => { const q = payloadRitmo(), s = q.DATA.PA['SV.PA.1'];
+      for(const r of ['PA13', 'PA14', 'PA15']) s[r] = JSON.parse(JSON.stringify(s.PA11));
+      return q; };
+    const pagSv = q => monta(q, {tipo: 'sv', gcs: ['PA'], sv: 'SV.PA.1'}).paginas[0];
+    const contas = pg => pg.colunas.slice(1).map(c => `${c.codigo} ${c.contaCob.ok}/${c.contaCob.n}`);
+    // caso real (SV.PA.1): P11 8/8, P12 8/10, P13 9/10, P14 9/10, P15 8/10 -> a P12 (a linha sumia: o empate ia para a P11)
+    let q = sv5();
+    [[8, 8], [8, 10], [9, 10], [9, 10], [8, 10]].forEach(([ok, n], i) => poe(q, `PA1${i + 1}`, ok, n));
+    let pg = pagSv(q);
+    assert.deepEqual(contas(pg), ['Rota PA11 8/8', 'Rota PA12 8/10', 'Rota PA13 9/10', 'Rota PA14 9/10', 'Rota PA15 8/10']);
+    assert.equal(pg.puxa, 'Puxando a média pra baixo: Rota PA12 — 8/10 no ritmo');
+    // x único menor: ganha mesmo com menos itens fora que outra (6/8: 2 fora; 7/10: 3 fora)
+    q = sv5();
+    [[9, 10], [6, 8], [7, 10], [8, 10], [9, 10]].forEach(([ok, n], i) => poe(q, `PA1${i + 1}`, ok, n));
+    assert.equal(pagSv(q).puxa, 'Puxando a média pra baixo: Rota PA12 — 6/8 no ritmo');
+    // empate de x com n diferentes: o de mais fora do ritmo (7/10 antes de 7/9 e 7/8)
+    q = sv5();
+    [[7, 8], [7, 9], [9, 10], [7, 10], [8, 10]].forEach(([ok, n], i) => poe(q, `PA1${i + 1}`, ok, n));
+    assert.equal(pagSv(q).puxa, 'Puxando a média pra baixo: Rota PA14 — 7/10 no ritmo');
+    // empate total (mesmo x e n): o menor código
+    q = sv5();
+    [[9, 10], [8, 10], [9, 10], [8, 10], [8, 10]].forEach(([ok, n], i) => poe(q, `PA1${i + 1}`, ok, n));
+    assert.equal(pagSv(q).puxa, 'Puxando a média pra baixo: Rota PA12 — 8/10 no ritmo');
+    // todos com x = n (ninguém fora do ritmo): sem a linha
+    q = sv5();
+    [[8, 8], [10, 10], [9, 9], [8, 8], [10, 10]].forEach(([ok, n], i) => poe(q, `PA1${i + 1}`, ok, n));
+    assert.equal(pagSv(q).puxa, '');
+    // página do GC (supervisões): SV.PA.1 8/8 e SV.PA.2 8/10 -> a SV.PA.2; as duas 8/8 -> sem a linha
+    const gcPa = (a, b) => { const g = payloadRitmo();
+      for(const r of ['PA11', 'PA12']) poe(g, r, ...a);
+      for(const r of ['PA21', 'PA22']) poe(g, r, ...b);
+      return monta(g, {tipo: 'gc', gcs: ['PA']}).paginas[0]; };
+    let gc = gcPa([8, 8], [8, 10]);
+    assert.deepEqual(contas(gc), ['SV.PA.1 8/8', 'SV.PA.2 8/10']);
+    assert.equal(gc.puxa, 'Puxando a média pra baixo: SV.PA.2 · Supervisor — 8/10 no ritmo');
+    assert.equal(gcPa([8, 9], [8, 9]).puxa, 'Puxando a média pra baixo: SV.PA.1 · Supervisor — 8/9 no ritmo');
+    assert.equal(gcPa([8, 8], [8, 8]).puxa, '');
   });
 
   test('"Sem vendedor" no subtítulo da coluna e no título (maiúsculas, minúsculas, vazio); os demais nomes como antes', () => {

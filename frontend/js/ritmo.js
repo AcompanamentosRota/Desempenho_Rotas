@@ -91,11 +91,13 @@ function montaRitmo(P, escopo){
       c.cob = COB.map(k => celCob(k, ind[k]));
       c.contaVol = conta(c.vol); c.contaCob = conta(c.cob);
     });
-    // quem puxa a média pra baixo: a coluna (fora o total) com menos coberturas no ritmo; empate, o menor código.
-    // Sem linha se não há coluna com cobertura ou se a pior já está com todas no ritmo.
+    // quem puxa a média pra baixo: a coluna (fora o total) com MENOS coberturas no ritmo (o x do "x / n", não a
+    // proporção); empate no x: a com MAIS itens fora do ritmo (n - x); persistindo, o menor código. Sem linha se não
+    // há coluna com cobertura ou se todas estão com x = n (ninguém fora do ritmo).
+    const fora = c => c.contaCob.n - c.contaCob.ok;
     const cand = cols.slice(1).filter(c => c.contaCob.n)
-      .sort((a, b) => a.contaCob.ok - b.contaCob.ok || N.ordemNatural(a.chave, b.chave));
-    const pior = cand[0] && cand[0].contaCob.ok < cand[0].contaCob.n ? cand[0] : null;
+      .sort((a, b) => a.contaCob.ok - b.contaCob.ok || fora(b) - fora(a) || N.ordemNatural(a.chave, b.chave));
+    const pior = cand.some(c => fora(c) > 0) ? cand[0] : null;
     const rotPior = c => nivel==='gc' ? c.codigo + (c.nome ? ' · ' + c.nome : '') : c.codigo;
     const titNivel = nivel==='gc' ? `GC.${gc}${nomeGc(gc) ? ' · ' + nomeGc(gc) : ''}` : `${sv}${nomeSv(sv) ? ' · ' + nomeSv(sv) : ''}`;
     return {nivel, gc, sv: sv || '',
