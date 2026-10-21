@@ -143,13 +143,16 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   font-variant-numeric:tabular-nums}
 .card .n.ok{color:var(--verde)} .card .n.no{color:var(--vermelho)}
 .card .l{font-size:11px;color:var(--cinza-txt);letter-spacing:.03em;margin-top:5px;line-height:1.25;text-transform:uppercase}
+.card .st{font-size:8.5px;color:var(--cinza-txt);letter-spacing:.03em;margin-top:3px;line-height:1.2;text-transform:uppercase}
+.card .st[hidden]{display:none}
+.card .st .stMarca{font-weight:700;margin-left:3px} .card .st .stMarca.ok{color:var(--verde)}
 .card .div{border-top:1px dashed var(--linha-forte);margin:9px 6px 8px}
 .card .x{font-size:12.5px;color:var(--cinza-txt);line-height:1.3}
 .card .x b{font-family:var(--serif);font-size:19px;display:block;margin-top:1px;font-weight:700}
 .card .x b.inl{display:inline;font-size:12.5px;font-family:inherit}
 .card .x b.ok{color:var(--verde)} .card .x b.no{color:var(--ruim)}
 .card.mudo{cursor:default}
-@media (hover:hover){.card:not(.mudo):hover,.ind[data-k]:hover,.ind[data-inc]:hover{filter:brightness(.97)}}
+@media (hover:hover){.card:not(.mudo):hover,.ind[data-k]:hover{filter:brightness(.97)}}
 
 /* ---------- supervisão que puxa ---------- */
 .puxa{background:var(--rosa);border-left:5px solid var(--ruim);border-radius:0 11px 11px 0;
@@ -235,10 +238,6 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   font-variant-numeric:tabular-nums}
 .obox span{font-size:10.5px;font-weight:600;display:block;margin-top:1px}
 .ind .semdado{font-size:13px;margin-top:6px}
-/* aba Incentivo: card "Status Todos a Bordo 3.0" (sem a caixa do Online; o "hoje" fica pequeno, para a conta fechar) */
-.ind .row.dois{grid-template-columns:auto minmax(0,1fr)}
-.ind .row.dois .cm{border-right:0}
-.ind .cl .hoje{font-size:11.5px;color:var(--cinza-escuro)}
 .tab[hidden]{display:none}
 
 /* ---------- drawer ---------- */
@@ -415,6 +414,7 @@ body.rs-travado{overflow:hidden}
 @media (max-width:380px){
   .card .n{font-size:23px}
   .card .l{font-size:10px}
+  .card .st{font-size:8px}
   .ind{padding:12px 11px 11px}
   .ind .row{grid-template-columns:auto minmax(0,1fr) 74px}
   .ind .cl{font-size:12px}

@@ -86,7 +86,7 @@ before(async () => {
   fs.writeFileSync(path.join(semdados, 'payload.json'), JSON.stringify(s));
   fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(semdados, 'online.json'));
   DADOS.semdados = semdados;
-  // aba Incentivo: cenários montados sobre o sintético normal e o do fechamento (montaIncentivo); payload antigo sem o
+  // aba Todos a Bordo: cenários montados sobre o sintético normal e o do fechamento (montaIncentivo); payload antigo sem o
   // grupo INCENTIVO (seminc)
   for(const [nome, origem] of [['inc', 'normal'], ['incfech', 'fech']]){
     const dir = path.join(tmp, nome);
@@ -2106,7 +2106,7 @@ describe('Parte K — "Meta batida!"', {skip: pular}, () => {
   });
 });
 
-/* ---------- Parte L: aba Incentivo (campanha "Todos a Bordo 3.0") ---------- */
+/* ---------- Parte L: aba Todos a Bordo (campanha "Todos a Bordo 3.0", chave INCENTIVO) ---------- */
 /* Cenário sobre o sintético (os 5 itens com meta 2 em todas as rotas e Real 0): Heineken e Heineken - 600ml só nas
    gerências FULL (RV, SL, PO, IT, MO, UR, RI) e na G211 (G2 mista); Eisenbahn - 600ml sem meta na G3. Rotas de
    cenário: IT11 com todos os itens batidos (Heineken pela união Real + online: o cliente do Real que comprou de novo
@@ -2145,38 +2145,51 @@ function montaIncentivo(p, o){
   const [g, h] = pvs('G212');
   for(const k of ['CERVEJAS', 'INC EISENBAHN 600ML', 'CERVEJAS 600ML RETORNAVEL']) poe('G212', k, [g, h]);
 }
-const TITULOS_INC = ['Status Todos a Bordo 3.0', 'Cervejas', 'Heineken', 'Eisenbahn - 600ml', 'Heineken - 600ml',
-                     'Cervejas 600ml Retornável'];
-/* cards da aba Incentivo por chave (INC_STATUS = Status) */
+const TITULOS_INC = ['Cervejas', 'Heineken', 'Eisenbahn - 600ml', 'Heineken - 600ml', 'Cervejas 600ml Retornável'];
+/* cards da aba Todos a Bordo por chave (data-k; sem meta: data-inc-off) */
 const cardsInc = page => page.$$eval('#lista .ind', els => Object.fromEntries(els.map(el => {
   const n = c => el.dataset[c] == null ? null : Number(el.dataset[c]);
   const txt = s => ((el.querySelector(s) || {}).textContent || '').replace(/\s+/g, ' ').trim();
   const ob = el.querySelector('.obox');
-  return [el.dataset.inc || el.dataset.incOff || (el.classList.contains('incStatus') ? 'INC_STATUS' : '?'), {
-    off: el.classList.contains('off'), ok: el.classList.contains('ok'), abre: el.hasAttribute('data-inc'),
-    meta: n('meta'), real: n('real'), ef: n('ef'), hoje: n('hoje'), dif: n('dif'), big: txt('.big'), acao: txt('.acao'),
-    semdado: txt('.semdado'), cl: txt('.cl'), temHoje: !!el.querySelector('.cl .hoje'),
+  return [el.dataset.k || el.dataset.incOff || '?', {
+    off: el.classList.contains('off'), ok: el.classList.contains('ok'), abre: el.hasAttribute('data-k'),
+    meta: n('meta'), real: n('real'), ef: n('ef'), big: txt('.big'), acao: txt('.acao'), opo: txt('.opo'),
+    semdado: txt('.semdado'), cl: txt('.cl'), html: el.outerHTML,
     obox: ob ? [ob.className.trim(), ob.querySelector('b').textContent, ob.querySelector('span').textContent.trim()] : null}];
 })));
+// Meta e Real do card (texto da coluna da esquerda)
+const metaReal = c => (c.cl.match(/Meta ([\d.]+) Real ([\d.]+)/) || []).slice(1).map(x => Number(x.replace(/\./g, '')));
 const terceiroCard = page => page.evaluate(() => [document.getElementById('lRitmo').textContent,
   document.getElementById('nRitmo').textContent, document.getElementById('nRitmo').className.trim(),
   document.getElementById('xRitmo').textContent]);
+// linha "Status" do card do topo: null = sem a linha; senão [status, marca, marca verde?]
+const statusTopo = page => page.evaluate(() => {
+  const el = document.getElementById('stRitmo');
+  if(el.hidden || getComputedStyle(el).display === 'none') return null;
+  const m = el.querySelector('.stMarca');
+  const verde = document.createElement('span');
+  verde.style.color = 'var(--verde)'; el.appendChild(verde);
+  const cor = getComputedStyle(verde).color; verde.remove();
+  return [el.dataset.status, el.textContent.replace(/\s+/g, ' ').trim(), getComputedStyle(m).color === cor];
+});
 const visivelInc = page => page.isVisible('.tab[data-g="INCENTIVO"]');
-/* soma das linhas da gaveta (meta, real, EF) e das notas */
-const somaLinhas = g => ['meta', 'real', 'ef'].map(c => g.reduce((a, l) => a + (l[c] || 0), 0));
+/* soma das linhas da gaveta (meta, real) e das notas */
+const somaLinhas = g => ['meta', 'real'].map(c => g.reduce((a, l) => a + (l[c] || 0), 0));
 const linhasInc = page => page.$$eval('#dCorpo .cLin', ls => ls.map(l => ({nome: l.querySelector('.cNome b').textContent,
   info: l.querySelector('.cNome small').textContent, ok: l.classList.contains('ok'), abre: l.hasAttribute('data-i'),
-  meta: Number(l.dataset.meta), real: Number(l.dataset.real), ef: Number(l.dataset.ef), dir: Number(l.dataset.dir),
-  hoje: l.dataset.hoje == null ? null : Number(l.dataset.hoje), dif: l.dataset.dif == null ? null : Number(l.dataset.dif),
-  meio: l.querySelector('.cMeio').textContent.replace(/\s+/g, ' ').trim()})));
+  meta: Number(l.dataset.meta), real: Number(l.dataset.real), dir: Number(l.dataset.dir), ef: l.dataset.ef,
+  meio: l.querySelector('.cMeio').textContent.replace(/\s+/g, ' ').trim(),
+  dirTxt: l.querySelector('.cDir').textContent.replace(/\s+/g, ' ').trim()})));
 const notasInc = page => page.$$eval('#dCorpo .cNota', ns => ns.map(n => ({meta: Number(n.dataset.meta),
-  real: Number(n.dataset.real), ef: Number(n.dataset.ef), texto: n.textContent})));
+  real: Number(n.dataset.real), texto: n.textContent})));
+const COM_ONLINE = {'/js/config.js': t => t.replace('STATUS_INCLUI_ONLINE: false', 'STATUS_INCLUI_ONLINE: true')};
 
-describe('Parte L — aba Incentivo', {skip: pular}, () => {
-  test('aba ao lado de Novos Negócios em todos os perfis e visões; oculta com INCENTIVO_ATIVO = false e no payload antigo', async () => {
+describe('Parte L — aba Todos a Bordo', {skip: pular}, () => {
+  test('aba "Todos a Bordo" ao lado de Novos Negócios em todos os perfis e visões; sem card Status; oculta com INCENTIVO_ATIVO = false e no payload antigo', async () => {
     let {page, ctx, erros, fonte} = await abre('inc', {entrar: 'dir'});
     assert.deepEqual(await page.$$eval('.tab', ts => ts.map(t => [t.dataset.g, t.textContent])),
-                     [['VOLUME', 'Volume'], ['ICS_GC', 'ICS GC'], ['NOVOS_NEG', 'Novos Negócios'], ['INCENTIVO', 'Incentivo']]);
+                     [['VOLUME', 'Volume'], ['ICS_GC', 'ICS GC'], ['NOVOS_NEG', 'Novos Negócios'], ['INCENTIVO', 'Todos a Bordo']]);
+    assert.equal(await page.getAttribute('.tab[data-g="INCENTIVO"]', 'aria-label'), 'Todos a Bordo');
     const ics = await page.evaluate(() => { document.querySelector('.tab[data-g="ICS_GC"]').click();
       return [...document.querySelectorAll('#lista .ind .tit')].map(t => t.textContent); });
     for(const entrar of ['dir', {perfil: 'gc', gc: 'G2'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'IT+MO', sv: 'SV.IT.1'},
@@ -2184,14 +2197,19 @@ describe('Parte L — aba Incentivo', {skip: pular}, () => {
       if(entrar !== 'dir') await vaiPara(page, entrar);
       assert.ok(await visivelInc(page), JSON.stringify(entrar));
       await filtra(page, {aba: 'INCENTIVO'});
+      // começa direto nos cinco cards, sem o card "Status Todos a Bordo 3.0"
       assert.deepEqual(await page.$$eval('#lista .ind .tit', t => t.map(x => x.textContent)), TITULOS_INC, JSON.stringify(entrar));
+      assert.equal(await page.$$eval('#lista .incStatus', e => e.length), 0);
       assert.equal((await terceiroCard(page))[0], 'Itens em 100%');
-      assert.equal(await page.innerHTML('#puxa'), '', 'sem "puxa a média" na aba Incentivo');
+      assert.ok(await statusTopo(page), 'linha Status ' + JSON.stringify(entrar));
+      assert.equal(await page.innerHTML('#puxa'), '', 'sem "puxa a média" na aba Todos a Bordo');
     }
-    // de volta ao ICS GC: o card e a contagem de antes; os itens INC não entram no ICS
+    assert.doesNotMatch(await page.textContent('body'), /Incentivo|Status Todos a Bordo|real \+ hoje/);
+    // de volta ao ICS GC: o card e a contagem de antes; os itens INC não entram no ICS; sem a linha Status
     await vaiPara(page, 'dir');
     await filtra(page, {aba: 'ICS_GC'});
     assert.equal((await terceiroCard(page))[0], 'Ritmo de coberturas');
+    assert.equal(await statusTopo(page), null);
     assert.deepEqual(await page.$$eval('#lista .ind .tit', t => t.map(x => x.textContent)), ics);
     assert.ok(!ics.some(t => /Heineken|600ml$/.test(t)), ics.join('|'));
     // payload novo sem o grupo (payload antigo) com a aba aberta: a aba some e volta para o ICS GC
@@ -2206,34 +2224,54 @@ describe('Parte L — aba Incentivo', {skip: pular}, () => {
       ({page, ctx, erros} = await abre(nome, {entrar: 'dir', troca}));
       assert.equal(await visivelInc(page), false, nome);
       assert.equal(await page.$$eval('#lista .ind', els => els.length) > 0, true);
+      await filtra(page, {aba: 'NOVOS_NEG'});
+      assert.ok(await statusTopo(page), 'Novos Negócios com a linha Status também sem a aba ' + nome);
       assert.deepEqual(erros, []);
       await ctx.close();
     }
   });
 
-  test('item: EF pela união (Real ou online, sem repetir), % e cor; Heineken BARRACUDA, mista e FULL; "Sem meta"', async () => {
-    const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'rota', gc: 'IT+MO', rota: 'IT11'}});
+  test('cards dos itens = cards do ICS GC (função, métricas, régua de ritmo, oportunidades, caixa Online); "Sem meta"', async () => {
+    const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'IT+MO'}});
+    await page.selectOption('#fgc', 'IT');
+    // escopo com meta em todas as rotas: os cards de Cervejas e Cervejas 600ml Retornável são idênticos aos do ICS GC
+    await filtra(page, {aba: 'ICS_GC'});
+    const ics = await cardsInc(page);
     await filtra(page, {aba: 'INCENTIVO'});
     let c = await cardsInc(page);
-    // Heineken: Real 1 + online [o mesmo do Real, um novo] = EF 2 (não 3): 100%, verde; caixa do Online como no ICS
-    assert.deepEqual([c['INC HEINEKEN'].meta, c['INC HEINEKEN'].real, c['INC HEINEKEN'].ef, c['INC HEINEKEN'].big,
-                      c['INC HEINEKEN'].ok, c['INC HEINEKEN'].cl], [2, 1, 2, '▲100%', true, 'Meta 2 Real 1 Diferença -1']);
-    assert.deepEqual(c['INC HEINEKEN'].obox, ['obox ok', '2', 'no ritmo']);
-    assert.deepEqual([c['INC EISENBAHN 600ML'].ef, c['INC EISENBAHN 600ML'].big, c['INC EISENBAHN 600ML'].obox],
-                     [3, '▲150%', ['obox ok', '0', 'Meta batida!']]);
-    assert.deepEqual([c['INC HEINEKEN 600ML'].real, c['INC HEINEKEN 600ML'].ef, c['INC HEINEKEN 600ML'].big], [2, 3, '▲150%']);
-    // IT12: Heineken abaixo (Real 1, sem online): vermelho, "faltam 1"
-    await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'IT12'});
+    for(const k of ['CERVEJAS', 'CERVEJAS 600ML RETORNAVEL']) assert.equal(c[k].html, ics[k].html, k);
+    // mesma estrutura do ICS: Meta, Real, Diferença; % do mês; texto do ritmo; caixa Online; nada de EF/"real + hoje"
+    for(const k of Object.keys(c)){
+      assert.ok(c[k].abre && c[k].obox && /^Meta \d+ Real \d+ Diferença [-+]?\d+$/.test(c[k].cl), k + ' ' + c[k].cl);
+      assert.match(c[k].big, /^[▲▼]\d+%$/);
+      assert.match(c[k].acao, /^(faltam \d+ hoje|no ritmo)$/);
+      assert.equal(c[k].ef, null);
+      assert.doesNotMatch(c[k].html, /real \+ hoje|data-ef/);
+    }
+    // IT11: Heineken Real 1 de 2 = 50%: verde pela régua do ritmo (>= PACE_ONTEM_PCT), sem contar o online no %
+    await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'IT11'});
+    const pace = await page.evaluate(() => P.PACE_ONTEM_PCT);
+    assert.ok(pace <= 50);
     c = await cardsInc(page);
-    assert.deepEqual([c['INC HEINEKEN'].ef, c['INC HEINEKEN'].big, c['INC HEINEKEN'].ok, c['INC HEINEKEN'].acao],
-                     [1, '▼50%', false, 'faltam 1']);
-    assert.deepEqual([c.CERVEJAS.real, c.CERVEJAS.ef, c.CERVEJAS.big], [3, 4, '▲200%'], 'cliente fora do roster no online conta');
+    assert.deepEqual([c['INC HEINEKEN'].cl, c['INC HEINEKEN'].big, c['INC HEINEKEN'].ok, c['INC HEINEKEN'].acao,
+                      c['INC HEINEKEN'].opo], ['Meta 2 Real 1 Diferença -1', '▲50%', true, 'no ritmo', 'oportunidades do dia 2']);
+    assert.deepEqual(c['INC HEINEKEN'].obox, ['obox ok', '2', 'no ritmo']);
+    // Real >= Meta: "Meta batida!" na caixa do Online (regra do ICS); 150% pela conta Real / Meta
+    assert.deepEqual([c['INC EISENBAHN 600ML'].big, c['INC EISENBAHN 600ML'].obox], ['▲150%', ['obox ok', '0', 'Meta batida!']]);
+    assert.deepEqual([c['INC HEINEKEN 600ML'].big, c['INC HEINEKEN 600ML'].obox], ['▲100%', ['obox ok', '1', 'Meta batida!']]);
+    // IT21: Real 0 = 0%, vermelho, "faltam 1 hoje" e meta do dia na caixa do Online
+    await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'IT21'});
+    c = await cardsInc(page);
+    assert.deepEqual([c['INC HEINEKEN'].big, c['INC HEINEKEN'].ok, c['INC HEINEKEN'].acao], ['▼0%', false, 'faltam 1 hoje']);
+    assert.match(c['INC HEINEKEN'].obox[2], /^meta do dia 1$/);
     // gerência BARRACUDA (AP): Heineken e Heineken - 600ml "Exclusivo portfólio Full"; os outros normais
     await vaiPara(page, {perfil: 'gc', gc: 'AP'});
     c = await cardsInc(page);
     assert.deepEqual(['INC HEINEKEN', 'INC HEINEKEN 600ML'].map(k => [c[k].off, c[k].semdado, c[k].abre]),
                      [[true, 'Exclusivo portfólio Full', false], [true, 'Exclusivo portfólio Full', false]]);
     assert.ok(!c.CERVEJAS.off && !c['INC EISENBAHN 600ML'].off);
+    await page.click('.ind[data-inc-off="INC HEINEKEN"]');
+    assert.equal(await page.evaluate(() => document.getElementById('drw').classList.contains('on')), false);
     // G3: Eisenbahn - 600ml sem meta = "Sem meta"
     await vaiPara(page, {perfil: 'gc', gc: 'G3'});
     c = await cardsInc(page);
@@ -2242,91 +2280,155 @@ describe('Parte L — aba Incentivo', {skip: pular}, () => {
     await vaiPara(page, {perfil: 'gc', gc: 'G2'});
     c = await cardsInc(page);
     const g211 = await page.evaluate(() => nodo('', 'G211').indicators['INC HEINEKEN']);
-    assert.deepEqual([c['INC HEINEKEN'].off, c['INC HEINEKEN'].meta, c['INC HEINEKEN'].real], [false, g211.meta, g211.real]);
-    // FULL (IT, no seletor do grupo IT+MO): todas as rotas da IT com meta, inclusive a Neutraliza I31
+    assert.deepEqual([c['INC HEINEKEN'].off, ...metaReal(c['INC HEINEKEN'])], [false, g211.meta, g211.real]);
+    const semEstilo = h => h.replace(/ style="[^"]*"/g, '');     // encaixa() ajusta a fonte depois de pintar
+    assert.equal(semEstilo(c['INC HEINEKEN'].html),
+                 await page.evaluate(() => linha('INC HEINEKEN', agrega(['G211']).ind['INC HEINEKEN'], ['G211'])));
+    // FULL (IT): todas as rotas da IT com meta, inclusive a Neutraliza I31
     await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
     await page.selectOption('#fgc', 'IT');
     c = await cardsInc(page);
     const it = await page.evaluate(() => rotasDe('IT', '').filter(r => temMetaInc('INC HEINEKEN', r)));
     assert.deepEqual(it.sort(), ['I31', 'IT11', 'IT12', 'IT21', 'IT22']);
-    assert.deepEqual([c['INC HEINEKEN'].meta, c['INC HEINEKEN'].real, c['INC HEINEKEN'].ef], [10, 2, 3]);
+    assert.deepEqual(metaReal(c['INC HEINEKEN']), [10, 2]);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
-  test('Status: verde com todos batidos; vermelho com um item abaixo (agregado >= 100%); item sem meta fora; "Sem meta"', async () => {
+  test('linha "Status" do card do topo: "-" parcial, "✓" verde com todos em 100% (Real >= Meta), sem meta, BARRACUDA fora da conta', async () => {
     const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'rota', gc: 'IT+MO', rota: 'IT11'}});
     await filtra(page, {aba: 'INCENTIVO'});
-    let s = (await cardsInc(page)).INC_STATUS;
-    // IT11: Meta 10, Real 10, Hoje 2 (EF 12): Diferença = (Real + Hoje) - Meta = +2; 120%; verde; no perfil Rota não abre
-    assert.deepEqual([s.meta, s.real, s.hoje, s.ef, s.dif, s.big, s.ok, s.abre, s.acao],
-                     [10, 10, 2, 12, 2, '▲120%', true, false, '5 de 5 itens em 100%']);
-    assert.equal(s.cl, 'Meta 10 Real 10 + hoje 2 Diferença +2');
-    assert.deepEqual(await terceiroCard(page), ['Itens em 100%', '5 / 5', 'n ok', 'todos em 100%']);
-    await page.click('#lista .incStatus');
-    assert.equal(await page.evaluate(() => document.getElementById('drw').classList.contains('on')), false);
-    // IT12: Heineken a 50% -> vermelho, com o agregado em 110%
-    await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'IT12'});
-    s = (await cardsInc(page)).INC_STATUS;
-    assert.deepEqual([s.meta, s.real, s.hoje, s.ef, s.dif, s.big, s.ok, s.acao], [10, 10, 1, 11, 1, '▼110%', false, '4 de 5 itens em 100%']);
+    // fonte visivelmente menor que a do rótulo "itens em 100%"
+    const tam = await page.evaluate(() => ['lRitmo', 'stRitmo'].map(id => parseFloat(getComputedStyle(document.getElementById(id)).fontSize)));
+    assert.ok(tam[1] <= tam[0] - 2, tam.join(' > '));
+    // IT11: Heineken com Real 1 de 2 (o online não conta com STATUS_INCLUI_ONLINE = false): 4 / 5, "-"
     assert.deepEqual(await terceiroCard(page), ['Itens em 100%', '4 / 5', 'n no', 'abaixo de 100%']);
-    // G212 (BARRACUDA): os itens Heineken ficam fora da soma e da cor
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    // IT12: Heineken abaixo: 4 / 5
+    await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'IT12'});
+    assert.deepEqual((await terceiroCard(page)).slice(1, 3), ['4 / 5', 'n no']);
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    // G212 (BARRACUDA): os itens Heineken ficam fora da conta; os 3 com meta batidos: "✓" verde
     await vaiPara(page, {perfil: 'rota', gc: 'G2', rota: 'G212'});
-    s = (await cardsInc(page)).INC_STATUS;
-    assert.deepEqual([s.meta, s.real, s.ef, s.big, s.ok, s.acao], [6, 6, 6, '▲100%', true, '3 de 3 itens em 100%']);
     assert.deepEqual(await terceiroCard(page), ['Itens em 100%', '3 / 3', 'n ok', 'todos em 100%']);
-    // G311: nenhum item com meta -> "Sem meta"
+    assert.deepEqual(await statusTopo(page), ['ok', 'Status ✓', true]);
+    // G311: nenhum item com meta: "0 / 0", sem a linha Status
     await vaiPara(page, {perfil: 'rota', gc: 'G3', rota: 'G311'});
-    const c = await cardsInc(page);
-    assert.deepEqual([c.INC_STATUS.off, c.INC_STATUS.semdado], [true, 'Sem meta']);
-    assert.deepEqual(Object.values(c).filter(x => !x.off), []);
     assert.deepEqual(await terceiroCard(page), ['Itens em 100%', '0 / 0', 'n', 'sem meta']);
+    assert.equal(await statusTopo(page), null);
+    // gerência BARRACUDA (AP): n = 3 (sem os Heineken); todos batidos depois de pôr Real = Meta: "✓"
+    await vaiPara(page, {perfil: 'gc', gc: 'AP'});
+    assert.deepEqual(await terceiroCard(page), ['Itens em 100%', '0 / 3', 'n no', 'abaixo de 100%']);
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    await ritmo(page, 'AP', await page.evaluate(() => rotasDe('AP', '')), 1);
+    await filtra(page, {});
+    assert.deepEqual(await terceiroCard(page), ['Itens em 100%', '3 / 3', 'n ok', 'todos em 100%']);
+    assert.deepEqual(await statusTopo(page), ['ok', 'Status ✓', true]);
+    // Diretoria e grupo: a mesma conta sobre o escopo
+    await vaiPara(page, 'dir');
+    await filtra(page, {aba: 'INCENTIVO'});
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    assert.equal((await terceiroCard(page))[1], '0 / 5');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
-  test('cascatas: soma das linhas = card (item e Status), Status termina nas rotas, item vai aos clientes; grupo com o filtro', async () => {
+  test('STATUS_INCLUI_ONLINE = true: item em 100% pela união Real ou online de hoje (clientes distintos)', async () => {
+    const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'rota', gc: 'IT+MO', rota: 'IT11'}, troca: COM_ONLINE});
+    await filtra(page, {aba: 'INCENTIVO'});
+    // IT11: Heineken Real [a] + online [a, b] = 2 clientes distintos = Meta: 5 / 5, "✓"
+    assert.deepEqual((await terceiroCard(page)).slice(1, 3), ['5 / 5', 'n ok']);
+    assert.deepEqual(await statusTopo(page), ['ok', 'Status ✓', true]);
+    // o card não muda: % pelo Real (50%), como no ICS
+    assert.equal((await cardsInc(page))['INC HEINEKEN'].big, '▲50%');
+    // IT12: Heineken sem online continua abaixo
+    await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'IT12'});
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    // o mesmo cliente do Real comprando de novo hoje não conta duas vezes
+    await page.evaluate(() => { ONLINE.clientes.IT12['INC HEINEKEN'] = [...COBERTOS.IT12['INC HEINEKEN']]; render(); });
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    await page.evaluate(() => { ONLINE.clientes.IT12['INC HEINEKEN'].push(987654); render(); });
+    assert.deepEqual(await statusTopo(page), ['ok', 'Status ✓', true]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Novos Negócios: mesma linha "Status" no "Ritmo de coberturas" (contagem e texto iguais); ICS GC e Volume sem ela', async () => {
+    let {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'rota', gc: 'IT+MO', rota: 'IT11'}});
+    await filtra(page, {aba: 'NOVOS_NEG'});
+    const antes = await terceiroCard(page);
+    assert.deepEqual([antes[0], antes[3]], ['Ritmo de coberturas', 'abaixo do ritmo']);
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    for(const a of ['ICS_GC', 'VOLUME']){ await filtra(page, {aba: a}); assert.equal(await statusTopo(page), null, a); }
+    // todos os itens de Novos Negócios com Real = Meta: "✓" verde; contagem e texto do ritmo como sempre
+    await ritmo(page, 'IT', ['IT11'], 1);
+    await filtra(page, {aba: 'NOVOS_NEG'});
+    const n = await page.evaluate(() => P.COV_GRUPO.NOVOS_NEG.length);
+    assert.deepEqual(await terceiroCard(page), ['Ritmo de coberturas', `${n} / ${n}`, 'n ok', 'dentro do ritmo']);
+    assert.deepEqual(await statusTopo(page), ['ok', 'Status ✓', true]);
+    await filtra(page, {aba: 'ICS_GC'});
+    assert.equal(await statusTopo(page), null);
+    // um item abaixo de 100% (mesmo no ritmo): "-"
+    await page.evaluate(() => { nodo('', 'IT11').indicators.CAMPARI.real = 1; });
+    await filtra(page, {aba: 'NOVOS_NEG'});
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // STATUS_INCLUI_ONLINE = true: o cliente novo do online de hoje completa o item
+    ({page, ctx, erros} = await abre('inc', {entrar: {perfil: 'rota', gc: 'IT+MO', rota: 'IT11'}, troca: COM_ONLINE}));
+    await ritmo(page, 'IT', ['IT11'], 1);
+    await page.evaluate(() => { nodo('', 'IT11').indicators.CAMPARI.real = 1; COBERTOS.IT11.CAMPARI = [111];
+      (ONLINE.clientes.IT11 = ONLINE.clientes.IT11 || {}).CAMPARI = [111]; });
+    await filtra(page, {aba: 'NOVOS_NEG'});
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false], 'o mesmo cliente não conta duas vezes');
+    await page.evaluate(() => { ONLINE.clientes.IT11.CAMPARI.push(222); render(); });
+    assert.deepEqual(await statusTopo(page), ['ok', 'Status ✓', true]);
+    // Diretoria: a linha também aparece
+    await vaiPara(page, 'dir');
+    await filtra(page, {aba: 'NOVOS_NEG'});
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('cascatas: as do ICS GC (soma das linhas = card), só rotas com meta, até os clientes; grupo com o filtro', async () => {
     const {page, ctx, erros} = await abre('inc', {entrar: 'dir'});
     await filtra(page, {aba: 'INCENTIVO'});
     let c = await cardsInc(page);
-    // Diretoria: Status por gerência (as 15 com dados, na ordem), soma = card
-    await page.click('.ind[data-inc="INC_STATUS"]');
+    // Diretoria: Heineken só nas gerências com meta (FULL e a G2 mista), soma = card; linhas com o % do mês
+    await page.click('.ind[data-k="INC HEINEKEN"]');
     let g = await linhasInc(page);
-    assert.deepEqual(g.map(l => l.nome.split(' ·')[0]), ORDEM.filter(x => x !== 'DI').map(x => 'GC.' + x));
-    assert.deepEqual(somaLinhas(g), [c.INC_STATUS.meta, c.INC_STATUS.real, c.INC_STATUS.ef]);
-    assert.ok(g.every(l => l.hoje === l.ef - l.real && l.dif === l.ef - l.meta));
-    assert.match(await page.textContent('#dTit'), /^Status Todos a Bordo 3\.0 · Diretoria$/);
-    await page.keyboard.press('Escape');
-    // Diretoria: Heineken só nas gerências com meta (FULL e a G2 mista), soma = card
-    await page.click('.ind[data-inc="INC HEINEKEN"]');
-    g = await linhasInc(page);
     assert.deepEqual(g.map(l => l.nome.split(' ·')[0]), ['G2', ...gcsFull()].map(x => 'GC.' + x)
       .sort((a, b) => ORDEM.indexOf(a.slice(3)) - ORDEM.indexOf(b.slice(3))));
-    assert.deepEqual(somaLinhas(g), [c['INC HEINEKEN'].meta, c['INC HEINEKEN'].real, c['INC HEINEKEN'].ef]);
+    assert.deepEqual(somaLinhas(g), metaReal(c['INC HEINEKEN']));
+    assert.ok(g.every(l => l.ef === undefined && /do mês$/.test(l.dirTxt) && l.dir === Math.round(l.real / l.meta * 100)));
+    assert.match(await page.textContent('#dTit'), /^Heineken · Diretoria$/);
+    assert.match(await page.textContent('#dSub'), /^Meta \d+ · Real \d+ · (faltam \d+ para o ritmo de hoje|no ritmo)$/);
     await page.keyboard.press('Escape');
-    // RV: supervisões, a linha "Neutraliza" (R31) e a nota da virtual R32: linhas + nota = card (Status e item)
+    // IT (todas as rotas com meta): a cascata de Cervejas é a mesma do ICS GC
+    await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
+    await page.selectOption('#fgc', 'IT');
+    const corpo = async aba => { await filtra(page, {aba}); await page.click('.ind[data-k="CERVEJAS"]');
+      const h = [await page.textContent('#dTit'), await page.textContent('#dSub'), await page.innerHTML('#dCorpo')];
+      await page.click('#dCorpo .cLin[data-i="0"]'); await page.click('#dCorpo .cLin[data-i="0"]');
+      h.push(await page.innerHTML('#dCorpo')); await page.keyboard.press('Escape'); return h; };
+    assert.deepEqual(await corpo('INCENTIVO'), await corpo('ICS_GC'));
+    // RV: supervisões, a linha "Neutraliza" (R31) e a nota da virtual R32: linhas + nota = card
     await vaiPara(page, {perfil: 'gc', gc: 'RV'});
     await filtra(page, {aba: 'INCENTIVO'});
     c = await cardsInc(page);
-    for(const k of ['INC_STATUS', 'INC HEINEKEN', 'CERVEJAS']){
-      await page.click(`.ind[data-inc="${k}"]`);
+    for(const k of ['INC HEINEKEN', 'CERVEJAS']){
+      await page.click(`.ind[data-k="${k}"]`);
       g = await linhasInc(page);
       const n = await notasInc(page);
       assert.deepEqual(g.map(l => l.nome.split(' ·')[0]), ['SV.RV.1', 'SV.RV.2', 'Neutraliza'], k);
       assert.equal(n.length, 1, k);
-      assert.match(n[0].texto, /^Inclui rotas virtuais: Meta \d+ · Real \d+/);
-      assert.deepEqual(somaLinhas([...g, ...n]), [c[k].meta, c[k].real, c[k].ef], k);
+      assert.match(n[0].texto, /^Inclui rotas virtuais: Meta \d+ · Real \d+$/);
+      assert.deepEqual(somaLinhas([...g, ...n]), metaReal(c[k]), k);
       await page.keyboard.press('Escape');
     }
-    // Status termina nas rotas (linhas sem clique); o item desce até os clientes que faltam comprar
-    await page.click('.ind[data-inc="INC_STATUS"]');
-    await page.click('#dCorpo .cLin[data-i="0"]');
-    g = await linhasInc(page);
-    assert.deepEqual([g.map(l => l.nome), g.map(l => l.abre)], [['Rota RV11', 'Rota RV12'], [false, false]]);
-    await page.click('#dCorpo .cLin');
-    assert.equal(await page.textContent('#dTit'), 'Status Todos a Bordo 3.0 · SV.RV.1 · Supervisor');
-    await page.keyboard.press('Escape');
-    await page.click('.ind[data-inc="INC HEINEKEN"]');
+    // o item desce até os clientes que faltam comprar (chips de dia de visita)
+    await page.click('.ind[data-k="INC HEINEKEN"]');
     await page.click('#dCorpo .cLin[data-i="0"]');
     await page.click('#dCorpo .cLin[data-i="0"]');
     assert.ok(await page.$('#dLista .chips'), 'clientes que faltam comprar');
@@ -2334,7 +2436,7 @@ describe('Parte L — aba Incentivo', {skip: pular}, () => {
     await page.keyboard.press('Escape');
     // G2 mista: só a SV.G2.1 e, nela, só a G211 (rotas sem meta fora das listas)
     await vaiPara(page, {perfil: 'gc', gc: 'G2'});
-    await page.click('.ind[data-inc="INC HEINEKEN"]');
+    await page.click('.ind[data-k="INC HEINEKEN"]');
     g = await linhasInc(page);
     assert.deepEqual(g.map(l => [l.nome.split(' ·')[0], l.info]), [['SV.G2.1', '2 rotas · 1 com meta']]);
     await page.click('#dCorpo .cLin[data-i="0"]');
@@ -2342,36 +2444,45 @@ describe('Parte L — aba Incentivo', {skip: pular}, () => {
     await page.keyboard.press('Escape');
     // gerência agrupada: Total = IT + MO; com a MO no seletor, só a MO
     await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
-    const soma = await page.evaluate(() => ['IT', 'MO'].map(gc => incItem('INC HEINEKEN', rotasDe(gc, '')).meta));
-    assert.equal((await cardsInc(page))['INC HEINEKEN'].meta, soma[0] + soma[1]);
+    const soma = await page.evaluate(() => ['IT', 'MO'].map(gc => agrega(rotasInc('INC HEINEKEN', rotasDe(gc, ''))).ind['INC HEINEKEN'].meta));
+    assert.equal(metaReal((await cardsInc(page))['INC HEINEKEN'])[0], soma[0] + soma[1]);
     await page.selectOption('#fgc', 'MO');
-    assert.equal((await cardsInc(page))['INC HEINEKEN'].meta, soma[1]);
-    await page.click('.ind[data-inc="INC_STATUS"]');
+    assert.equal(metaReal((await cardsInc(page))['INC HEINEKEN'])[0], soma[1]);
+    await page.click('.ind[data-k="INC HEINEKEN"]');
     assert.ok((await linhasInc(page)).every(l => l.nome.startsWith('SV.MO.') || l.nome === 'Neutraliza'));
+    await page.keyboard.press('Escape');
+    // perfil Rota: abre direto nos clientes
+    await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'IT11'});
+    await page.click('.ind[data-k="INC HEINEKEN"]');
+    assert.ok(await page.$('#dLista .chips'));
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
-  test('fechamento do mês: sem "Hoje" (EF = Real), % = Real / Meta, Status só com o Real; tag de fechamento', async () => {
-    const {page, ctx, erros} = await abre('incfech', {entrar: {perfil: 'rota', gc: 'IT+MO', rota: 'IT11'}});
+  test('fechamento do mês: cards e cascata iguais aos do ICS; Status só com o Real (mesmo com STATUS_INCLUI_ONLINE)', async () => {
+    const {page, ctx, erros} = await abre('incfech', {entrar: {perfil: 'gc', gc: 'IT+MO'}, troca: COM_ONLINE});
+    await page.selectOption('#fgc', 'IT');
+    assert.match(await page.textContent('#sub'), /Fechamento/);
+    await filtra(page, {aba: 'ICS_GC'});
+    const ics = await cardsInc(page);
     await filtra(page, {aba: 'INCENTIVO'});
     const c = await cardsInc(page);
-    assert.match(await page.textContent('#sub'), /Fechamento/);
-    // Heineken: Real 1 de 2, o online de hoje (mês novo) não conta: 50%, vermelho; caixa do Online sem número
-    assert.deepEqual([c['INC HEINEKEN'].ef, c['INC HEINEKEN'].big, c['INC HEINEKEN'].ok, c['INC HEINEKEN'].obox],
-                     [1, '▼50%', false, ['obox nd', '—', 'mês fechado']]);
-    assert.deepEqual([c.INC_STATUS.meta, c.INC_STATUS.real, c.INC_STATUS.ef, c.INC_STATUS.hoje, c.INC_STATUS.dif,
-                      c.INC_STATUS.big, c.INC_STATUS.ok, c.INC_STATUS.temHoje], [10, 10, 10, 0, 0, '▼100%', false, false]);
-    assert.equal(c.INC_STATUS.cl, 'Meta 10 Real 10 Diferença 0');
-    await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
-    await page.click('.ind[data-inc="INC HEINEKEN"]');
-    const g = await linhasInc(page);
-    assert.ok(g.every(l => l.ef === l.real && /mês fechado/.test(l.meio)), JSON.stringify(g));
+    for(const k of ['CERVEJAS', 'CERVEJAS 600ML RETORNAVEL']) assert.equal(c[k].html, ics[k].html, k);
+    assert.doesNotMatch(await page.textContent('#lista'), /Meta batida|mês fechado|real \+ hoje/);
+    await page.click('.ind[data-k="INC HEINEKEN"]');
+    assert.ok((await linhasInc(page)).every(l => /do mês$/.test(l.dirTxt)));
+    await page.keyboard.press('Escape');
+    // IT11: Heineken Real 1 de 2; o online de hoje (mês novo) não completa o item: 4 / 5, "-"
+    await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'IT11'});
+    assert.deepEqual((await terceiroCard(page)).slice(1, 3), ['4 / 5', 'n no']);
+    assert.deepEqual(await statusTopo(page), ['parcial', 'Status -', false]);
+    await vaiPara(page, {perfil: 'rota', gc: 'G2', rota: 'G212'});
+    assert.deepEqual(await statusTopo(page), ['ok', 'Status ✓', true]);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
-  test('busca de cliente na aba Incentivo: quadrinhos dos 5 itens; item sem meta na rota do cliente sem quadrinho de compra', async () => {
+  test('busca de cliente na aba Todos a Bordo: quadrinhos dos 5 itens; item sem meta na rota do cliente sem quadrinho de compra', async () => {
     const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'IT+MO'}});
     await filtra(page, {aba: 'INCENTIVO'});
     const tiles = async pv => { await page.fill('#q', String(pv)); return page.$$eval('#cli .tile', ts => ts.map(t =>
