@@ -1162,7 +1162,8 @@ describe('Parte S — SEM_COMPRA_MES (chave nova e opcional do payload)', {skip:
 
   test('o sintético traz a lista: tamanho = semCompra e contém o SEM_COMPRA_HOJE', () => {
     const p = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
-    assert.equal(Object.keys(p).at(-1), 'SEM_COMPRA_MES');
+    // a última, antes só da MES_ANTERIOR (opcional, Etapa 8b; o front ainda não lê)
+    assert.equal(Object.keys(p).filter(k => k !== 'MES_ANTERIOR').at(-1), 'SEM_COMPRA_MES');
     assert.deepEqual(Object.keys(p.SEM_COMPRA_MES), Object.keys(p.SEM_COMPRA_HOJE));
     for(const svs of Object.values(p.DATA)) for(const rotas of Object.values(svs)) for(const [r, d] of Object.entries(rotas)){
       const l = p.SEM_COMPRA_MES[r];

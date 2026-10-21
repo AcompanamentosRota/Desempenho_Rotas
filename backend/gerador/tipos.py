@@ -117,3 +117,7 @@ class Fontes:
     comodato_cliente: dict[str, dict[int, list]] = field(default_factory=dict)
     # rota oculta com o Real dos clientes em rotas EV* (M.rota_eventuais) -> gerência; o volume dela está em `volume`
     eventuais: dict[str, str] = field(default_factory=dict)
+    # mês anterior no mesmo dia útil (mes_anterior.Dados; None = sem a chave MES_ANTERIOR nesta rodada)
+    mes_anterior: object | None = None
+    # segundos medidos na carga (mes_anterior_s, mes_anterior_espera_s): log e workflow "Conferir tendência"
+    tempos: dict[str, float] = field(default_factory=dict)

@@ -118,7 +118,8 @@ class TestSemCompraMes(unittest.TestCase):
 
     def test_chave_no_fim_e_opcional(self):
         for p in self.payloads:
-            self.assertEqual(list(p)[-1], "SEM_COMPRA_MES")
+            # a última, antes só da MES_ANTERIOR (opcional, Etapa 8b)
+            self.assertEqual([k for k in p if k != "MES_ANTERIOR"][-1], "SEM_COMPRA_MES")
         self.assertNotIn("SEM_COMPRA_MES", CHAVES_PAYLOAD)
 
     def test_validacao_sem_erro_nem_aviso(self):

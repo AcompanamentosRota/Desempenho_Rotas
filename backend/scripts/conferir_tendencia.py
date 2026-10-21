@@ -34,7 +34,11 @@ nomes ou códigos de clientes) com:
   E10. mês anterior no mesmo dia útil (descoberta da Etapa 8, "Evolução contra o mês anterior"): data de corte no
      calendário (E10a), Real e cobertura do mês anterior até o corte e metas dele, com o filtro de DATA_MOVIMENTO
      conferido, linhas e tempo de cada consulta (E10b), amostra de 3 gerências e BAND (E10c), Refrigerantes por
-     gerência (E10d), custo no gerador e peso da chave proposta no payload (E10e) e riscos e dúvidas (E10f). Só relata.
+     gerência (E10d), custo no gerador e peso da chave no payload (E10e) e riscos e decisões (E10f). Só relata; grava
+     e10_mes_anterior.json ao lado do relatório (para a E11).
+  E11. MES_ANTERIOR do payload que o gerar.py gravou (workflow: `--e11 PAYLOAD`, sem rede, acrescentada ao relatório):
+     Real da chave x consulta direta da E10 x curva diária, Refrigerantes por gerência x E10d, tamanho, tempo, rotas e
+     o caso do calendário. Só contagens e códigos de rota.
 """
 from __future__ import annotations
 
@@ -55,11 +59,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gerador import calendario as calmod  # noqa: E402
 from gerador import fontes, modelo  # noqa: E402
+# E10: o corte, o Vol Real com corte e a meta por rota (CASO_*/FONTE_* ficam aqui para quem lê ct.CASO_..., os testes)
+from gerador.mes_anterior import (  # noqa: E402, F401
+    CASO_FECHAMENTO, CASO_LIMITADO, CASO_NORMAL, CASO_SEM_DIA, FONTE_DATASPHERE, FONTE_LOCAL, CorteMesAnterior,
+    consulta_volume, corte_do_dia, corte_mes_anterior, dias_uteis_do_mes, filtro_ate, linhas_do_mes,
+    meta_volume_por_rota, real_por_rota)
 from gerador import mapeamento as M  # noqa: E402
 from gerador.consulta import Consulta, e, eq, ou  # noqa: E402
 from gerador.payload import _mais_comum  # noqa: E402
 from gerador.texto import data, inteiro, limpar, normalizar, numero  # noqa: E402
-from gerador.tipos import Calendario, Online  # noqa: E402
+from gerador.tipos import Online  # noqa: E402
 
 CM, CO, CB = M.ColMeta, M.ColComodato, M.ColBase
 VOL = M.INDICADORES_VOLUME
@@ -124,6 +133,7 @@ class ConsultaCronometrada(Consulta):
 class Relatorio:
     def __init__(self):
         self.linhas: list[str] = []
+        self.anexos: dict[str, dict] = {}    # nome do arquivo -> JSON gravado ao lado do relatório (só totais e rotas)
 
     def h(self, t: str):
         self.linhas += ["", f"## {t}", ""]
@@ -1236,6 +1246,225 @@ def secao_sem_compra_mes(rel: Relatorio, payload: dict | None, duracao_gerar: fl
              else "; gerar.py completo: ver a seção 10."))
 
 
+# ------------------------------------------------------------------ E11: MES_ANTERIOR do payload gerado
+# Roda depois do gerar.py (workflow: --e11 PAYLOAD, sem rede), sobre o payload que ele gravou e o resumo da E10 (ARQ_E10,
+# gravado pela parte com rede do mesmo workflow). Só totais, contagens e códigos de rota e gerência: nunca clientes.
+LIMITE_GERAR_S = 120        # tempo total do gerar.py (meta)
+TOL_E11 = 0.5               # caixas: diferença aceita além do arredondamento de 1 casa por rota
+
+
+def _rotas_gc(payload: dict) -> dict[str, str]:
+    """{rota: gerência} de todas as rotas do DATA (Neutraliza, virtuais e as ocultas das EV* inclusive)."""
+    return {r: gc for gc, svs in (payload.get("DATA") or {}).items() for rotas in svs.values() for r in rotas}
+
+
+def soma_chave(ma: dict, rotas=None) -> dict[str, list]:
+    """{VOL: [Real, Meta, rotas com o indicador]} somando os pares da chave (só os não nulos) nas `rotas` (todas)."""
+    out = {k: [0.0, 0.0, 0] for k in ma.get("IND") or []}
+    for r, vals in (ma.get("ROTAS") or {}).items():
+        if rotas is not None and r not in rotas:
+            continue
+        for k, par in zip(ma.get("IND") or [], vals or []):
+            if par is not None:
+                out[k][0] += par[0]
+                out[k][1] += par[1]
+                out[k][2] += 1
+    return out
+
+
+def real_hoje_gc(payload: dict, k: str) -> dict[str, list]:
+    """{gerência: [Real, Meta, rotas]} do macro `k` no payload, como o card (só as rotas com o indicador) + 'BAND'."""
+    out: dict = {}
+    for gc, svs in (payload.get("DATA") or {}).items():
+        for rotas in svs.values():
+            for d in rotas.values():
+                b = (d.get("indicators") or {}).get(k) or {}
+                if b.get("unavailable", True) or b.get("meta") is None:
+                    continue
+                for g in (gc, "BAND"):
+                    t = out.setdefault(g, [0.0, 0.0, 0])
+                    t[0] += b.get("real") or 0.0
+                    t[1] += b["meta"]
+                    t[2] += 1
+    return out
+
+
+def reconcilia(ma: dict, ref: dict, rotas_gc: dict[str, str]) -> dict[str, dict[str, float]]:
+    """Por macro: o Real da chave contra a consulta direta da E10 (todas as linhas por rota do cliente), separando o que
+    fica fora da chave: rotas do painel sem o indicador no mês anterior, EV* (na rota oculta ou fora dela) e rotas fora
+    do painel. resíduo = consulta direta - (na chave pelas rotas + EV* na rota oculta + o que fica fora)."""
+    real, ev = ref.get("REAL_ROTA") or {}, ref.get("EV") or {}
+    eventuais = {r for r in (ma.get("ROTAS") or {}) if r.endswith("-EV")}
+    ocultas = {r[:-3] for r in eventuais}
+    ind, rotas = ma.get("IND") or [], ma.get("ROTAS") or {}
+    out = {}
+    for i, k in enumerate(ind):
+        t = {"chave": sum(p[0] for vs in rotas.values() for p in [vs[i]] if p), "direta": 0.0, "nas_rotas": 0.0,
+             "sem_meta": 0.0, "ev_oculta": 0.0, "ev_fora": 0.0, "fora": 0.0}
+        for r, ks in real.items():
+            v = ks.get(k, 0.0)
+            t["direta"] += v
+            if r in rotas and r not in eventuais:
+                t["nas_rotas" if rotas[r][i] is not None else "sem_meta"] += v
+            elif M.rota_eventual(r):
+                pass                                 # entra pela gerência comercial (EV), abaixo
+            else:
+                t["fora"] += v
+        ev_total = sum(v for r, ks in real.items() if M.rota_eventual(r) for kk, v in ks.items() if kk == k)
+        for g, ks in ev.items():
+            v = ks.get(k, 0.0)
+            par = rotas.get(M.rota_eventuais(g), [None] * len(ind))[i] if g in ocultas else None
+            t["ev_oculta" if par is not None else "ev_fora"] += v
+        t["ev_fora"] += ev_total - sum(ks.get(k, 0.0) for ks in ev.values())   # EV* sem gerência comercial do painel
+        t["residuo"] = t["direta"] - (t["nas_rotas"] + t["sem_meta"] + t["ev_oculta"] + t["ev_fora"] + t["fora"])
+        t["dif_chave"] = t["chave"] - (t["nas_rotas"] + t["ev_oculta"])
+        out[k] = t
+    return out
+
+
+def secao_mes_anterior_payload(rel: Relatorio, payload: dict | None, ref: dict | None = None,
+                               tempos: dict | None = None, duracao_gerar: float | None = None) -> None:
+    """Seção E11: a chave MES_ANTERIOR do payload que o gerar.py gravou, contra a E10 (`ref`, o ARQ_E10)."""
+    tempos = tempos or {}
+    if payload is None:
+        rel.p("payload.json não gerado (o gerar.py falhou ou reprovou na validação): E11 sem dados.")
+        return
+    ma = payload.get(M.CHAVE_MES_ANTERIOR)
+    if ma is None:
+        motivo = ("sem dia útil fechado (DIA_ONTEM = 0): a chave não é gerada" if not payload.get("DIA_ONTEM") else
+                  "consulta do mês anterior falhou ou passou do limite (ver o aviso no log do gerar.py), ou payload de "
+                  "uma versão anterior do gerador")
+        rel.p(f"payload.json sem a chave {M.CHAVE_MES_ANTERIOR}: {motivo}.")
+        if tempos.get("mes_anterior_s") is not None:
+            rel.p(f"Consultas do mês anterior: {tempos['mes_anterior_s']:.1f} s (limite {M.MES_ANTERIOR_LIMITE_S} s).")
+        return
+    rotas_gc = _rotas_gc(payload)
+    ind, rotas = ma.get("IND") or [], ma.get("ROTAS") or {}
+    lab = ma.get("MES_LABEL")
+    rel.p(f"Chave do payload: {lab}, dia útil {ma.get('DIA_UTIL')} de {ma.get('TOTAL_DIAS_UTEIS')}, corte "
+          f"{ma.get('DATA_CORTE')}, FECHADO = {str(bool(ma.get('FECHADO'))).lower()}; IND = "
+          + ", ".join(f"`{k}`" for k in ind) + ". Mês do payload: " + str(payload.get("MES_LABEL"))
+          + (" (fechamento)" if payload.get("FECHAMENTO") else "") + f", DIA_ONTEM {payload.get('DIA_ONTEM')}.")
+    if ref is None:
+        rel.p("Sem o resumo da E10 (`" + ARQ_E10 + "`, gravado pela parte com rede do workflow): (a), (b) e (c) só com o "
+              "lado do payload.")
+    elif ref.get("DATA_CORTE") != ma.get("DATA_CORTE"):
+        rel.p(f"**Corte diferente**: E10 {ref.get('DATA_CORTE')} x chave {ma.get('DATA_CORTE')} (o relatório e o "
+              "gerar.py rodaram com datas diferentes?).")
+
+    # (a) Real de cada macro: chave x consulta direta x curva diária
+    rel.h3("E11a. Real de cada macro: chave x consulta direta (E10) x curva diária")
+    if ref and ref.get("REAL_ROTA") is not None:
+        rec = reconcilia(ma, ref, rotas_gc)
+        rel.p("Consulta direta = Vol Real com o filtro de data por rota do cliente (todas as linhas). Fica fora da chave: "
+              "rota do painel sem o indicador no mês anterior (como o card), EV* sem a rota oculta de hoje (ou sem "
+              "gerência comercial do painel) e rota fora do painel. 'chave - (rotas + EV*)' deve ser só arredondamento.")
+        rel.tabela(["macro", "chave (todas as rotas)", "consulta direta", "nas rotas da chave", "EV* na rota oculta",
+                    "rotas sem o indicador (fora)", "EV* fora", "fora do painel", "resíduo", "chave - (rotas + EV*)"],
+                   [[M.LABELS.get(k, k), _n(t["chave"]), _n(t["direta"]), _n(t["nas_rotas"]), _n(t["ev_oculta"]),
+                     _n(t["sem_meta"]), _n(t["ev_fora"]), _n(t["fora"]), _n(round(t["residuo"], 1) or 0.0),
+                     _n(round(t["dif_chave"], 1) or 0.0)]
+                    for k, t in rec.items()])
+        lim = TOL_E11 + 0.05 * len(rotas)
+        ok = all(abs(t["dif_chave"]) <= lim and abs(t["residuo"]) <= TOL_E11 for t in rec.values())
+        rel.p("\n" + ("**Bate**: o Real da chave é o da consulta direta nas rotas da chave (+ EV* na rota oculta) em todos "
+                      "os macros." if ok else "**Não bate** em algum macro (ver a tabela)."))
+        direta = sum(t["direta"] for t in rec.values())
+        curva = ref.get("CURVA_ATE_CORTE")
+        if curva is not None:
+            igual = abs(direta - curva) <= TOL_FILTRO * max(abs(curva), 1.0)
+            rel.p(f"Consulta direta (5 macros, BAND) {_n(direta, 0)} x curva diária até o corte {_n(curva, 0)}: "
+                  + ("**igual**." if igual else "**difere**."))
+    else:
+        rel.tabela(["macro", "chave (todas as rotas)", "rotas com o indicador"],
+                   [[M.LABELS.get(k, k), _n(t[0]), t[2]] for k, t in soma_chave(ma).items()])
+
+    # (b) e (c) Refrigerantes por gerência
+    rel.h3(f"E11b/c. {M.LABELS[K_REFRI]} por gerência: chave x E10d e Real de hoje (payload) x E10d")
+    por_gc = {gc: soma_chave(ma, {r for r, g in rotas_gc.items() if g == gc}).get(K_REFRI) for gc in
+              (payload.get("GC_ATIVAS") or [])}
+    por_gc["BAND"] = soma_chave(ma).get(K_REFRI)
+    hoje = real_hoje_gc(payload, K_REFRI)
+    refri = (ref or {}).get("REFRI_GC") or {}
+
+    def ig(a, b):
+        return None if a is None or b is None else ("ok" if abs(a - b) <= TOL_E11 + 0.05 * len(rotas) else "**difere**")
+    linhas, difs = [], 0
+    for g, t in por_gc.items():
+        a = t if t and t[2] else None
+        e10 = (refri.get(g) or {}).get("ant")
+        e10r = (refri.get(g) or {}).get("ref")
+        h = hoje.get(g)
+        pa = a[0] / a[1] * 100 if a and a[1] else None
+        ph = h[0] / h[1] * 100 if h and h[1] else None
+        conf = [ig(a and a[0], e10 and e10[0]), ig(a and a[1], e10 and e10[1]), ig(h and h[0], e10r and e10r[0])]
+        difs += sum(1 for x in conf if x == "**difere**")
+        linhas.append([g, _n(a[0], 0) if a else None, _n(e10[0], 0) if e10 else None, conf[0],
+                       _n(a[1], 0) if a else None, _n(e10[1], 0) if e10 else None, conf[1], _pct2(pa, 100),
+                       _n(h[0], 0) if h else None, _n(e10r[0], 0) if e10r else None, conf[2], _pct2(ph, 100),
+                       _sinal(None if pa is None or ph is None else ph - pa, 1),
+                       _sinal((h[0] / a[0] - 1) * 100 if a and h and a[0] else None, 1, "%")])
+    rel.tabela(["gerência", f"Real {lab} (chave)", "E10d", "", f"Meta {lab} (chave)", "E10d", "", f"% {lab}",
+                f"Real {payload.get('MES_LABEL')} (payload)", "E10d", "", f"% {payload.get('MES_LABEL')}", "Δ p.p.",
+                "Δ Real"], linhas)
+    if ref:
+        rel.p("\n" + ("Chave e payload iguais à E10d em todas as gerências." if not difs else
+                      f"**{difs} diferença(s)** contra a E10d (ver a tabela)."))
+
+    # (d) tamanho
+    rel.h3("E11d. Tamanho")
+    from gerador.saida import serializar
+    total_b = len(serializar(payload))
+    chave_b = peso_chave(ma)
+    rel.p(f"Chave {chave_b / 1e3:.1f} KB; payload {total_b / 1e6:.2f} MB"
+          + (f" **(acima do limite de atenção de {LIMITE_PAYLOAD_MB:.0f} MB)**" if total_b / 1e6 > LIMITE_PAYLOAD_MB
+             else f" (limite de atenção: {LIMITE_PAYLOAD_MB:.0f} MB)") + "; a E10 estimou +19 KB.")
+
+    # (e) tempo
+    rel.h3("E11e. Tempo do gerador")
+    s_ma, espera = tempos.get("mes_anterior_s"), tempos.get("mes_anterior_espera_s")
+    rel.p("Consultas do mês anterior (em paralelo com as do mês): "
+          + (f"{s_ma:.1f} s (limite {M.MES_ANTERIOR_LIMITE_S} s)" if s_ma is not None else "não informado")
+          + "; espera depois das consultas do mês (o que a chave atrasou): "
+          + (f"{espera:.1f} s" if espera is not None else "não informado")
+          + "; gerar.py completo: " + (f"{duracao_gerar:.0f} s (meta: abaixo de {LIMITE_GERAR_S} s"
+                                      + ("; **acima**" if duracao_gerar >= LIMITE_GERAR_S else "") + ")"
+                                      if duracao_gerar else "ver a seção 10") + ". Antes da chave: ~64 s (21/10/2026).")
+
+    # (f) rotas
+    rel.h3("E11f. Rotas")
+    no_payload = set(rotas_gc)
+    faltam = sorted(no_payload - set(rotas), key=_ordem_rota)
+    sobram = sorted(set(rotas) - no_payload, key=_ordem_rota)
+    todas_null = sorted((r for r, vs in rotas.items() if all(v is None for v in vs)), key=_ordem_rota)
+    alguma_null = sum(1 for vs in rotas.values() if any(v is None for v in vs))
+    ev = sorted(r for r in rotas if r in set(payload.get("EVENTUAIS_ROTAS") or []))
+    rel.tabela(["", "rotas"], [
+        ["no payload (DATA)", len(no_payload)], ["na chave", len(rotas)],
+        ["do payload fora da chave", f"{len(faltam)}" + (f" ({_rotas_txt(faltam)})" if faltam else "")],
+        ["na chave fora do payload", f"{len(sobram)}" + (f" ({_rotas_txt(sobram)})" if sobram else "")],
+        ["sem nenhum indicador no mês anterior (todos null)", f"{len(todas_null)}"
+         + (f" ({_rotas_txt(todas_null)})" if todas_null else "")],
+        ["com algum indicador null", alguma_null],
+        ["ocultas das EV* (Real das rotas EV*)", f"{len(ev)}" + (f" ({_rotas_txt(ev)})" if ev else "")]])
+    if ref and ref.get("EV"):
+        sem = sorted(g for g in ref["EV"] if M.rota_eventuais(g) not in rotas)
+        if sem:
+            rel.p(f"\nGerências com Real de rotas EV* em {lab} sem a rota oculta hoje (fica fora da chave): "
+                  + ", ".join(sem) + ".")
+
+    # (g) caso
+    rel.h3("E11g. Caso do calendário")
+    if ma.get("FECHADO"):
+        caso = f"fechamento: {payload.get('MES_LABEL')} fechado contra {lab} inteiro (corte = último dia)"
+    elif (ma.get("DIA_UTIL") or 0) < (payload.get("DIA_ONTEM") or 0):
+        caso = (f"mês limitado: DIA_ONTEM {payload.get('DIA_ONTEM')} > {ma.get('TOTAL_DIAS_UTEIS')} dias úteis de {lab} "
+                "(vale ele inteiro)")
+    else:
+        caso = f"normal: dia útil {ma.get('DIA_UTIL')} de {lab}"
+    rel.p(f"**{caso}**." + (f" E10: {ref.get('CASO')}." if ref else ""))
+
+
 # ------------------------------------------------------------------ E10: mês anterior no mesmo dia útil
 # Descoberta da Etapa 8 da visão executiva (bloco "Evolução contra o mês anterior"): dá para comparar onde estamos com
 # onde estávamos no MESMO dia útil do mês anterior (calendário de vendas)? Quanto custa? Só relata: nada muda no gerador
@@ -1245,101 +1474,11 @@ E10_N_AMOSTRA = 3
 E10_MAX_ROTAS = 40                     # rotas listadas por motivo (as demais só contadas)
 COB_E10 = list(M.INDICADORES_COBERTURA)  # ICS GC e Novos Negócios (13 itens; incentivo, Imperdoáveis e Venda Zero fora)
 AGRUPADORES_COB_E10 = [M.AGRUPADORES_COBERTURA[k] for k in COB_E10]
-CHAVE_E10 = "MES_ANTERIOR"             # proposta de chave opcional do payload (a última, fora de CHAVES_PAYLOAD)
+CHAVE_E10 = M.CHAVE_MES_ANTERIOR       # chave opcional do payload (a última, fora de CHAVES_PAYLOAD; gerador/mes_anterior.py)
 GERAR_HOJE_S = 64                      # gerar.py completo em 21/10/2026, sem a E10 (a seção 10 mede o desta execução)
 PAYLOAD_PUBLICADO = Path(__file__).resolve().parents[2] / "frontend" / "data" / "payload.json"
 TOL_FILTRO = 0.001                     # 0,1%: "igual" ao comparar a consulta com e sem o filtro de data
-FONTE_DATASPHERE, FONTE_LOCAL = "Datasphere", "cálculo local (seg-sex menos feriados nacionais)"
-CASO_NORMAL, CASO_LIMITADO = "normal", "limitado: o mês anterior tem menos dias úteis (vale ele inteiro)"
-CASO_SEM_DIA, CASO_FECHAMENTO = "sem dia útil fechado", "fechamento (o mês fechado contra o anterior a ele)"
-
-
-class CorteMesAnterior(NamedTuple):
-    """O mesmo dia útil no mês anterior ao de referência (E10a)."""
-    ref: date               # 1º dia do mês de referência (o do payload; no fechamento, o mês fechado)
-    anterior: date          # 1º dia do mês anterior a ele
-    n: int                  # dias úteis fechados no mês de referência (DIA_ONTEM; no fechamento, o total)
-    total_ref: int          # dias úteis do mês de referência
-    data_ref: date | None   # data do dia útil n no mês de referência (DATA_ONTEM)
-    total_ant: int          # dias úteis do mês anterior
-    n_ant: int              # dia útil usado no mês anterior: n limitado ao total dele (0 = nenhum)
-    data_n: date | None     # data do dia útil n_ant
-    corte: date | None      # corte, inclusive: o dia útil n_ant e os dias não úteis logo depois dele
-    fonte: str              # FONTE_DATASPHERE ou FONTE_LOCAL (dias úteis do mês anterior)
-    caso: str               # CASO_NORMAL, CASO_LIMITADO, CASO_SEM_DIA ou CASO_FECHAMENTO
-    limitado: bool          # n > total_ant: o mês anterior tem menos dias úteis e vale inteiro
-    n_proporcional: int     # alternativa para a decisão: n / total_ref x total_ant, arredondado
-
-
-def linhas_do_mes(linhas_cal: list[dict], ref: date) -> int:
-    """Linhas do calendário do Datasphere no mês de `ref`."""
-    return sum(1 for l in linhas_cal
-               if (d := data(l.get(M.ColCalendario.DATA))) and (d.year, d.month) == (ref.year, ref.month))
-
-
-def dias_uteis_do_mes(linhas_cal: list[dict], ref: date) -> tuple[list[date], str]:
-    """(datas dos dias úteis do mês de `ref`, em ordem; fonte). Pelo calendário do Datasphere (o 1º dia de semana com
-    cada NO_DIA_UTIL, calendario.data_do_dia_util); sem as linhas do mês, ou com algum dia útil faltando, pelo cálculo
-    local (só os feriados nacionais)."""
-    if linhas_do_mes(linhas_cal, ref):
-        total = calmod.total_dias_uteis(linhas_cal, ref)
-        datas = [calmod.data_do_dia_util(linhas_cal, ref.year, ref.month, i) for i in range(1, total + 1)]
-        if datas and all(datas):
-            return datas, FONTE_DATASPHERE
-    return calmod.dias_uteis_do_mes(ref.year, ref.month), FONTE_LOCAL
-
-
-def corte_do_dia(datas: list[date], n: int, ref: date) -> date | None:
-    """Corte do dia útil `n` (datas = dias úteis do mês de `ref`): a véspera do dia útil seguinte (inclui os dias não
-    úteis logo depois do dia n) ou, no último dia útil, o fim do mês; None com n = 0."""
-    if n <= 0 or not datas:
-        return None
-    return datas[n] - timedelta(days=1) if n < len(datas) else fontes.ultimo_dia(ref)
-
-
-def corte_mes_anterior(cal: Calendario, linhas_cal: list[dict]) -> CorteMesAnterior:
-    """O mesmo dia útil no mês anterior ao de referência: N = DIA_ONTEM (dias úteis fechados; no fechamento, o total do
-    mês fechado), limitado aos dias úteis do mês anterior. O corte inclui os dias não úteis logo depois do dia útil N
-    (o Real de hoje também traz as NF do fim de semana); no último dia útil do mês anterior, vai até o fim dele."""
-    ref = cal.ref or cal.hoje.replace(day=1)
-    ant = calmod.mes_anterior(ref)
-    datas, fonte = dias_uteis_do_mes(linhas_cal, ant)
-    n, total_ant = max(0, cal.dia_ontem), len(datas)
-    n_ant = min(n, total_ant)
-    caso = (CASO_SEM_DIA if not n_ant else CASO_FECHAMENTO if cal.fechamento else
-            CASO_LIMITADO if n > total_ant else CASO_NORMAL)
-    prop = min(total_ant, _inteiro(n * total_ant / cal.total_dias_uteis)) if cal.total_dias_uteis else 0
-    return CorteMesAnterior(ref, ant, n, cal.total_dias_uteis, cal.data_ontem, total_ant, n_ant,
-                            datas[n_ant - 1] if n_ant else None, corte_do_dia(datas, n_ant, ant), fonte, caso,
-                            n > total_ant, prop)
-
-
-def filtro_ate(cons: Consulta, corte: date) -> str:
-    """DATA_MOVIMENTO até o corte (inclusive), com o literal pelo tipo do $metadata (fontes.literal_data)."""
-    return f"{CM.DATA} le {fontes.literal_data(cons, corte)}"
-
-
-def _consulta_e10(cons: Consulta, sel: list[str], filtro: str | None, gcs: list[str]) -> list[dict]:
-    """A consulta inteira; se falhar (ex.: HTTP 500), uma por gerência em paralelo (como fontes._por_rota)."""
-    try:
-        return cons.linhas(M.OBJ_META, sel, filtro)
-    except Exception:  # noqa: BLE001
-        if not gcs:
-            raise
-        return [l for ls in cons.em_paralelo(fontes._por_gerencia(M.OBJ_META, sel, filtro, gcs, None)).values()
-                for l in ls]
-
-
-def consulta_volume(cons: Consulta, anomes: str, gcs: list[str], corte: date | None = None,
-                    col_rota: str = CM.ROTA) -> list[dict]:
-    """Vol Real do mês por rota x agrupador x NF_STATUS, agregado no servidor (sem cliente nem dia), com os filtros do Vol
-    Real do gerador (os 5 macros, FILTRO_PEDIDOS_ONLINE) e, com `corte`, DATA_MOVIMENTO <= corte. Pela rota do cliente,
-    também a gerência comercial (clientes em rotas EV*, como fontes.carregar_volume_real)."""
-    sel = fontes._colunas(cons, M.OBJ_META, [col_rota, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES],
-                          [CM.GC_COMERCIAL] if col_rota == CM.ROTA else [])
-    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())), M.FILTRO_PEDIDOS_ONLINE,
-               filtro_ate(cons, corte) if corte else None)
-    return _consulta_e10(cons, sel, filtro, gcs)
+ARQ_E10 = "e10_mes_anterior.json"      # resumo da E10 para a E11 (gravado ao lado do relatório, no artifact)
 
 
 def consulta_curva(cons: Consulta, anomes: str) -> list[dict]:
@@ -1369,23 +1508,6 @@ def consulta_gc_meta(cons: Consulta, anomes: str) -> list[dict] | None:
                        e(eq(CM.META_ANOMES, anomes), ou(CM.META_AGRUPADOR, list(M.AGRUPADORES_VOLUME.values()))))
 
 
-def real_por_rota(linhas: list[dict], col_rota: str = CM.ROTA) -> tuple[dict, dict]:
-    """({rota: {VOL: Vol Real}}, {sigla da gerência comercial: {VOL: Vol Real}} dos clientes em rotas EV*), só com os
-    NF_STATUS do Vol Real (M.status_nf_real), como fontes.carregar_volume_real."""
-    por_rota: dict = defaultdict(dict)
-    ev: dict = defaultdict(dict)
-    for l in linhas:
-        r, k = fontes._rota(l.get(col_rota)), M.indicador_volume(l.get(CM.AGRUPADOR))
-        if not r or k not in VOL or not M.status_nf_real(l.get(CM.NF_STATUS)):
-            continue
-        v = numero(l.get(CM.VOL_MES))
-        por_rota[r][k] = por_rota[r].get(k, 0.0) + v
-        gc = _sigla_gc(l.get(CM.GC_COMERCIAL)) if M.rota_eventual(r) else None
-        if gc:
-            ev[gc][k] = ev[gc].get(k, 0.0) + v
-    return dict(por_rota), dict(ev)
-
-
 def curva_por_dia(linhas: list[dict]) -> dict[date, float]:
     """{DATA_MOVIMENTO: Vol Real} com os NF_STATUS do Vol Real."""
     out: dict = defaultdict(float)
@@ -1401,20 +1523,6 @@ def _soma_vol(por_rota: dict | None, rotas=None) -> float | None:
     if por_rota is None:
         return None
     return sum(v for r, ks in por_rota.items() if rotas is None or r in rotas for k, v in ks.items() if k in VOL)
-
-
-def meta_volume_por_rota(metas_vol: dict, neg_mes: dict | None, gc_rota: dict[str, str],
-                         real: dict | None = None) -> dict[str, dict]:
-    """{rota: {VOL: meta ou None}} como o gerador (modelo.meta_e_restante: META_VOLUME; sem ela, a soma de META_NEG da
-    rota da meta; None = indicador indisponível). A rota oculta das EV* tem meta 0 (só soma o Real) nos macros com Real."""
-    out = {}
-    for r, gc in gc_rota.items():
-        if r == M.rota_eventuais(gc):
-            out[r] = {k: 0.0 if (real or {}).get(r, {}).get(k) else None for k in VOL}
-        else:
-            out[r] = {k: modelo.meta_e_restante(metas_vol.get(r, {}).get(k), (neg_mes or {}).get(r, {}).get(k),
-                                                0.0, 0, 1)[0] for k in VOL}
-    return out
 
 
 def volume_por_gc(real: dict, meta: dict, gc_rota: dict[str, str]) -> dict[str, dict[str, list]]:
@@ -1585,6 +1693,23 @@ def peso_chave(chave: dict) -> int:
     return len(serializar({CHAVE_E10: chave})) - 1
 
 
+def resumo_e10(c: CorteMesAnterior, vol_ant: list[dict] | None, ev_ant: dict, curva_ate: float | None,
+               vol_gc_ant: dict, vol_gc_ref: dict, gcs: list[str]) -> dict:
+    """O que a E11 confere contra a chave MES_ANTERIOR do payload (arquivo ARQ_E10 ao lado do relatório): o corte, o Vol
+    Real da consulta direta por rota do cliente (todas as linhas, inclusive EV* e fora do painel), o das EV* por gerência
+    comercial, a curva diária até o corte e Refrigerantes por gerência (a E10d). Só códigos de rota e totais."""
+    def par(t):
+        return [round(t[0], 3), round(t[1], 3)] if t and t[2] else None
+    return {"MES_LABEL": calmod.rotulo_mes(c.anterior), "DATA_CORTE": c.corte.isoformat() if c.corte else None,
+            "DIA_UTIL": c.n_ant, "CASO": c.caso,
+            "REAL_ROTA": None if vol_ant is None else
+            {r: {k: round(v, 3) for k, v in ks.items()} for r, ks in sorted(real_por_rota(vol_ant)[0].items())},
+            "EV": {g: {k: round(v, 3) for k, v in ks.items()} for g, ks in sorted(ev_ant.items())},
+            "CURVA_ATE_CORTE": None if curva_ate is None else round(curva_ate, 3),
+            "REFRI_GC": {g: {"ant": None if vol_ant is None else par(vol_gc_ant.get(g, {}).get(K_REFRI)),
+                             "ref": par(vol_gc_ref.get(g, {}).get(K_REFRI))} for g in gcs + ["BAND"]}}
+
+
 def _d(d: date | None) -> str | None:
     """'18/09/2026 (sexta-feira)'."""
     return None if d is None else f"{d:%d/%m/%Y} ({calmod.nome_dia(d)})"
@@ -1618,8 +1743,8 @@ def _e10_calendario(rel: Relatorio, c: CorteMesAnterior, linhas_cal: list[dict])
     rel.p("- **Mês anterior com menos dias úteis**: o dia útil N fica limitado ao total dele (vale o mês anterior inteiro).")
     rel.p("- **Início do mês**: até o fim do 1º dia útil o painel está em fechamento (abaixo); sem dia útil fechado "
           "(DIA_ONTEM = 0) não há corte e a E10 não consulta nada.")
-    rel.p("- **Fechamento**: o mês de referência é o fechado (N = total dele) contra o anterior a ele no mesmo dia útil: "
-          "o anterior inteiro se tiver até N dias úteis; se tiver mais, os últimos ficam fora (ver as variantes).")
+    rel.p("- **Fechamento** (decisão de 21/10/2026: fechamento x fechamento): o mês de referência é o fechado contra o "
+          "anterior a ele INTEIRO (corte = o último dia dele), como a chave MES_ANTERIOR do gerador.")
     rel.p("- **Dias não úteis**: o corte inclui os dias logo depois do dia útil N (sábado, domingo, feriado), como o Real "
           "do mês de referência inclui as NF desses dias; o calendário do Datasphere manda (feriados regionais); sem as "
           "linhas do mês anterior, o cálculo local (só os feriados nacionais).")
@@ -1834,6 +1959,7 @@ def mes_anterior(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, hoje
     rel.tabela(["gerência", f"Real {lab_ant} {ate}", f"Meta {lab_ant}", f"% {lab_ant}", f"Real {lab_ref}",
                 f"Meta {lab_ref}", f"% {lab_ref}", "Δ p.p.", "Δ Real"],
                [[r[0]] + r[2:5] + r[7:] for r in (linha_vol(g, K_REFRI) for g in _gcs_com_dados(gc_rota) + ["BAND"])])
+    rel.anexos[ARQ_E10] = resumo_e10(c, vol_ant, ev_ant, esperado, vol_gc_ant, vol_gc_ref, _gcs_com_dados(gc_rota))
 
     # E10e. custo ------------------------------------------------------------------------------------------------------
     rel.h3("E10e. Custo: tempo no gerador e peso no payload")
@@ -1910,20 +2036,17 @@ def mes_anterior(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, hoje
               "gerências com diferença:")
         rel.tabela(["gerência", "pela rota do cliente (hoje)", "pela rota da meta", "diferença"],
                    dif or [["—", None, None, "nenhuma"]])
-    rel.p("\nDúvidas para a Karen (nada disso foi escolhido; a E10 usa a primeira opção de cada uma só para medir):")
-    rel.p(f"1. Mês anterior com menos dias úteis: limitar ao total (mês anterior inteiro) ou proporcional (hoje: dia "
-          f"{c.n_ant} x {c.n_proporcional})?")
-    rel.p("2. Fechamento: o mês fechado contra o anterior no mesmo dia útil (usado) ou contra o anterior inteiro?")
-    rel.p("3. Estrutura: Real do mês anterior pela rota atual do cliente (o que o gerador faria; usado) ou pela rota da "
-          "meta daquele mês? E rota que mudou de gerência: conta na gerência de hoje (usado) ou na de antes?")
-    rel.p("4. Base do %: Real até o corte ÷ meta do mês anterior inteiro (usado; o % real do card) ou ÷ META_NEG acumulada "
-          "até o corte (o ritmo)?")
-    rel.p("5. Coberturas entram no bloco? Real até o corte precisa da consulta por rota x cliente (a mais pesada), a não "
-          f"ser que `{CM.COB_MES}` some clientes no servidor (E10b); se a cobertura ignorar o corte, usar "
-          f"`{CM.VOL_MES}` > 0?")
-    rel.p("6. Ficam fora: Todos a Bordo (chaves INC), Del Valle Frut, Imperdoáveis e Venda Zero (o giro do mês anterior "
-          "não existe no comodato, seção 8)?")
-    rel.p("7. KS TT do mês anterior pelo segmento de hoje (base de hoje; usado) ou o da venda?")
+    rel.p("\nDecisões da Karen (21/10/2026), seguidas pela chave `MES_ANTERIOR` do gerador (gerador/mes_anterior.py):")
+    rel.p(f"1. Mês anterior com menos dias úteis: o dia útil fica limitado ao total dele (vale ele inteiro; hoje: dia "
+          f"{c.n_ant}; o proporcional seria {c.n_proporcional}).")
+    rel.p("2. Fechamento: fechamento x fechamento (o mês fechado contra o anterior a ele inteiro, com as metas dele).")
+    rel.p("3. Estrutura: Real do mês anterior pela rota ATUAL do cliente, na gerência de hoje; o Real das rotas EV* na "
+          "rota oculta da gerência comercial, como o do mês de referência.")
+    rel.p("4. Base do %: Real até o corte ÷ meta do mês anterior inteiro (META_VOLUME da rota da meta; sem ela, "
+          "META_NEG), o % real dos medidores da Executiva.")
+    rel.p("5. Por enquanto só Volume (os 5 macros): as coberturas ficam fora desta rodada (a E10 continua medindo).")
+    rel.p("6. Ficam fora: Todos a Bordo (chaves INC), Del Valle Frut, Imperdoáveis e Venda Zero.")
+    rel.p("7. KS TT do mês anterior pelo segmento de hoje: só quando as coberturas entrarem.")
 
 
 def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
@@ -2680,10 +2803,20 @@ def main() -> int:
     ap.add_argument("--rotas", default="", help="rotas extras de amostra, separadas por vírgula")
     ap.add_argument("--e9", type=Path, metavar="PAYLOAD",
                     help="só a seção E9 (SEM_COMPRA_MES) deste payload.json, acrescentada ao relatório (sem rede)")
-    ap.add_argument("--e9-duracao", type=float, help="segundos do gerar.py completo (para a E9)")
+    ap.add_argument("--e9-duracao", type=float, help="segundos do gerar.py completo (para a E9 e a E11)")
+    ap.add_argument("--e11", type=Path, metavar="PAYLOAD",
+                    help="a seção E11 (MES_ANTERIOR) deste payload.json, acrescentada ao relatório (sem rede); usa o "
+                         f"{ARQ_E10} da pasta do relatório")
+    ap.add_argument("--e11-tempo", type=float, help="segundos das consultas do mês anterior no gerar.py (mes_anterior_s)")
+    ap.add_argument("--e11-espera", type=float, help="espera pelo mês anterior no gerar.py (mes_anterior_espera_s)")
     args = ap.parse_args()
-    if args.e9:
-        return main_e9(args.e9, args.saida, args.e9_duracao)
+    if args.e9 or args.e11:
+        if args.e9:
+            main_e9(args.e9, args.saida, args.e9_duracao)
+        if args.e11:
+            main_e11(args.e11, args.saida, {"mes_anterior_s": args.e11_tempo, "mes_anterior_espera_s": args.e11_espera},
+                     args.e9_duracao)
+        return 0
     configurar_log("conferir")
     cfg = carregar_config()
     M.OBJ_META = cfg.objeto
@@ -2695,6 +2828,8 @@ def main() -> int:
     destino = args.saida / "relatorio_tendencia.md"
     destino.write_text(rel.texto(f"Conferência da tendência de volume e do fechamento · {hoje:%d/%m/%Y} "
                                  f"(gerado {calmod.agora():%d/%m/%Y %H:%M})"), encoding="utf-8")
+    for nome, obj in rel.anexos.items():
+        (args.saida / nome).write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"\nRelatório: {destino}")
     return 0
 
@@ -2708,6 +2843,20 @@ def main_e9(caminho: Path, pasta: Path, duracao: float | None) -> int:
     pasta.mkdir(parents=True, exist_ok=True)
     with (pasta / "relatorio_tendencia.md").open("a", encoding="utf-8") as arq:
         arq.write("\n".join(rel.linhas) + "\n")
+    return 0
+
+
+def main_e11(caminho: Path, pasta: Path, tempos: dict, duracao: float | None) -> int:
+    """Acrescenta a seção E11 ao relatório da pasta (o workflow roda depois do gerar.py)."""
+    payload = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else None
+    arq = pasta / ARQ_E10
+    ref = json.loads(arq.read_text(encoding="utf-8")) if arq.exists() else None
+    rel = Relatorio()
+    rel.h(f"E11. {M.CHAVE_MES_ANTERIOR} do payload gerado (mês anterior no mesmo dia útil, só Volume)")
+    secao_mes_anterior_payload(rel, payload, ref, {k: v for k, v in tempos.items() if v is not None}, duracao)
+    pasta.mkdir(parents=True, exist_ok=True)
+    with (pasta / "relatorio_tendencia.md").open("a", encoding="utf-8") as f:
+        f.write("\n".join(rel.linhas) + "\n")
     return 0
 
 

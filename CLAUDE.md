@@ -48,16 +48,27 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   workflow "Conferir tendência" já chama). Por gerência: Σ tamanho das listas x Σ `semCompra`, rotas com divergência,
   `SEM_COMPRA_HOJE` contido, KB que a chave acrescenta (limite de atenção 8 MB) e tempo. Só contagens e códigos de rota.
 - E10 do conferir (sempre, antes da seção 9; descoberta da Etapa 8, "Evolução contra o mês anterior"; `mes_anterior`):
-  o mesmo dia útil no mês anterior ao de referência (`corte_mes_anterior`: N = DIA_ONTEM, no fechamento o total;
-  limitado ao total do anterior; data pelo calendário do Datasphere, sem as linhas do mês anterior pelo cálculo local;
-  corte inclusive = véspera do dia útil N+1, com os dias não úteis logo depois do N). Até o corte (`DATA_MOVIMENTO le`,
+  o mesmo dia útil no mês anterior ao de referência (`corte_mes_anterior`, desde a Etapa 8b em
+  `backend/gerador/mes_anterior.py` com `consulta_volume`/`real_por_rota`/`meta_volume_por_rota`/`filtro_ate`; o
+  conferir importa de lá: N = DIA_ONTEM limitado ao total do anterior; no fechamento, o anterior INTEIRO; data pelo
+  calendário do Datasphere, sem as linhas do mês anterior pelo cálculo local; corte inclusive = véspera do dia útil N+1,
+  com os dias não úteis logo depois do N). Até o corte (`DATA_MOVIMENTO le`,
   só no `$filter`): Vol Real (5 macros, status do Vol Real; por rota do cliente e da meta), META_NEG e cobertura (rota x
   cliente e só rota x agrupador), cada filtro conferido contra o mês inteiro e a curva diária BAND, com linhas e tempo.
   Amostra `E10_AMOSTRA` (G1 AP IT) + BAND e Refrigerantes por gerência, como o card (rota oculta das EV* com meta 0 nos
-  macros com Real; cobertura só nas rotas com meta; KS TT). Custo no gerador (~64 s hoje) e peso da chave proposta
-  `MES_ANTERIOR` (opcional, a última; NÃO existe no payload), riscos (`DS_GERENCIA_COM_Chave_Meta_SAP` por mês;
-  `CD_ROTA_Clien` = rota ATUAL do cliente) e 7 dúvidas. Só relata. Como ler: README, "Mês anterior no mesmo dia útil";
-  testes: `test_mes_anterior.py` (Datasphere simulado `ConsultaE10`).
+  macros com Real; cobertura só nas rotas com meta; KS TT). Custo no gerador (~64 s hoje) e peso da chave
+  `MES_ANTERIOR` (com e sem coberturas), riscos (`DS_GERENCIA_COM_Chave_Meta_SAP` por mês;
+  `CD_ROTA_Clien` = rota ATUAL do cliente) e as 7 decisões da Karen. Só relata; grava `e10_mes_anterior.json` (`ARQ_E10`,
+  `resumo_e10`: corte, Vol Real da consulta direta por rota, EV* por gerência, curva até o corte, E10d) ao lado do
+  relatório, para a E11. Como ler: README, "Mês anterior no mesmo dia útil"; testes: `test_mes_anterior.py` (Datasphere
+  simulado `ConsultaE10`).
+- E11 do conferir (`MES_ANTERIOR` do payload gerado; como a E9, depois do gerar.py, sem rede:
+  `conferir_tendencia.py --saida DIR --e11 DIR/payload.json [--e9-duracao S] [--e11-tempo S] [--e11-espera S]`; o
+  workflow chama no passo "E9 e E11" com `mes_anterior_s`/`mes_anterior_espera_s` do `GITHUB_OUTPUT` do gerar.py): Real de
+  cada macro na chave x consulta direta da E10 (o que fica fora: sem indicador, EV* sem rota oculta, fora do painel;
+  resíduo) x curva diária; Refrigerantes por gerência x E10d (chave e Real de hoje do payload); tamanho; tempo; rotas
+  (null, EV*, total); caso (normal, limitado, fechamento). Só contagens e códigos de rota. Testes:
+  `test_mes_anterior_payload.py` (o sintético do front + setembro/26 pelo `ConsultaE10`).
 - Front local: `cd frontend && python -m http.server 8765`.
 - **Versão do código e aviso de versão nova** (README, "Versão do código e aviso de versão nova"): versão = hash de 12
   caracteres de `frontend/` sem `frontend/data/**` (`.github/scripts/versao-front.sh`; nunca o SHA do commit: com só os
@@ -116,12 +127,23 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `SEM_COMPRA_MES` (Etapa 1 do pacote da Executiva, 21/10/2026): `{rota: [PVs]}` = clientes do roster sem compra no mês
   (`sorted(pvs_roster - comprou)`, o mesmo `comprou` do `semCompra` e do `SEM_COMPRA_HOJE`; no fechamento, do mês
   fechado), `None` na rota sem dado; mesmas rotas e ordem do `SEM_COMPRA_HOJE` (`por_ordem`; Neutraliza, virtuais e as
-  ocultas das EV* como ele; o front esconde). Chave opcional, a ÚLTIMA do payload, fora de `CHAVES_PAYLOAD`;
+  ocultas das EV* como ele; o front esconde). Chave opcional, a última antes da `MES_ANTERIOR`, fora de `CHAVES_PAYLOAD`;
   `validacao._sem_compra_mes` só AVISA (tamanho ≠ `semCompra` ou `SEM_COMPRA_HOJE` fora). O front lê `P.SEM_COMPRA_MES`
   só na gaveta Sem compra fora do "Hoje" (Etapa 6, `abreSemCompra`); payload sem ela (antigo) = gaveta só no "Hoje", sem a
   barra (Partes S e X dos testes).
   Peso no payload real de 21/10 (4.631 clientes em 231 rotas): +39 KB (6,60 → 6,63 MB); pior caso (base inteira, ~29 mil)
   ~+0,24 MB.
+  `MES_ANTERIOR` (Etapa 8b, 21/10/2026; `gerador/mes_anterior.py`, README "Chave MES_ANTERIOR"): o mês anterior no mesmo
+  dia útil, SÓ Volume (decisões da Karen de 21/10: dia útil = DIA_ONTEM limitado ao total do anterior; fechamento x
+  fechamento = o anterior INTEIRO, `FECHADO: true`; Real pela rota ATUAL do cliente na gerência de hoje, EV* na rota
+  oculta "{GC}-EV" com meta 0; meta = a do mês anterior inteiro, META_VOLUME da rota da meta, sem ela META_NEG; só os 5
+  macros: sem coberturas, INC, Del Valle Frut, Imperdoáveis e Venda Zero). `{MES_LABEL, DIA_UTIL, TOTAL_DIAS_UTEIS,
+  DATA_CORTE, FECHADO, IND, ROTAS: {rota: [[real, meta] | null x 5]}}`, todas as rotas do payload na ordem dele; null =
+  sem o indicador no mês anterior (o Real não entra). Chave opcional, a ÚLTIMA do payload, fora de `CHAVES_PAYLOAD`;
+  DIA_ONTEM = 0 = sem a chave. Consultas em threads DAEMON (`mes_anterior.Carga`, nunca ThreadPoolExecutor: ele segura o
+  fim do processo) junto com as do mês; falha, > `M.MES_ANTERIOR_LIMITE_S` (60 s), Real negativo ou não finito = chave
+  fora + aviso, nunca reprova. `validacao._mes_anterior`: aviso (ausente com DIA_ONTEM > 0, Real BAND 0, meta negativa),
+  erro só NaN/inf ou Real negativo. O front ainda não lê (`CONFIG.EVOLUCAO_ATIVA = false`).
 - **Todo nome de coluna, filtro e agrupador fica em `backend/gerador/mapeamento.py`.** Valores conferidos em 13/10/2026:
   - Base de clientes guarda histórico: filtrar `FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'`.
   - Gerências do painel na fonte (`M.GC_ORIGEM`): `Gc. G1/G2/G3/Ap/It_Mo` conferidas; `Gc. At/An/Sl/Rv/Pa_Di/Ur_Ri/Gu_Po`

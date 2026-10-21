@@ -95,6 +95,9 @@ def main() -> int:
         log.error("Falha ao consultar o Datasphere: %s", erro)
         return 1
 
+    # tempo das consultas do mês anterior (MES_ANTERIOR): para a E11 do workflow "Conferir tendência"
+    _github_output(**{k: f"{v:.1f}" for k, v in f.tempos.items()})
+
     # janela de recarga: consulta sem nenhum cliente online e o online.json publicado do mesmo dia com dados ->
     # fica o publicado (não grava o vazio); o payload desta rodada usa o online dele (revertidos da Venda Zero)
     online_publicado = saida.ler(destino / "online.json")

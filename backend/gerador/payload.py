@@ -23,7 +23,7 @@ from dataclasses import replace
 
 from . import calendario as calmod
 from . import mapeamento as M
-from . import modelo
+from . import mes_anterior, modelo
 from .texto import limpar, normalizar
 from .tipos import Cliente, Fontes, Online
 
@@ -271,7 +271,7 @@ def montar_payload(f: Fontes) -> dict:
     def por_ordem(d: dict) -> dict:
         return {r: d[r] for r in rotas_ord if r in d}
 
-    return {
+    payload = {
         "MES_LABEL": cal.mes_label,
         "TOTAL_DIAS_UTEIS": cal.total_dias_uteis,
         "DIA_ONTEM": cal.dia_ontem,
@@ -318,3 +318,11 @@ def montar_payload(f: Fontes) -> dict:
         # clientes do roster sem compra no mês (PVs em ordem crescente; None = rota sem dado), como o SEM_COMPRA_HOJE
         "SEM_COMPRA_MES": por_ordem(sem_compra_mes),
     }
+    # mês anterior no mesmo dia útil (só Volume; a última chave, opcional): fica fora sem o dado ou com valor inválido
+    if f.mes_anterior is not None:
+        chave, aviso = mes_anterior.chave(f.mes_anterior, rotas_ord, f.eventuais)
+        if chave is not None:
+            payload[M.CHAVE_MES_ANTERIOR] = chave
+        if aviso:
+            f.avisos.append(aviso)
+    return payload
