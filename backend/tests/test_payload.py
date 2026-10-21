@@ -30,7 +30,7 @@ HOJE = date(2026, 10, 13)
 # chaves que o arquivo antigo não tinha (acrescentadas no fim do payload)
 CHAVES_NOVAS = {"FECHAMENTO", "DATA_ONTEM", "DIA_ONTEM_NOME", "GC_NOMES", "NEUTRALIZA_ROTAS", "VIRTUAIS_ROTAS", "EVENTUAIS_ROTAS", "OCULTAS",
                 "GC_SEM_OCULTAS",
-                "VOLUME_EXTRA", "COMODATO_CLIENTE"}
+                "VOLUME_EXTRA", "COMODATO_CLIENTE", "SEM_COMPRA_MES"}
 
 
 def _carregar():
@@ -74,6 +74,16 @@ class TestIdaEVolta(unittest.TestCase):
         for k in ["CLIENT_ROSTER", "CLIENTES_HOJE", "OPORTUNIDADES_DIA", "VISITAS_DIA", "COBERTOS",
                   "SEM_COMPRA_HOJE", "COMODATO_ATIVOS"]:
             self.assertEqual(self.g[k], self.p[k], k)
+
+    def test_sem_compra_mes(self):
+        # chave nova (não estava no arquivo antigo): tamanho = semCompra do arquivo antigo e contém o SEM_COMPRA_HOJE
+        rotas = {r: d for svs in self.p["DATA"].values() for rs in svs.values() for r, d in rs.items()}
+        self.assertEqual(list(self.g["SEM_COMPRA_MES"]), list(self.g["SEM_COMPRA_HOJE"]))
+        for r, d in rotas.items():
+            lista = self.g["SEM_COMPRA_MES"][r]
+            self.assertEqual(None if lista is None else len(lista), d["semCompra"], r)
+            self.assertLessEqual(set(self.p["SEM_COMPRA_HOJE"][r] or []), set(lista or []), r)
+            self.assertLessEqual(set(lista or []), {c[0] for c in self.p["CLIENT_ROSTER"][r]}, r)
 
     def test_redes(self):
         self.assertEqual(self.g["REDES_CLIENTE"], self.p["REDES_CLIENTE"])

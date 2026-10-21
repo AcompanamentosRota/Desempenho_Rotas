@@ -28,7 +28,7 @@ desempenho/
 ├── .github/workflows/
 │   ├── atualizar-dados.yml   cron 15 min, seg-sex, 07h-18h45 (Brasília)
 │   ├── deploy-pages.yml      publica frontend/ no Pages (com a versão do código: scripts/versao-front.sh)
-│   ├── conferir-tendencia.yml  manual: relatório da tendência/fechamento (artifact, sem commit)
+│   ├── conferir-tendencia.yml  manual: relatório da tendência/fechamento e E9 (artifact, sem commit)
 │   └── testes.yml            testes do back-end
 └── index.html                redireciona links antigos para frontend/
 ```
@@ -345,6 +345,8 @@ de Ritmo: `montaRitmo` sem navegador (vm com ONLINE e os campos de hoje lançand
 (sem Neutraliza/virtuais/-EV/SV.G3.3, que ficam no total), células e "Puxando a média", subtítulo com e sem
 `DIA_ONTEM_NOME`, botão (1280/390 px, Rota, fechamento), PDF simulado (páginas, progresso, confirmação, nome, sem
 conexão), desenho de 9 colunas sem texto cortado e, com as bibliotecas npm, o PDF real (páginas, 1280x720, tamanho).
+A Parte S abre o painel com e sem `SEM_COMPRA_MES` (Diretoria, Gerência, Supervisão e Rota) e confere que as telas
+(cards, listas, cascata, gavetas Base e Sem compra, Resumo) são as mesmas e que não há erro.
 
 ### Visual (fonte, escala e cores)
 
@@ -510,6 +512,31 @@ Todos a Bordo; nada muda no painel. Gerência = a da rota no painel; `fora` = ro
 - **E8e**: clientes distintos com cobertura realizada > 0, por item e gerência.
 - **E8f**: proposta de mapeamento: item → agrupador → chave interna sugerida (INC ...) → tem meta? → tem online? →
   observações.
+
+### Sem compra no mês (`SEM_COMPRA_MES`, seção E9)
+
+Chave do `payload.json` (desde 21/10/2026; Etapa 1 da visão executiva): por rota, os PVs dos clientes da base da rota
+que **não compraram no mês** (nenhuma compra ou cobertura nos 17 agrupadores do painel), em ordem crescente; `null` na
+rota sem venda no mês (sem dado), como o `semCompra`. É o mesmo cálculo do card "Sem compra" (base − compraram): o
+tamanho da lista é sempre o `semCompra` da rota, e a lista "Sem compra hoje" (`SEM_COMPRA_HOJE`, os agendados de hoje
+sem compra no mês) está sempre contida nela. Mesmas rotas e ordem do `SEM_COMPRA_HOJE` (Neutraliza, virtuais e as rotas
+ocultas das EV* seguem a mesma regra; o painel as esconde como hoje). No fechamento do mês, é do mês fechado.
+
+- Opcional e a última chave do payload: payload sem ela (o publicado antes desta versão) continua abrindo igual. A
+  validação não reprova por ela; só **avisa** se o tamanho de alguma lista for diferente do `semCompra` ou se o "Sem
+  compra hoje" de alguma rota não estiver dentro dela.
+- Peso: no payload real de 21/10/2026 (4.631 clientes sem compra em 231 rotas), +39 KB (6,60 → 6,63 MB); no pior caso
+  (começo do mês, a base inteira sem compra, ~29 mil clientes) cerca de +0,24 MB, abaixo do limite de atenção de 8 MB.
+- O painel ainda não usa a lista: ela vai alimentar a gaveta "Sem compra" com a barra de dias (fora do "Hoje"). Depois
+  do merge, rode **Atualizar dados** uma vez para o payload publicado trazer a chave.
+
+**Seção E9** do relatório "Conferir tendência": roda **depois** do `gerar.py`, sobre o `payload.json` que ele gravou
+(no workflow, o passo "E9"; local: `python scripts/conferir_tendencia.py --saida DIR --e9 DIR/payload.json`, sem rede,
+acrescenta a seção ao `relatorio_tendencia.md` da pasta). Por gerência e no TOTAL BAND: rotas, rotas com lista, soma
+dos tamanhos das listas × soma de `semCompra`, rotas com divergência (com os códigos), soma do "Sem compra hoje" e rotas
+em que ele não está contido; quanto a chave acrescenta ao payload (KB e %) e o tempo (serializar, a seção e o
+`gerar.py` completo). Só contagens e códigos de rota: nunca nomes nem códigos de clientes. Sem o payload (o `gerar.py`
+reprovou) ou com um payload sem a chave, a seção diz isso.
 
 Diferenças em relação ao arquivo que era montado à mão:
 - **Visitas de hoje**: vêm do campo `VISITA_HOJE` do SAP e incluem clientes com mais de um dia de
