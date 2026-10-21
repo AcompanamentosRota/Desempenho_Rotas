@@ -117,10 +117,18 @@ function claseTag(st){
   if(st.cor==='fechamento') return 'tagUpd fechamento';
   return 'tagUpd';
 }
+/* conteúdo da etiqueta: o texto inteiro (painel lateral do PC) e o curto do topo do celular ("20/10 18:58", só a data e
+   a hora da última atualização; no fechamento, o mesmo texto); o inteiro também fica no title */
+function textoTag(st){
+  const upd = ONLINE && ONLINE.updatedAt ? ONLINE.updatedAt.split('T') : null;
+  const curto = st.cor==='fechamento' || !upd ? st.texto
+    : `${upd[0].slice(8,10)}/${upd[0].slice(5,7)} ${(upd[1]||'').slice(0,5)}`;
+  return `<span class="pt"></span><span class="tLongo">${esc(st.texto)}</span><span class="tCurto">${esc(curto)}</span>`;
+}
 function tagAtualizado(){
   const st = statusAtualizado();
   if(!st) return '';
-  return ` <span class="${claseTag(st)}" id="tagUpdEl"><span class="pt"></span>${esc(st.texto)}</span>`;
+  return ` <span class="${claseTag(st)}" id="tagUpdEl" title="${esc(st.texto)}">${textoTag(st)}</span>`;
 }
 
 // reavalia a tag e o rodapé a cada minuto, sem re-renderizar o painel inteiro
@@ -129,7 +137,8 @@ function atualizarStatusTag(){
   const tagEl = document.getElementById('tagUpdEl');
   if(tagEl){
     tagEl.className = claseTag(st);
-    tagEl.innerHTML = st ? `<span class="pt"></span>${esc(st.texto)}` : '';
+    tagEl.innerHTML = st ? textoTag(st) : '';
+    tagEl.title = st ? st.texto : '';
   }
   const rEl = document.getElementById('rodapeStatus');
   if(rEl) rEl.textContent = st ? st.texto : 'sem dados de venda online neste export';
@@ -282,14 +291,19 @@ function render(){
   const perfil = ACESSO ? ACESSO.perfil : '';
   const onde = sel.modo==='dir' ? `Diretoria${sel.dgc ? ' · '+esc(rotuloGc(sel.dgc)) : ''}`
     : `${PERFIS[perfil==='sv' || perfil==='rota' ? perfil : 'gc']} · ${esc(rotuloGc(sel.gc))}`;
-  $('sub').innerHTML = `${esc(P.MES_LABEL)}${tagAtualizado()} · ${onde}` +
+  // escopo numa linha própria no painel lateral; no topo do celular some só na Diretoria (o seletor logo abaixo mostra)
+  $('sub').innerHTML = `${esc(P.MES_LABEL)}${tagAtualizado()}<span class="subEsc"><span class="subSep"> · </span>${onde}` +
     (sel.sv?` · ${esc(rotuloSv(sel.sv))}`:'') +
-    (sel.rota?` · Rota ${esc(sel.rota)} — ${esc(titulo(nodo(sel.gc,sel.rota).consultor))}`:'');
+    (sel.rota?` · Rota ${esc(sel.rota)} — ${esc(titulo(nodo(sel.gc,sel.rota).consultor))}`:'') + '</span>';
+  $('sub').classList.toggle('dir', sel.modo==='dir');
   const paceHoje = Math.round(P.DIA_HOJE / P.TOTAL_DIAS_UTEIS * 100);
+  // caixa de ritmo de hoje (painel lateral) e a linha curta do topo do celular
   $('ritmo').innerHTML =
-    `<span>Real até ontem: <b>dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}</b> (<span class="pct">${P.PACE_ONTEM_PCT}%</span>)`+
+    `<span class="ritLongo">Real até ontem: <b>dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}</b> (<span class="pct">${P.PACE_ONTEM_PCT}%</span>)`+
     ` · para entrar no ritmo hoje: <span class="pct">${paceHoje}%</span></span>`+
-    `<span>Hoje é o dia <b>${P.DIA_HOJE}</b> · ${esc(P.DIA_SEMANA)} · semana <b>N°${P.SEMANA_NUM}</b> (${esc(P.SEMANA_TIPO)})</span>`;
+    `<span class="ritLongo">Hoje é o dia <b>${P.DIA_HOJE}</b> · ${esc(P.DIA_SEMANA)} · semana <b>N°${P.SEMANA_NUM}</b> (${esc(P.SEMANA_TIPO)})</span>`+
+    `<span class="ritCurto">Dia útil <b>${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}</b> (<span class="pct">${P.PACE_ONTEM_PCT}%</span>)`+
+    ` · ritmo hoje <span class="pct">${paceHoje}%</span></span>`;
 
   const visiveis = rotasVisiveis();
   const visitas = visiveis.reduce((a,r)=>a+(VISITAS_DIA.geral[r]||0),0);
@@ -1101,6 +1115,27 @@ document.querySelectorAll('#entrada [data-perfil]').forEach(b => b.onclick = () 
 $('btnCasa').onclick = () => saiDoAcesso('');
 aplicaTemaEntrada(temaEntrada());
 $('entRod').textContent = CONFIG.CREDITOS;
+/* ---------- painel lateral (PC): recolher / expandir ----------
+   Recolhido = só os ícones (menu, abas, ↻ e casa, com o nome no title). O estado fica no aparelho ('drotas_lado') só
+   como conveniência; sem armazenamento, vale só nesta visita. No celular a classe não muda nada. Sem os elementos
+   (index.html antigo no cache com o app.js novo) não faz nada, para o resto do painel (e o ↻) seguir funcionando. */
+const LADO = 'drotas_lado', ladoMenu = $('ladoMenu');
+if($('ladoCred')) $('ladoCred').textContent = CONFIG.CREDITOS;
+function recolheLado(r){
+  document.body.classList.toggle('recolhido', r);
+  const t = r ? 'Abrir o painel' : 'Recolher o painel';
+  ladoMenu.setAttribute('aria-expanded', String(!r));
+  ladoMenu.setAttribute('aria-label', t);
+  ladoMenu.title = t;
+}
+if(ladoMenu){
+  ladoMenu.onclick = () => {
+    const r = !document.body.classList.contains('recolhido');
+    recolheLado(r);
+    try { localStorage.setItem(LADO, r ? 'recolhido' : 'aberto'); } catch(e) { /* sem armazenamento */ }
+  };
+  recolheLado((() => { try { return localStorage.getItem(LADO)==='recolhido'; } catch(e) { return false; } })());
+}
 
 /* ---------- busca de cliente ---------- */
 let ULTIMA_BUSCA = [];   // [ {tipo:'cliente',rota,c} | {tipo:'rede',nome,membros} ], sugestão mostrada agora

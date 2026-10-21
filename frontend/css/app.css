@@ -50,6 +50,9 @@
   /* indicador de ritmo (caixa Online dos cards) */
   --ritmo-raio:10px; --ritmo-peso:700; --ritmo-h:62px; --ritmo-w:84px;
   --largura:760px;
+  /* painel lateral do PC (>= 1000px): largura aberta e recolhida e a escala própria dele */
+  --lado-aberto:272px; --lado-recolhido:76px;
+  --fs-lado-tit:22px; --fs-lado-aba:14px; --fs-lado-sec:10.5px;
   --seguro-b:env(safe-area-inset-bottom,0px);
 }
 @media (max-width:640px){
@@ -155,9 +158,15 @@ body.na-entrada{overflow:hidden}
 .aviso.branca .avisoBtns button{color:var(--txt-apoio);border-color:var(--linha-forte)}
 .aviso.branca .avisoBtns .avisoPri{background:var(--preto);color:#fff;border-color:var(--preto)}
 /* com a faixa, a área segura do topo fica nela */
-.aviso:not([hidden])+.topo{padding-top:12px}
-.aviso:not([hidden])+.topo .topoBtns{top:10px}
+.aviso:not([hidden])+.lado .topo{padding-top:12px}
+.aviso:not([hidden])+.lado .topoBtns{top:10px}
 select[hidden]{display:none}
+
+/* ---------- painel lateral (PC): no celular o <aside> não tem caixa e os itens só dele somem ---------- */
+.lado{display:contents}
+.ladoMenu,.ladoSec,.ladoCred,.tab .ico,.rotBtn{display:none}
+.ico{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.topo button:focus-visible,.barra button:focus-visible,.barra select:focus-visible{outline:2px solid #fff;outline-offset:2px}
 
 /* ---------- cabeçalho (rola com a página) ---------- */
 .topo{background:var(--preto);color:#fff;padding:calc(12px + env(safe-area-inset-top,0px)) 0 10px}
@@ -504,23 +513,27 @@ body.rs-travado{overflow:hidden}
 #rsFolha.rs-pdf .rs-tab{display:block!important}
 #rsFolha.rs-pdf .rs-cards{display:none!important}
 
-/* ---------- cabeçalho compacto no celular (até 640px): mesma informação, menos altura ----------
-   Marca e título mais juntos; o bloco de datas sem caixa, as duas frases correndo juntas em até 2 linhas; seletores
-   numa linha; abas numa linha com a largura de cada rótulo. A barra (seletores e abas) continua sticky. */
-@media (max-width:640px){
+/* ---------- topo compacto (abaixo de 1000px): título + ↻ e casa; mês + etiqueta curta ("● 20/10 18:58", o texto
+   inteiro no title); uma linha "Dia útil 12/21 (57%) · ritmo hoje 62%". Sem a linha da marca, sem a caixa de ritmo de
+   duas linhas e sem o escopo da Diretoria (o seletor logo abaixo mostra); nos perfis com o filtro travado o escopo
+   fica. A barra (seletores e abas) continua sticky. ---------- */
+@media (max-width:999px){
   .topo{padding:calc(8px + env(safe-area-inset-top,0px)) 0 6px}
   .topoBtns{top:calc(8px + env(safe-area-inset-top,0px))}
   .casa,.recarga{width:32px;height:32px}
-  .marca{font-size:10px;padding-right:78px}
-  .topo h1{margin:2px 0 1px;line-height:1.1;padding-right:78px}
-  .aviso:not([hidden])+.topo{padding-top:8px}
-  .aviso:not([hidden])+.topo .topoBtns{top:8px}
+  .topo .marca{display:none}
+  .topo h1{margin:0 0 2px;line-height:32px;padding-right:78px}
+  .aviso:not([hidden])+.lado .topo{padding-top:8px}
+  .aviso:not([hidden])+.lado .topoBtns{top:8px}
   .sub{margin-bottom:5px;line-height:1.3}
-  .tagUpd{margin-left:4px;padding:1px 7px 1px 6px}
+  .sub .tLongo,.sub.dir .subEsc{display:none}
   .ritmo{display:block;background:none;border:0;border-top:1px solid rgba(255,255,255,.08);border-radius:0;
     padding:5px 0 0;line-height:1.3}
-  .ritmo>span{display:inline}
-  .ritmo>span+span::before{content:" · "}
+  .ritmo .ritLongo{display:none}
+}
+/* celular (até 640px): seletores numa linha; abas numa linha com a largura de cada rótulo */
+@media (max-width:640px){
+  .tagUpd{margin-left:4px;padding:1px 7px 1px 6px}
   .barra{padding-bottom:7px}
   .filtros{gap:6px}
   select{padding:6px 24px 6px 8px;background-position:right 7px center}
@@ -534,6 +547,9 @@ body.rs-travado{overflow:hidden}
 
 /* ---------- celular estreito (até 380px): só espaçamentos; a letra segue a escala ---------- */
 @media (max-width:380px){
+  /* as quatro abas cabem na linha (em 360 px passavam 6 px da caixa) */
+  .tabs{gap:4px}
+  .tab{padding:7px 6px}
   .ind{--pad-esq:10px;padding:12px 10px 11px calc(var(--pad-esq) - var(--faixa))}
   .ind .row{gap:6px}
   .ind .cm{padding:0 5px}
@@ -545,18 +561,57 @@ body.rs-travado{overflow:hidden}
 
 /* ---------- tablet / PC (a partir de 1000px): usa a largura da tela ---------- */
 @media (min-width:1000px){
-  :root{--largura:1180px}
-  .topo{padding:16px 0 12px}
-  /* o bloco de datas (à direita) não passa por baixo dos botões do canto quando a tela é pouco mais larga que o painel */
-  .topo .hd{padding-right:max(12px, calc(96px - max(0px, (100vw - var(--largura)) / 2)))}
-  .aviso:not([hidden])+.topo{padding-top:16px}
-  .topo .hd{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"marca ritmo" "h1 ritmo" "sub ritmo";column-gap:28px;align-items:center}
-  .topo .marca{grid-area:marca} .topo h1{grid-area:h1} .topo .sub{grid-area:sub;margin-bottom:0}
-  .topo .ritmo{grid-area:ritmo;justify-self:end;max-width:640px;flex-direction:column;align-items:flex-start}
-  .barra{padding:10px 0}
-  .barra .hd{display:flex;gap:16px;align-items:center}
-  .filtros{flex:1 1 55%;padding-top:0;overflow:visible}
-  .tabs{flex:1 1 45%;margin-top:0}
+  :root{--largura:1180px;--lado:var(--lado-aberto)}
+  body.recolhido{--lado:var(--lado-recolhido)}
+  /* painel lateral fixo à esquerda: o <aside> vira a coluna; .topo, .barra e os .hd não têm caixa e a ordem dos itens
+     sai por `order` (menu, marca, título, mês/atualização/escopo, Filtro, Painéis, ritmo de hoje, ↻ e casa, créditos) */
+  body{padding-left:var(--lado)}
+  .lado{display:flex;flex-direction:column;gap:12px;position:fixed;top:0;bottom:0;left:0;width:var(--lado);z-index:50;
+    background:var(--preto);color:#fff;padding:16px 16px 18px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+  .lado .topo,.lado .barra,.lado .topo .hd,.lado .barra .hd{display:contents}
+  .ladoMenu{display:grid;place-items:center;order:0;flex:none;width:40px;height:40px;padding:0;margin:-4px 0 0 -6px;border:0;
+    border-radius:10px;background:transparent;color:#fff;cursor:pointer}
+  .ladoMenu:hover{background:var(--escuro-2)}
+  .ladoMenu .ico{width:22px;height:22px}
+  .lado .marca{order:1;flex:none}
+  .lado h1{order:2;flex:none;margin:0;font-size:var(--fs-lado-tit);line-height:1.2}
+  .lado .sub{order:3;flex:none;margin:0;line-height:1.6}
+  .lado .sub .tagUpd{margin-left:0;white-space:normal;max-width:100%}
+  .lado .sub .tCurto,.lado .subSep{display:none}
+  .lado .subEsc{display:block}
+  .ladoSec{display:block;flex:none;font-size:var(--fs-lado-sec);letter-spacing:.12em;text-transform:uppercase;
+    color:var(--topo-txt);margin-top:6px}
+  .sFil{order:4} .sTab{order:6}
+  .lado .filtros{order:5;flex:none;flex-direction:column;gap:7px;padding-top:0;overflow:visible}
+  .lado select,.lado #fgc{flex:none;width:100%;max-width:none}
+  .lado .tabs{order:7;flex:none;flex-direction:column;gap:3px;margin:0}
+  .lado .tab{flex:none;display:flex;align-items:center;gap:12px;text-align:left;padding:11px 12px;font-size:var(--fs-lado-aba);
+    background:transparent;color:var(--escuro-txt);border-radius:10px;line-height:1.2}
+  .lado .tab[hidden]{display:none}
+  .lado .tab .ico{display:block}
+  .lado .tab:not(.on):hover{background:var(--escuro-2)}
+  .lado .tab.on{background:var(--vermelho);color:#fff}
+  .lado .ritmo{order:8;flex:none;flex-direction:column;align-items:flex-start;margin-top:4px}
+  .lado .ritmo .ritCurto{display:none}
+  .lado .topoBtns{order:9;flex:none;position:static;margin-top:auto;display:flex;gap:8px}
+  .lado .casa,.lado .recarga{flex:1 1 0;min-width:0;width:auto;height:40px;gap:8px;padding:0 10px;border-radius:10px;
+    font:inherit;font-size:var(--fs-legenda);font-weight:700;color:#fff}
+  .lado .rotBtn{display:inline}
+  .ladoCred{display:block;order:10;flex:none;font-size:var(--fs-lado-sec);color:var(--topo-txt);line-height:1.5;
+    border-top:1px solid var(--escuro-borda);padding-top:10px}
+  /* recolhido: só os ícones (menu, abas, ↻ e casa), com o nome no title */
+  body.recolhido .lado{padding:16px 10px;align-items:center}
+  body.recolhido .lado h1,body.recolhido .lado .sub,body.recolhido .ladoSec,body.recolhido .lado .filtros,
+  body.recolhido .lado .ritmo,body.recolhido .ladoCred,body.recolhido .lado .tab>span,body.recolhido .lado .rotBtn,
+  body.recolhido .lado .marca>span{display:none}
+  body.recolhido .ladoMenu{margin:0}
+  body.recolhido .lado .tabs{align-items:center}
+  body.recolhido .lado .tab{justify-content:center;padding:11px 0;width:48px}
+  body.recolhido .lado .topoBtns{flex-direction:column;align-items:center}
+  body.recolhido .lado .casa,body.recolhido .lado .recarga{flex:none;width:48px;padding:0}
+  /* conteúdo na largura da tela, à direita do painel; a faixa de versão nova no alto dele */
+  .wrap{max-width:none;padding-left:clamp(20px,2.4vw,40px);padding-right:clamp(20px,2.4vw,40px)}
+  .aviso .hd{max-width:none;padding:0 clamp(20px,2.4vw,40px)}
   .topoGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:14px}
   .topoGrid .cards{margin:0}
   .lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-top:4px}
@@ -572,6 +627,8 @@ body.rs-travado{overflow:hidden}
   .drw.on{transform:translateY(-50%);opacity:1;transition:transform .2s ease,opacity .2s ease,visibility 0s}
   .drwCab{border-radius:16px 16px 0 0}
   .corpo{padding-bottom:20px}
+  /* a gaveta começa à direita do painel lateral (só a posição; nada do estilo interno muda) */
+  .drw{left:var(--lado)}
   .rs-barra{padding:12px 28px}
   .rs-barra .rsChips{flex:0 1 520px}
   .rs-corpo{padding:18px 28px 32px}

@@ -56,9 +56,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Front (`app.js`, seção "versão nova do código"; `aoVoltar` em main.js): `confereVersao` (no-store + `?t=`; falha/404
   = silêncio) em todo `puxaOnline`, no `visibilitychange` visível e no `pageshow`; ao voltar também o online já e o
   payload se `P._versao` tiver mais de `PAYLOAD_POLL_MS` (uma vez só se os dois eventos vierem juntos). Faixa `#aviso`
-  acima do `.topo` (no fluxo; escondida com `body.na-entrada`; `.branca` pelo fundo da entrada): "Depois" adia aquela
+  acima do `.topo` (no fluxo; no PC, no alto do conteúdo, à direita do painel lateral; escondida com `body.na-entrada`;
+  `.branca` pelo fundo da entrada): "Depois" adia aquela
   versão até a 1ª verificação após `CONFIG.VERSAO_ADIA_MS` (30 min). `#btnRecarga` (↻, "Atualizar o painel", em
-  `.topoBtns` com a casa, sempre visível) e "Atualizar" = `atualizaPainel`: fetch `cache:'reload'` da própria URL, CSS,
+  `.topoBtns` com a casa, sempre visível; no PC no rodapé do painel lateral) e "Atualizar" = `atualizaPainel`: fetch `cache:'reload'` da própria URL, CSS,
   JS, manifest, versao.json e os dois JSONs; falha = "Sem conexão. Tente de novo." sem reload; sucesso = `location.reload()`;
   nunca apaga `localStorage`. Testes: Partes P (script) e Q (`abreVersao`) do front.test.js.
 - Testes de front (Chromium headless + dado sintético gerado pelo próprio back-end): `node --test frontend/tests/front.test.js`
@@ -307,6 +308,18 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   negativa, no "faltam" (`.acao.falta`) e em alertas; Meta/Real/apoio em `--txt`/`--txt-apoio` (AA 4,5:1); rosa e verde
   claro dos cards e o verde do ritmo não mudam. Alturas mínimas por tipo (`--h-*`, card de volume com classe `vol`).
   Cabeçalho em 390 px <= 221 px até o fim das abas (Parte M dos testes; era 295).
+  **Layout (Etapa 3, 21/10/2026; README, "Layout")**: `header.topo` + `nav.barra` dentro de `<aside class="lado">`
+  (sem duplicar HTML). PC (>= 1000 px): o aside é o painel lateral fixo (`--lado`: 272 px, `body.recolhido` 76 px, só
+  ícones com `title`; `#ladoMenu` recolhe; estado em `localStorage 'drotas_lado'` 'recolhido'/'aberto', try/catch, só
+  conveniência); `.topo`, `.barra` e os `.hd` com `display:contents` e a ordem por `order` (menu, marca, título,
+  `#sub` com o escopo numa linha `.subEsc`, Filtro, selects empilhados, Painéis = abas verticais com SVG `.ico`, ativa
+  em `--vermelho`, `#ritmo` = caixa de hoje, `.topoBtns` (↻ "Atualizar" e casa "Entrada", `.rotBtn`), `#ladoCred` =
+  `CONFIG.CREDITOS`); `body{padding-left:var(--lado)}`, `.wrap` sem max-width; gaveta só com `left:var(--lado)` (a
+  Parte N dá o mesmo `left` ao front do 0a59eb4 e compara o resto). Celular (< 1000 px): aside `display:contents` (a
+  barra continua sticky), topo compacto: título + ↻ e casa; `#sub` = mês + etiqueta curta (`.tCurto` "dd/mm hh:mm"; o
+  texto inteiro `.tLongo` no PC e no `title`); escopo `.subEsc` oculto só na Diretoria (`#sub.dir`: o seletor
+  mostra); nos perfis travados ele fica; `#ritmo .ritCurto` "Dia útil x/n (p%) · ritmo hoje h%" (`.ritLongo` = as duas
+  linhas do PC); sem a linha da marca. Escala do painel: `--fs-lado-tit/aba/sec` em `:root`. Testes: Parte U.
   **Cascata (gaveta, `.drw` e tudo dentro) = aparência do commit 0a59eb4, só com a Inter** (o ajuste visual foi
   reprovado ali): bloco "drawer" do `app.css` copiado do 0a59eb4 (sem a serifa do `.cLin .cDir b`), cinzas antigos
   redefinidos em `.drw` (`--cinza`, `--cinza-escuro`), sem `var(--fs-*)`, alturas mínimas, `data-fit` nem `encaixa()`

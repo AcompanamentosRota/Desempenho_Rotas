@@ -63,12 +63,13 @@ atualizar) vê quando há versão nova do **código** e atualiza com um toque.
   `"dev"`, e com `"dev"` o aviso fica desligado (nem pede o `versao.json`).
 - O painel confere o `versao.json` (sem cache: `cache: 'no-store'` e `?t=` para furar o CDN) a cada atualização do
   online (5 min), ao voltar para a aba/app e no `pageshow`. Falha de rede ou 404: silêncio.
-- Versão do servidor diferente da do painel: faixa discreta **acima do cabeçalho**, "Nova versão disponível" +
+- Versão do servidor diferente da do painel: faixa discreta **acima do cabeçalho** (no PC, no alto do conteúdo, à
+  direita do painel lateral), "Nova versão disponível" +
   **Atualizar** + **Depois**. "Depois" esconde a faixa daquela versão até a 1ª verificação 30 min depois
   (`CONFIG.VERSAO_ADIA_MS`); volta se a versão continuar diferente (outra versão nova aparece já). A faixa não
   aparece na tela de entrada (a checagem roda em segundo plano e ela aparece ao abrir o painel) e segue o fundo da
   entrada (preto ou branco).
-- **Ícone ↻** no canto do cabeçalho, ao lado da casa, sempre visível ("Atualizar o painel"): mesma ação do
+- **Ícone ↻** no canto do cabeçalho (no PC, no rodapé do painel lateral), ao lado da casa, sempre visível ("Atualizar o painel"): mesma ação do
   "Atualizar" da faixa. A ação mostra "Atualizando…", baixa de novo sem o cache do navegador (`cache: 'reload'`) a
   página, CSS, JS, manifest, `versao.json` e os dois JSONs de dados e só então recarrega; se algum falhar, mostra
   "Sem conexão. Tente de novo." e não recarrega. Nenhuma chave do `localStorage` é apagada: o acesso guardado
@@ -353,6 +354,28 @@ dos números e os cards: Source Serif 4 local carregada (`document.fonts.check`,
 algarismos `lining-nums tabular-nums`, fundo dos cards igual ao do CSS da main antes da Etapa 2 (commit `2744537`),
 faixa lateral na cor do status (sem faixa no card indisponível), escala dos cards, 3 colunas em 1440 px e nenhum texto
 cortado em 360 e 390 px.
+A Parte U confere o layout (Etapa 3): painel lateral em 1000 e 1440 px (fixo, 272 px, itens na ordem, abas verticais
+com ícone e `title`, ativa em vermelho, créditos, conteúdo à direita e sem rolagem lateral nas quatro abas), recolher e
+expandir (76 px, só ícones, gaveta acompanhando, `drotas_lado` guardado e sem armazenamento sem erro), foco por teclado,
+escopo igual ao filtro em todos os perfis (também o grupo no Total) em 390 e 1440 px, topo compacto em 360 e 390 px
+(<= 221 px), ↻ (recarrega no mesmo acesso e painel) e casa nos dois layouts e a faixa de versão nova livre nos dois
+fundos.
+
+### Layout (painel lateral no PC, topo compacto no celular)
+
+- **PC (a partir de 1000 px)**: o cabeçalho e a barra de filtros/abas viram um **painel lateral fixo à esquerda**
+  (272 px), preto: botão ☰ (recolher), marca, "Desempenho de Rotas", mês + etiqueta de atualização + escopo (o perfil e
+  o filtro, numa linha própria), **Filtro** (seletores empilhados), **Painéis** (abas na vertical com ícone; a ativa em
+  vermelho), a caixa do ritmo de hoje, no rodapé **↻ Atualizar** e **Entrada** (casa) e os créditos. O conteúdo ocupa
+  o resto da largura da tela; a cascata (gaveta) abre à direita do painel, com a mesma aparência de sempre.
+- **Recolher**: o ☰ deixa só os ícones (☰, abas, ↻ e casa; o nome aparece ao passar o mouse). O aparelho guarda a
+  escolha (`drotas_lado`); sem armazenamento, vale só na visita. A faixa de versão nova fica no alto do conteúdo, à
+  direita do painel, aberto ou recolhido.
+- **Celular (abaixo de 1000 px)**: topo compacto, com a barra de filtros e abas presa no alto como antes: título com ↻
+  e casa; mês e a etiqueta curta ("● 21/10 08:01"; o texto inteiro, como "Última atualização em …", fica no `title`);
+  "Dia útil 13/21 (62%) · ritmo hoje 67%" (dia útil do Real até ontem e o % do ritmo; o ritmo de hoje = dia de hoje ÷
+  dias úteis). O escopo sai do topo só na Diretoria (o seletor logo abaixo mostra); nos perfis com o filtro travado
+  (Gerência, Supervisão, Rota) ele continua, para o contexto não sumir.
 
 ### Visual (fonte, escala e cores)
 

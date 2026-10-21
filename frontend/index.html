@@ -54,7 +54,8 @@
   </div>
 </div>
 
-<!-- versão nova do código: faixa acima do cabeçalho (só com o painel aberto; também mostra "Sem conexão") -->
+<!-- versão nova do código: faixa acima do cabeçalho; no PC, no alto do conteúdo, à direita do painel lateral (só com o
+     painel aberto; também mostra "Sem conexão") -->
 <div id="aviso" class="aviso" role="status" hidden>
   <div class="hd">
     <span id="avisoTxt" class="avisoTxt">Nova versão disponível</span>
@@ -65,39 +66,49 @@
   </div>
 </div>
 
+<!-- cabeçalho + filtros e abas: no celular o <aside> não tem caixa (display:contents; a barra continua sticky); no PC
+     (>= 1000px) vira o painel lateral fixo à esquerda, recolhível (body.recolhido), com a ordem dos itens por `order` -->
+<aside class="lado" id="lado" aria-label="Painel lateral">
 <header class="topo">
-  <div class="topoBtns">
-    <button id="btnRecarga" class="recarga" type="button" aria-label="Atualizar o painel" title="Atualizar o painel">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10a6 6 0 1 1-1.76-4.24" fill="none" stroke="#fff"
-        stroke-width="2" stroke-linecap="round"/><path d="M16.5 2.5v4.5H12" fill="none" stroke="#fff" stroke-width="2"
-        stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-    <button id="btnCasa" class="casa" type="button" aria-label="Voltar para a entrada" title="Entrada">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9.5 10 3.5l7 6V17h-4.5v-4.5h-5V17H3z" fill="#fff"/></svg>
-    </button>
-  </div>
   <div class="hd">
-    <div class="marca"><img class="helm" src="assets/helm.png" alt="" width="11" height="19">Comercial Bandeirantes</div>
+    <button class="ladoMenu" id="ladoMenu" type="button" aria-controls="lado" aria-expanded="true" aria-label="Recolher o painel"
+      title="Recolher o painel"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg></button>
+    <div class="marca"><img class="helm" src="assets/helm.png" alt="" width="11" height="19"><span>Comercial Bandeirantes</span></div>
     <h1>Desempenho de Rotas</h1>
     <div class="sub" id="sub"></div>
     <div class="ritmo" id="ritmo"></div>
   </div>
+  <!-- ↻ e casa: no canto do topo (celular) ou no rodapé do painel lateral (PC) -->
+  <div class="topoBtns">
+    <button id="btnRecarga" class="recarga" type="button" aria-label="Atualizar o painel" title="Atualizar o painel">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10a6 6 0 1 1-1.76-4.24" fill="none" stroke="#fff"
+        stroke-width="2" stroke-linecap="round"/><path d="M16.5 2.5v4.5H12" fill="none" stroke="#fff" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"/></svg><span class="rotBtn">Atualizar</span>
+    </button>
+    <button id="btnCasa" class="casa" type="button" aria-label="Voltar para a entrada" title="Entrada">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9.5 10 3.5l7 6V17h-4.5v-4.5h-5V17H3z" fill="#fff"/></svg><span class="rotBtn">Entrada</span>
+    </button>
+  </div>
 </header>
 <nav class="barra" aria-label="Filtros">
   <div class="hd">
+    <div class="ladoSec sFil" aria-hidden="true">Filtro</div>
     <div class="filtros">
       <label class="sr-only" for="fgc">Gerência</label><select id="fgc"></select>
       <label class="sr-only" for="fsv">Supervisor</label><select id="fsv"></select>
       <label class="sr-only" for="frota">Rota</label><select id="frota"></select>
     </div>
+    <div class="ladoSec sTab" aria-hidden="true">Painéis</div>
     <div class="tabs" role="tablist" aria-label="Grupo de indicadores">
-      <button class="tab" role="tab" aria-selected="false" data-g="VOLUME">Volume</button>
-      <button class="tab on" role="tab" aria-selected="true" data-g="ICS_GC">ICS GC</button>
-      <button class="tab" role="tab" aria-selected="false" data-g="NOVOS_NEG">Novos Negócios</button>
-      <button class="tab" role="tab" aria-selected="false" data-g="INCENTIVO" aria-label="Todos a Bordo" hidden>Todos a Bordo</button>
+      <button class="tab" role="tab" aria-selected="false" data-g="VOLUME" title="Volume"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3h8l-1 5h-6zM7 8v8a2 2 0 0 0 2 1h2a2 2 0 0 0 2-1V8"/></svg><span>Volume</span></button>
+      <button class="tab on" role="tab" aria-selected="true" data-g="ICS_GC" title="ICS GC"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 10 6 6"/><circle cx="10" cy="10" r="1.6"/></svg><span>ICS GC</span></button>
+      <button class="tab" role="tab" aria-selected="false" data-g="NOVOS_NEG" title="Novos Negócios"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v14M3 10h14"/></svg><span>Novos Negócios</span></button>
+      <button class="tab" role="tab" aria-selected="false" data-g="INCENTIVO" aria-label="Todos a Bordo" title="Todos a Bordo" hidden><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l2.3 4.7 5.2.8-3.8 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1-3.8-3.6 5.2-.8z"/></svg><span>Todos a Bordo</span></button>
     </div>
+    <div class="ladoCred" id="ladoCred"></div>
   </div>
 </nav>
+</aside>
 
 <main class="wrap">
   <div class="topoGrid">
