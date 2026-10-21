@@ -1,7 +1,7 @@
 # Desempenho de Rotas · Comercial Bandeirantes
 
-Painel de desempenho por rota (ICS GC, Novos Negócios, Volume e Venda Zero) das 16 gerências,
-publicado no GitHub Pages e alimentado automaticamente pelo **SAP Datasphere** via OData.
+Painel de desempenho por rota (resumo Executivo, Volume, ICS GC, Novos Negócios, Todos a Bordo e Venda Zero) das 16
+gerências, publicado no GitHub Pages e alimentado automaticamente pelo **SAP Datasphere** via OData.
 
 ```
 desempenho/
@@ -10,12 +10,12 @@ desempenho/
 │   ├── css/app.css
 │   ├── js/config.js          URLs dos dados, intervalos, aviso de versão, placa ATENÇÃO, aba Todos a Bordo, linha Status, entrada (grupos, virada), CDN
 │   ├── js/nucleo.js          agregação pura dos cards (sem DOM nem online; usada pelo painel e pelo Painel de Ritmo)
-│   ├── js/app.js             painel (entrada por seleção, filtros, cards, cascata, busca, Desempenho GDM)
+│   ├── js/app.js             painel (entrada por seleção, filtros, aba Executiva, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/ritmo.js           "Painel de ritmo": PDF matinal só com dados reais
 │   ├── js/main.js            carga e atualização periódica dos JSONs
 │   ├── assets/ (ícones, logos da entrada; fonts/ = Inter local + OFL), manifest.webmanifest
-│   ├── tests/                testes de front (Chromium headless, dado sintético)
+│   ├── tests/                testes de front (Chromium headless, dado sintético; conferência da Executiva com dado real sob demanda)
 │   └── data/payload.json, data/online.json   ← gerados pelo back-end
 ├── backend/                  gerador Python (roda no GitHub Actions)
 │   ├── odata/                cliente OData (copiado do kit Teste_ODATA)
@@ -173,7 +173,10 @@ texto preto. O sol/lua troca as duas imagens e a cor do texto junto com o fundo.
 pouco menores (logo 52 px de altura e elmo 34 px; nas demais, 62 e 40 px). Arquivos em `frontend/assets/`
 (`coca-bandeirantes-fundo-escuro.png`, `coca-bandeirantes-fundo-claro.png`, `elmo-branco.png`, `elmo-preto.png`; no
 tamanho original, 560x251 e 140x263 px, otimizados: ~95 KB os quatro, eram ~220 KB). Leitores de tela: "Coca-Cola
-Bandeirantes" (logo) e "Comercial Bandeirantes" (elmo e texto). A aba que abre ao entrar não mudou (ICS GC).
+Bandeirantes" (logo) e "Comercial Bandeirantes" (elmo e texto).
+
+**Aba inicial** (desde a Etapa 5): ao entrar (e ao reabrir pelo acesso guardado), Diretoria, Gerência e Supervisão abrem na
+aba **Executiva**; a Rota, que não tem a Executiva, abre no **Volume**.
 
 | Perfil | Escolhe | Abre |
 |---|---|---|
@@ -358,7 +361,8 @@ conexão), desenho de 9 colunas sem texto cortado e, com as bibliotecas npm, o P
 A Parte S abre o painel com e sem `SEM_COMPRA_MES` (Diretoria, Gerência, Supervisão e Rota) e confere que as telas
 (cards, listas, cascata, gavetas Base e Sem compra, Resumo) são as mesmas e que não há erro. A Parte T confere a fonte
 dos números e os cards: Source Serif 4 local carregada (`document.fonts.check`, pedido só a `assets/fonts`, licença,
-`@font-face` com `swap`, pesos 200-900 e o unicode-range da Inter) e usada só em `.ind .big`, `.obox b` e `.card .n`
+`@font-face` com `swap`, pesos 200-900 e o unicode-range da Inter) e usada só em `.ind .big`, `.obox b` e `.card .n` (nas
+abas de indicadores; o `.gPct` dos medidores da Executiva é conferido na Parte W)
 (estilo computado; o resto da tela, a entrada, a gaveta, o Resumo, o PDF do Resumo e o Painel de Ritmo em Inter),
 algarismos `lining-nums tabular-nums`, fundo dos cards igual ao do CSS da main antes da Etapa 2 (commit `2744537`),
 faixa lateral na cor do status (sem faixa no card indisponível), escala dos cards, 3 colunas em 1440 px e nenhum texto
@@ -388,7 +392,32 @@ abrindo com as imagens dele e os PNG no tamanho original; em 360, 390 e 1440 px,
 52/34 px em <= 380 px), proporção sem distorção, logo | linha | elmo alinhados e centralizados acima do título, a linha
 (1,5 x 64 px, `--vermelho`), o texto (duas linhas, Inter 800, 9,5 px, line-height 1.08, .015em, centralizado embaixo do
 elmo), contraste AA, nada fora da tela nem cortado e sem rolagem lateral; e a entrada funcionando como antes nos dois
-fundos (Diretoria, Gerência, grupo, Supervisão e Rota; acesso guardado, recarregar, casa; aba inicial ICS GC).
+fundos (Diretoria, Gerência, grupo, Supervisão e Rota; acesso guardado, recarregar, casa; aba inicial Executiva, Volume na
+Rota).
+A Parte W confere a aba Executiva (Etapa 5), com o cenário `exec` (o do Todos a Bordo com clientes sem compra no mês,
+`montaSemCompra`; o sintético compra tudo): aba inicial de Diretoria, Gerência, grupo e Supervisão (também ao recarregar e
+ao entrar de novo), sem a aba na Rota e com uma rota no filtro; unidades = grupos da cascata (Diretoria, uma gerência,
+grupo no Total, supervisão, "Neutraliza"), total BAND ou o código, virtuais/EV* fora das listas e dentro dos totais; as
+invariantes da seção 7 (KPIs = cards das abas, desvio do total = Tendência / Meta - 1 do card de Volume, % da linha de total
+da tabela = cards do ICS GC, Novos Negócios e Todos a Bordo, Status, somas e "restam" de Sem compra e Agenda, gaveta Sem
+compra), também no fechamento; ordem, lado e escala das barras e o sinal exato (−0,03% vermelho com o card verde em 100%);
+caixa de comentário (mouse, teclado e toque); categoria em análise (medidor, chip, teclado, textos dos quadros com números
+conhecidos); fechamento ("Realizado x Meta", sem Meta do dia e Agenda); Evolução oculta; layout em 1440, 1000, 390 e 360 px
+(sem texto cortado nem rolagem lateral, colunas, tabela rolando dentro do bloco com a 1ª coluna presa, fontes, contraste,
+cabeçalho do celular <= 221 px); e, contra o front da main antes da etapa (commit `321b0ea` via `git show`), cabeçalho,
+cards, cascata, gavetas, Resumo e Painel de Ritmo iguais. Desde a Etapa 5, `abre()`/`entra()`/`vaiPara()` levam o painel
+para a aba `aba` depois de entrar (padrão ICS GC, a aba inicial de antes, de onde os testes anteriores partem; `null` = fica
+na aba inicial do perfil); a Parte L passa `'INCENTIVO'` ao entrar de novo (antes a aba ficava a mesma).
+As invariantes ficam em `frontend/tests/executiva_invariantes.js`, usadas também pela **conferência com dado real**
+(`frontend/tests/conferencia_real.test.js`, só roda com `PAYLOAD_REAL` e `ONLINE_REAL` apontando para os JSONs, uma cópia
+fora do repositório; sem elas, é pulada): Diretoria, cada gerência com dados, cada grupo no Total e uma supervisão, com uma
+tabela-resumo só de totais e códigos.
+
+```bash
+git show origin/main:frontend/data/payload.json > /tmp/real/payload.json
+git show origin/main:frontend/data/online.json > /tmp/real/online.json
+PAYLOAD_REAL=/tmp/real/payload.json ONLINE_REAL=/tmp/real/online.json node --test frontend/tests/conferencia_real.test.js
+```
 
 ### Layout (painel lateral no PC, topo compacto no celular)
 
@@ -404,7 +433,62 @@ fundos (Diretoria, Gerência, grupo, Supervisão e Rota; acesso guardado, recarr
   e casa; mês e a etiqueta curta ("● 21/10 08:01"; o texto inteiro, como "Última atualização em …", fica no `title`);
   "Dia útil 13/21 (62%) · ritmo hoje 67%" (dia útil do Real até ontem e o % do ritmo; o ritmo de hoje = dia de hoje ÷
   dias úteis). O escopo sai do topo só na Diretoria (o seletor logo abaixo mostra); nos perfis com o filtro travado
-  (Gerência, Supervisão, Rota) ele continua, para o contexto não sumir.
+  (Gerência, Supervisão, Rota) ele continua, para o contexto não sumir. Com a Executiva, as cinco abas não cabem numa
+  linha em 360-640 px: a faixa das abas rola de lado (como a dos seletores) e a aba ativa fica sempre à vista.
+
+### Aba Executiva (resumo executivo)
+
+Desde a Etapa 5 (21/10/2026), a primeira aba da barra e a aba inicial de Diretoria, Gerência e Supervisão. A Rota não tem a
+Executiva (abre no Volume); com uma rota escolhida no filtro, a aba some e o painel vai para o Volume (volta a aparecer ao
+tirar a rota). Tudo segue o filtro, com os mesmos grupos da cascata: Diretoria → gerências (as com dados); uma gerência →
+supervisões + a linha "Neutraliza"; grupo no Total (ex.: GC.IT + GC.MO) → as supervisões das duas, com o total do grupo;
+uma supervisão → rotas; "Neutraliza" no filtro → as rotas Neutraliza. Rotas virtuais e clientes em rotas eventuais (EV*)
+ficam fora das listas de unidades e dentro dos totais. Linha de total: **BAND** na Diretoria; com filtro, o código (GC.AT,
+GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai da mesma agregação dos cards.
+
+- **Cabeçalho**: "Resumo executivo" e a etiqueta do dia (a das abas, com a caixa de comentário). Sem busca e sem filtro
+  rápido.
+- **4 KPIs** (cards brancos, número em Source Serif 4): **Base total de clientes**, **Sem compra** ("X% da base · sem compra
+  no mês"), **Visitas hoje** e **Categorias na tendência** ("x / 5", verde ou vermelho pela mesma regra do card do Volume, e
+  "Coberturas no ritmo: a / b" = os cards de ritmo do ICS GC e de Novos Negócios somados). Os números são os dos cards Base,
+  Sem compra e "visitas hoje" com o mesmo filtro. Base e Visitas abrem a gaveta "Visitas de hoje"; Sem compra, a "Sem compra
+  hoje" (as mesmas de sempre; a barra de dias vem na Etapa 6).
+- **Foco do fechamento** (categoria em análise): "Refrigerantes está em 92% de tendência; faltam 553.417 para a meta. A
+  gerência GC.AT concentra 63% dessa falta (403.372)." Falta = Meta − Tendência; a maior falta entre as unidades fora da
+  tendência (% de tendência abaixo de 100), em % da soma das faltas delas. Na tendência: "… no caminho da meta".
+- **Meta do dia (SAP)**: online de hoje contra a meta do dia (a mesma do card) e quantas unidades já alcançaram (meta do
+  dia batida ou online >= meta do dia, a regra da caixa Online). Sem meta do dia: "sem meta do dia do SAP neste escopo".
+- **Categorias**: um medidor (meia-lua) por categoria de volume (Refrigerantes, Cervejas, Still, Água Mineral,
+  Dest+Art+Cnd; Del Valle Frut fica fora), preenchido com Real ÷ Meta (até 100%) na cor da categoria; no centro o % real;
+  Meta | Real; Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
+  valor exato, como o SAC: −0,03% é vermelho mesmo com o card do Volume verde em 100%); "meta do dia N · online N" (ou
+  "meta do dia batida" / "meta do dia —"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os
+  dois quadros acima. Sem meta no escopo: "sem meta neste escopo".
+- **Tendência x Meta por gerência / supervisão / rota**: barras divergentes do desvio Tendência ÷ Meta − 1 (1 casa), da
+  maior para a menor, com a linha de total no meio da ordenação; verde à direita, vermelho à esquerda; escala de cada
+  categoria pela maior barra (mínimo 10%). Unidade sem meta na categoria fica fora dela. No PC as 5 categorias lado a lado
+  (a partir de 1200 px; entre 1000 e 1199 px, em duas linhas); no celular, uma por vez, escolhida pelos chips. Passar o
+  mouse, focar pelo teclado ou tocar numa linha abre a caixa de comentário ("Refrigerantes · GC.UR / Meta / Real (%) /
+  Tendência / Desvio +14,94%").
+- **Sem compra por unidade**: barra = sem compra ÷ base, só o % (1 casa), do maior para o menor; caixa: "483 sem compra de
+  1.818 clientes na base / Compraram no mês: 1.335".
+- **Agenda de hoje por unidade**: barra 100% sobre os agendados de hoje: vermelho = **restam** (sem compra no mês e sem
+  pedido online hoje), verde = sem compra no mês mas pediu online hoje, cinza = já comprou no mês; à direita "restam N",
+  da maior sobra para a menor. Como nas listas de clientes, ficam fora as virtuais, as EV*, a SV.G3.3 (oculta) e as rotas
+  sem venda no mês (sem dado de compra): o "sem compra hoje" do total é exatamente a gaveta "Sem compra hoje" (e os que
+  pediram online são os riscados dela). Por isso os agendados da Agenda podem ser um pouco menos que o KPI Visitas hoje.
+- **Coberturas por unidade**: tabela com o % real do mês de cada item (o mesmo % dos cards): **ICS GC** (os 9 itens),
+  **Novos Negócios** (5) e **Todos a Bordo 3.0** (Status "x/n" itens em 100% e os 5 itens, só nas rotas com meta do item,
+  como na aba). Vermelho e negrito abaixo do ritmo (o % do dia útil de ontem), verde a partir de 100%, "—" sem meta.
+  Colunas iguais, a 1ª (70 px) presa; com menos de ~1520 px de tela (painel lateral aberto) a tabela rola de lado dentro
+  do bloco. O nome inteiro de cada item fica no `title` do cabeçalho.
+- **Fechamento do mês**: medidores e barras pelo **realizado** (Real ÷ Meta − 1, "Realizado x Meta"); sem os quadros/blocos
+  "Meta do dia" e "Agenda de hoje" (não há online nem agenda do mês fechado). O Foco do fechamento usa o realizado
+  ("Refrigerantes fechou o mês em 95% da meta; faltaram …").
+- **Evolução contra o mês anterior**: fica para a Etapa 8 (consulta nova); até lá não aparece (`CONFIG.EVOLUCAO_ATIVA =
+  false`).
+- **Layout**: KPIs em 4 colunas no PC e 2 no celular; os dois quadros lado a lado no PC; medidores 5 por linha a partir de
+  1200 px, 3 entre 700 e 1199 px e 2 no celular; Sem compra e Agenda lado a lado no PC.
 
 ### Cabeçalho das abas (Volume, ICS GC, Novos Negócios, Todos a Bordo)
 
@@ -424,8 +508,8 @@ Desde a Etapa 4 (21/10/2026), o alto de cada aba é organizado assim (os número
   baixo. A ficha do cliente abre logo abaixo da linha.
 - **Base total de clientes** ("visitas hoje N") e **Sem compra X%** ("sem compra hoje N"), no mesmo formato, só com uma
   supervisão (ou "Neutraliza") ou uma rota no filtro (perfis Supervisão e Rota, ou a Gerência com uma supervisão/rota
-  escolhida): ficam acima da linha de resumo. Na Diretoria e na Gerência eles saem das abas (a aba Executiva, na próxima
-  etapa, traz esses números). Sem o "puxa a média" (a Rota sempre), o card de ritmo vai para a linha deles: **três cards
+  escolhida): ficam acima da linha de resumo. Na Diretoria e na Gerência eles saem das abas (a aba Executiva traz esses
+  números). Sem o "puxa a média" (a Rota sempre), o card de ritmo vai para a linha deles: **três cards
   lado a lado**, e a busca fica sozinha na linha de baixo. As gavetas "Visitas de hoje" e "Sem compra hoje" não mudaram.
 - **Filtro rápido dos cards**: acima da grade, "Todos N · Abaixo N · No ritmo N". Só mostra ou oculta os cards (a ordem e
   as cores não mudam); o card indisponível só aparece em "Todos"; um filtro sem card fica desabilitado; volta para
@@ -445,8 +529,9 @@ Desde a Etapa 4 (21/10/2026), o alto de cada aba é organizado assim (os número
   (50 KB, só o subset latin, mesmo `unicode-range` da Inter; `@fontsource-variable/source-serif-4` 5.3.0, licença em
   `OFL-source-serif-4.txt`), `@font-face` local com `font-display: swap` e pesos 200-900, sem `preload` (só é baixada
   quando a tela principal desenha um número). Variável `--serif` (`'Source Serif 4', Georgia, 'Times New Roman', serif`)
-  aplicada SÓ ao % dos cards (`.ind .big`; a seta ▲▼ fica na Inter), ao número da caixa Online (`.obox b`) e aos
-  números dos cards do topo (`.card .n`). A gaveta, o Resumo, o PDF do Resumo, o Painel de Ritmo, a entrada e os textos
+  aplicada SÓ ao % dos cards (`.ind .big`; a seta ▲▼ fica na Inter), ao número da caixa Online (`.obox b`), aos
+  números dos cards do topo e dos KPIs da Executiva (`.card .n`) e ao % no centro dos medidores da Executiva (`.gPct`; o
+  "real" embaixo fica na Inter). A gaveta, o Resumo, o PDF do Resumo, o Painel de Ritmo, a entrada e os textos
   continuam em Inter. Os números da tela principal (cards, cards do topo, cabeçalho, busca, rodapé) usam
   `font-variant-numeric: lining-nums tabular-nums` (algarismos alinhados e de largura fixa); a gaveta, o Resumo e o
   Painel de Ritmo ficam como estavam. Os números dos cards do topo também encaixam (`data-fit`, mínimo 16 px; se nem
@@ -471,6 +556,9 @@ Desde a Etapa 4 (21/10/2026), o alto de cada aba é organizado assim (os número
   e 134 px no celular, a altura natural dos cards com a escala menor), `--h-kpi`,
   cards da mesma linha da grade ficam com a mesma altura. O indicador de ritmo (caixa Online) dos cards tem tamanho,
   raio e peso fixos (`--ritmo-*`).
+  A aba Executiva tem a própria escala, também em `:root` e igual no PC e no celular (`--fs-ex-*`): título dos blocos 16
+  px, título dos medidores 13 px, % do medidor 20 px, Meta/Real 13,5 px (encaixa até 9 px), tendência 15 px, desvio 12 px,
+  linhas das barras 11,5 px, células da tabela 12 px, rótulos pequenos 10,5 px e cabeçalho da tabela 10 px.
 - **Cascata (gaveta que abre no card)**: mantém a aparência de antes do ajuste visual (commit `0a59eb4`) em todos os
   níveis (gerências, supervisões, rotas, clientes, Visitas de hoje, Sem compra, Venda Zero): tamanhos, pesos,
   espaçamentos, colunas, alturas, bordas e cores de antes, e os cinzas antigos (`--cinza`, `--cinza-escuro`

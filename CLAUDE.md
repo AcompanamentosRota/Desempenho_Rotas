@@ -68,12 +68,22 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `abre(nome, {entrar})` entra pela tela de entrada clicando na caixa de seleção (`entra()`: 'gc' = primeira gerência
   com dados, 'dir' = Diretoria, ou {perfil, gc, sv, rota}, com gc = sigla ou grupo 'IT+MO'; a sigla de uma gerência
   agrupada escolhe o grupo); `vaiPara()` = casa + `entra()`; relógio simulado por `antes: p => p.clock...`.
+  Desde a Etapa 5 o painel abre na Executiva (Rota: Volume) a cada entrada: `abre(nome, {aba})`, `entra(page, e, aba)` e
+  `vaiPara(page, e, aba)` vão para `aba` depois de entrar (padrão 'ICS_GC', a aba inicial de antes, de onde os testes
+  antigos partem; `null` = fica na aba inicial do perfil); a Parte L passa 'INCENTIVO'. `esperaCarga` aceita os cards
+  ou a Executiva desenhada (`#exGauges`).
   Variantes do payload montadas no próprio teste: 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV), 'semdados'
   (G3 e PA sem dados), 'semsv', 'antigo', 'inc'/'incfech' (cenários da aba Todos a Bordo, `montaIncentivo`), 'seminc'
-  (payload sem o grupo INCENTIVO), 'semscm' (payload sem SEM_COMPRA_MES; Parte S) e 'grande' (16 gerências, a DI
-  copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
+  (payload sem o grupo INCENTIVO), 'semscm' (payload sem SEM_COMPRA_MES; Parte S), 'grande' (16 gerências, a DI
+  copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`) e 'exec' (o 'inc' com clientes sem compra no
+  mês, `montaSemCompra`: o sintético compra tudo; Parte W). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
   `require.resolve` (local, `NODE_PATH` ou global); sem eles, pulado. `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
   a Parte N serve o CSS e o app.js do 0a59eb4 assim).
+- Conferência da Executiva com DADO REAL (sob demanda, fora do CI): `PAYLOAD_REAL=/tmp/real/payload.json
+  ONLINE_REAL=/tmp/real/online.json node --test frontend/tests/conferencia_real.test.js` (os JSONs = `git show
+  origin/main:frontend/data/...` copiados FORA do repo; sem as variáveis, pula). Diretoria, cada gerência, cada grupo no
+  Total e uma supervisão; invariantes em `frontend/tests/executiva_invariantes.js` (as mesmas da Parte W); imprime uma
+  tabela-resumo só de totais e códigos.
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -227,8 +237,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `#fff` no fundo preto, `--preto` no branco). Cada imagem tem as duas versões no HTML com `data-tema="preta"|"branca"`
   (o valor de `temaEntrada()`) e o CSS esconde a do outro fundo: o sol/lua troca as imagens sem JavaScript novo (nunca
   trocar `src` nem usar `filter` nas logos). PNG em `frontend/assets/` (do pacote, mesmas dimensões: 560x251 e 140x263;
-  coca em paleta de 256 cores, elmo sem perda). A aba inicial NÃO mudou (ICS GC em todos os perfis): "Executiva para
-  Diretoria/Gerência/Supervisão e Rota no Volume" entra com a Etapa 5 (a Parte Y trava o ICS GC; trocar lá). Testes: Parte Y.
+  coca em paleta de 256 cores, elmo sem perda). Aba inicial (Etapa 5): Executiva para Diretoria, Gerência e Supervisão;
+  Volume para a Rota (`aplicaAcesso` → `marcaAba`, a cada entrada e ao reabrir o acesso guardado; payload novo não
+  muda a aba). Testes: Parte Y.
 - **Aba Todos a Bordo ("Todos a Bordo 3.0", cobertura de cervejas; chave interna INCENTIVO, era "Incentivo" até
   21/10/2026)**: `M.GROUPS['INCENTIVO']` = CERVEJAS, INC HEINEKEN,
   INC EISENBAHN 600ML, INC HEINEKEN 600ML, CERVEJAS 600ML RETORNAVEL (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS,
@@ -303,7 +314,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`; `encaixa()` remede no `loadingdone` das fontes e o PDF
   espera `document.fonts.ready`. Números grandes em Source Serif 4 LOCAL (Etapa 2, 21/10/2026;
   `source-serif-4-latin-wght-normal.woff2`, 50 KB, `OFL-source-serif-4.txt`, mesmo unicode-range da Inter, sem preload):
-  `--serif` SÓ em `.ind .big` (a `.seta` fica em `--sans`), `.obox b` e `.card .n` (a Executiva entra na Etapa 5); nunca na
+  `--serif` SÓ em `.ind .big` (a `.seta` fica em `--sans`), `.obox b`, `.card .n` (também os KPIs da Executiva) e `.gPct`
+  (% dos medidores da Executiva; o `small` "real" em `--sans`); nunca na
   gaveta, no Resumo, nos PDFs, no Painel de Ritmo nem na entrada. `lining-nums tabular-nums` em `.abaTopo, .card, .ind, .topo,
   .puxa, .cli, .rodape` (fora da gaveta: a Parte N compara `font-variant-numeric`). `.card .n` com `data-fit` (mín. 16,
   `data-fit-quebra`; `encaixa()` também em `.cards`); `numObox` com `data-fit=""` (parte do `--fs-online`).
@@ -312,7 +324,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `--fs-card` 15, `--fs-valor` 11,5, `--fs-ind` 25, `--fs-legenda` 11, `--fs-acao` 12,5, `--fs-online` 19,
   `--fs-online-rot` 9,5; `--h-card-*` 136 (PC) / 134 (celular). Grade da `.lista` no PC: `repeat(auto-fill,
   minmax(340px, 1fr))` (3 colunas em 1440 px). Testes: Parte T. Escala só por variáveis de `:root` (`--fs-titulo/card/ind/valor/legenda`, celular até
-  640 px): não pôr tamanho de letra solto fora dela (exceções: caixas `.rs-k` do Resumo/PDF e a página `.rt-*` do Painel de Ritmo). `%` de cards e linhas
+  640 px; a Executiva tem `--fs-ex-*` em `:root`): não pôr tamanho de letra solto fora dela (exceções: caixas `.rs-k` do Resumo/PDF e a página `.rt-*` do Painel de Ritmo). `%` de cards e linhas
   de grupo com `data-fit=""` (parte da escala, só reduz se não couber). Vermelho só no % abaixo, na Diferença
   negativa, no "faltam" (`.acao.falta`) e em alertas; Meta/Real/apoio em `--txt`/`--txt-apoio` (AA 4,5:1); rosa e verde
   claro dos cards e o verde do ritmo não mudam. Alturas mínimas por tipo (`--h-*`, card de volume com classe `vol`).
@@ -338,7 +350,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `nRitmo` = `x<small> / n</small>` com o className 'n ok|no', `lRitmo`, `xRitmo`, `stRitmo`); cards brancos `.card.kpi`
   (`.l` rótulo, `.ki` ícone, `.n` número, `.x` legenda; `--borda-card`, `--sombra-card`). Volume: rótulo "Categorias na
   tendência" (mesma regra). `linhaResumo()`: Base e Sem compra só com `sel.sv` (também "Neutraliza") ou `sel.rota` no modo
-  'gc' (a Diretoria e a Gerência sem eles; a gaveta continua, a Executiva da Etapa 5 a abre); sem "puxa a média"
+  'gc' (a Diretoria e a Gerência sem eles; a gaveta continua, os KPIs da Executiva a abrem); sem "puxa a média"
   (`#puxa` vazio: Rota, Todos a Bordo, todos no ritmo) o cRitmo vai para o `#abBase` (`.tres`, três cards; `.abRes.soBusca`),
   sem a Base e sem o puxa `.abRes.semPuxa`. PC: 260px | 1fr | 1.1fr; celular: `clamp(120px,38%,200px) 1fr` e a busca
   na linha de baixo. "Puxa a média" = mesmo `piorSv()`, saída `quadroPuxa(quem, p)`: `.foco.puxa` (quadro de destaque,
@@ -352,6 +364,27 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Elemento aberto ganha `emFoco` (nunca `foco`: é a classe do quadro de destaque) e `aria-describedby="dica"`. Testes:
   Parte V (compara com o front do `a70a2c3` via `git show`); helpers `abreCardTopo` (gaveta Base/Sem pelo `click()` do
   elemento, também oculto), `puxaTxt` ("título: nome") e `abre(..., {toque: true})` (hasTouch, `page.tap`).
+  **Aba Executiva (Etapa 5, 21/10/2026; README, "Aba Executiva")**: `.tab[data-g="EXEC"]` (primeira da barra; `aba` começa
+  em 'EXEC'), `section#exec` (KPIs `.card.kpi` `#exBase/#exSem/#exVis/#exCat`, quadros `.foco` `#exFoco`/`#exDia`, blocos
+  `.bloco`: `#exGauges`, `#exChips` + `#exDivs`, `.dupla` com `#exSemc` e `#exAg`/`#exAgenda`, `table#exCob` em `.rolaX`);
+  no EXEC o `#abaTopo` fica só com `.abCab` (`.abaTopo.exec`, título "Resumo executivo") e `#lista` vazio e `hidden`
+  (`linhaResumo`/`filtraCards` não rodam; `buscaCliente` sai cedo). `temExecutiva()` = sem rota no filtro (modo 'gc'): com
+  rota (perfil Rota) a aba some e `render` vai ao Volume. `pintaExecutiva(rotas, {ind, tot}, visitas)`: unidades =
+  `gruposDo(ctxInicial(), null)` sem `off` (`unidadesExec`, cada uma com `agrega()` próprio; `cod` = nome sem " · ...");
+  total = o `agrega()` do render (`totalExec`: 'BAND' / 'GC.AT' / 'GC.IT+MO' / 'SV.AP.1' / 'Neutraliza'). Categoria em
+  análise `catExec` (GROUPS.VOLUME; padrão a 1ª; `escolheCat` re-renderiza e devolve o foco). Desvio `desvioVol` =
+  tendência/meta − 1 exato (fechamento: real/meta − 1), cor pelo sinal (≠ card, que arredonda); Foco = falta Meta −
+  Tendência nas unidades com `pctTendencia` < 100; Meta do dia: online `onlineVol` x `metaDia`, alcançou = `metaBatida` ou
+  online >= metaDia. KPIs = os números dos cards (Categorias = `ritmoGrupo(ind,'VOLUME')`, a regra do card: ok com
+  x*2 >= n; Coberturas = ICS GC + Novos Negócios). Agenda (`agendaDe`): como as listas de clientes (sem virtuais/EV*,
+  sem ocultas `ehOculta`) e só rotas com `SEM_COMPRA_HOJE` não nulo; pediram = SEM_COMPRA_HOJE ∩ `onlineIds(r)`
+  (QUALQUER); total = gaveta Sem compra (riscados = pediram). Tabela: `agrega().ind[k].pct` (ICS/NN), Todos a Bordo por
+  `rotasInc` + `itensEm100`; células com `data-g` (o mesmo item está em dois grupos: ARTD KO; CERVEJAS e CERVEJAS 600ML
+  RETORNAVEL no INCENTIVO só com as rotas com meta). Fechamento: "Realizado x Meta", `#exDia` e `#exAg` hidden
+  (`.dupla.so1`). `CONFIG.EVOLUCAO_ATIVA = false` (Etapa 8). Dica = `ativaDica` em todo `[data-dica]` do `#exec` (linhas
+  `.dRow`/`.hRow` com `tabindex=0`; fecha a aberta ao redesenhar). Celular: as 5 abas rolam de lado (`.tabs`
+  overflow-x, `mostraAbaAtiva`); só a coluna `.dv.sel` com os chips. Medidores 5 colunas >= 1200 px, 3 >= 700, 2;
+  tabela `min-width` 1140 px (rola dentro do bloco, 1ª coluna sticky). Escala `--fs-ex-*`. Testes: Parte W.
   **Cascata (gaveta, `.drw` e tudo dentro) = aparência do commit 0a59eb4, só com a Inter** (o ajuste visual foi
   reprovado ali): bloco "drawer" do `app.css` copiado do 0a59eb4 (sem a serifa do `.cLin .cDir b`), cinzas antigos
   redefinidos em `.drw` (`--cinza`, `--cinza-escuro`), sem `var(--fs-*)`, alturas mínimas, `data-fit` nem `encaixa()`
