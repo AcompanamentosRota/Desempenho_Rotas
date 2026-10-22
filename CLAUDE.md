@@ -434,8 +434,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   pontos percentuais (p.p.)" e as cores: na linha só o número, `fmtDpp`; na dica com "p.p.", `fmtPP`), `data-dpp/pct/pct-ant/real/meta/
   real-ant/meta-ant`; ordem decrescente do Δ com o total no meio, cor pelo sinal exato (0 = cinza "0,0 p.p."), escala pela
   maior barra (mín. 10 p.p.), "0,0" com 0; sem meta anterior ou atual = "—" no fim. Chips `#exEvChips` no celular (`escolheCat`, a mesma
-  `catExec`). Subtítulo `#exSEvo`: "Setembro/26 até 20/09 (dia útil 13 de 21) x Outubro/26 (dia útil 14 de 21). % = Real ÷
-  meta do mês." (`MES_ANTERIOR.DIA_UTIL`/`TOTAL_DIAS_UTEIS` x `DIA_HOJE`/`TOTAL_DIAS_UTEIS`); fechamento x fechamento:
+  `catExec`). Subtítulo `#exSEvo`: "Setembro/26 até 20/09 (dia útil 13 de 21) x Outubro/26 até 20/10 (dia útil 13 de 21). % = Real ÷
+  meta do mês." (`MES_ANTERIOR.DIA_UTIL`/`TOTAL_DIAS_UTEIS` x `DATA_ONTEM` dd/mm e `DIA_ONTEM`/`TOTAL_DIAS_UTEIS`, o último dia útil
+  fechado, o do Real; sem `DATA_ONTEM`, sem a data); fechamento x fechamento:
   "Agosto/26 (fechado) x Setembro/26 (fechado)" (decisão 2 da Karen; as 7 decisões no README). Inter (sem `--serif`).
   Testes: Parte Z (variantes 'evo', 'evogrupo', 'evogrande', 'evofech' com `montaMesAnterior`; 'semevo' = 'exec' sem a
   chave; o sintético do back-end já traz uma MES_ANTERIOR, que `montaMesAnterior` substitui) e `conferencia_real.test.js`

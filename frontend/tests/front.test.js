@@ -6356,15 +6356,18 @@ describe('Parte Z — Evolução contra o mês anterior (Etapa 8c)', {skip: pula
   test('subtítulos: normal (corte e dias úteis) e fechamento x fechamento (FECHADO = true)', async () => {
     let {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null});
     const p = await page.evaluate(() => ({s: document.getElementById('exSEvo').textContent, t: document.getElementById('exTEvo').textContent,
-      d: P.MES_ANTERIOR.DIA_UTIL, h: P.DIA_HOJE, T: P.TOTAL_DIAS_UTEIS, m: P.MES_LABEL}));
+      d: P.MES_ANTERIOR.DIA_UTIL, o: P.DIA_ONTEM, data: P.DATA_ONTEM, T: P.TOTAL_DIAS_UTEIS, m: P.MES_LABEL}));
     assert.equal(p.t, 'Evolução contra o mês anterior');
-    assert.equal(p.s, `Setembro/26 até 11/09 (dia útil ${p.d} de 22) x ${p.m} (dia útil ${p.h} de ${p.T}). % = Real ÷ meta do mês.`);
+    // o mês atual até o último dia útil fechado (o do Real): DATA_ONTEM em dd/mm e DIA_ONTEM
+    assert.match(p.data, /^\d{4}-\d{2}-\d{2}$/);
+    const ontem = `${p.data.slice(8, 10)}/${p.data.slice(5, 7)}`;
+    assert.equal(p.s, `Setembro/26 até 11/09 (dia útil ${p.d} de 22) x ${p.m} até ${ontem} (dia útil ${p.o} de ${p.T}). % = Real ÷ meta do mês.`);
     // a dica com os dois períodos
     await page.evaluate(() => document.querySelector('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot').scrollIntoView({block: 'center'}));
     await page.waitForTimeout(100);
     await page.hover('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot');
     assert.match(await page.textContent('#dica'), new RegExp(`^Refrigerantes · BAND.*Setembro/26 até 11/09: Real [\\d.]+ \\([\\d,]+% da meta [\\d.]+\\)` +
-      `${p.m}: Real [\\d.]+ \\([\\d,]+% da meta [\\d.]+\\)Δ [+−][\\d,]+ p\\.p\\. · Real [+−][\\d,]+%$`));
+      `${p.m} até ${ontem}: Real [\\d.]+ \\([\\d,]+% da meta [\\d.]+\\)Δ [+−][\\d,]+ p\\.p\\. · Real [+−][\\d,]+%$`));
     assert.deepEqual(erros, []);
     await ctx.close();
     ({page, ctx, erros} = await abre('evofech', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null}));

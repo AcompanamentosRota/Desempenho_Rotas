@@ -509,9 +509,9 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   (ver "Chave `MES_ANTERIOR`"). Aparece com `CONFIG.EVOLUCAO_ATIVA = true` **e** a chave no payload; sem ela (payload
   antigo, ou a consulta do mês anterior falhou ou passou de 60 s na rodada) o bloco fica oculto, sem erro. A Rota não tem
   (não tem a Executiva).
-  - Subtítulo: "Setembro/26 até 20/09 (dia útil 13 de 21) x Outubro/26 (dia útil 14 de 21). % = Real ÷ meta do mês."
-    (o 1º dia útil é o N do mês anterior, `MES_ANTERIOR.DIA_UTIL`; o 2º é o dia útil de hoje, `DIA_HOJE`, como na etiqueta
-    do dia). No fechamento: "Agosto/26 (fechado) x Setembro/26 (fechado)".
+  - Subtítulo: "Setembro/26 até 20/09 (dia útil 13 de 21) x Outubro/26 até 20/10 (dia útil 13 de 21). % = Real ÷ meta do mês."
+    (o 1º dia útil é o N do mês anterior, `MES_ANTERIOR.DIA_UTIL`; o 2º é o último dia útil fechado, o do Real:
+    `DATA_ONTEM` em dd/mm e `DIA_ONTEM`; sem `DATA_ONTEM`, sem a data). No fechamento: "Agosto/26 (fechado) x Setembro/26 (fechado)".
   - Mesmas unidades e mesma linha de total da Tendência x Meta (Diretoria → gerências, total BAND; gerência → supervisões
     + "Neutraliza"; grupo no Total → as supervisões das duas; supervisão → rotas); virtuais, "{GC}-EV" e ocultas dentro
     dos totais e fora das listas. Para cada categoria (os 5 macros) e unidade: Real e Meta do mês anterior = soma dos pares
@@ -524,7 +524,7 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
     sem meta anterior (ou sem meta no mês atual) na categoria: "—", no fim, fora da ordenação. No PC as 5 categorias lado a
     lado; no celular uma por vez, pelos chips (a mesma categoria em análise dos medidores).
   - Caixa de comentário (mouse, teclado e toque): "Refrigerantes · GC.UR / Setembro/26 até 20/09: Real 85.879 (66,6% da
-    meta 129.000) / Outubro/26: Real 92.207 (63,6% da meta 145.000) / Δ −3,0 p.p. · Real +7,4%".
+    meta 129.000) / Outubro/26 até 20/10: Real 92.207 (63,6% da meta 145.000) / Δ −3,0 p.p. · Real +7,4%".
   - Decisões da Karen (21/10/2026), as mesmas da chave: (1) mês anterior com menos dias úteis que o N de hoje = ele
     inteiro; (2) **fechamento x fechamento**: com o painel em fechamento, o mês fechado contra o anterior a ele INTEIRO
     (corte = o último dia dele), com as metas dele; (3) Real do mês anterior pela rota ATUAL do cliente, na gerência de

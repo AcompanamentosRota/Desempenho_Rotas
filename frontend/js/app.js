@@ -873,9 +873,11 @@ function pintaEvolucao(us, tot, k){
   if(!on){ $('exEvChips').innerHTML = ''; $('exEvDivs').innerHTML = ''; return; }
   const M = P.MES_ANTERIOR, fech = !!P.FECHAMENTO;
   const rotAnt = fech || M.FECHADO ? `${M.MES_LABEL} (fechado)` : `${M.MES_LABEL} até ${diaMes(M.DATA_CORTE)}`;
-  const rotAtu = fech ? `${P.MES_LABEL} (fechado)` : P.MES_LABEL;
+  // mês de referência: até o último dia útil fechado, o do Real (DATA_ONTEM / DIA_ONTEM; sem DATA_ONTEM, sem a data)
+  const ontem = diaMes(P.DATA_ONTEM);
+  const rotAtu = fech ? `${P.MES_LABEL} (fechado)` : `${P.MES_LABEL}${ontem ? ` até ${ontem}` : ''}`;
   $('exSEvo').textContent = fech ? `${rotAnt} x ${rotAtu}`
-    : `${rotAnt} (dia útil ${M.DIA_UTIL} de ${M.TOTAL_DIAS_UTEIS}) x ${rotAtu} (dia útil ${P.DIA_HOJE} de ${P.TOTAL_DIAS_UTEIS}).`+
+    : `${rotAnt} (dia útil ${M.DIA_UTIL} de ${M.TOTAL_DIAS_UTEIS}) x ${rotAtu} (dia útil ${P.DIA_ONTEM} de ${P.TOTAL_DIAS_UTEIS}).`+
       ' % = Real ÷ meta do mês.';
   $('exEvChips').innerHTML = GROUPS.VOLUME.map(c=>`<button type="button" class="fchip${c===k ? ' on' : ''}" data-k="${esc(c)}"`+
     ` aria-pressed="${c===k}">${esc(rotuloInd(c))}</button>`).join('');
