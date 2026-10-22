@@ -251,8 +251,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - **Validação por gerência**: gerência sem rotas, metas ou Real = aviso; quedas (rotas, clientes, volume real) só contra
   a mesma gerência publicada (gerência nova não é comparada).
 - **Entrada com perfis, por seleção** (controle de acesso INTERNO, não é segurança: os dados estão em
-  `frontend/data/*.json`; aviso no README e em `config.js`; nada de usuário, senha ou campo de texto): DIRETORIA entra
-  direto ("Todas as gerências"); GERÊNCIA, SUPERVISÃO e ROTA abrem a caixa de seleção (`#entCaixa`: `abreCaixa` /
+  `frontend/data/*.json`; aviso no README e em `config.js`; nada de usuário; senha só na Diretoria): DIRETORIA abre a
+  mesma caixa (`pintaSenha`: campo `#entSenha` type=password, "Entrar", "← Voltar" fecha, `#entSenhaMsg` role=alert;
+  `confereSenha`) e entra em "Todas as gerências" com uma das DUAS senhas; GERÊNCIA, SUPERVISÃO e ROTA abrem a caixa de seleção (`#entCaixa`: `abreCaixa` /
   `pintaCaixa`, diálogo com foco, Tab preso, setas, ESC, × e clique fora). 1ª etapa (`opcoesGc`): as 16 na ordem de
   `GC_NOMES`/`GC_ATIVAS` com os grupos de `CONFIG.GC_GRUPOS` (PA+DI, GU+PO, IT+MO, UR+RI, os pares que o Datasphere
   junta) numa opção só, na posição do 1º membro; sem dados = desabilitada (grupo: se nenhuma das duas tiver). 2ª etapa
@@ -272,6 +273,15 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   no `visibilitychange` (`confereDia`); payload novo revalida (`confereAcesso`; no grupo, a escolha do seletor fica
   enquanto tiver dados). A casa apaga o acesso. Link `?resumo=` (também `gc=IT%2BMO`) não lê nem grava o acesso.
   Sol/lua só no fundo da entrada (`'drotas_entrada'`, à parte).
+  **Senha da Diretoria (22/10/2026; README, "Senha da Diretoria")**: AS SENHAS NUNCA FICAM EM TEXTO NO REPOSITÓRIO
+  (código, testes, documentos, commits, PR). `CONFIG.DIRETORIA_SENHAS_HASH` = só os 2 hashes: SHA-256 hex minúsculo de
+  "drotas:" + senha com trim e `toUpperCase()`, UTF-8 (`normalizaSenha`/`hashSenha`, `crypto.subtle` + `TextEncoder`).
+  Errada/vazia/só espaços: "Senha incorreta", campo limpo, foco nele. Sem `crypto.subtle` (`temCripto`): "Abra o painel
+  pelo endereço seguro (https)", não entra. Sessão com `v: SESSAO_VERSAO` (2; `gravaSessao`); `entradaOuAcesso`
+  descarta Diretoria sem `v: 2` com "Digite a senha para entrar na Diretoria" (`MSG_ENTRADA.senha`); Gerência,
+  Supervisão e Rota antigas valem. Recarregar no mesmo dia não pede a senha; casa e virada das 05:00 pedem. Testes:
+  senhas FICTÍCIAS em `frontend/tests/senha_teste.js` (`trocaHash` troca os hashes no config.js servido, em `abre()` dos
+  dois arquivos de teste; `digitaSenha` no `entra()`; front antigo sem senha passa direto); Parte AB.
   **Logos da entrada (Etapa 7, 21/10/2026; no lugar da linha `.entMarca`)**: `.entLogos` acima do `#entTit` = logo
   Coca-Cola Bandeirantes (`.entCoca`, 62 px; 52 px em <= 380 px; `alt="Coca-Cola Bandeirantes"`) | `.entSep` (1,5 x 64 px,
   `--vermelho`, `aria-hidden`) | `.entElmo` (`role="img"` + `aria-label="Comercial Bandeirantes"`: elmo 40/34 px com

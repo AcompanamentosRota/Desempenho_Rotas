@@ -44,14 +44,15 @@
     <h1 id="entTit">Desempenho de Rotas</h1>
     <div class="entMsg" id="entMsg" role="alert"></div>
     <div class="entBotoes" id="entBotoes">
-      <button type="button" data-perfil="dir">DIRETORIA</button>
+      <button type="button" data-perfil="dir" aria-haspopup="dialog">DIRETORIA</button>
       <button type="button" data-perfil="gc" aria-haspopup="dialog">GERÊNCIA</button>
       <button type="button" data-perfil="sv" aria-haspopup="dialog">SUPERVISÃO</button>
       <button type="button" data-perfil="rota" aria-haspopup="dialog">ROTA</button>
     </div>
   </div>
   <div class="entRod" id="entRod">Karen Oliveira - Inteligência de Mercado</div>
-  <!-- caixa de seleção: a gerência (ou o grupo); na Supervisão e na Rota, depois a lista da gerência escolhida -->
+  <!-- caixa de seleção: a gerência (ou o grupo); na Supervisão e na Rota, depois a lista da gerência escolhida; na
+       Diretoria, o campo de senha -->
   <div id="entCaixa" class="entCaixa" role="dialog" aria-modal="true" aria-labelledby="entCaixaTit"
        aria-describedby="entCaixaSub" hidden>
     <div class="entPainel">

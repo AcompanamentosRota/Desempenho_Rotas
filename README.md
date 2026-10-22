@@ -158,13 +158,25 @@ nomes em `backend/gerador/mapeamento.py`, `GC_NOMES`, enviados no payload). Não
 
 ### Entrada com perfis
 
-> **Controle de acesso interno: a entrada só organiza o que cada perfil vê, sem usuário nem senha; NÃO é
-> segurança — os dados estão em frontend/data/*.json. O acesso fica guardado no aparelho até a virada do dia
-> (05:00, horário de Brasília) ou até clicar na casa.**
+> **Controle de acesso interno: a entrada só organiza o que cada perfil vê, sem usuário; só a Diretoria pede senha.
+> NÃO é segurança — os dados estão em frontend/data/*.json e qualquer um com o endereço lê tudo. O acesso fica
+> guardado no aparelho até a virada do dia (05:00, horário de Brasília) ou até clicar na casa.**
 
 O painel abre na **entrada**, com quatro botões (o sol/lua troca só o fundo da entrada, preto ou branco, e o
-aparelho guarda a escolha em `drotas_entrada`). Nada é digitado: Gerência, Supervisão e Rota abrem uma **caixa de
-seleção** (fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa; funciona no celular).
+aparelho guarda a escolha em `drotas_entrada`). Gerência, Supervisão e Rota abrem uma **caixa de seleção** (nada é
+digitado; fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa; funciona no celular).
+
+**Senha da Diretoria** (desde 22/10/2026): o botão DIRETORIA abre a mesma caixa com um campo **Senha** e o botão
+**Entrar** (foco no campo; Enter confirma; ESC, ×, clique fora e "← Voltar" fecham). Valem **duas senhas**, sem
+diferenciar maiúsculas de minúsculas e ignorando espaços nas pontas. Senha errada, vazia ou só com espaços: "Senha
+incorreta", o campo é limpo e o foco volta nele (continua na entrada). As senhas **não ficam no repositório**: em
+`frontend/js/config.js` há só os hashes (`CONFIG.DIRETORIA_SENHAS_HASH`), SHA-256 em hex minúsculo de `drotas:` + a
+senha sem espaços nas pontas e em MAIÚSCULAS (UTF-8; `hashSenha` em `app.js`, com `crypto.subtle`). Para trocar uma
+senha, calcule o hash dela da mesma forma e troque a linha (ex.: no console do navegador, com o painel aberto,
+`await hashSenha('nova senha')`). Sem `crypto.subtle` (página aberta por um endereço não seguro, sem https) aparece
+"Abra o painel pelo endereço seguro (https)" e a Diretoria não abre. **Não é segurança**: só organiza quem abre a
+visão Diretoria; os dados continuam públicos em `frontend/data/*.json`. Os testes usam senhas fictícias
+(`frontend/tests/senha_teste.js`), servindo o `config.js` com os hashes delas.
 
 **Logos** (desde 21/10/2026, Etapa 7): acima de "Desempenho de Rotas", a logo Coca-Cola Bandeirantes e o elmo com
 "COMERCIAL / BANDEIRANTES" embaixo, lado a lado, separados por uma linha vermelha fina. No fundo preto (padrão) vão a
@@ -181,7 +193,7 @@ Rota, que não tem a Executiva, abre no **Volume**.
 
 | Perfil | Escolhe | Abre |
 |---|---|---|
-| DIRETORIA | nada (entra direto) | a visão Diretoria de hoje, em "Todas as gerências" |
+| DIRETORIA | nada; digita a senha | a visão Diretoria de hoje, em "Todas as gerências" |
 | GERÊNCIA | a gerência (ou o grupo) | a visão Gerência com a gerência travada (sem seletor de gerência); supervisão e rota livres. No grupo: o total das duas e o seletor Total / uma delas |
 | SUPERVISÃO | a gerência (ou o grupo) e depois a supervisão | gerência e supervisão travadas; só o filtro das rotas dela; cascata card → rotas → clientes |
 | ROTA | a gerência (ou o grupo) e depois a rota | gerência, supervisão e rota travadas, sem filtros e sem Resumo; cascata card → clientes |
@@ -206,10 +218,12 @@ Rota, que não tem a Executiva, abre no **Volume**.
 - O cabeçalho mostra o contexto (ex.: "Supervisão · GC.G2 · Goiânia 02 · SV.G2.1 · Nome"). O "puxa a média" e o
   Resumo seguem a lógica da visão Gerência (na Supervisão, a rota que mais puxa a média e o Resumo da supervisão;
   na Rota, sem os dois).
-- **Acesso guardado** (`localStorage` `drotas_sessao`: perfil, gerência, supervisão, rota e o dia; nada de nomes,
-  senha ou token; no grupo, a gerência é a chave do grupo, ex.: `IT+MO`): recarregar a página reabre o mesmo
-  perfil e contexto (Diretoria em "Todas as gerências"; grupo no Total; os outros filtros e a cascata voltam ao
-  padrão), sem piscar a entrada. A **casa** vermelha apaga o acesso e volta para a entrada (é a única forma manual
+- **Acesso guardado** (`localStorage` `drotas_sessao`: perfil, gerência, supervisão, rota, o dia e a versão `v: 2`;
+  nada de nomes, senha, hash ou token; no grupo, a gerência é a chave do grupo, ex.: `IT+MO`): recarregar a página
+  reabre o mesmo perfil e contexto (Diretoria em "Todas as gerências", sem pedir a senha de novo no mesmo dia de
+  trabalho; grupo no Total; os outros filtros e a cascata voltam ao padrão), sem piscar a entrada. Acesso de
+  Diretoria guardado antes da senha (sem `v`) é descartado: a entrada aparece com "Digite a senha para entrar na
+  Diretoria". Os de Gerência, Supervisão e Rota guardados antes continuam valendo. A **casa** vermelha apaga o acesso e volta para a entrada (é a única forma manual
   de voltar). Sem armazenamento no aparelho, a entrada aparece a cada visita.
 - **Virada diária**: o acesso vale para o "dia de trabalho", que vira às **05:00 de Brasília** (independente do
   fuso do aparelho; `CONFIG.SESSAO_VIRADA_HORA`). Acesso de outro dia (ou sem o dia) volta para a entrada com
@@ -996,6 +1010,6 @@ Diferenças em relação ao arquivo que era montado à mão:
 - O secret do OAuth Client circulou em texto: peça a rotação no Datasphere e
   atualize o Secret `DATASPHERE_CLIENT_SECRET`.
 - O repositório é público: `payload.json` contém nomes e códigos de clientes.
-- A entrada com perfis (Diretoria, Gerência, Supervisão e Rota, por seleção, sem usuário nem senha) é só
-  organização interna, não protege os dados:
+- A entrada com perfis (Diretoria, Gerência, Supervisão e Rota, por seleção, sem usuário; a senha da Diretoria só
+  com os hashes em `config.js`) é só organização interna, não protege os dados:
   quem tiver o endereço de `frontend/data/*.json` lê tudo.

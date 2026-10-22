@@ -41,10 +41,18 @@ const CONFIG = Object.freeze({
   ROTULO_VOLUME_SUB: 'Dest+Art+Cnd',
   // nome da aba EXEC (visão executiva) por perfil; o perfil Rota não tem a aba
   ABA_EXEC_NOME: {dir: 'Diretoria', gc: 'Gerencial', sv: 'Supervisão'},
-  /* Controle de acesso interno: a entrada só organiza o que cada perfil vê, sem usuário nem senha; NÃO é
-     segurança — os dados estão em frontend/data/*.json. O acesso fica guardado no aparelho até a virada do dia
+  /* Controle de acesso interno: a entrada só organiza o que cada perfil vê (sem usuário; senha só na Diretoria); NÃO
+     é segurança — os dados estão em frontend/data/*.json. O acesso fica guardado no aparelho até a virada do dia
      (05:00, horário de Brasília) ou até clicar na casa. */
   SESSAO_VIRADA_HORA: 5,              // o "dia de trabalho" do acesso guardado vira às 05:00 de Brasília
+  /* Senha da visão Diretoria: controle de acesso INTERNO (organiza o que cada perfil vê), NÃO é segurança — os dados
+     continuam em frontend/data/*.json e qualquer um pode lê-los. Duas senhas valem; aqui ficam SÓ os hashes, nunca a
+     senha: SHA-256 (hex minúsculo) de "drotas:" + a senha sem espaços nas pontas e em MAIÚSCULAS, em UTF-8 (hashSenha
+     em app.js). Gerência, Supervisão e Rota entram sem senha. */
+  DIRETORIA_SENHAS_HASH: [
+    'b9d9818e4672b1f0d17c953a7dce40e58b06e06168e3aa2bda2bb7ca254d3d66',
+    '912ab610b482ee34ffca833bfbb38dc64b9cd7fc04fe142dbcaaca9b038db34c',
+  ],
   // Gerências agrupadas: os pares que o Datasphere junta numa gerência só (Pa_Di, Gu_Po, It_Mo, Ur_Ri; ver
   // GC_ORIGEM e GC_SIGLAS_ORIGEM em backend/gerador/mapeamento.py). Na entrada viram uma opção "GC.IT + GC.MO"
   // que abre o total das duas, com o seletor Total / uma delas no cabeçalho.
