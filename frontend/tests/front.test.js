@@ -145,6 +145,25 @@ before(async () => {
   fs.writeFileSync(path.join(grande, 'payload.json'), JSON.stringify(pgr));
   fs.writeFileSync(path.join(grande, 'online.json'), JSON.stringify(ogr));
   DADOS.grande = grande;
+  // Evolução contra o mês anterior (Parte Z): MES_ANTERIOR sintética (montaMesAnterior) sobre o 'exec', o 'grupo', o 'grande'
+  // e o fechamento do Todos a Bordo ('incfech', com FECHADO: true)
+  const semevo = path.join(tmp, 'semevo');      // o 'exec' sem MES_ANTERIOR (payload antigo ou com a consulta falhando)
+  fs.mkdirSync(semevo);
+  const pse = JSON.parse(fs.readFileSync(path.join(DADOS.exec, 'payload.json'), 'utf-8'));
+  delete pse.MES_ANTERIOR;
+  fs.writeFileSync(path.join(semevo, 'payload.json'), JSON.stringify(pse));
+  fs.copyFileSync(path.join(DADOS.exec, 'online.json'), path.join(semevo, 'online.json'));
+  DADOS.semevo = semevo;
+  for(const [nome, origem, fechado] of [['evo', 'exec', false], ['evogrupo', 'grupo', false], ['evogrande', 'grande', false],
+                                         ['evofech', 'incfech', true]]){
+    const dir = path.join(tmp, nome);
+    fs.mkdirSync(dir);
+    const pe = JSON.parse(fs.readFileSync(path.join(DADOS[origem], 'payload.json'), 'utf-8'));
+    montaMesAnterior(pe, fechado);
+    fs.writeFileSync(path.join(dir, 'payload.json'), JSON.stringify(pe));
+    fs.copyFileSync(path.join(DADOS[origem], 'online.json'), path.join(dir, 'online.json'));
+    DADOS[nome] = dir;
+  }
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -156,7 +175,8 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
   '.png':'image/png', '.woff2':'font/woff2', '.webmanifest':'application/manifest+json'};
 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' |
-   'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm');
+   'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm' | 'evo' | 'evogrupo' | 'evogrande' |
+   'evofech' | 'semevo');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
@@ -5824,11 +5844,12 @@ describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
     await ctx.close();
   });
 
-  test('Evolução contra o mês anterior oculta (CONFIG.EVOLUCAO_ATIVA = false; o bloco entra com a Etapa 8)', async () => {
-    const {page, ctx, erros} = await abre('exec', {entrar: 'dir', aba: null});
-    const r = await page.evaluate(() => ({flag: CONFIG.EVOLUCAO_ATIVA, txt: document.getElementById('exec').textContent,
-      blocos: [...document.querySelectorAll('#exec .bloco h3')].map(h => h.textContent)}));
-    assert.equal(r.flag, false);
+  test('Evolução contra o mês anterior oculta com payload sem MES_ANTERIOR (o bloco entrou na Etapa 8c; Parte Z)', async () => {
+    const {page, ctx, erros} = await abre('semevo', {entrar: 'dir', aba: null});
+    const r = await page.evaluate(() => ({flag: CONFIG.EVOLUCAO_ATIVA, chave: !!P.MES_ANTERIOR, txt: document.getElementById('exec').innerText,
+      blocos: [...document.querySelectorAll('#exec .bloco h3')].filter(h => h.getClientRects().length).map(h => h.textContent)}));
+    assert.equal(r.flag, true);
+    assert.equal(r.chave, false);
     assert.doesNotMatch(r.txt, /Evolução|mês anterior/);
     assert.deepEqual(r.blocos, ['Categorias', 'Tendência x Meta por gerência', 'Sem compra por gerência', 'Agenda de hoje por gerência',
                                 'Coberturas por gerência']);
@@ -6223,7 +6244,13 @@ describe('Parte X — gavetas com barra de dias (Etapa 6)', {skip: pular}, () =>
       for(const {page} of [novo, velho]) await variedade(page);
       if(entrar.perfil !== 'rota'){
         for(const {page} of [novo, velho]){ await vaiAba(page, 'VOLUME'); await vaiAba(page, 'EXEC'); }
-        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        // a Executiva sem o bloco "Evolução contra o mês anterior" (Etapa 8c; o 0a59eb4.. Etapa 5 não tinha), e o comentário dele
+        const semEvo = () => { const c = document.getElementById('exec').cloneNode(true);
+          [...c.childNodes].filter(n => n.nodeType === 8 && /Evolução/.test(n.data))
+            .forEach(n => { n.previousSibling.remove(); n.nextSibling.remove(); n.remove(); });
+          c.querySelector('#exEvo').remove();
+          return c.innerHTML; };
+        assert.equal(await novo.page.evaluate(semEvo), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
       }
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         for(const {page} of [novo, velho]) await filtra(page, {aba});
@@ -6259,4 +6286,234 @@ describe('Parte X — gavetas com barra de dias (Etapa 6)', {skip: pular}, () =>
       await novo.ctx.close(); await velho.ctx.close();
     }
   });
+});
+
+/* ---------- Parte Z — Evolução contra o mês anterior (Etapa 8c, só Volume) ----------
+   MES_ANTERIOR sintética no formato do gerador (backend/gerador/mes_anterior.py): todas as rotas do payload na ordem dele,
+   um par [Real até o corte, Meta do mês anterior] por macro de volume, null onde a rota não tem o indicador (o sintético
+   do back-end já traz a chave, com outros números; esta a substitui). No sintético só Refrigerantes e Água Mineral têm meta
+   (as outras 3 categorias saem "—" em todas as linhas). Cenários: a AN sem Refrigerantes no mês anterior (gerência "—"), a G211 sem Refrigerantes (rota null), a G3 com Água Mineral igual ao mês
+   de referência (Δ exatamente 0, cinza), a G212 com Água Mineral 12 x a meta (Δ de 4 dígitos) e as demais com fatores variados (Δ dos dois sinais). A rota oculta das EV* (SL-EV,
+   MO-EV no 'grupo') entra com meta 0, como no gerador. */
+function montaMesAnterior(p, fechado){
+  // os 5 macros (VOL_EXEC, declarado mais abaixo: o before() roda antes de chegar nele)
+  const IND = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MINERAL', 'VOL DEST+ART+CND'], rotas = [];
+  for(const gc in p.DATA) for(const sv in p.DATA[gc]) for(const r in p.DATA[gc][sv]) rotas.push([gc, r, p.DATA[gc][sv][r]]);
+  const ROTAS = {};
+  rotas.forEach(([gc, r, n], i) => {
+    ROTAS[r] = IND.map((k, j) => {
+      const b = n.indicators[k];
+      if(!b || b.unavailable || b.meta == null) return null;
+      if(gc === 'AN' && k === 'VOL REFRIGERANTES') return null;
+      if(r === 'G211' && k === 'VOL REFRIGERANTES') return null;
+      if(gc === 'G3' && k === 'VOL AGUA MINERAL') return [b.real, b.meta];
+      // Real anterior 12 x a meta: Δ de 4 dígitos (−1.1xx,x) na rota e na SV.G2.1 (largura da coluna do valor)
+      if(r === 'G212' && k === 'VOL AGUA MINERAL') return [Math.round(b.meta * 12 * 10) / 10, b.meta];
+      const f = 0.6 + ((i + j) % 5) * 0.12, g = 0.9 + (j % 3) * 0.05;
+      return [Math.round(b.real * f * 10) / 10, Math.round(b.meta * g * 10) / 10];
+    });
+  });
+  p.MES_ANTERIOR = fechado
+    ? {MES_LABEL: 'Agosto/26', DIA_UTIL: 21, TOTAL_DIAS_UTEIS: 21, DATA_CORTE: '2026-08-31', FECHADO: true, IND, ROTAS}
+    : {MES_LABEL: 'Setembro/26', DIA_UTIL: p.DIA_ONTEM, TOTAL_DIAS_UTEIS: 22, DATA_CORTE: '2026-09-11', FECHADO: false, IND, ROTAS};
+}
+const linhasEvo = (page, k) => page.evaluate(k => [...document.querySelectorAll(`#exEvDivs .dv[data-k="${k}"] .dRow`)].map(r => ({
+  u: r.dataset.u, tot: r.classList.contains('tot'), dpp: r.dataset.dpp === '' ? null : Number(r.dataset.dpp),
+  realAnt: r.dataset.realAnt === '' ? null : Number(r.dataset.realAnt), txt: r.querySelector('.dVal').textContent,
+  cls: r.querySelector('.dVal').className, w: (r.querySelector('.dEixo i') || {style: {}}).style.width || ''})), k);
+const evoVisivel = page => page.evaluate(() => { const e = document.getElementById('exEvo');
+  return !e.hidden && e.getClientRects().length > 0; });
+
+describe('Parte Z — Evolução contra o mês anterior (Etapa 8c)', {skip: pular}, () => {
+  const {confereEvolucao} = require('./evolucao_invariantes.js');
+
+  test('oculto sem MES_ANTERIOR e com CONFIG.EVOLUCAO_ATIVA = false; visível nos perfis com Executiva, depois de "Coberturas"; a Rota não tem', async () => {
+    const semFlag = {'/js/config.js': t => t.replace('EVOLUCAO_ATIVA: true', 'EVOLUCAO_ATIVA: false')};
+    for(const [dados, troca, vis] of [['semevo', {}, false], ['evo', semFlag, false], ['evo', {}, true]]){
+      const onde = `${dados} ${Object.keys(troca).length ? 'flag false' : ''}`;
+      const {page, ctx, erros} = await abre(dados, {entrar: 'dir', aba: null, troca});
+      assert.equal(await evoVisivel(page), vis, onde);
+      const blocos = await page.evaluate(() => [...document.querySelectorAll('#exec .bloco h3')].filter(h => h.getClientRects().length)
+        .map(h => h.textContent));
+      assert.deepEqual(blocos, ['Categorias', 'Tendência x Meta por gerência', 'Sem compra por gerência', 'Agenda de hoje por gerência',
+        'Coberturas por gerência', ...(vis ? ['Evolução contra o mês anterior'] : [])], onde);
+      if(!vis) assert.equal(await page.evaluate(() => document.getElementById('exEvDivs').innerHTML), '', onde);
+      assert.deepEqual(erros, [], onde);
+      await ctx.close();
+    }
+    for(const [dados, entrar, vis] of [['evo', {perfil: 'gc', gc: 'G1'}, true], ['evogrupo', {perfil: 'gc', gc: 'IT+MO'}, true],
+        ['evo', {perfil: 'sv', gc: 'G2', sv: '1'}, true], ['evo', {perfil: 'rota', gc: 'G2', rota: 'G211'}, false]]){
+      const onde = JSON.stringify(entrar);
+      const {page, ctx, erros} = await abre(dados, {entrar, aba: null});
+      assert.equal(await evoVisivel(page), vis, onde);
+      if(!vis) assert.ok(!(await telaExec(page)).tabs.includes('EXEC'), `${onde}: sem a Executiva`);
+      else assert.equal(await page.evaluate(() => [...document.querySelectorAll('#exec > .bloco, #exec > .dupla')].at(-1).id), 'exEvo', onde);
+      assert.deepEqual(erros, [], onde);
+      await ctx.close();
+    }
+  });
+
+  test('subtítulos: normal (corte e dias úteis) e fechamento x fechamento (FECHADO = true)', async () => {
+    let {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null});
+    const p = await page.evaluate(() => ({s: document.getElementById('exSEvo').textContent, t: document.getElementById('exTEvo').textContent,
+      d: P.MES_ANTERIOR.DIA_UTIL, h: P.DIA_HOJE, T: P.TOTAL_DIAS_UTEIS, m: P.MES_LABEL}));
+    assert.equal(p.t, 'Evolução contra o mês anterior');
+    assert.equal(p.s, `Setembro/26 até 11/09 (dia útil ${p.d} de 22) x ${p.m} (dia útil ${p.h} de ${p.T}). % = Real ÷ meta do mês.`);
+    // a dica com os dois períodos
+    await page.evaluate(() => document.querySelector('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot').scrollIntoView({block: 'center'}));
+    await page.waitForTimeout(100);
+    await page.hover('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot');
+    assert.match(await page.textContent('#dica'), new RegExp(`^Refrigerantes · BAND.*Setembro/26 até 11/09: Real [\\d.]+ \\([\\d,]+% da meta [\\d.]+\\)` +
+      `${p.m}: Real [\\d.]+ \\([\\d,]+% da meta [\\d.]+\\)Δ [+−][\\d,]+ p\\.p\\. · Real [+−][\\d,]+%$`));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    ({page, ctx, erros} = await abre('evofech', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null}));
+    const f = await page.evaluate(() => ({s: document.getElementById('exSEvo').textContent, m: P.MES_LABEL, fech: !!P.FECHAMENTO}));
+    assert.ok(f.fech);
+    assert.equal(f.s, `Agosto/26 (fechado) x ${f.m} (fechado)`);
+    await confereEvolucao(page, 'fechamento GC.G1');
+    await page.evaluate(() => document.querySelector('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot').scrollIntoView({block: 'center'}));
+    await page.waitForTimeout(100);
+    await page.hover('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot');
+    assert.match(await page.textContent('#dica'), new RegExp(`Agosto/26 \\(fechado\\): Real .*${f.m} \\(fechado\\): Real `));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('unidades e total (Diretoria, uma gerência, gerência com EV*, grupo no Total, supervisão, "Neutraliza"): invariantes (a) a (e)', async () => {
+    const casos = [
+      {nome: 'BAND', dados: 'evo', entrar: 'dir'},
+      {nome: 'Diretoria · AN (virtuais)', dados: 'evo', entrar: 'dir', dgc: 'AN', fora: 3},
+      {nome: 'GC.G1', dados: 'evo', entrar: {perfil: 'gc', gc: 'G1'}},
+      {nome: 'GC.SL (EV*)', dados: 'evo', entrar: {perfil: 'gc', gc: 'SL'}, fora: 1},
+      {nome: 'Total IT+MO', dados: 'evogrupo', entrar: {perfil: 'gc', gc: 'IT+MO'}, fora: 2},
+      {nome: 'SV.G2.1', dados: 'evo', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}},
+      {nome: 'Neutraliza', dados: 'evo', entrar: {perfil: 'gc', gc: 'G1'}, sv: 'Neutraliza'},
+    ];
+    for(const c of casos){
+      const {page, ctx, erros} = await abre(c.dados, {entrar: c.entrar, aba: null});
+      if(c.dgc) await page.selectOption('#fgc', c.dgc);
+      if(c.sv) await page.selectOption('#fsv', c.sv);
+      const r = await confereEvolucao(page, c.nome);
+      if(c.fora) assert.equal(r.fora, c.fora, `${c.nome}: rotas fora das unidades (virtuais / EV*)`);
+      // as mesmas unidades e o mesmo total da Tendência x Meta (a Evolução também lista as sem meta, com "—")
+      const u = await page.evaluate(() => ({evo: [...document.querySelectorAll('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow')].map(x => x.dataset.u),
+        tot: [...document.querySelectorAll('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot')].map(x => x.dataset.u),
+        div: [...document.querySelectorAll('#exDivs .dv[data-k="VOL REFRIGERANTES"] .dRow')].map(x => x.dataset.u),
+        divTot: [...document.querySelectorAll('#exDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot')].map(x => x.dataset.u),
+        uns: unidadesExec(ctxInicial()).map(x => x.cod)}));
+      assert.deepEqual(u.tot, u.divTot, `${c.nome}: linha de total`);
+      assert.deepEqual([...u.evo].sort(), [...u.uns, u.tot[0]].sort(), `${c.nome}: unidades`);
+      assert.ok(u.div.every(x => u.evo.includes(x)), `${c.nome}: Tendência x Meta contida`);
+      if(c.nome === 'BAND') assert.equal(u.tot[0], 'BAND');
+      assert.deepEqual(erros, [], c.nome);
+      await ctx.close();
+    }
+  });
+
+  test('rota null, unidade sem meta anterior ("—" no fim), Δ exatamente 0 em cinza; ordem decrescente, barras e cores pelo sinal exato', async () => {
+    const {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null});
+    // AN sem Refrigerantes no mês anterior: "—", sem barra, na última posição
+    const refri = await linhasEvo(page, 'VOL REFRIGERANTES');
+    const an = refri.find(x => x.u === 'GC.AN');
+    assert.deepEqual([an.txt, an.dpp, an.w, an.realAnt], ['—', null, '', null]);
+    assert.match(an.cls, /\bnd\b/);
+    assert.equal(refri.at(-1).u, 'GC.AN');
+    // categoria sem meta no escopo (Still, no sintético): todas as linhas "—", o total incluído
+    const still = await linhasEvo(page, 'VOL STILL');
+    assert.ok(still.length > 1 && still.every(x => x.txt === '—' && x.dpp == null), 'Still: "—"');
+    // G3 com Água Mineral igual ao mês de referência: Δ 0, cinza, sem barra
+    const agua = await linhasEvo(page, 'VOL AGUA MINERAL'), g3 = agua.find(x => x.u === 'GC.G3');
+    assert.deepEqual([g3.dpp, g3.txt, g3.w], [0, '0,0', '']);
+    assert.match(g3.cls, /\bzero\b/);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#exEvDivs .dVal.zero')).color),
+      await page.evaluate(() => { const e = document.createElement('i'); e.style.color = 'var(--txt-apoio)'; document.body.append(e);
+        const c = getComputedStyle(e).color; e.remove(); return c; }));
+    // ordem, cores e escala (a maior barra = 100% quando passa de 10 p.p.)
+    for(const k of VOL_EXEC){
+      const ls = (await linhasEvo(page, k)).filter(x => x.dpp != null);
+      for(let i = 1; i < ls.length; i++) assert.ok(ls[i - 1].dpp >= ls[i].dpp, `${k}: ordem`);
+      for(const x of ls) assert.match(x.cls, x.dpp > 0 ? /\bpos\b/ : x.dpp < 0 ? /\bneg\b/ : /\bzero\b/, `${k} ${x.u}`);
+      const max = Math.max(...ls.map(x => Math.abs(x.dpp)));
+      if(max >= 10) assert.ok(ls.some(x => Math.abs(parseFloat(x.w) - 100) < 0.01), `${k}: maior barra = 100%`);
+      else for(const x of ls) if(x.dpp) assert.ok(Math.abs(parseFloat(x.w) - Math.abs(x.dpp) / 10 * 100) < 0.01, `${k}: escala mínima 10 p.p.`);
+    }
+    const sinais = new Set((await Promise.all(VOL_EXEC.map(k => linhasEvo(page, k)))).flat().filter(x => x.dpp).map(x => Math.sign(x.dpp)));
+    assert.deepEqual([...sinais].sort(), [-1, 1], 'o cenário tem Δ dos dois sinais');
+    // G211 sem Refrigerantes no mês anterior: a SV.G2.1 só com a G212
+    await vaiPara(page, {perfil: 'sv', gc: 'G2', sv: '1'}, null);
+    const sv = await linhasEvo(page, 'VOL REFRIGERANTES');
+    const g212 = await page.evaluate(() => P.MES_ANTERIOR.ROTAS.G212[0][0]);
+    assert.equal(sv.find(x => x.u === 'SV.G2.1').realAnt, g212);
+    const g211 = sv.find(x => x.u === 'Rota G211');
+    assert.deepEqual([g211.txt, g211.realAnt], ['—', null]);
+    assert.equal(sv.at(-1).u, 'Rota G211');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('caixa de comentário no hover, no teclado e no toque', async () => {
+    let {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null, largura: 1440});
+    const sel = '#exEvDivs .dv[data-k="VOL AGUA MINERAL"] .dRow[data-u="GC.G1"]';
+    const dica = () => page.evaluate(() => { const d = document.getElementById('dica');
+      return d && d.classList.contains('on') ? d.textContent : null; });
+    // rolar fecha a caixa: a linha vai para a tela antes (o hover não rola mais)
+    await page.evaluate(s => document.querySelector(s).scrollIntoView({block: 'center'}), sel);
+    await page.waitForTimeout(100);
+    await page.hover(sel);
+    assert.match(await dica(), /^Água Mineral · GC\.G1Setembro\/26 até 11\/09: Real/);
+    assert.ok(await page.evaluate(s => document.querySelector(s).classList.contains('emFoco'), sel));
+    await page.mouse.move(5, 5);
+    assert.equal(await dica(), null, 'some ao sair');
+    await page.focus(sel);
+    assert.match(await dica(), /^Água Mineral · GC\.G1/);
+    await page.keyboard.press('Escape');
+    assert.equal(await dica(), null, 'ESC fecha');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    ({page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null, largura: 390, toque: true}));
+    const tot = '#exEvDivs .dv.sel .dRow.tot';
+    await page.evaluate(s => document.querySelector(s).scrollIntoView({block: 'center'}), tot);
+    await page.tap(tot);
+    assert.match(await dica(), /^Refrigerantes · BAND/);
+    await page.tap(tot);
+    assert.equal(await dica(), null, 'o 2º toque fecha');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [1440, 1200, 1000, 390, 360]){
+    test(`${largura} px: sem rolagem lateral nem texto cortado (com Δ de 4 dígitos); Inter; chips só no celular (uma categoria por vez)`, async () => {
+      const pc = largura >= 1000;
+      for(const [dados, entrar] of [['evogrande', 'dir'], ['evogrupo', {perfil: 'gc', gc: 'IT+MO'}], ['evo', {perfil: 'sv', gc: 'G2', sv: '1'}],
+                                    ['evofech', 'dir']]){
+        const onde = `${largura} ${dados} ${JSON.stringify(entrar)}`;
+        const {page, ctx, erros} = await abre(dados, {largura, altura: 900, entrar, aba: null});
+        await medidas(page);
+        await page.evaluate(() => document.fonts.ready);
+        assert.ok(await evoVisivel(page), onde);
+        assert.ok(await semRolagemLateral(page), `${onde}: rolagem lateral`);
+        assert.deepEqual(await page.evaluate(() => __vis.estouros('#exEvo')), [], onde);
+        const r = await page.evaluate(() => ({chips: document.getElementById('exEvChips').getClientRects().length > 0,
+          dvs: [...document.querySelectorAll('#exEvDivs .dv')].filter(d => d.getClientRects().length).map(d => d.dataset.k),
+          fontes: [...new Set([...document.querySelectorAll('#exEvo, #exEvo *')].map(e => getComputedStyle(e).fontFamily))],
+          sub: (() => { const e = document.getElementById('exSEvo'); return e.scrollWidth <= e.clientWidth; })()}));
+        assert.ok(r.fontes.every(f => /^Inter/.test(f) && !/Serif/.test(f)), `${onde}: ${r.fontes}`);
+        assert.ok(r.sub, `${onde}: subtítulo`);
+        assert.equal(r.chips, !pc, `${onde}: chips`);
+        assert.deepEqual(r.dvs, pc ? VOL_EXEC : ['VOL REFRIGERANTES'], onde);
+        if(!pc){
+          // o chip troca a categoria em análise (a mesma dos medidores e da Tendência x Meta)
+          await page.click('#exEvChips .fchip[data-k="VOL AGUA MINERAL"]');
+          assert.deepEqual(await page.evaluate(() => [catExec, [...document.querySelectorAll('#exEvDivs .dv')]
+            .filter(d => d.getClientRects().length).map(d => d.dataset.k), document.querySelector('#exGauges .gCard.sel').dataset.k]),
+            ['VOL AGUA MINERAL', ['VOL AGUA MINERAL'], 'VOL AGUA MINERAL'], onde);
+          assert.deepEqual(await page.evaluate(() => __vis.estouros('#exEvo')), [], `${onde} Água`);
+          assert.ok(await semRolagemLateral(page), `${onde} Água`);
+        }
+        assert.deepEqual(erros, [], onde);
+        await ctx.close();
+      }
+    });
+  }
 });

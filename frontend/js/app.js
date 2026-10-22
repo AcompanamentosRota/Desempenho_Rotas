@@ -857,14 +857,16 @@ function pintaCoberturasExec(us, tot, niv){
    unidades e a mesma linha de total da Tendência x Meta), o Real até o corte do mês anterior e a Meta do mês anterior
    inteiro = soma dos pares de MES_ANTERIOR.ROTAS das rotas da unidade (NUCLEO.mesAnterior; item null = rota fora);
    % anterior = Real / Meta; % atual = o % real do medidor (Real / Meta do mês de referência, de agrega(), sem arredondar);
-   Δ p.p. = % atual - % anterior (1 casa na tela; a cor pelo sinal exato, 0 em cinza); Δ Real = Real atual / Real anterior
+   Δ p.p. = % atual - % anterior (1 casa na tela, só o número: a unidade fica na legenda; a cor pelo sinal exato, 0 em cinza); Δ Real = Real atual / Real anterior
    - 1 (só na caixa de comentário). Barras divergentes do Δ p.p., da maior para a menor, com o total no meio; escala de
    cada categoria pela maior barra (mínimo 10 p.p.). Unidade sem meta anterior (ou sem meta no mês de referência) na
    categoria: "—", no fim, fora da ordenação. No fechamento do mês, o mês fechado contra o anterior a ele inteiro
    (MES_ANTERIOR.FECHADO). No celular, uma categoria por vez (chips; a mesma categoria em análise do resto da aba). */
 const evolucaoAtiva = () => !!(CONFIG.EVOLUCAO_ATIVA && P.MES_ANTERIOR && P.MES_ANTERIOR.ROTAS && Array.isArray(P.MES_ANTERIOR.IND));
 const diaMes = iso => { const m = /^\d{4}-(\d{2})-(\d{2})/.exec(iso || ''); return m ? `${m[2]}/${m[1]}` : ''; };
-const fmtPP = d => d===0 ? '0,0 p.p.' : `${d>0 ? '+' : '−'}${pctBR(Math.abs(d), 1)} p.p.`;
+// Δ em p.p. com 1 casa e o sinal (0 exato sem sinal); na linha só o número (a unidade está na legenda), na dica com "p.p."
+const fmtDpp = d => d===0 ? '0,0' : `${d>0 ? '+' : '−'}${pctBR(Math.abs(d), 1)}`;
+const fmtPP = d => `${fmtDpp(d)} p.p.`;
 function pintaEvolucao(us, tot, k){
   const on = evolucaoAtiva();
   $('exEvo').hidden = !on;
@@ -907,7 +909,7 @@ function pintaEvolucao(us, tot, k){
       return `<div class="dRow${u.tot ? ' tot' : ''}${ok ? '' : ' nd'}" tabindex="0" ${at} data-dica="${esc(dica)}">`+
         `<span class="dNome">${esc(u.cod)}</span><div class="dEixo"><div class="dN">${ok && d < 0 ? `<i style="width:${w}"></i>` : ''}</div>`+
         `<div class="dP">${ok && d > 0 ? `<i style="width:${w}"></i>` : ''}</div></div>`+
-        `<span class="dVal ${cls}">${ok ? fmtPP(d) : '—'}</span></div>`;
+        `<span class="dVal ${cls}">${ok ? fmtDpp(d) : '—'}</span></div>`;
     }).join('');
     return `<div class="dv${c===k ? ' sel' : ''}" data-k="${esc(c)}"><h4>${esc(nome)}</h4>`+
       `${linhas || '<div class="exVazio">Sem dado neste escopo.</div>'}</div>`;

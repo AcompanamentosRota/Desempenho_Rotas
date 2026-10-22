@@ -109,6 +109,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   tabela-resumo só de totais e códigos. Gavetas com barra de dias (Etapa 6): Diretoria, G1, G2, AP, IT+MO e uma
   supervisão (cada chip x recontagem e x cards, `frontend/tests/gavetas_invariantes.js`, as mesmas da Parte X) e cada
   unidade dessas gerências (Hoje e Todos x cards); sem rolagem lateral nem erro em 360/390/1000/1440 px nos dois fundos.
+  Evolução contra o mês anterior (Etapa 8c): Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px
+  (`frontend/tests/evolucao_invariantes.js`, as mesmas da Parte Z; pula sem `MES_ANTERIOR`).
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -143,7 +145,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   DIA_ONTEM = 0 = sem a chave. Consultas em threads DAEMON (`mes_anterior.Carga`, nunca ThreadPoolExecutor: ele segura o
   fim do processo) junto com as do mês; falha, > `M.MES_ANTERIOR_LIMITE_S` (60 s), Real negativo ou não finito = chave
   fora + aviso, nunca reprova. `validacao._mes_anterior`: aviso (ausente com DIA_ONTEM > 0, Real BAND 0, meta negativa),
-  erro só NaN/inf ou Real negativo. O front ainda não lê (`CONFIG.EVOLUCAO_ATIVA = false`).
+  erro só NaN/inf ou Real negativo. O front lê desde a Etapa 8c (bloco "Evolução contra o mês anterior" da Executiva).
 - **Todo nome de coluna, filtro e agrupador fica em `backend/gerador/mapeamento.py`.** Valores conferidos em 13/10/2026:
   - Base de clientes guarda histórico: filtrar `FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'`.
   - Gerências do painel na fonte (`M.GC_ORIGEM`): `Gc. G1/G2/G3/Ap/It_Mo` conferidas; `Gc. At/An/Sl/Rv/Pa_Di/Ur_Ri/Gu_Po`
@@ -418,10 +420,26 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (QUALQUER); total = gaveta Sem compra (riscados = pediram). Tabela: `agrega().ind[k].pct` (ICS/NN), Todos a Bordo por
   `rotasInc` + `itensEm100`; células com `data-g` (o mesmo item está em dois grupos: ARTD KO; CERVEJAS e CERVEJAS 600ML
   RETORNAVEL no INCENTIVO só com as rotas com meta). Fechamento: "Realizado x Meta", `#exDia` e `#exAg` hidden
-  (`.dupla.so1`). `CONFIG.EVOLUCAO_ATIVA = false` (Etapa 8). Dica = `ativaDica` em todo `[data-dica]` do `#exec` (linhas
+  (`.dupla.so1`). Evolução: ver abaixo (Etapa 8c). Dica = `ativaDica` em todo `[data-dica]` do `#exec` (linhas
   `.dRow`/`.hRow` com `tabindex=0`; fecha a aberta ao redesenhar). Celular: as 5 abas rolam de lado (`.tabs`
   overflow-x, `mostraAbaAtiva`); só a coluna `.dv.sel` com os chips. Medidores 5 colunas >= 1200 px, 3 >= 700, 2;
   tabela `min-width` 1140 px (rola dentro do bloco, 1ª coluna sticky). Escala `--fs-ex-*`. Testes: Parte W.
+  **Evolução contra o mês anterior (Etapa 8c, 22/10/2026; README, "Aba Executiva"; só Volume)**: `section#exEvo` (último
+  `.bloco` do `#exec`, `hidden` sem `evolucaoAtiva()` = `CONFIG.EVOLUCAO_ATIVA` (true) e `P.MES_ANTERIOR`; payload sem a
+  chave = oculto, sem erro). `pintaEvolucao(us, tot, k)`: as mesmas unidades e total da Tendência x Meta; anterior =
+  `NUCLEO.mesAnterior(P, rotas)` (soma simples dos pares de `MES_ANTERIOR.ROTAS` por item de `IND`; null = rota fora; o
+  `modelo.py` não agrega essa chave, nada a espelhar); % atual = Real/Meta do `agrega()` (exato); Δ p.p. = % atual −
+  % anterior; Δ Real = Real atual / Real anterior − 1 (só na dica). Linhas `.dRow` dentro de `.divs.ev#exEvDivs` (as
+  classes da Tendência x Meta; coluna do valor 54/52 px, cabe "−1.234,5"; `.dVal.zero/.nd` cinza; `.legenda` com "Δ em
+  pontos percentuais (p.p.)" e as cores: na linha só o número, `fmtDpp`; na dica com "p.p.", `fmtPP`), `data-dpp/pct/pct-ant/real/meta/
+  real-ant/meta-ant`; ordem decrescente do Δ com o total no meio, cor pelo sinal exato (0 = cinza "0,0 p.p."), escala pela
+  maior barra (mín. 10 p.p.), "0,0" com 0; sem meta anterior ou atual = "—" no fim. Chips `#exEvChips` no celular (`escolheCat`, a mesma
+  `catExec`). Subtítulo `#exSEvo`: "Setembro/26 até 20/09 (dia útil 13 de 21) x Outubro/26 (dia útil 14 de 21). % = Real ÷
+  meta do mês." (`MES_ANTERIOR.DIA_UTIL`/`TOTAL_DIAS_UTEIS` x `DIA_HOJE`/`TOTAL_DIAS_UTEIS`); fechamento x fechamento:
+  "Agosto/26 (fechado) x Setembro/26 (fechado)" (decisão 2 da Karen; as 7 decisões no README). Inter (sem `--serif`).
+  Testes: Parte Z (variantes 'evo', 'evogrupo', 'evogrande', 'evofech' com `montaMesAnterior`; 'semevo' = 'exec' sem a
+  chave; o sintético do back-end já traz uma MES_ANTERIOR, que `montaMesAnterior` substitui) e `conferencia_real.test.js`
+  (invariantes (a)-(e) em `frontend/tests/evolucao_invariantes.js`).
   **Gavetas com barra de dias (Etapa 6, 21/10/2026; README, "Gavetas com barra de dias")**: o `chipsHtml`/`DIAS_CHIP` das
   coberturas e a regra única `noDia(c, chip)` (Todos; Hoje = `c[4]===1`; dia = `DIAS[c[3]].includes(chip)`: "Seg - Qui"
   aparece na Seg e na Qui; `listaCobertura` usa a mesma). `listaVolume`: barra em `#dLista` acima do `.cCab`, padrão
