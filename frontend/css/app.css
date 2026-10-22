@@ -685,6 +685,48 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .cLin .cNome{grid-column:1/-1}
   .cCab,.cCli{grid-template-columns:minmax(0,1fr) 54px 54px 60px 38px;font-size:11.5px}
 }
+/* gaveta "Categoria por unidade" (medidor da aba Executiva): conteúdo NOVO dentro da .drw, só com classes novas (nenhuma
+   regra da cascata acima muda). Cartão de total (fundo --papel) e um por unidade: faixa lateral de 6 px na cor do status,
+   % real, Meta e Real, barra do Real (trilho no tom claro do status) e barra da Tendência (trilho cinza; não existe no
+   fechamento). Grade de 3 colunas (rótulo 50 px | barra | valor, no mínimo --cu-val-w) com as barras em subgrid, para alinhar as duas. Escala e
+   cores no escopo da gaveta: --cu-cor (faixa, %, Real), --cu-esc (valores e Tendência), --cu-clr (trilho e foco). */
+.cuGav{--cu-fs-nome:12px;--cu-fs-sub:10px;--cu-fs-pct:20px;--cu-fs-rot:9.5px;--cu-fs-val:10.5px;--cu-barra:5px;
+  --cu-val-w:80px;--cu-ambar-esc:#7d5a00;font-variant-numeric:lining-nums tabular-nums}
+.cuAbx{--cu-cor:var(--vermelho);--cu-esc:var(--ruim);--cu-clr:var(--rosa)}
+.cuTend{--cu-cor:var(--ambar);--cu-esc:var(--cu-ambar-esc);--cu-clr:var(--creme)}
+.cuBat{--cu-cor:var(--verde);--cu-esc:var(--verdeE);--cu-clr:var(--menta)}
+.cuGrade{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+@media (min-width:700px){.cuGrade{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (min-width:1000px){.cuGrade{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}}
+.cuCard{display:grid;grid-template-columns:50px minmax(0,1fr) minmax(var(--cu-val-w),max-content);
+  grid-template-areas:"cab cab pct" "vals vals vals" "b1 b1 b1" "b2 b2 b2";column-gap:6px;row-gap:3px;align-items:center;
+  background:#fff;border:1px solid var(--linha);border-left:6px solid var(--cu-cor);border-radius:10px;padding:7px 10px 7px 9px;
+  outline:none;transition:box-shadow .12s;cursor:default}
+.cuCard.cuFech{grid-template-areas:"cab cab pct" "vals vals vals" "b1 b1 b1"}
+.cuCard.cuTot{background:var(--papel)}
+.cuCard:hover,.cuCard.emFoco,.cuCard:focus{box-shadow:0 0 0 3px var(--cu-clr)}
+.cuCard:focus-visible{outline:1.5px solid var(--cu-esc);outline-offset:3px}
+@media(prefers-reduced-motion:reduce){.cuCard{transition:none}}
+.cuCab{grid-area:cab;display:flex;align-items:baseline;gap:6px;min-width:0;white-space:nowrap;line-height:1.25}
+.cuNome{min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:var(--cu-fs-nome);font-weight:700;color:var(--txt)}
+.cuSub{flex:none;font-size:var(--cu-fs-sub);color:var(--txt-apoio)}
+.cuPct{grid-area:pct;justify-self:end;white-space:nowrap;line-height:1}
+.cuPct b{font-size:var(--cu-fs-pct);font-weight:800;letter-spacing:-.01em;color:var(--cu-cor)}
+.cuPct small{font-size:var(--cu-fs-rot);color:var(--txt-apoio)}
+.cuVals{grid-area:vals;display:flex;gap:12px;white-space:nowrap;font-size:var(--cu-fs-val);line-height:1.3}
+.cuVals small{font-size:var(--cu-fs-rot);color:var(--txt-apoio)}
+.cuVals b{font-size:var(--cu-fs-val);font-weight:600;color:var(--txt)}
+.cuB1{grid-area:b1} .cuB2{grid-area:b2}
+.cuBar{display:grid;grid-template-columns:50px minmax(0,1fr) minmax(var(--cu-val-w),max-content);grid-template-columns:subgrid;align-items:center;line-height:1.3}
+.cuRot{font-size:var(--cu-fs-rot);color:var(--txt-apoio);white-space:nowrap}
+.cuTr{position:relative;height:var(--cu-barra);border-radius:3px;overflow:hidden;background:var(--cu-clr)}
+.cuTr i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--cu-cor)}
+.cuB2 .cuTr{background:#e8e8ec}
+.cuB2 .cuTr i{background:var(--cu-esc)}
+.cuVal{font-size:var(--cu-fs-val);font-weight:600;color:var(--cu-esc);text-align:right;white-space:nowrap}
+.cuLeg{display:flex;flex-wrap:wrap;gap:6px 14px;padding:10px 2px 0;font-size:var(--cu-fs-sub);color:var(--txt-apoio)}
+.cuLeg span{display:inline-flex;align-items:center;gap:5px}
+.cuLg{display:inline-block;flex:none;width:12px;height:10px;border-radius:3px;background:var(--cu-cor)}
 .rodape{text-align:center;font-size:var(--fs-nota);color:var(--txt-apoio);padding:20px 10px 0;line-height:1.6}
 .rodape .fonte{color:var(--cinza-fraco)}
 .creditos{margin-top:12px;padding-top:10px;border-top:1px solid var(--linha-suave);font-size:var(--fs-nota);color:var(--cinza-fraco);line-height:1.6}

@@ -21,7 +21,10 @@
    linha = medidor (e agrega() das unidades); % atual e anterior; Δ p.p. com o sinal exato; Σ unidades abertas + rotas fora
    delas (virtuais, "{GC}-EV", ocultas) = total; BAND = MES_ANTERIOR.ROTAS inteira; sem meta anterior = "—"; largura das
    barras = % (até 100). Pula o bloco se o payload não tiver MES_ANTERIOR. Antes x depois contra a main antes do redesenho
-   (REF_PRE_EVO), com o mesmo payload: cards, cabeçalho, cascata, Resumo e a Executiva sem o bloco iguais. */
+   (REF_PRE_EVO), com o mesmo payload: cards, cabeçalho, cascata, Resumo e a Executiva sem o bloco iguais.
+   Gaveta "Categoria por unidade" (tocar num medidor; invariantes (a)-(f) em categoria_invariantes.js, as mesmas da Parte AC):
+   a Diretoria, cada gerência, cada grupo no Total e uma supervisão, nas 5 categorias; 360, 390, 1000 e 1440 px nos dois fundos
+   sem rolagem lateral nem texto cortado; antes x depois contra a main antes da etapa (REF_PRE_CAT), com o mesmo payload. */
 'use strict';
 const {test, before, after, describe} = require('node:test');
 const assert = require('node:assert/strict');
@@ -459,6 +462,135 @@ describe('Antes x depois do redesenho da Evolução com dado real', {skip: pular
     assert.deepEqual([...novo.erros, ...velho.erros], []);
     for(const {ctx} of [novo, velho]) await ctx.close();
     console.log(`# Antes x depois (main ${REF_PRE_EVO} x branch), mesmo payload real: tudo igual fora o bloco da Evolução`);
+    console.log('# | Perfil | Comparado (igual) |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+  });
+});
+
+/* Gaveta "Categoria por unidade" da Executiva com dado real (invariantes (a)-(f) em categoria_invariantes.js, as mesmas da
+   Parte AC): a Diretoria, cada gerência com dados (filtro da Diretoria), cada grupo no Total e uma supervisão, nas 5 categorias;
+   em 360, 390, 1000 e 1440 px, nos dois fundos, sem rolagem lateral nem texto cortado (g); e o antes x depois contra a main antes
+   da etapa (REF_PRE_CAT), com o mesmo payload: Executiva, cabeçalho e cards das 4 abas, cascata, gavetas Base e Sem compra e
+   Resumo iguais (HTML). Imprime tabelas-resumo só de totais e códigos. */
+const CAT = require('./categoria_invariantes.js');
+const REF_PRE_CAT = 'ec60a88';
+const FRONT_PRE_CAT = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_CAT}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+const KS_VOL = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MINERAL', 'VOL DEST+ART+CND'];
+const CURTO_VOL = {'VOL REFRIGERANTES': 'Refri', 'VOL CERVEJAS': 'Cervejas', 'VOL STILL': 'Still', 'VOL AGUA MINERAL': 'Água',
+                   'VOL DEST+ART+CND': 'Novos Neg.'};
+
+describe('Gaveta "Categoria por unidade" com dado real', {skip: pular}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px: Diretoria, cada gerência, cada grupo no Total e uma supervisão, nas 5 categorias: invariantes (a) a (f)`, async () => {
+    const {page, ctx, erros} = await abre(largura);
+    const info = await page.evaluate(() => ({gcs: gcsComDados(), grupos: gruposGc().map(g => g.chave).filter(temDados),
+      mes: P.MES_LABEL, dia: `${P.DIA_HOJE}/${P.TOTAL_DIAS_UTEIS}`, fech: !!P.FECHAMENTO}));
+    const linhas = [];
+    await entra(page, {perfil: 'dir'});
+    linhas.push(await CAT.confereCategoria(page, 'BAND'));
+    for(const g of info.gcs){
+      await page.selectOption('#fgc', g);
+      linhas.push(await CAT.confereCategoria(page, `GC.${g}`));
+    }
+    for(const g of info.grupos){
+      await entra(page, {perfil: 'gc', gc: g});
+      linhas.push(await CAT.confereCategoria(page, `Total ${g}`));
+    }
+    const sv = await page.evaluate(() => { const g = gcsComDados()[0]; return {gc: g, sv: svsDaEntrada(g)[0]}; });
+    await entra(page, {perfil: 'sv', gc: sv.gc, sv: sv.sv});
+    linhas.push(await CAT.confereCategoria(page, sv.sv));
+    const upd = await page.evaluate(() => (ONLINE || {}).updatedAt);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // por categoria: unidades na gaveta (verde/âmbar/vermelho), % real e % tendência do total, unidades sem meta e rotas fora
+    const cel = c => c === 'sem meta' ? 'sem meta' : `${c.n} (${c.bat}/${c.am}/${c.abx})${c.neutra ? ' +N' : ''} · ${c.pct}%` +
+      (c.tend == null ? '' : ` / ${c.tend}%`) + (c.semMeta ? ` · ${c.semMeta} s/meta` : '') + (c.fora ? ` · ${c.fora} fora` : '');
+    console.log(`# Gaveta Categoria por unidade com dado real (${largura} px): ${info.mes}, dia útil ${info.dia}${info.fech ? ' (fechamento)' : ''}, online ${upd}`);
+    console.log('# Cada célula: unidades na gaveta (verde/âmbar/vermelho; +N = com a linha Neutraliza) · % real / % tendência do total' +
+      ' · unidades sem meta na categoria · rotas fora das unidades (virtuais, -EV)');
+    console.log(`# | Escopo | ${KS_VOL.map(k => CURTO_VOL[k]).join(' | ')} |`);
+    console.log(`# |---|${KS_VOL.map(() => '---').join('|')}|`);
+    for(const l of linhas) console.log(`# | ${l.onde} | ${KS_VOL.map(k => cel(l.cats[k])).join(' | ')} |`);
+  });
+
+  for(const largura of [360, 390, 1000, 1440])
+  test(`${largura} px, fundos preto e branco: a gaveta das 5 categorias sem rolagem lateral nem texto cortado, sem erro no console (g)`, async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre(largura, tema);
+      const sv = await page.evaluate(() => svsDaEntrada('G2')[0]);
+      for(const e of [{perfil: 'dir'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'gc', gc: 'AT'}, {perfil: 'sv', gc: 'G2', sv}]){
+        await entra(page, e);
+        const onde = `${largura} ${tema} ${JSON.stringify(e)}`;
+        for(const k of KS_VOL){
+          if(await page.$eval(`#exGauges .gCard[data-k="${k}"]`, g => g.classList.contains('off'))) continue;
+          await page.click(`#exGauges .gCard[data-k="${k}"]`);
+          await page.waitForTimeout(260);
+          assert.ok(await page.evaluate(() => document.getElementById('drw').classList.contains('on')), `${onde} ${k}: abre`);
+          assert.deepEqual(await page.evaluate(CAT.CORTES_CAT), [], `${onde} ${k}: texto cortado`);
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde} ${k}: rolagem lateral`);
+          await page.keyboard.press('Escape');
+        }
+      }
+      assert.deepEqual(erros, [], `${largura} ${tema}`);
+      await ctx.close();
+    }
+  });
+
+  test('antes x depois (main antes da etapa, mesmo payload real): Executiva, cabeçalho e cards das 4 abas, cascata, gavetas Base e Sem compra e Resumo iguais', {skip: !FRONT_PRE_CAT && `sem o commit ${REF_PRE_CAT}`}, async () => {
+    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_CAT)];
+    const linhas = [];
+    const gaveta = async (p, abrir) => { await abrir(p); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
+    const clica = id => p => p.evaluate(id => document.getElementById(id).click(), id);
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      const comp = [];
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        for(const id of ['exBase', 'exSem', 'exVis'])
+          assert.equal(await gaveta(novo.page, clica(id)), await gaveta(velho.page, clica(id)), `${onde}: gaveta do KPI ${id}`);
+        comp.push('Executiva (HTML) e as gavetas dos KPIs');
+      }
+      for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${onde} ${ab}`);
+        if(!ta) continue;
+        const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
+        assert.deepEqual(a, b, `${onde} ${ab}: cabeçalho e cards`);
+        let niveis = 0;
+        const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
+        for(const k of ks){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          for(let nivel = 0; nivel < 5; nivel++){
+            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            niveis++;
+            if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+          }
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        for(const id of ['cBase', 'cSem'])
+          assert.equal(await gaveta(novo.page, clica(id)), await gaveta(velho.page, clica(id)), `${onde} ${ab}: gaveta ${id}`);
+        comp.push(`${ab} (${a.n} cards, ${niveis} telas de cascata, Base e Sem compra)`);
+      }
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+        comp.push('Resumo');
+      }
+      linhas.push([onde, comp.join(', ')]);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_CAT} x branch), mesmo payload real: tudo igual (a gaveta nova só abre no medidor)`);
     console.log('# | Perfil | Comparado (igual) |');
     console.log('# |---|---|');
     for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);

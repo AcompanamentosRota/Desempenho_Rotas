@@ -458,6 +458,24 @@ crédito e as legendas menores (até 1 px, ~10%) com contraste AA, com a letra d
 390 px, nos dois fundos, e o antes x depois com o mesmo payload real). Os "antes x depois" de etapas anteriores (Partes V,
 R, W e X) comparam com o nome antigo trocado pelo novo e sem a 2ª linha (`igualRotulo`).
 
+A **Parte AC** confere a gaveta "Categoria por unidade" da visão executiva (cenários `vol5`/`vol5fech`, `exec` e `grupo`):
+tocar em "Refrigerantes" abre "Refrigerantes por gerência" com o total e uma por gerência com meta, do maior para o menor %
+real (uma gerência sem meta fica fora); totais = card de Volume; cores pela regra (verde, âmbar, vermelho); gerência →
+supervisões com a "Neutraliza" por último (mesmo com o maior %), virtuais e EV* fora da lista e dentro do total; grupo no
+Total, uma gerência do grupo, supervisão → rotas e "Neutraliza" no filtro; "faltam N", "+X% s/ meta", Real = Meta ("+0% s/
+meta") e a tendência de 99,6% (= 100%, âmbar); categoria sem meta (ou meta 0) não abre; fechar (ESC, ×, fora) mantém a
+categoria e devolve o foco ao medidor; Enter e Espaço abrem; os chips do celular só escolhem; fechamento (sem âmbar nem
+barra de Tendência, "Realizado ÷ Meta", legenda de 2 cores); rótulo "Novos Negócios"; perfil Rota sem a Executiva; caixa de
+comentário (mouse, teclado e toque, rolar fecha); em 360, 390, 800, 1000 e 1440 px nos dois fundos: o cartão (faixa, borda,
+raio, padding, ~84 px, fontes, barras alinhadas, rótulo de 50 px, anel do hover), a grade, nada cortado nem rolagem lateral e
+o cabeçalho da gaveta igual ao da cascata; e, contra a main antes da etapa (`ec60a88` via `git show`), Executiva, cabeçalho e
+cards das abas, cascata, gavetas Base e Sem compra e Resumo iguais (HTML). As invariantes ficam em
+`frontend/tests/categoria_invariantes.js` ((a) total = medidor = card de Volume = soma das rotas; (b) Σ unidades + unidades
+sem meta + rotas fora = total; (c) ordem e só as unidades com meta; (d) cor recontada das rotas; (e) "faltam"/"s/ meta" e
+barras; (f) "Neutraliza" por último), usadas também pela conferência com dado real (bloco "Gaveta Categoria por unidade":
+Diretoria, cada gerência, cada grupo no Total e uma supervisão, nas 5 categorias; 360, 390, 1000 e 1440 px nos dois fundos; e
+o antes x depois com o mesmo payload real).
+
 ```bash
 git show origin/main:frontend/data/payload.json > /tmp/real/payload.json
 git show origin/main:frontend/data/online.json > /tmp/real/online.json
@@ -515,7 +533,36 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   Meta | Real; Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
   valor exato, como o SAC: −0,03% é vermelho mesmo com o card do Volume verde em 100%); "meta do dia N · online N" (ou
   "meta do dia batida" / "meta do dia —"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os
-  dois quadros acima. Sem meta no escopo: "sem meta neste escopo".
+  dois quadros acima, e abre a gaveta da categoria por unidade (abaixo). Sem meta no escopo: "sem meta neste escopo" (o
+  medidor não é clicável e não abre a gaveta).
+- **Categoria por unidade** (gaveta; desde 22/10/2026, versão "Destaque"): tocar num medidor (ou Enter/Espaço com o foco
+  nele) abre a gaveta **"Refrigerantes por gerência"** (ou "por supervisão", "por rota": o nível abaixo do filtro, como na
+  cascata: Diretoria → gerências; gerência → supervisões e a linha "Neutraliza"; grupo no Total → as supervisões das duas
+  gerências; supervisão → rotas; "Neutraliza" no filtro → as rotas dela). O nome da categoria é o central ("Novos
+  Negócios", sem a 2ª linha do card). Fechar (ESC, ×, tocar fora) mantém a categoria em análise; os chips do celular só
+  escolhem a categoria, sem abrir a gaveta. A Rota não tem a Executiva.
+  - Subtítulo: "Real até ontem ÷ Meta · cor pela tendência do SAC · 16 gerências" (o número de cartões de unidade, contando
+    a "Neutraliza"); no fechamento do mês, "Realizado ÷ Meta · cor pelo realizado · 16 gerências".
+  - Primeiro o cartão de **total** (fundo cinza-claro): "BAND · Diretoria", a gerência ("GC.G2 · Goiânia 02"), o grupo
+    ("GC.IT + GC.MO"), a supervisão ("SV.G2.1 · Nome") ou "Neutraliza · G1". Depois as unidades **do maior para o menor %
+    real** (Real ÷ Meta, pelo valor exato), com a **"Neutraliza" sempre por último**. Unidade sem meta na categoria fica
+    fora; o Real dela continua no total, como o das rotas virtuais e das eventuais (EV*), que nunca têm cartão.
+  - Cartão: o nome e o que há dentro ("2 supervisões", "7 rotas", "169 clientes"), o % real (o mesmo do medidor) com
+    "real"; "Meta … Real …"; a barra do **Real** (Real ÷ Meta, até 100%) com "faltam N" (Meta − Real) ou "+X% s/ meta"
+    quando o Real já passou da meta; e a barra da **Tendência** (Tendência ÷ Meta, até 100%) com o % de tendência do card de
+    Volume. No fechamento, sem a barra da Tendência.
+  - **Cor (status)**, na faixa de 6 px à esquerda, no % e na barra do Real: **verde** "meta batida" = Real ≥ Meta; **âmbar**
+    "na tendência" = % de tendência ≥ 100 (o número e a regra do card de Volume, não o ritmo linear: pelo ritmo linear a
+    GC.PA em Refrigerantes, 51% real e 104% de tendência em 20/10, ficaria vermelha, contra o card); **vermelho** = o resto.
+    No limite vale o número do card: 99,6% de tendência aparece como 100% e fica âmbar (a Tendência x Meta mostra o desvio
+    exato, −0,4%). **Fechamento**: só verde (Real ≥ Meta) ou vermelho, sem âmbar. Legenda das cores no fim.
+  - Passar o mouse, focar pelo teclado (Tab passa de cartão em cartão) ou tocar num cartão abre a caixa de comentário: Meta /
+    Real até ontem (X%) / Tendência (Y%) / Desvio (Tendência ÷ Meta − 1, 2 casas, como na Tendência x Meta); no toque, rolar
+    a lista fecha a caixa.
+  - Grade: 1 coluna no celular, 2 a partir de 700 px e colunas de no mínimo 300 px no PC (3 em 1440 px). A gaveta mantém a
+    aparência de sempre (moldura, cabeçalho, ×); o cartão é conteúdo novo, em Inter, com a escala própria (nome 12 px, % 20
+    px, valores 10,5 px, rótulos 9,5 px; variáveis `--cu-*`) e algarismos alinhados. Nada é recalculado: os números de cada
+    cartão saem da mesma agregação dos cards, unidade por unidade.
 - **Tendência x Meta por gerência / supervisão / rota**: barras divergentes do desvio Tendência ÷ Meta − 1 (1 casa), da
   maior para a menor, com a linha de total no meio da ordenação; verde à direita, vermelho à esquerda; escala de cada
   categoria pela maior barra (mínimo 10%). Unidade sem meta na categoria fica fora dela. No PC as 5 categorias lado a lado
@@ -712,7 +759,9 @@ quem chama nos demais (usada pelo `rotuloInd` do app.js, pelo resumo.js e pelo r
   barra de dias que entrou na lista de volume e nas gavetas Base e Sem compra (Etapa 6) é a mesma das listas de cobertura,
   com o mesmo estilo.
   A escala tipográfica, as alturas mínimas e a regra do vermelho NÃO valem dentro dela. Em 390 px o nome do cliente
-  na lista de volume (`.cCli .nm`, coluna estreita) corta com reticências, como antes.
+  na lista de volume (`.cCli .nm`, coluna estreita) corta com reticências, como antes. A gaveta "Categoria por unidade" da
+  visão executiva é conteúdo novo dentro dela, só com classes novas (`.cu…`, escala e cores próprias); nada do que está
+  acima muda.
 - **Cards de indicador**: grade `repeat(auto-fill, minmax(340px, 1fr))` a partir de 1000 px (3 colunas em 1280-1440
   px, 2 em 1000 px); no celular, uma coluna. Faixa lateral de 5 px (`border-left`) na cor do status: `--ruim` abaixo,
   `--verde` no ritmo; o padding esquerdo desconta a faixa (o conteúdo começa onde começava) e o card indisponível
