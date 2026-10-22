@@ -6324,7 +6324,10 @@ describe('Parte X — gavetas com barra de dias (Etapa 6)', {skip: pular}, () =>
   });
 });
 
-/* ---------- Parte Z — Evolução contra o mês anterior (Etapa 8c, só Volume) ----------
+/* ---------- Parte Z — Evolução contra o mês anterior (Etapa 8c, só Volume; barras pareadas desde 22/10/2026) ----------
+   Uma linha por categoria no total do escopo (barra sólida = mês de referência, hachurada = mês anterior, trilhas de 0 a 100%
+   com a marca de 100%; % atual, % anterior e Δ p.p.); clicar abre as unidades logo abaixo. Invariantes (a) a (f) em
+   evolucao_invariantes.js (as mesmas da conferência com dado real); antes x depois contra a main antes do redesenho.
    MES_ANTERIOR sintética no formato do gerador (backend/gerador/mes_anterior.py): todas as rotas do payload na ordem dele,
    um par [Real até o corte, Meta do mês anterior] por macro de volume, null onde a rota não tem o indicador (o sintético
    do back-end já traz a chave, com outros números; esta a substitui). No sintético só Refrigerantes e Água Mineral têm meta
@@ -6353,15 +6356,41 @@ function montaMesAnterior(p, fechado){
     ? {MES_LABEL: 'Agosto/26', DIA_UTIL: 21, TOTAL_DIAS_UTEIS: 21, DATA_CORTE: '2026-08-31', FECHADO: true, IND, ROTAS}
     : {MES_LABEL: 'Setembro/26', DIA_UTIL: p.DIA_ONTEM, TOTAL_DIAS_UTEIS: 22, DATA_CORTE: '2026-09-11', FECHADO: false, IND, ROTAS};
 }
-const linhasEvo = (page, k) => page.evaluate(k => [...document.querySelectorAll(`#exEvDivs .dv[data-k="${k}"] .dRow`)].map(r => ({
-  u: r.dataset.u, tot: r.classList.contains('tot'), dpp: r.dataset.dpp === '' ? null : Number(r.dataset.dpp),
-  realAnt: r.dataset.realAnt === '' ? null : Number(r.dataset.realAnt), txt: r.querySelector('.dVal').textContent,
-  cls: r.querySelector('.dVal').className, w: (r.querySelector('.dEixo i') || {style: {}}).style.width || ''})), k);
+/* antes x depois do redesenho: o front da main antes desta etapa (REF_PRE_EVO), servido por `troca` (só index.html, app.css e
+   app.js mudaram) */
+const REF_PRE_EVO = '7674ca2';
+const FRONT_PRE_EVO = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_EVO}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
+    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+  } catch(e) { return null; }
+})();
+const linhasEvo = (page, k) => page.evaluate(k => {
+  const n = v => v === '' || v == null ? null : Number(v);
+  const le = r => ({u: r.dataset.u, dpp: n(r.dataset.dpp), pct: n(r.dataset.pct), pctAnt: n(r.dataset.pctAnt), realAnt: n(r.dataset.realAnt),
+    pa: r.querySelector('.evPA').textContent, pb: r.querySelector('.evPB').textContent, d: r.querySelector('.evDN').textContent,
+    cls: r.querySelector('.evD').className, w: [...r.querySelectorAll('.evTr i')].map(i => parseFloat(i.style.width))});
+  const cat = document.querySelector(`#exEvLinhas .evLin.cat[data-k="${k}"]`);
+  return {tot: le(cat), aria: cat.getAttribute('aria-expanded'), aberta: !document.getElementById(cat.getAttribute('aria-controls')).hidden,
+    us: [...document.getElementById(cat.getAttribute('aria-controls')).querySelectorAll('.evLin')].map(le)};
+}, k);
 const evoVisivel = page => page.evaluate(() => { const e = document.getElementById('exEvo');
   return !e.hidden && e.getClientRects().length > 0; });
+// categorias abertas (aria-expanded = true e a lista de unidades à vista), na ordem
+const evoAbertas = page => page.evaluate(() => [...document.querySelectorAll('#exEvLinhas .evLin.cat')].filter(l => {
+  const det = document.getElementById(l.getAttribute('aria-controls'));
+  if((l.getAttribute('aria-expanded') === 'true') !== !det.hidden) throw new Error(`aria-expanded x lista: ${l.dataset.k}`);
+  return !det.hidden && det.getClientRects().length > 0;
+}).map(l => l.dataset.k));
+const catEvo = k => `#exEvLinhas .evLin.cat[data-k="${k}"]`;
+const dicaAberta = page => page.evaluate(() => { const d = document.getElementById('dica');
+  return d && d.classList.contains('on') ? d.textContent : null; });
+// rótulos dos dois meses na legenda (sem o "Δ" e a dica de abrir)
+const legendaEvo = page => page.evaluate(() => [...document.querySelectorAll('#exEvLeg > span')].map(s => s.textContent));
 
-describe('Parte Z — Evolução contra o mês anterior (Etapa 8c)', {skip: pular}, () => {
-  const {confereEvolucao} = require('./evolucao_invariantes.js');
+describe('Parte Z — Evolução contra o mês anterior em barras pareadas', {skip: pular}, () => {
+  const {confereEvolucao, ABRE_TODAS, textoD} = require('./evolucao_invariantes.js');
 
   test('oculto sem MES_ANTERIOR e com CONFIG.EVOLUCAO_ATIVA = false; visível nos perfis com Executiva, depois de "Coberturas"; a Rota não tem', async () => {
     const semFlag = {'/js/config.js': t => t.replace('EVOLUCAO_ATIVA: true', 'EVOLUCAO_ATIVA: false')};
@@ -6373,7 +6402,11 @@ describe('Parte Z — Evolução contra o mês anterior (Etapa 8c)', {skip: pula
         .map(h => h.textContent));
       assert.deepEqual(blocos, ['Categorias', 'Tendência x Meta por gerência', 'Sem compra por gerência', 'Agenda de hoje por gerência',
         'Coberturas por gerência', ...(vis ? ['Evolução contra o mês anterior'] : [])], onde);
-      if(!vis) assert.equal(await page.evaluate(() => document.getElementById('exEvDivs').innerHTML), '', onde);
+      if(!vis) assert.deepEqual(await page.evaluate(() => [document.getElementById('exEvLinhas').innerHTML, document.getElementById('exEvLeg').innerHTML]),
+        ['', ''], onde);
+      // o desenho antigo saiu: sem os chips de categoria e sem as colunas divergentes
+      assert.deepEqual(await page.evaluate(() => [!!document.getElementById('exEvChips'), !!document.getElementById('exEvDivs'),
+        document.querySelectorAll('#exEvo .dRow, #exEvo .dv, #exEvo .fchip').length]), [false, false, 0], onde);
       assert.deepEqual(erros, [], onde);
       await ctx.close();
     }
@@ -6389,45 +6422,170 @@ describe('Parte Z — Evolução contra o mês anterior (Etapa 8c)', {skip: pula
     }
   });
 
-  test('subtítulos: normal (corte e dias úteis) e fechamento x fechamento (FECHADO = true)', async () => {
+  test('subtítulo e legenda: normal, mês anterior limitado e fechamento x fechamento; sem "(a implementar)"', async () => {
     let {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null});
     const p = await page.evaluate(() => ({s: document.getElementById('exSEvo').textContent, t: document.getElementById('exTEvo').textContent,
-      d: P.MES_ANTERIOR.DIA_UTIL, o: P.DIA_ONTEM, data: P.DATA_ONTEM, T: P.TOTAL_DIAS_UTEIS, m: P.MES_LABEL}));
+      o: P.DIA_ONTEM, data: P.DATA_ONTEM, T: P.TOTAL_DIAS_UTEIS, m: P.MES_LABEL, d: P.MES_ANTERIOR.DIA_UTIL}));
     assert.equal(p.t, 'Evolução contra o mês anterior');
-    // o mês atual até o último dia útil fechado (o do Real): DATA_ONTEM em dd/mm e DIA_ONTEM
+    assert.equal(p.d, p.o, 'o sintético compara o mesmo dia útil');
+    // o mês de referência pelo DIA_ONTEM (o Real é até ontem) e o anterior pela DATA_CORTE (dd/mm)
+    assert.equal(p.s, `% real até ontem: ${p.m} (dia útil ${p.o} de ${p.T}) contra Setembro/26 no mesmo dia útil (até 11/09).`);
     assert.match(p.data, /^\d{4}-\d{2}-\d{2}$/);
     const ontem = `${p.data.slice(8, 10)}/${p.data.slice(5, 7)}`;
-    assert.equal(p.s, `Setembro/26 até 11/09 (dia útil ${p.d} de 22) x ${p.m} até ${ontem} (dia útil ${p.o} de ${p.T}). % = Real ÷ meta do mês.`);
-    // a dica com os dois períodos
-    await page.evaluate(() => document.querySelector('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot').scrollIntoView({block: 'center'}));
-    await page.waitForTimeout(100);
-    await page.hover('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot');
-    assert.match(await page.textContent('#dica'), new RegExp(`^Refrigerantes · BAND.*Setembro/26 até 11/09: Real [\\d.]+ \\([\\d,]+% da meta [\\d.]+\\)` +
-      `${p.m} até ${ontem}: Real [\\d.]+ \\([\\d,]+% da meta [\\d.]+\\)Δ [+−][\\d,]+ p\\.p\\. · Real [+−][\\d,]+%$`));
+    const leg = await legendaEvo(page);
+    assert.deepEqual(leg.slice(0, 3), [`${p.m} até ${ontem}`, 'Setembro/26 no mesmo dia útil (até 11/09)', '100% da meta']);
+    assert.equal(leg[3], `Δ = ${p.m} − Setembro/26, em pontos percentuais (p.p.): ▲ subiu, ▼ caiu`);
+    assert.equal(leg[4], 'Clique ou toque numa categoria para abrir por gerência');
+    assert.doesNotMatch(await page.textContent('#exEvo'), /implementar/);
+    // mês anterior com menos dias úteis que o DIA_ONTEM: vale ele inteiro
+    const lim = await page.evaluate(() => { P.MES_ANTERIOR.DIA_UTIL = P.DIA_ONTEM - 1; P.MES_ANTERIOR.TOTAL_DIAS_UTEIS = P.DIA_ONTEM - 1; render();
+      return [document.getElementById('exSEvo').textContent, document.querySelectorAll('#exEvLeg > span')[1].textContent, P.DIA_ONTEM - 1]; });
+    assert.deepEqual(lim.slice(0, 2), [`% real até ontem: ${p.m} (dia útil ${p.o} de ${p.T}) contra Setembro/26 inteiro (${lim[2]} dias úteis, até 11/09).`,
+      `Setembro/26 inteiro (${lim[2]} dias úteis, até 11/09)`]);
     assert.deepEqual(erros, []);
     await ctx.close();
     ({page, ctx, erros} = await abre('evofech', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null}));
     const f = await page.evaluate(() => ({s: document.getElementById('exSEvo').textContent, m: P.MES_LABEL, fech: !!P.FECHAMENTO}));
     assert.ok(f.fech);
-    assert.equal(f.s, `Agosto/26 (fechado) x ${f.m} (fechado)`);
+    assert.equal(f.s, `% real: ${f.m} (fechado) contra Agosto/26 (fechado).`);
+    assert.deepEqual((await legendaEvo(page)).slice(0, 3), [`${f.m} (fechado)`, 'Agosto/26 (fechado)', '100% da meta']);
     await confereEvolucao(page, 'fechamento GC.G1');
-    await page.evaluate(() => document.querySelector('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot').scrollIntoView({block: 'center'}));
+    await page.evaluate(s => document.querySelector(s).scrollIntoView({block: 'center'}), catEvo('VOL REFRIGERANTES'));
     await page.waitForTimeout(100);
-    await page.hover('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot');
-    assert.match(await page.textContent('#dica'), new RegExp(`Agosto/26 \\(fechado\\): Real .*${f.m} \\(fechado\\): Real `));
+    await page.hover(catEvo('VOL REFRIGERANTES'));
+    assert.match(await dicaAberta(page), new RegExp(`^Refrigerantes · GC\\.G1Agosto/26 \\(fechado\\): Real .*${f.m} \\(fechado\\): Real `));
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
-  test('unidades e total (Diretoria, uma gerência, gerência com EV*, grupo no Total, supervisão, "Neutraliza"): invariantes (a) a (e)', async () => {
+  test('uma linha por categoria (ordem fixa, rótulo central "Novos Negócios"), duas barras (sólida e hachurada), a marca de 100% e a legenda', async () => {
+    const {page, ctx, erros} = await abre('vol5', {entrar: 'dir', aba: null, largura: 1440});
+    const r = await page.evaluate(() => {
+      const cor = v => { const e = document.createElement('i'); e.style.background = v; document.body.append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return c; };
+      const linhas = [...document.querySelectorAll('#exEvLinhas .evLin.cat')].map(l => {
+        const trs = [...l.querySelectorAll('.evTr')], ba = l.querySelector('.evBarras'), mk = getComputedStyle(ba, '::after');
+        const rb = ba.getBoundingClientRect(), rt = trs.map(t => t.getBoundingClientRect());
+        return {k: l.dataset.k, nome: l.querySelector('.evTxt').textContent, sub: !!l.querySelector('.tsub'),
+          trilhas: trs.length, barras: trs.map(t => t.querySelector('i').className),
+          solida: getComputedStyle(trs[0].querySelector('i')).backgroundColor, hachura: getComputedStyle(trs[1].querySelector('i')).backgroundImage,
+          marca: {conteudo: mk.content, w: mk.width, cor: mk.backgroundColor, direita: rb.right - parseFloat(mk.right) - parseFloat(mk.width),
+                  fimTrilhas: rt.map(t => t.right), topo: rb.top + parseFloat(mk.top), base: rb.bottom - parseFloat(mk.bottom),
+                  trilhasY: [rt[0].top, rt[1].bottom]},
+          val: [l.querySelector('.evPA').textContent, l.querySelector('.evPB').textContent], seta: !!l.querySelector('svg.evSeta')};
+      });
+      const lg = [...document.querySelectorAll('#exEvLeg .lg')].map(i => [i.className, getComputedStyle(i).backgroundColor, getComputedStyle(i).backgroundImage]);
+      return {linhas, lg, ruim: cor('var(--ruim)'), preto: cor('var(--preto)'), txt: document.getElementById('exEvo').textContent,
+        rot: GROUPS.VOLUME.map(rotuloInd)};
+    });
+    assert.deepEqual(r.linhas.map(l => l.k), VOL_EXEC);
+    assert.deepEqual(r.linhas.map(l => l.nome), ['Refrigerantes', 'Cervejas', 'Still', 'Água Mineral', 'Novos Negócios']);
+    assert.deepEqual(r.linhas.map(l => l.nome), r.rot);
+    assert.match(await page.getAttribute(catEvo('VOL DEST+ART+CND'), 'aria-label'), /^Novos Negócios: .* Detalhe por gerência$/);
+    assert.ok(!r.txt.includes('Dest+Art+Cnd'), 'sem a 2ª linha do card');
+    for(const l of r.linhas){
+      assert.deepEqual([l.trilhas, l.barras, l.sub, l.seta], [2, ['atu', 'ant'], false, true], l.k);
+      assert.equal(l.solida, r.ruim, `${l.k}: barra de cima sólida`);
+      assert.match(l.hachura, /repeating-linear-gradient/, `${l.k}: barra de baixo hachurada`);
+      // marca preta de 100% no fim das duas trilhas, cobrindo as duas
+      assert.deepEqual([l.marca.conteudo, l.marca.w, l.marca.cor], ['""', '2px', r.preto], l.k);
+      for(const f of l.marca.fimTrilhas) assert.ok(Math.abs(l.marca.direita - f) <= 0.5, `${l.k}: marca no fim da trilha (${l.marca.direita} x ${f})`);
+      assert.ok(l.marca.topo <= l.marca.trilhasY[0] && l.marca.base >= l.marca.trilhasY[1], `${l.k}: marca nas duas trilhas`);
+      assert.ok(l.val.every(v => /^\d[\d.]*,\d%$/.test(v)), `${l.k}: ${l.val}`);
+    }
+    assert.deepEqual(r.lg.map(x => x[0]), ['lg evAtu', 'lg evAnt', 'lg evCem']);
+    assert.equal(r.lg[0][1], r.ruim);
+    assert.match(r.lg[1][2], /repeating-linear-gradient/);
+    assert.equal(r.lg[2][1], r.preto);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('% acima de 100: barra cheia até o fim da trilha e o número com o valor real (atual e anterior)', async () => {
+    const {page, ctx, erros} = await abre('evo', {entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, aba: null});
+    // G212 com Água Mineral do mês anterior em 12 x a meta (montaMesAnterior)
+    await page.click(catEvo('VOL AGUA MINERAL'));
+    const g212 = (await linhasEvo(page, 'VOL AGUA MINERAL')).us.find(x => x.u === 'Rota G212');
+    assert.ok(g212.pctAnt > 1000, `${g212.pctAnt}`);
+    assert.equal(g212.w[1], 100);
+    assert.equal(g212.pb, `${g212.pctAnt.toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1})}%`);
+    assert.match(g212.pb, /^1\.\d{3},\d%$/);
+    // mês de referência em 112% da meta em Água Mineral (todas as rotas)
+    await page.evaluate(() => { for(const g of Object.keys(P.DATA)) for(const s of Object.keys(P.DATA[g])) for(const n of Object.values(P.DATA[g][s])){
+      const b = n.indicators['VOL AGUA MINERAL']; if(b && !b.unavailable && b.meta) b.real = b.meta * 1.12; } render(); });
+    const ag = await linhasEvo(page, 'VOL AGUA MINERAL');
+    assert.equal(ag.aberta, true, 'o redesenho não recolhe');
+    assert.equal(ag.tot.pa, '112,0%');
+    assert.equal(ag.tot.w[0], 100);
+    for(const u of ag.us.filter(x => x.pct != null)) assert.deepEqual([u.pa, u.w[0]], ['112,0%', 100], u.u);
+    await confereEvolucao(page, 'SV.G2.1 com 112%');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('abrir e recolher: mouse, Enter e Espaço; aria-expanded e seta; mais de uma aberta; o online não recolhe; trocar filtro e perfil recolhe', async () => {
+    const {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null, largura: 1440});
+    assert.deepEqual(await evoAbertas(page), [], 'começa recolhido');
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#exEvLinhas .evLin.cat')].map(l =>
+      [l.getAttribute('role'), l.tabIndex, l.getAttribute('aria-expanded'), document.getElementById(l.getAttribute('aria-controls')).dataset.k === l.dataset.k])),
+      VOL_EXEC.map(() => ['button', 0, 'false', true]));
+    // a seta gira em 0,15 s: lê depois da transição
+    const seta = async k => { await page.waitForTimeout(250);
+      return page.evaluate(s => getComputedStyle(document.querySelector(s + ' .evSeta')).transform, catEvo(k)); };
+    const fechada = await seta('VOL REFRIGERANTES');
+    // mouse
+    await page.click(catEvo('VOL REFRIGERANTES'));
+    assert.deepEqual(await evoAbertas(page), ['VOL REFRIGERANTES']);
+    assert.notEqual(await seta('VOL REFRIGERANTES'), fechada, 'a seta gira');
+    // Enter numa outra: as duas abertas
+    await page.focus(catEvo('VOL AGUA MINERAL'));
+    await page.keyboard.press('Enter');
+    assert.deepEqual(await evoAbertas(page), ['VOL REFRIGERANTES', 'VOL AGUA MINERAL']);
+    // Espaço recolhe (sem rolar a página)
+    await page.focus(catEvo('VOL REFRIGERANTES'));
+    const y = await page.evaluate(() => scrollY);
+    await page.keyboard.press(' ');
+    assert.deepEqual(await evoAbertas(page), ['VOL AGUA MINERAL']);
+    assert.equal(await page.evaluate(() => scrollY), y, 'Espaço não rola');
+    assert.equal(await seta('VOL REFRIGERANTES'), fechada);
+    // o redesenho do online (puxaOnline -> render) e a troca da categoria em análise não recolhem
+    await page.evaluate(() => { render(); escolheCat('VOL AGUA MINERAL', 'exGauges'); });
+    assert.deepEqual(await evoAbertas(page), ['VOL AGUA MINERAL']);
+    // outras abas e a volta: continua
+    await vaiAba(page, 'VOLUME'); await vaiAba(page, 'EXEC');
+    assert.deepEqual(await evoAbertas(page), ['VOL AGUA MINERAL']);
+    // trocar o filtro da Diretoria recolhe; voltar para "Todas" também
+    await page.selectOption('#fgc', 'G1');
+    assert.deepEqual(await evoAbertas(page), []);
+    await page.click(catEvo('VOL REFRIGERANTES'));
+    assert.deepEqual(await evoAbertas(page), ['VOL REFRIGERANTES']);
+    await page.selectOption('#fgc', '');
+    assert.deepEqual(await evoAbertas(page), []);
+    // trocar de perfil (casa e entrada) recolhe, também voltando para o mesmo perfil
+    await page.evaluate(ABRE_TODAS);
+    assert.equal((await evoAbertas(page)).length, 5);
+    await vaiPara(page, {perfil: 'gc', gc: 'G1'}, null);
+    assert.deepEqual(await evoAbertas(page), []);
+    await page.click(catEvo('VOL REFRIGERANTES'));
+    // na Gerência: trocar a supervisão do filtro recolhe
+    const sv = (await opcoes(page)).sv[0];
+    await page.selectOption('#fsv', sv);
+    assert.deepEqual(await evoAbertas(page), [], `filtro ${sv}`);
+    await page.click(catEvo('VOL REFRIGERANTES'));
+    await vaiPara(page, {perfil: 'gc', gc: 'G1'}, null);
+    assert.deepEqual(await evoAbertas(page), [], 'a mesma Gerência de novo');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('unidades por escopo (Diretoria, uma gerência, gerência com EV*, grupo no Total, supervisão, "Neutraliza"): invariantes (a) a (f), ordem por Δ e "—" no fim', async () => {
     const casos = [
-      {nome: 'BAND', dados: 'evo', entrar: 'dir'},
-      {nome: 'Diretoria · AN (virtuais)', dados: 'evo', entrar: 'dir', dgc: 'AN', fora: 3},
-      {nome: 'GC.G1', dados: 'evo', entrar: {perfil: 'gc', gc: 'G1'}},
-      {nome: 'GC.SL (EV*)', dados: 'evo', entrar: {perfil: 'gc', gc: 'SL'}, fora: 1},
-      {nome: 'Total IT+MO', dados: 'evogrupo', entrar: {perfil: 'gc', gc: 'IT+MO'}, fora: 2},
-      {nome: 'SV.G2.1', dados: 'evo', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}},
-      {nome: 'Neutraliza', dados: 'evo', entrar: {perfil: 'gc', gc: 'G1'}, sv: 'Neutraliza'},
+      {nome: 'BAND', dados: 'evo', entrar: 'dir', niv: 'gerência'},
+      {nome: 'Diretoria · AN (virtuais)', dados: 'evo', entrar: 'dir', dgc: 'AN', fora: 3, niv: 'supervisão'},
+      {nome: 'GC.G1', dados: 'evo', entrar: {perfil: 'gc', gc: 'G1'}, niv: 'supervisão'},
+      {nome: 'GC.SL (EV*)', dados: 'evo', entrar: {perfil: 'gc', gc: 'SL'}, fora: 1, niv: 'supervisão'},
+      {nome: 'Total IT+MO', dados: 'evogrupo', entrar: {perfil: 'gc', gc: 'IT+MO'}, fora: 2, niv: 'supervisão'},
+      {nome: 'SV.G2.1', dados: 'evo', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, niv: 'rota'},
+      {nome: 'Neutraliza', dados: 'evo', entrar: {perfil: 'gc', gc: 'G1'}, sv: 'Neutraliza', niv: 'rota'},
     ];
     for(const c of casos){
       const {page, ctx, erros} = await abre(c.dados, {entrar: c.entrar, aba: null});
@@ -6436,125 +6594,209 @@ describe('Parte Z — Evolução contra o mês anterior (Etapa 8c)', {skip: pula
       const r = await confereEvolucao(page, c.nome);
       if(c.fora) assert.equal(r.fora, c.fora, `${c.nome}: rotas fora das unidades (virtuais / EV*)`);
       // as mesmas unidades e o mesmo total da Tendência x Meta (a Evolução também lista as sem meta, com "—")
-      const u = await page.evaluate(() => ({evo: [...document.querySelectorAll('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow')].map(x => x.dataset.u),
-        tot: [...document.querySelectorAll('#exEvDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot')].map(x => x.dataset.u),
-        div: [...document.querySelectorAll('#exDivs .dv[data-k="VOL REFRIGERANTES"] .dRow')].map(x => x.dataset.u),
-        divTot: [...document.querySelectorAll('#exDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot')].map(x => x.dataset.u),
-        uns: unidadesExec(ctxInicial()).map(x => x.cod)}));
-      assert.deepEqual(u.tot, u.divTot, `${c.nome}: linha de total`);
-      assert.deepEqual([...u.evo].sort(), [...u.uns, u.tot[0]].sort(), `${c.nome}: unidades`);
+      const u = await page.evaluate(() => ({evo: [...document.querySelectorAll('#exEvDet0 .evLin')].map(x => x.dataset.u),
+        tot: document.querySelector('#exEvLinhas .evLin.cat').dataset.u, div: [...document.querySelectorAll('#exDivs .dv[data-k="VOL REFRIGERANTES"] .dRow')]
+          .filter(x => !x.classList.contains('tot')).map(x => x.dataset.u),
+        divTot: (document.querySelector('#exDivs .dv[data-k="VOL REFRIGERANTES"] .dRow.tot') || {dataset: {}}).dataset.u,
+        uns: unidadesExec(ctxInicial()).map(x => x.cod), rot: document.getElementById('exEvDet0').getAttribute('aria-label'),
+        dica: document.querySelectorAll('#exEvDet0 .evLin[tabindex="0"][data-dica]').length}));
+      assert.equal(u.tot, u.divTot, `${c.nome}: linha de total`);
+      assert.deepEqual([...u.evo].sort(), [...u.uns].sort(), `${c.nome}: unidades`);
       assert.ok(u.div.every(x => u.evo.includes(x)), `${c.nome}: Tendência x Meta contida`);
-      if(c.nome === 'BAND') assert.equal(u.tot[0], 'BAND');
+      assert.equal(u.rot, `Refrigerantes por ${c.niv}`, c.nome);
+      assert.equal(u.dica, u.evo.length, `${c.nome}: cada unidade com a caixa de comentário`);
+      if(c.nome === 'BAND') assert.equal(u.tot, 'BAND');
+      if(c.nome === 'Total IT+MO') assert.equal(u.tot, 'GC.IT+MO');
+      if(c.nome === 'SV.G2.1') assert.ok(u.evo.every(x => /^Rota /.test(x)), u.evo.join());
       assert.deepEqual(erros, [], c.nome);
       await ctx.close();
     }
   });
 
-  test('rota null, unidade sem meta anterior ("—" no fim), Δ exatamente 0 em cinza; ordem decrescente, barras e cores pelo sinal exato', async () => {
+  test('Δ com seta e cor: ▲ verde subiu, ▼ vermelho caiu, 0,0 cinza sem seta, "—" cinza sem meta anterior (no fim); rota null', async () => {
     const {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null});
-    // AN sem Refrigerantes no mês anterior: "—", sem barra, na última posição
+    await page.evaluate(ABRE_TODAS);
+    const cores = await page.evaluate(() => { const c = v => { const e = document.createElement('i'); e.style.color = v; document.body.append(e);
+      const x = getComputedStyle(e).color; e.remove(); return x; }; return {pos: c('var(--verdeE)'), neg: c('var(--vermelho2)'), cinza: c('var(--txt-apoio)')}; });
+    const corD = (k, u) => page.evaluate(([k, u]) => getComputedStyle(document.querySelector(`#exEvLinhas .evDet[data-k="${k}"] .evLin[data-u="${u}"] .evD`)).color, [k, u]);
+    // AN sem Refrigerantes no mês anterior: "—" no % anterior e no Δ, barra hachurada vazia, na última posição
     const refri = await linhasEvo(page, 'VOL REFRIGERANTES');
-    const an = refri.find(x => x.u === 'GC.AN');
-    assert.deepEqual([an.txt, an.dpp, an.w, an.realAnt], ['—', null, '', null]);
+    const an = refri.us.find(x => x.u === 'GC.AN');
+    assert.deepEqual([an.pb, an.d, an.dpp, an.realAnt, an.w[1]], ['—', '—', null, null, 0]);
     assert.match(an.cls, /\bnd\b/);
-    assert.equal(refri.at(-1).u, 'GC.AN');
-    // categoria sem meta no escopo (Still, no sintético): todas as linhas "—", o total incluído
-    const still = await linhasEvo(page, 'VOL STILL');
-    assert.ok(still.length > 1 && still.every(x => x.txt === '—' && x.dpp == null), 'Still: "—"');
-    // G3 com Água Mineral igual ao mês de referência: Δ 0, cinza, sem barra
-    const agua = await linhasEvo(page, 'VOL AGUA MINERAL'), g3 = agua.find(x => x.u === 'GC.G3');
-    assert.deepEqual([g3.dpp, g3.txt, g3.w], [0, '0,0', '']);
+    assert.equal(refri.us.at(-1).u, 'GC.AN');
+    assert.equal(await corD('VOL REFRIGERANTES', 'GC.AN'), cores.cinza);
+    // G3 com Água Mineral igual à do mês de referência: Δ 0, "0,0" sem seta, cinza
+    const agua = await linhasEvo(page, 'VOL AGUA MINERAL'), g3 = agua.us.find(x => x.u === 'GC.G3');
+    assert.deepEqual([g3.dpp, g3.d], [0, '0,0']);
     assert.match(g3.cls, /\bzero\b/);
-    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#exEvDivs .dVal.zero')).color),
-      await page.evaluate(() => { const e = document.createElement('i'); e.style.color = 'var(--txt-apoio)'; document.body.append(e);
-        const c = getComputedStyle(e).color; e.remove(); return c; }));
-    // ordem, cores e escala (a maior barra = 100% quando passa de 10 p.p.)
-    for(const k of VOL_EXEC){
-      const ls = (await linhasEvo(page, k)).filter(x => x.dpp != null);
-      for(let i = 1; i < ls.length; i++) assert.ok(ls[i - 1].dpp >= ls[i].dpp, `${k}: ordem`);
-      for(const x of ls) assert.match(x.cls, x.dpp > 0 ? /\bpos\b/ : x.dpp < 0 ? /\bneg\b/ : /\bzero\b/, `${k} ${x.u}`);
-      const max = Math.max(...ls.map(x => Math.abs(x.dpp)));
-      if(max >= 10) assert.ok(ls.some(x => Math.abs(parseFloat(x.w) - 100) < 0.01), `${k}: maior barra = 100%`);
-      else for(const x of ls) if(x.dpp) assert.ok(Math.abs(parseFloat(x.w) - Math.abs(x.dpp) / 10 * 100) < 0.01, `${k}: escala mínima 10 p.p.`);
+    assert.equal(await corD('VOL AGUA MINERAL', 'GC.G3'), cores.cinza);
+    // subiu e caiu: seta, sinal e cor pelo valor exato, nas linhas e nas categorias
+    const todas = (await Promise.all(VOL_EXEC.map(k => linhasEvo(page, k)))).flatMap((x, i) => [x.tot, ...x.us].map(l => ({...l, k: VOL_EXEC[i]})));
+    const com = todas.filter(x => x.dpp != null && x.dpp !== 0);
+    assert.deepEqual([...new Set(com.map(x => Math.sign(x.dpp)))].sort(), [-1, 1], 'o cenário tem Δ dos dois sinais');
+    for(const x of com){
+      assert.equal(x.d, textoD(x.dpp), `${x.k} ${x.u}`);
+      assert.match(x.d, x.dpp > 0 ? /^▲ \+/ : /^▼ −/, `${x.k} ${x.u}`);
+      assert.match(x.cls, x.dpp > 0 ? /\bpos\b/ : /\bneg\b/, `${x.k} ${x.u}`);
     }
-    const sinais = new Set((await Promise.all(VOL_EXEC.map(k => linhasEvo(page, k)))).flat().filter(x => x.dpp).map(x => Math.sign(x.dpp)));
-    assert.deepEqual([...sinais].sort(), [-1, 1], 'o cenário tem Δ dos dois sinais');
-    // G211 sem Refrigerantes no mês anterior: a SV.G2.1 só com a G212
+    const sobe = com.find(x => x.dpp > 0 && x.u !== 'BAND'), desce = com.find(x => x.dpp < 0 && x.u !== 'BAND');
+    assert.equal(await corD(sobe.k, sobe.u), cores.pos);
+    assert.equal(await corD(desce.k, desce.u), cores.neg);
+    // categoria sem meta no escopo (Still, no sintético): "—" na linha e em todas as unidades
+    const still = await linhasEvo(page, 'VOL STILL');
+    assert.ok([still.tot, ...still.us].every(x => x.d === '—' && x.pa === '—' && x.dpp == null), 'Still: "—"');
+    // G211 sem Refrigerantes no mês anterior: a SV.G2.1 só com a G212; a rota "—" no fim
     await vaiPara(page, {perfil: 'sv', gc: 'G2', sv: '1'}, null);
+    await page.click(catEvo('VOL REFRIGERANTES'));
     const sv = await linhasEvo(page, 'VOL REFRIGERANTES');
     const g212 = await page.evaluate(() => P.MES_ANTERIOR.ROTAS.G212[0][0]);
-    assert.equal(sv.find(x => x.u === 'SV.G2.1').realAnt, g212);
-    const g211 = sv.find(x => x.u === 'Rota G211');
-    assert.deepEqual([g211.txt, g211.realAnt], ['—', null]);
-    assert.equal(sv.at(-1).u, 'Rota G211');
+    assert.equal(sv.tot.realAnt, g212);
+    const g211 = sv.us.find(x => x.u === 'Rota G211');
+    assert.deepEqual([g211.d, g211.pb, g211.realAnt], ['—', '—', null]);
+    assert.equal(sv.us.at(-1).u, 'Rota G211');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
-  test('caixa de comentário no hover, no teclado e no toque', async () => {
+  test('caixa de comentário no hover, no teclado e no toque (categoria e unidade)', async () => {
     let {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null, largura: 1440});
-    const sel = '#exEvDivs .dv[data-k="VOL AGUA MINERAL"] .dRow[data-u="GC.G1"]';
-    const dica = () => page.evaluate(() => { const d = document.getElementById('dica');
-      return d && d.classList.contains('on') ? d.textContent : null; });
+    const m = await page.evaluate(() => P.MES_LABEL);
+    const cat = catEvo('VOL REFRIGERANTES');
     // rolar fecha a caixa: a linha vai para a tela antes (o hover não rola mais)
-    await page.evaluate(s => document.querySelector(s).scrollIntoView({block: 'center'}), sel);
+    await page.evaluate(s => document.querySelector(s).scrollIntoView({block: 'center'}), cat);
     await page.waitForTimeout(100);
-    await page.hover(sel);
-    assert.match(await dica(), /^Água Mineral · GC\.G1Setembro\/26 até 11\/09: Real/);
-    assert.ok(await page.evaluate(s => document.querySelector(s).classList.contains('emFoco'), sel));
+    await page.hover(cat);
+    assert.match(await dicaAberta(page), new RegExp(`^Refrigerantes · BANDSetembro/26 até 11/09: Real [\\d.]+ \\([\\d.]+,\\d% da meta [\\d.]+\\)` +
+      `${m}: Real [\\d.]+ \\([\\d.]+,\\d% da meta [\\d.]+\\)Δ [+−][\\d.]+,\\d p\\.p\\. · Real [+−][\\d.]+,\\d%$`));
+    assert.ok(await page.evaluate(s => document.querySelector(s).classList.contains('emFoco'), cat));
+    // a dica fala dos mesmos números da linha
+    const l = await linhasEvo(page, 'VOL REFRIGERANTES');
+    const t = await dicaAberta(page);
+    assert.ok(t.includes(`(${l.tot.pb} da meta`) && t.includes(`(${l.tot.pa} da meta`) && t.includes(`Δ ${l.tot.d.replace(/^[▲▼] /, '')} p.p.`), t);
+    // o clique abre e a dica continua; a unidade também tem a dica
+    await page.click(cat);
+    assert.deepEqual(await evoAbertas(page), ['VOL REFRIGERANTES']);
+    const un = '#exEvDet0 .evLin[data-u="GC.G1"]';
+    await page.hover(un);
+    assert.match(await dicaAberta(page), /^Refrigerantes · GC\.G1Setembro\/26 até 11\/09: Real/);
     await page.mouse.move(5, 5);
-    assert.equal(await dica(), null, 'some ao sair');
-    await page.focus(sel);
-    assert.match(await dica(), /^Água Mineral · GC\.G1/);
+    assert.equal(await dicaAberta(page), null, 'some ao sair');
+    // teclado: foco mostra, ESC fecha (a linha já à vista: rolar a página fecha a caixa, regra do componente)
+    await page.evaluate(s => document.querySelector(s).scrollIntoView({block: 'center'}), catEvo('VOL AGUA MINERAL'));
+    await page.waitForTimeout(100);
+    await page.focus(catEvo('VOL AGUA MINERAL'));
+    assert.match(await dicaAberta(page), /^Água Mineral · BAND/);
     await page.keyboard.press('Escape');
-    assert.equal(await dica(), null, 'ESC fecha');
+    assert.equal(await dicaAberta(page), null, 'ESC fecha');
+    await page.evaluate(s => document.querySelector(s).scrollIntoView({block: 'center'}), un);
+    await page.waitForTimeout(100);
+    await page.focus(un);
+    assert.match(await dicaAberta(page), /^Refrigerantes · GC\.G1/);
     assert.deepEqual(erros, []);
     await ctx.close();
+    // toque: o toque abre a categoria e mostra a dica; o 2º toque recolhe e fecha
     ({page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null, largura: 390, toque: true}));
-    const tot = '#exEvDivs .dv.sel .dRow.tot';
-    await page.evaluate(s => document.querySelector(s).scrollIntoView({block: 'center'}), tot);
-    await page.tap(tot);
-    assert.match(await dica(), /^Refrigerantes · BAND/);
-    await page.tap(tot);
-    assert.equal(await dica(), null, 'o 2º toque fecha');
+    await page.evaluate(s => document.querySelector(s).scrollIntoView({block: 'center'}), cat);
+    await page.tap(cat);
+    assert.match(await dicaAberta(page), /^Refrigerantes · BAND/);
+    assert.deepEqual(await evoAbertas(page), ['VOL REFRIGERANTES']);
+    await page.tap(cat);
+    assert.equal(await dicaAberta(page), null, 'o 2º toque fecha');
+    assert.deepEqual(await evoAbertas(page), []);
+    await page.tap(cat);
+    await page.tap('#exEvDet0 .evLin[data-u="GC.G1"]');
+    assert.match(await dicaAberta(page), /^Refrigerantes · GC\.G1/);
+    assert.deepEqual(await evoAbertas(page), ['VOL REFRIGERANTES'], 'tocar na unidade não recolhe');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
   for(const largura of [1440, 1200, 1000, 390, 360]){
-    test(`${largura} px: sem rolagem lateral nem texto cortado (com Δ de 4 dígitos); Inter; chips só no celular (uma categoria por vez)`, async () => {
-      const pc = largura >= 1000;
+    test(`${largura} px: sem rolagem lateral nem texto cortado (todas as categorias abertas, com Δ de 4 dígitos); Inter e Source Serif 4 só no %; Δ ${largura >= 700 ? 'na linha' : 'embaixo do valor'}`, async () => {
       for(const [dados, entrar] of [['evogrande', 'dir'], ['evogrupo', {perfil: 'gc', gc: 'IT+MO'}], ['evo', {perfil: 'sv', gc: 'G2', sv: '1'}],
-                                    ['evofech', 'dir']]){
+                                    ['evofech', 'dir'], ['vol5', 'dir']]){
         const onde = `${largura} ${dados} ${JSON.stringify(entrar)}`;
         const {page, ctx, erros} = await abre(dados, {largura, altura: 900, entrar, aba: null});
         await medidas(page);
         await page.evaluate(() => document.fonts.ready);
         assert.ok(await evoVisivel(page), onde);
+        await page.evaluate(ABRE_TODAS);
         assert.ok(await semRolagemLateral(page), `${onde}: rolagem lateral`);
         assert.deepEqual(await page.evaluate(() => __vis.estouros('#exEvo')), [], onde);
-        const r = await page.evaluate(() => ({chips: document.getElementById('exEvChips').getClientRects().length > 0,
-          dvs: [...document.querySelectorAll('#exEvDivs .dv')].filter(d => d.getClientRects().length).map(d => d.dataset.k),
-          fontes: [...new Set([...document.querySelectorAll('#exEvo, #exEvo *')].map(e => getComputedStyle(e).fontFamily))],
-          sub: (() => { const e = document.getElementById('exSEvo'); return e.scrollWidth <= e.clientWidth; })()}));
-        assert.ok(r.fontes.every(f => /^Inter/.test(f) && !/Serif/.test(f)), `${onde}: ${r.fontes}`);
+        const r = await page.evaluate(() => {
+          const fam = e => getComputedStyle(e).fontFamily;
+          const todos = [...document.querySelectorAll('#exEvo, #exEvo *')].filter(e => !(e instanceof SVGElement));
+          const box = e => e.getBoundingClientRect();
+          const lin = [...document.querySelectorAll('#exEvo .evLin')].filter(l => l.getClientRects().length).map(l => {
+            const pa = box(l.querySelector('.evPA')), d = box(l.querySelector('.evD')), ba = box(l.querySelector('.evBarras')), li = box(l);
+            return {abaixo: d.top >= pa.bottom - 0.5, dentro: d.right <= li.right + 0.5 && pa.right <= li.right + 0.5 && ba.left >= li.left - 0.5};
+          });
+          return {serif: [...new Set(todos.filter(e => /Serif/.test(fam(e))).map(e => e.className))],
+            semInter: todos.filter(e => !/Serif/.test(fam(e)) && !/^Inter/.test(fam(e))).map(e => e.className),
+            lin, n: lin.length, sub: (() => { const e = document.getElementById('exSEvo'); return e.scrollWidth <= e.clientWidth; })()};
+        });
+        assert.deepEqual(r.serif, ['evPA'], `${onde}: serifa só no % do mês de referência`);
+        assert.deepEqual(r.semInter, [], `${onde}: o resto em Inter`);
         assert.ok(r.sub, `${onde}: subtítulo`);
-        assert.equal(r.chips, !pc, `${onde}: chips`);
-        assert.deepEqual(r.dvs, pc ? VOL_EXEC : ['VOL REFRIGERANTES'], onde);
-        if(!pc){
-          // o chip troca a categoria em análise (a mesma dos medidores e da Tendência x Meta)
-          await page.click('#exEvChips .fchip[data-k="VOL AGUA MINERAL"]');
-          assert.deepEqual(await page.evaluate(() => [catExec, [...document.querySelectorAll('#exEvDivs .dv')]
-            .filter(d => d.getClientRects().length).map(d => d.dataset.k), document.querySelector('#exGauges .gCard.sel').dataset.k]),
-            ['VOL AGUA MINERAL', ['VOL AGUA MINERAL'], 'VOL AGUA MINERAL'], onde);
-          assert.deepEqual(await page.evaluate(() => __vis.estouros('#exEvo')), [], `${onde} Água`);
-          assert.ok(await semRolagemLateral(page), `${onde} Água`);
-        }
+        assert.ok(r.n > 5, onde);
+        assert.ok(r.lin.every(x => x.dentro), `${onde}: tudo dentro da linha`);
+        assert.ok(r.lin.every(x => x.abaixo === (largura < 700)), `${onde}: Δ ${largura < 700 ? 'embaixo do valor' : 'ao lado'}`);
+        // contraste AA (4,5:1) dos textos do bloco: nomes, os dois %, o Δ e a legenda
+        const baixo = (await page.evaluate(() => __vis.contrastes(['#exEvo .evTxt', '#exEvo .evPA', '#exEvo .evPB', '#exEvo .evDN',
+          '#exEvo .evD small', '#exEvLeg > span', '#exSEvo']))).filter(c => c[2] < 4.5);
+        assert.deepEqual(baixo, [], `${onde}: contraste`);
         assert.deepEqual(erros, [], onde);
         await ctx.close();
       }
     });
   }
+
+  test('antes x depois (main antes do redesenho, mesmo payload): cards, cabeçalho, cascata, Resumo e a Executiva sem o bloco iguais', {skip: !FRONT_PRE_EVO && `sem o commit ${REF_PRE_EVO}`}, async () => {
+    // a Executiva sem o bloco "Evolução contra o mês anterior" (o único redesenhado) e o comentário dele
+    const semEvo = () => { const c = document.getElementById('exec').cloneNode(true);
+      [...c.childNodes].filter(n => n.nodeType === 8 && /Evolução/.test(n.data))
+        .forEach(n => { n.previousSibling.remove(); n.nextSibling.remove(); n.remove(); });
+      c.querySelector('#exEvo').remove();
+      return c.innerHTML; };
+    const vistos = [];
+    for(const entrar of ['dir', {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G2', sv: '1'},
+                         {perfil: 'rota', gc: 'G2', rota: 'G211'}]){
+      const onde = JSON.stringify(entrar);
+      const [novo, velho] = [await abre('vol5', {entrar, largura: 1280, aba: null}), await abre('vol5', {entrar, largura: 1280, aba: null, troca: FRONT_PRE_EVO})];
+      for(const {page} of [novo, velho]) await variedade(page);
+      if(entrar.perfil !== 'rota'){
+        for(const {page} of [novo, velho]){ await vaiAba(page, 'VOLUME'); await vaiAba(page, 'EXEC'); }
+        assert.equal(await novo.page.evaluate(semEvo), await velho.page.evaluate(semEvo), `${onde}: Executiva sem o bloco`);
+        vistos.push(`${onde} EXEC`);
+      }
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        assert.deepEqual(await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO), `${onde} ${aba}: cabeçalho e cards`);
+        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${onde} ${aba}: cards`);
+        // cascata dos 2 primeiros cards, do 1º nível até os clientes
+        const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))).slice(0, 2);
+        for(const k of ks){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          for(let nivel = 0; nivel < 5; nivel++){
+            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${aba} ${k}: cascata nível ${nivel}`);
+            if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+          }
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        vistos.push(`${onde} ${aba}`);
+      }
+      if(entrar.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+      }
+      assert.deepEqual([...novo.erros, ...velho.erros], [], onde);
+      for(const {ctx} of [novo, velho]) await ctx.close();
+    }
+    assert.ok(vistos.length >= 24, vistos.join(', '));
+  });
 });
 
 /* ---------- Parte AA — rótulos: "Novos Negócios" no macro de volume, nome da aba EXEC por perfil, notas menores ----------

@@ -643,7 +643,7 @@ function pintaExecutiva(rotas, a, visitas){
   $('exAg').parentNode.classList.toggle('so1', fech);
   $('exAgenda').innerHTML = fech ? '' : agendaHtml(us, tot, niv);
   pintaCoberturasExec(us, tot, niv);
-  pintaEvolucao(us, tot, k);
+  pintaEvolucao(us, tot, niv);
   $('exec').querySelectorAll('[data-dica]').forEach(ativaDica);
 }
 
@@ -860,69 +860,105 @@ function pintaCoberturasExec(us, tot, niv){
     `</tr></thead><tbody>${[tot, ...us].map(linha).join('')}</tbody>`;
 }
 
-/* Evolução contra o mês anterior (só Volume; decisões da Karen de 21/10/2026): para cada categoria e unidade (as mesmas
-   unidades e a mesma linha de total da Tendência x Meta), o Real até o corte do mês anterior e a Meta do mês anterior
-   inteiro = soma dos pares de MES_ANTERIOR.ROTAS das rotas da unidade (NUCLEO.mesAnterior; item null = rota fora);
-   % anterior = Real / Meta; % atual = o % real do medidor (Real / Meta do mês de referência, de agrega(), sem arredondar);
-   Δ p.p. = % atual - % anterior (1 casa na tela, só o número: a unidade fica na legenda; a cor pelo sinal exato, 0 em cinza); Δ Real = Real atual / Real anterior
-   - 1 (só na caixa de comentário). Barras divergentes do Δ p.p., da maior para a menor, com o total no meio; escala de
-   cada categoria pela maior barra (mínimo 10 p.p.). Unidade sem meta anterior (ou sem meta no mês de referência) na
-   categoria: "—", no fim, fora da ordenação. No fechamento do mês, o mês fechado contra o anterior a ele inteiro
-   (MES_ANTERIOR.FECHADO). No celular, uma categoria por vez (chips; a mesma categoria em análise do resto da aba). */
+/* Evolução contra o mês anterior (só Volume; decisões da Karen de 21/10/2026): barras pareadas, uma linha por categoria
+   (ordem fixa de GROUPS.VOLUME) no total do escopo (o mesmo total dos outros blocos: BAND, total do grupo, da supervisão).
+   Mês de referência = Real / Meta de agrega() (o % real do medidor, sem arredondar); mês anterior = Real até o corte / Meta
+   do mês anterior inteiro = soma dos pares de MES_ANTERIOR.ROTAS das rotas (NUCLEO.mesAnterior; item null = rota fora).
+   Duas trilhas de 0 a 100% da meta: em cima, sólida, o mês de referência; embaixo, hachurada, o anterior; acima de 100% a
+   barra enche e o número mostra o valor. Δ p.p. = % atual - % anterior (1 casa; seta e cor pelo sinal exato, 0 e sem dado
+   em cinza); Δ Real = Real atual / Real anterior - 1 (só na caixa de comentário). Sem meta anterior (ou sem meta no mês de
+   referência): "—". Clicar numa categoria (ou Enter/Espaço) abre logo abaixo, na página, as unidades do escopo (as da
+   Tendência x Meta) no mesmo desenho, menor, por Δ decrescente e as "—" no fim; várias abertas ao mesmo tempo; trocar de
+   filtro ou de perfil recolhe tudo (o redesenho do online ou do payload não). No fechamento do mês, o mês fechado contra o
+   anterior a ele inteiro (MES_ANTERIOR.FECHADO). */
 const evolucaoAtiva = () => !!(CONFIG.EVOLUCAO_ATIVA && P.MES_ANTERIOR && P.MES_ANTERIOR.ROTAS && Array.isArray(P.MES_ANTERIOR.IND));
 const diaMes = iso => { const m = /^\d{4}-(\d{2})-(\d{2})/.exec(iso || ''); return m ? `${m[2]}/${m[1]}` : ''; };
-// Δ em p.p. com 1 casa e o sinal (0 exato sem sinal); na linha só o número (a unidade está na legenda), na dica com "p.p."
+// Δ em p.p. com 1 casa e o sinal (0 exato sem sinal); na dica com "p.p."
 const fmtDpp = d => d===0 ? '0,0' : `${d>0 ? '+' : '−'}${pctBR(Math.abs(d), 1)}`;
 const fmtPP = d => `${fmtDpp(d)} p.p.`;
-function pintaEvolucao(us, tot, k){
+// categorias abertas (chaves de GROUPS.VOLUME), válidas só no escopo `chave` (perfil + filtro); a entrada também zera
+const evoAberto = {chave:'', ks:new Set()};
+const chaveEvo = () => [ACESSO ? ACESSO.perfil : '', sel.modo, sel.dgc, sel.gc, sel.sv, sel.rota].join('|');
+// os dois meses de uma unidade numa categoria (ant = NUCLEO.mesAnterior das rotas dela)
+function evoDe(u, c, ant){
+  const b = u.a.ind[c], a = (ant || {})[c] || null;
+  const x = {u, b, a, temB: comMeta(b), temA: !!a && a.meta > 0};
+  if(x.temB) x.pt = b.real/b.meta*100;
+  if(x.temA) x.pa = a.real/a.meta*100;
+  x.ok = x.temB && x.temA;
+  if(x.ok){ x.d = x.pt - x.pa; x.dr = a.real ? b.real/a.real - 1 : null; }
+  return x;
+}
+function pintaEvolucao(us, tot, niv){
   const on = evolucaoAtiva();
   $('exEvo').hidden = !on;
-  if(!on){ $('exEvChips').innerHTML = ''; $('exEvDivs').innerHTML = ''; return; }
-  const M = P.MES_ANTERIOR, fech = !!P.FECHAMENTO;
-  const rotAnt = fech || M.FECHADO ? `${M.MES_LABEL} (fechado)` : `${M.MES_LABEL} até ${diaMes(M.DATA_CORTE)}`;
-  // mês de referência: até o último dia útil fechado, o do Real (DATA_ONTEM / DIA_ONTEM; sem DATA_ONTEM, sem a data)
-  const ontem = diaMes(P.DATA_ONTEM);
-  const rotAtu = fech ? `${P.MES_LABEL} (fechado)` : `${P.MES_LABEL}${ontem ? ` até ${ontem}` : ''}`;
-  $('exSEvo').textContent = fech ? `${rotAnt} x ${rotAtu}`
-    : `${rotAnt} (dia útil ${M.DIA_UTIL} de ${M.TOTAL_DIAS_UTEIS}) x ${rotAtu} (dia útil ${P.DIA_ONTEM} de ${P.TOTAL_DIAS_UTEIS}).`+
-      ' % = Real ÷ meta do mês.';
-  $('exEvChips').innerHTML = GROUPS.VOLUME.map(c=>`<button type="button" class="fchip${c===k ? ' on' : ''}" data-k="${esc(c)}"`+
-    ` aria-pressed="${c===k}">${esc(rotuloInd(c))}</button>`).join('');
-  $('exEvChips').querySelectorAll('.fchip').forEach(el=>el.onclick = ()=>escolheCat(el.dataset.k, 'exEvChips'));
-  const ant = new Map([...us, tot].map(u=>[u, NUCLEO.mesAnterior(P, u.rotas) || {}]));
+  if(!on){ $('exEvLinhas').innerHTML = ''; $('exEvLeg').innerHTML = ''; return; }
+  const ch = chaveEvo();
+  if(ch!==evoAberto.chave){ evoAberto.chave = ch; evoAberto.ks.clear(); }
+  const M = P.MES_ANTERIOR, fech = !!P.FECHAMENTO, corte = diaMes(M.DATA_CORTE), ontem = diaMes(P.DATA_ONTEM);
+  const antFech = fech || !!M.FECHADO;
+  // mês anterior com menos dias úteis que o DIA_ONTEM: vale ele inteiro (decisão 1)
+  const limitado = !antFech && M.DIA_UTIL < P.DIA_ONTEM;
+  const ate = corte ? ` (até ${corte})` : '';
+  const comoAnt = antFech ? `${M.MES_LABEL} (fechado)`
+    : limitado ? `${M.MES_LABEL} inteiro (${M.TOTAL_DIAS_UTEIS} dias úteis${corte ? `, até ${corte}` : ''})` : `${M.MES_LABEL} no mesmo dia útil${ate}`;
+  $('exSEvo').textContent = fech ? `% real: ${P.MES_LABEL} (fechado) contra ${M.MES_LABEL} (fechado).`
+    : `% real até ontem: ${P.MES_LABEL} (dia útil ${P.DIA_ONTEM} de ${P.TOTAL_DIAS_UTEIS}) contra ${comoAnt}.`;
+  // rótulos dos dois meses na caixa de comentário
+  const rotAnt = antFech ? `${M.MES_LABEL} (fechado)` : `${M.MES_LABEL}${corte ? ` até ${corte}` : ''}`;
+  const rotAtu = fech ? `${P.MES_LABEL} (fechado)` : P.MES_LABEL;
   const pctTxt = v => `${pctBR(v, 1)}%`;
-  $('exEvDivs').innerHTML = GROUPS.VOLUME.map(c=>{
+  const larg = p => `${p==null ? 0 : Math.max(0, Math.min(100, p)).toFixed(2)}%`;
+  // uma linha: nome | trilhas (sólida em cima, hachurada embaixo; marca de 100% no fim) | % atual sobre % anterior | Δ
+  const linhaEvo = (x, nome, cat, i) => {
+    const {u, b, a, temA, temB, pt, pa, ok, d, dr} = x;
+    const lA = temA ? `Real <b>${fmt0(a.real)}</b> (${pctTxt(pa)} da meta ${fmt0(a.meta)})` : 'sem meta no mês anterior';
+    const lB = temB ? `Real <b>${fmt0(b.real)}</b> (${pctTxt(pt)} da meta ${fmt0(b.meta)})` : 'sem meta';
+    const cls = !ok ? 'nd' : d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero';
+    const dTxt = !ok ? '—' : `${d > 0 ? '▲ ' : d < 0 ? '▼ ' : ''}${fmtDpp(d)}`;
+    const dica = `<div class="t">${esc(nome)} · ${esc(u.cod)}</div>${esc(rotAnt)}: ${lA}<br>${esc(rotAtu)}: ${lB}`+
+      (ok ? `<br>Δ <b class="${d > 0 ? 'g' : d < 0 ? 'v' : ''}">${fmtPP(d)}</b>`+
+            ` · Real <b class="${dr == null ? '' : dr >= 0 ? 'g' : 'v'}">${dr == null ? '—' : fmtDesvio(dr, 1)}</b>` : '');
+    const at = `data-k="${esc(x.k)}" data-u="${esc(u.cod)}" data-dpp="${ok ? d : ''}" data-pct="${temB ? pt : ''}"`+
+      ` data-pct-ant="${temA ? pa : ''}" data-real="${temB ? b.real : ''}" data-meta="${temB ? b.meta : ''}"`+
+      ` data-real-ant="${a ? a.real : ''}" data-meta-ant="${a ? a.meta : ''}" data-dica="${esc(dica)}"`;
+    const aberta = cat && evoAberto.ks.has(x.k);
+    const papel = cat ? ` role="button" aria-expanded="${aberta}" aria-controls="exEvDet${i}"`+
+      ` aria-label="${esc(`${nome}: ${rotAtu} ${temB ? pctTxt(pt) : '—'}, ${rotAnt} ${temA ? pctTxt(pa) : '—'}, Δ ${ok ? fmtPP(d) : '—'}. Detalhe por ${niv[0]}`)}"` : '';
+    return `<div class="evLin ${cat ? 'cat' : 'un'}" tabindex="0"${papel} ${at}>`+
+      `<span class="evNome">${cat ? '<svg class="evSeta" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>' : ''}`+
+      `<span class="evTxt">${esc(cat ? nome : u.cod)}</span></span>`+
+      `<div class="evBarras" aria-hidden="true"><div class="evTr"><i class="atu" style="width:${larg(temB ? pt : null)}"></i></div>`+
+      `<div class="evTr"><i class="ant" style="width:${larg(temA ? pa : null)}"></i></div></div>`+
+      `<span class="evVal"><b class="evPA">${temB ? pctTxt(pt) : '—'}</b><span class="evPB">${temA ? pctTxt(pa) : '—'}</span></span>`+
+      `<span class="evD ${cls}"><span class="evDN">${dTxt}</span>${ok ? '<small>p.p.</small>' : ''}</span></div>`;
+  };
+  const antTot = NUCLEO.mesAnterior(P, tot.rotas) || {};
+  const antUs = us.map(u=>NUCLEO.mesAnterior(P, u.rotas) || {});
+  $('exEvLinhas').innerHTML = GROUPS.VOLUME.map((c, i)=>{
     const nome = rotuloInd(c);
-    const ls = [...us, tot].map(u=>{
-      const b = u.a.ind[c], a = ant.get(u)[c], x = {u, b, a};
-      x.ok = comMeta(b) && !!a && a.meta > 0;
-      if(x.ok){ x.pa = a.real/a.meta*100; x.pt = b.real/b.meta*100; x.d = x.pt - x.pa; x.dr = a.real ? b.real/a.real - 1 : null; }
-      return x;
-    });
-    const com = ls.filter(x=>x.ok).sort((p, q)=>q.d - p.d), sem = ls.filter(x=>!x.ok);
-    const max = Math.max(10, ...com.map(x=>Math.abs(x.d)));
-    const linhas = [...com, ...sem].map(({u, b, a, ok, pa, pt, d, dr})=>{
-      const temB = comMeta(b), temA = !!a && a.meta > 0;
-      const lA = temA ? `Real <b>${fmt0(a.real)}</b> (${pctTxt(pa != null ? pa : a.real/a.meta*100)} da meta ${fmt0(a.meta)})`
-                      : 'sem meta no mês anterior';
-      const lB = temB ? `Real <b>${fmt0(b.real)}</b> (${pctTxt(pt != null ? pt : b.real/b.meta*100)} da meta ${fmt0(b.meta)})`
-                      : 'sem meta';
-      const cls = !ok ? 'nd' : d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero';
-      const dica = `<div class="t">${esc(nome)} · ${esc(u.cod)}</div>${esc(rotAnt)}: ${lA}<br>${esc(rotAtu)}: ${lB}`+
-        (ok ? `<br>Δ <b class="${d > 0 ? 'g' : d < 0 ? 'v' : ''}">${fmtPP(d)}</b>`+
-              ` · Real <b class="${dr == null ? '' : dr >= 0 ? 'g' : 'v'}">${dr == null ? '—' : fmtDesvio(dr, 1)}</b>` : '');
-      const w = ok ? `${(Math.abs(d)/max*100).toFixed(2)}%` : '0%';
-      const at = `data-u="${esc(u.cod)}" data-dpp="${ok ? d : ''}" data-pct="${ok ? pt : ''}" data-pct-ant="${ok ? pa : ''}"`+
-        ` data-real="${temB ? b.real : ''}" data-meta="${temB ? b.meta : ''}" data-real-ant="${a ? a.real : ''}"`+
-        ` data-meta-ant="${a ? a.meta : ''}"`;
-      return `<div class="dRow${u.tot ? ' tot' : ''}${ok ? '' : ' nd'}" tabindex="0" ${at} data-dica="${esc(dica)}">`+
-        `<span class="dNome">${esc(u.cod)}</span><div class="dEixo"><div class="dN">${ok && d < 0 ? `<i style="width:${w}"></i>` : ''}</div>`+
-        `<div class="dP">${ok && d > 0 ? `<i style="width:${w}"></i>` : ''}</div></div>`+
-        `<span class="dVal ${cls}">${ok ? fmtDpp(d) : '—'}</span></div>`;
-    }).join('');
-    return `<div class="dv${c===k ? ' sel' : ''}" data-k="${esc(c)}"><h4>${esc(nome)}</h4>`+
-      `${linhas || '<div class="exVazio">Sem dado neste escopo.</div>'}</div>`;
+    const total = {...evoDe(tot, c, antTot), k:c};
+    // unidades: Δ decrescente; sem meta anterior (ou atual) no fim, na ordem de sempre
+    const ls = us.map((u, j)=>({...evoDe(u, c, antUs[j]), k:c}));
+    const det = [...ls.filter(x=>x.ok).sort((p, q)=>q.d - p.d), ...ls.filter(x=>!x.ok)];
+    return linhaEvo(total, nome, true, i) +
+      `<div class="evDet" id="exEvDet${i}" data-k="${esc(c)}" role="group" aria-label="${esc(`${nome} por ${niv[0]}`)}"`+
+      `${evoAberto.ks.has(c) ? '' : ' hidden'}>`+
+      (det.map(x=>linhaEvo(x, nome, false)).join('') || '<div class="exVazio">Nenhuma unidade neste escopo.</div>') + '</div>';
   }).join('');
+  $('exEvLinhas').querySelectorAll('.evLin.cat').forEach(el=>clicavel(el, ()=>abreEvo(el)));
+  const atu = fech ? `${P.MES_LABEL} (fechado)` : `${P.MES_LABEL} até ${ontem || 'ontem'}`;
+  $('exEvLeg').innerHTML = `<span><i class="lg evAtu"></i>${esc(atu)}</span><span><i class="lg evAnt"></i>${esc(comoAnt)}</span>`+
+    `<span><i class="lg evCem"></i>100% da meta</span>`+
+    `<span>Δ = ${esc(P.MES_LABEL)} − ${esc(M.MES_LABEL)}, em pontos percentuais (p.p.): <b class="pos">▲</b> subiu, <b class="neg">▼</b> caiu</span>`+
+    `<span>Clique ou toque numa categoria para abrir por ${esc(niv[0])}</span>`;
+}
+// abre ou recolhe as unidades de uma categoria logo abaixo da linha (sem redesenhar o bloco: a caixa de comentário fica)
+function abreEvo(el){
+  const k = el.dataset.k, det = $(el.getAttribute('aria-controls')), abrir = det.hidden;
+  det.hidden = !abrir;
+  el.setAttribute('aria-expanded', abrir);
+  if(abrir) evoAberto.ks.add(k); else evoAberto.ks.delete(k);
 }
 
 function linha(k, b, rotas){
@@ -1562,6 +1598,7 @@ function validaAcesso(a){
 // do perfil: Executiva (Diretoria, Gerência e Supervisão) ou Volume (Rota, que não tem a Executiva)
 function aplicaAcesso(a){
   ACESSO = a;
+  evoAberto.ks.clear();      // Evolução contra o mês anterior: cada entrada começa com as categorias recolhidas
   sel = a.perfil==='dir' ? {...sel, modo:'dir', dgc:'', sv:'', rota:''} : {...sel, modo:'gc', gc:a.gc, sv:a.sv, rota:a.rota};
   marcaAba(a.perfil==='rota' ? 'VOLUME' : EXEC);
   fecha();

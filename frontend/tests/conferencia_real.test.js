@@ -16,10 +16,12 @@
    gerência (e gerência do grupo), supervisão, "Neutraliza" e rota, o "Hoje" e o "Todos" das duas gavetas contra os cards
    (o "Todos" do Sem compra = semCompra). Sem rolagem lateral nem erro no console em 360, 390, 1000 e 1440 px, nos dois
    fundos da entrada.
-   Evolução contra o mês anterior (Etapa 8c; invariantes em evolucao_invariantes.js): a Diretoria, cada gerência com dados
-   (filtro da Diretoria), cada grupo no Total e uma supervisão: Real e Meta do total = medidor; % e Δ p.p.; Σ unidades + rotas
-   fora delas (virtuais, "{GC}-EV", ocultas) = total; BAND = MES_ANTERIOR.ROTAS inteira; sem meta anterior = "—". Pula o
-   bloco se o payload não tiver MES_ANTERIOR. */
+   Evolução contra o mês anterior (barras pareadas; invariantes em evolucao_invariantes.js): a Diretoria, cada gerência com
+   dados (filtro da Diretoria), cada grupo no Total e uma supervisão, com todas as categorias abertas: Real e Meta de cada
+   linha = medidor (e agrega() das unidades); % atual e anterior; Δ p.p. com o sinal exato; Σ unidades abertas + rotas fora
+   delas (virtuais, "{GC}-EV", ocultas) = total; BAND = MES_ANTERIOR.ROTAS inteira; sem meta anterior = "—"; largura das
+   barras = % (até 100). Pula o bloco se o payload não tiver MES_ANTERIOR. Antes x depois contra a main antes do redesenho
+   (REF_PRE_EVO), com o mesmo payload: cards, cabeçalho, cascata, Resumo e a Executiva sem o bloco iguais. */
 'use strict';
 const {test, before, after, describe} = require('node:test');
 const assert = require('node:assert/strict');
@@ -28,7 +30,7 @@ const path = require('node:path');
 const {execSync} = require('node:child_process');
 const {confereExecutiva} = require('./executiva_invariantes.js');
 const {confereGavetas, leChips} = require('./gavetas_invariantes.js');
-const {confereEvolucao} = require('./evolucao_invariantes.js');
+const {confereEvolucao, ABRE_TODAS} = require('./evolucao_invariantes.js');
 const ROT = require('./rotulos_invariantes.js');
 const {trocaHash, digitaSenha} = require('./senha_teste.js');
 
@@ -121,7 +123,7 @@ describe('Conferência da Executiva com dado real (seção 7)', {skip: pular}, (
 });
 
 // textos cortados no bloco Evolução (scrollWidth > clientWidth, só o que está à vista)
-// (fora das áreas com rolagem própria: a fila de chips rola de lado no celular)
+// (fora das áreas com rolagem própria)
 const ESTOUROS_EVO = () => [...document.querySelectorAll('#exEvo, #exEvo *')].filter(el => el.clientWidth > 0 && el.getClientRects().length
   && !/auto|scroll/.test(getComputedStyle(el).overflowX) && el.scrollWidth > el.clientWidth + 1).map(el => `${el.className || el.tagName}: ${el.textContent.trim().slice(0, 40)}`);
 
@@ -208,14 +210,15 @@ describe('Gavetas com barra de dias com dado real (Etapa 6)', {skip: pular}, () 
           await page.evaluate(a => document.querySelector(`.tab[data-g="${a}"]`).click(), a);
           assert.ok(await rola(), `${onde} ${a}`);
         }
-        // Evolução contra o mês anterior (Etapa 8c): nenhum texto cortado no bloco, em cada categoria (chips no celular)
+        // Evolução contra o mês anterior (barras pareadas): nenhum texto cortado no bloco, com as categorias fechadas e todas
+        // abertas (as unidades embaixo)
         if(await page.evaluate(() => !!P.MES_ANTERIOR)){
           await page.evaluate(() => document.querySelector('.tab[data-g="EXEC"]').click());
-          for(const k of await page.evaluate(() => GROUPS.VOLUME)){
-            if(largura < 1000) await page.click(`#exEvChips .fchip[data-k="${k}"]`);
-            assert.deepEqual(await page.evaluate(ESTOUROS_EVO), [], `${onde} evolução ${k}`);
-            assert.ok(await rola(), `${onde} evolução ${k}`);
-          }
+          assert.deepEqual(await page.evaluate(ESTOUROS_EVO), [], `${onde} evolução`);
+          await page.evaluate(ABRE_TODAS);
+          assert.equal(await page.evaluate(() => document.querySelectorAll('#exEvLinhas .evDet:not([hidden])').length), 5, `${onde} evolução aberta`);
+          assert.deepEqual(await page.evaluate(ESTOUROS_EVO), [], `${onde} evolução aberta`);
+          assert.ok(await rola(), `${onde} evolução aberta`);
         }
         // cascata de volume até os clientes (com a barra) e as gavetas Base / Sem compra em alguns chips
         await page.evaluate(() => document.querySelector('.tab[data-g="VOLUME"]').click());
@@ -235,9 +238,9 @@ describe('Gavetas com barra de dias com dado real (Etapa 6)', {skip: pular}, () 
   });
 });
 
-describe('Evolução contra o mês anterior com dado real (Etapa 8c)', {skip: pular}, () => {
+describe('Evolução contra o mês anterior com dado real (barras pareadas)', {skip: pular}, () => {
   for(const largura of [1440, 390])
-  test(`${largura} px: Diretoria, cada gerência, cada grupo no Total e uma supervisão: invariantes (a) a (e)`, async (t) => {
+  test(`${largura} px: Diretoria, cada gerência, cada grupo no Total e uma supervisão: invariantes (a) a (f), com as unidades abertas`, async (t) => {
     const {page, ctx, erros} = await abre(largura);
     const info = await page.evaluate(() => ({gcs: gcsComDados(), grupos: gruposGc().map(g => g.chave).filter(temDados),
       mes: P.MES_LABEL, dia: `${P.DIA_HOJE}/${P.TOTAL_DIAS_UTEIS}`, fech: !!P.FECHAMENTO, ma: P.MES_ANTERIOR ?
@@ -249,6 +252,8 @@ describe('Evolução contra o mês anterior com dado real (Etapa 8c)', {skip: pu
     linhas.push(await confereEvolucao(page, 'BAND'));
     for(const g of info.gcs){
       await page.selectOption('#fgc', g);
+      // trocar o filtro recolhe as categorias abertas
+      assert.equal(await page.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat[aria-expanded="true"]').length), 0, `GC.${g}: recolhido`);
       linhas.push(await confereEvolucao(page, `GC.${g}`));
     }
     for(const g of info.grupos){
@@ -387,5 +392,75 @@ describe('Ajuste de rótulos com dado real (Novos Negócios, aba por perfil, not
     console.log('# |---|---|');
     for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
     console.log(`# Notas (main -> branch): ${Object.keys(nb).map(n => `${n} ${nb[n].fs} -> ${na[n].fs}px`).join(', ')}`);
+  });
+});
+
+/* Antes x depois do redesenho da Evolução (barras pareadas) com dado real: o front da main antes desta etapa (REF_PRE_EVO;
+   só index.html, app.css e app.js mudaram) x o atual, com o mesmo payload real: a Executiva sem o bloco, o cabeçalho e os
+   cards de Volume, ICS GC, Novos Negócios e Todos a Bordo, a cascata dos 2 primeiros cards de cada aba até os clientes e o
+   Resumo, iguais (HTML). */
+const REF_PRE_EVO = '7674ca2';
+const FRONT_PRE_EVO = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_EVO}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+// a Executiva sem o bloco "Evolução contra o mês anterior" e o comentário dele (com os espaços em volta)
+const SEM_EVO = () => { const c = document.getElementById('exec').cloneNode(true);
+  [...c.childNodes].filter(n => n.nodeType === 8 && /Evolução/.test(n.data))
+    .forEach(n => { n.previousSibling.remove(); n.nextSibling.remove(); n.remove(); });
+  c.querySelector('#exEvo').remove();
+  return c.innerHTML; };
+const TELA_ABA = () => ({topo: document.getElementById('abaTopo').innerHTML, lista: document.getElementById('lista').innerHTML,
+  n: document.querySelectorAll('#lista .ind').length});
+
+describe('Antes x depois do redesenho da Evolução com dado real', {skip: pular || (!FRONT_PRE_EVO && `sem o commit ${REF_PRE_EVO}`)}, () => {
+  test('Diretoria, G1, IT+MO, a 1ª supervisão e a 1ª rota da G2: Executiva sem o bloco, cabeçalho, cards, cascata e Resumo iguais aos da main', async () => {
+    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_EVO)];
+    const linhas = [];
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      const comp = [];
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+        assert.equal(await novo.page.evaluate(SEM_EVO), await velho.page.evaluate(SEM_EVO), `${onde}: Executiva sem o bloco`);
+        comp.push('Executiva sem o bloco');
+      }
+      for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${onde} ${ab}`);
+        if(!ta) continue;
+        const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
+        assert.deepEqual(a, b, `${onde} ${ab}: cabeçalho e cards`);
+        let niveis = 0;
+        const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
+        for(const k of ks){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          for(let nivel = 0; nivel < 5; nivel++){
+            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            niveis++;
+            if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+          }
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        comp.push(`${ab} (${a.n} cards, ${niveis} telas de cascata)`);
+      }
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+        comp.push('Resumo');
+      }
+      linhas.push([onde, comp.join(', ')]);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_EVO} x branch), mesmo payload real: tudo igual fora o bloco da Evolução`);
+    console.log('# | Perfil | Comparado (igual) |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
   });
 });
