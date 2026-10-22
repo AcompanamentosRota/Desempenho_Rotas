@@ -85,5 +85,25 @@ const NUCLEO = (()=>{
      ritmo, teto(Meta / dias úteis). */
   const metaDiaCobertura = (b, totalDias) => b.gap > 0 ? b.gap : (b.meta ? Math.ceil(b.meta/totalDias) : 0);
 
-  return {agrega, metaDiaCobertura, ehVirtual, ehEventual, INVERTIDOS, titulo, ordemNatural};
+  /* Mês anterior no mesmo dia útil (chave MES_ANTERIOR, só os macros de volume de IND): soma simples dos pares
+     [Real até o corte, Meta do mês anterior inteiro] das rotas. Item null (ou rota ausente) = a rota não tem o indicador
+     no mês anterior: fica fora (Real e Meta). Devolve {k: {real, meta, n}} por item de IND (null sem nenhuma rota), ou
+     null sem a chave. Nada de regra comercial aqui: a chave já vem pronta do gerador (backend/gerador/mes_anterior.py). */
+  function mesAnterior(P, rotas){
+    const M = P && P.MES_ANTERIOR;
+    if(!M || !M.ROTAS || !Array.isArray(M.IND)) return null;
+    const out = {};
+    M.IND.forEach((k, i)=>{
+      const a = {real:0, meta:0, n:0};
+      rotas.forEach(r=>{
+        const x = (M.ROTAS[r] || [])[i];
+        if(!x) return;
+        a.real += x[0] || 0; a.meta += x[1] || 0; a.n++;
+      });
+      out[k] = a.n ? a : null;
+    });
+    return out;
+  }
+
+  return {agrega, metaDiaCobertura, mesAnterior, ehVirtual, ehEventual, INVERTIDOS, titulo, ordemNatural};
 })();

@@ -504,9 +504,34 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
 - **Fechamento do mês**: medidores e barras pelo **realizado** (Real ÷ Meta − 1, "Realizado x Meta"); sem os quadros/blocos
   "Meta do dia" e "Agenda de hoje" (não há online nem agenda do mês fechado). O Foco do fechamento usa o realizado
   ("Refrigerantes fechou o mês em 95% da meta; faltaram …").
-- **Evolução contra o mês anterior**: fica para a Etapa 8 (consulta nova); até lá não aparece (`CONFIG.EVOLUCAO_ATIVA =
-  false`). A descoberta da consulta e do custo é a seção E10 do "Conferir tendência" (ver "Mês anterior no mesmo dia
-  útil").
+- **Evolução contra o mês anterior** (Etapa 8c, 22/10/2026; **só Volume**): o último bloco, depois de "Coberturas por …".
+  Compara onde estamos com onde estávamos **no mesmo dia útil do mês anterior**, pela chave `MES_ANTERIOR` do payload
+  (ver "Chave `MES_ANTERIOR`"). Aparece com `CONFIG.EVOLUCAO_ATIVA = true` **e** a chave no payload; sem ela (payload
+  antigo, ou a consulta do mês anterior falhou ou passou de 60 s na rodada) o bloco fica oculto, sem erro. A Rota não tem
+  (não tem a Executiva).
+  - Subtítulo: "Setembro/26 até 20/09 (dia útil 13 de 21) x Outubro/26 até 20/10 (dia útil 13 de 21). % = Real ÷ meta do mês."
+    (o 1º dia útil é o N do mês anterior, `MES_ANTERIOR.DIA_UTIL`; o 2º é o último dia útil fechado, o do Real:
+    `DATA_ONTEM` em dd/mm e `DIA_ONTEM`; sem `DATA_ONTEM`, sem a data). No fechamento: "Agosto/26 (fechado) x Setembro/26 (fechado)".
+  - Mesmas unidades e mesma linha de total da Tendência x Meta (Diretoria → gerências, total BAND; gerência → supervisões
+    + "Neutraliza"; grupo no Total → as supervisões das duas; supervisão → rotas); virtuais, "{GC}-EV" e ocultas dentro
+    dos totais e fora das listas. Para cada categoria (os 5 macros) e unidade: Real e Meta do mês anterior = soma dos pares
+    `[Real até o corte, Meta]` das rotas da unidade (`NUCLEO.mesAnterior`; item null = a rota fica fora); % anterior =
+    Real ÷ Meta; % atual = o % real do medidor (Real até ontem ÷ Meta do mês, sem arredondar); **Δ p.p.** = % atual −
+    % anterior (1 casa); **Δ Real** = Real atual ÷ Real anterior − 1 (só na caixa de comentário).
+  - Barras divergentes do Δ p.p., da maior para a menor, com o total no meio; verde para cima, vermelho para baixo, pelo
+    sinal exato (Δ exatamente 0 em cinza, "0,0"); à direita só o número (1 casa e o sinal; a unidade, p.p., fica na legenda
+    abaixo das barras e na caixa de comentário); escala de cada categoria pela maior barra (mínimo 10 p.p.). Unidade
+    sem meta anterior (ou sem meta no mês atual) na categoria: "—", no fim, fora da ordenação. No PC as 5 categorias lado a
+    lado; no celular uma por vez, pelos chips (a mesma categoria em análise dos medidores).
+  - Caixa de comentário (mouse, teclado e toque): "Refrigerantes · GC.UR / Setembro/26 até 20/09: Real 85.879 (66,6% da
+    meta 129.000) / Outubro/26 até 20/10: Real 92.207 (63,6% da meta 145.000) / Δ −3,0 p.p. · Real +7,4%".
+  - Decisões da Karen (21/10/2026), as mesmas da chave: (1) mês anterior com menos dias úteis que o N de hoje = ele
+    inteiro; (2) **fechamento x fechamento**: com o painel em fechamento, o mês fechado contra o anterior a ele INTEIRO
+    (corte = o último dia dele), com as metas dele; (3) Real do mês anterior pela rota ATUAL do cliente, na gerência de
+    hoje, e o das EV* na rota oculta "{GC}-EV"; (4) % = Real até o corte ÷ meta do mês anterior inteiro (META_VOLUME da
+    rota da meta; sem ela, META_NEG), Δ p.p. e Δ Real como acima; (5) só Volume, coberturas fora; (6) fora também Todos a
+    Bordo, Del Valle Frut, Imperdoáveis e Venda Zero; (7) KS TT pelo segmento de hoje só quando as coberturas entrarem.
+  - Conferência com dado real: `conferencia_real.test.js` (invariantes em `frontend/tests/evolucao_invariantes.js`).
 - **Layout**: KPIs em 4 colunas no PC e 2 no celular; os dois quadros lado a lado no PC; medidores 5 por linha a partir de
   1200 px, 3 entre 700 e 1199 px e 2 no celular; Sem compra e Agenda lado a lado no PC.
 
@@ -847,7 +872,7 @@ input `hoje` simula outra data, ex.: um dia de fechamento). Local (precisa do `b
 ### Chave `MES_ANTERIOR` (mês anterior no mesmo dia útil, só Volume; seção E11)
 
 Etapa 8b (21/10/2026): o gerador grava no fim do `payload.json` onde estávamos **no mesmo dia útil do mês anterior**, para
-o bloco "Evolução contra o mês anterior" da aba Executiva (o front ainda não lê a chave: `CONFIG.EVOLUCAO_ATIVA = false`).
+o bloco "Evolução contra o mês anterior" da aba Executiva (lido pelo front desde a Etapa 8c; ver "Aba Executiva").
 Código em `backend/gerador/mes_anterior.py`; nomes e constantes em `mapeamento.py` (`CHAVE_MES_ANTERIOR`,
 `INDICADORES_MES_ANTERIOR`, `MES_ANTERIOR_LIMITE_S`).
 
@@ -869,7 +894,7 @@ Decisões da Karen (21/10/2026):
    rota oculta "{GC}-EV" da gerência comercial, como o Real do mês de referência.
 4. **Base do %**: Real até o corte ÷ meta do mês anterior **inteiro** (META_VOLUME da rota da meta; sem ela, META_NEG do
    mês), o mesmo "% real" dos medidores da Executiva. Δ p.p. = % do mês de referência − % do anterior; Δ Real = Real de
-   hoje ÷ Real do anterior até o corte − 1 (contas do front, quando o bloco entrar).
+   hoje ÷ Real do anterior até o corte − 1 (contas do front, no bloco da Executiva).
 5. **Só Volume**: os 5 macros (`IND`). Coberturas fora nesta rodada.
 6. Ficam fora: Todos a Bordo (chaves INC), Del Valle Frut, Imperdoáveis e Venda Zero.
 7. KS TT do mês anterior pelo segmento de hoje: só quando as coberturas entrarem.

@@ -15,7 +15,11 @@
    Total e uma supervisão, cada chip contra a recontagem do payload e do online e as contagens contra os cards; e, em cada
    gerência (e gerência do grupo), supervisão, "Neutraliza" e rota, o "Hoje" e o "Todos" das duas gavetas contra os cards
    (o "Todos" do Sem compra = semCompra). Sem rolagem lateral nem erro no console em 360, 390, 1000 e 1440 px, nos dois
-   fundos da entrada. */
+   fundos da entrada.
+   Evolução contra o mês anterior (Etapa 8c; invariantes em evolucao_invariantes.js): a Diretoria, cada gerência com dados
+   (filtro da Diretoria), cada grupo no Total e uma supervisão: Real e Meta do total = medidor; % e Δ p.p.; Σ unidades + rotas
+   fora delas (virtuais, "{GC}-EV", ocultas) = total; BAND = MES_ANTERIOR.ROTAS inteira; sem meta anterior = "—". Pula o
+   bloco se o payload não tiver MES_ANTERIOR. */
 'use strict';
 const {test, before, after, describe} = require('node:test');
 const assert = require('node:assert/strict');
@@ -24,6 +28,7 @@ const path = require('node:path');
 const {execSync} = require('node:child_process');
 const {confereExecutiva} = require('./executiva_invariantes.js');
 const {confereGavetas, leChips} = require('./gavetas_invariantes.js');
+const {confereEvolucao} = require('./evolucao_invariantes.js');
 
 const FRONT = path.resolve(__dirname, '..');
 const PAYLOAD = process.env.PAYLOAD_REAL, ONLINE = process.env.ONLINE_REAL;
@@ -109,6 +114,11 @@ describe('Conferência da Executiva com dado real (seção 7)', {skip: pular}, (
   });
 });
 
+// textos cortados no bloco Evolução (scrollWidth > clientWidth, só o que está à vista)
+// (fora das áreas com rolagem própria: a fila de chips rola de lado no celular)
+const ESTOUROS_EVO = () => [...document.querySelectorAll('#exEvo, #exEvo *')].filter(el => el.clientWidth > 0 && el.getClientRects().length
+  && !/auto|scroll/.test(getComputedStyle(el).overflowX) && el.scrollWidth > el.clientWidth + 1).map(el => `${el.className || el.tagName}: ${el.textContent.trim().slice(0, 40)}`);
+
 // "Hoje" e "Todos" das gavetas Base e Sem compra no filtro atual, contra os cards (números da tela) e o semCompra das rotas
 // (instalada na página como window.__gavetaXCards)
 const GAVETA_X_CARDS = () => {
@@ -179,7 +189,7 @@ describe('Gavetas com barra de dias com dado real (Etapa 6)', {skip: pular}, () 
   });
 
   for(const largura of [360, 390, 1000, 1440])
-  test(`${largura} px, fundos preto e branco: sem rolagem lateral nem erro no console (abas, cascata de volume, gavetas com a barra)`, async () => {
+  test(`${largura} px, fundos preto e branco: sem rolagem lateral nem erro no console (abas, cascata de volume, gavetas com a barra; Evolução sem texto cortado)`, async () => {
     for(const tema of ['preta', 'branca']){
       const {page, ctx, erros} = await abre(largura, tema);
       const rola = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
@@ -191,6 +201,15 @@ describe('Gavetas com barra de dias com dado real (Etapa 6)', {skip: pular}, () 
           if(await page.isHidden(`.tab[data-g="${a}"]`)) continue;
           await page.evaluate(a => document.querySelector(`.tab[data-g="${a}"]`).click(), a);
           assert.ok(await rola(), `${onde} ${a}`);
+        }
+        // Evolução contra o mês anterior (Etapa 8c): nenhum texto cortado no bloco, em cada categoria (chips no celular)
+        if(await page.evaluate(() => !!P.MES_ANTERIOR)){
+          await page.evaluate(() => document.querySelector('.tab[data-g="EXEC"]').click());
+          for(const k of await page.evaluate(() => GROUPS.VOLUME)){
+            if(largura < 1000) await page.click(`#exEvChips .fchip[data-k="${k}"]`);
+            assert.deepEqual(await page.evaluate(ESTOUROS_EVO), [], `${onde} evolução ${k}`);
+            assert.ok(await rola(), `${onde} evolução ${k}`);
+          }
         }
         // cascata de volume até os clientes (com a barra) e as gavetas Base / Sem compra em alguns chips
         await page.evaluate(() => document.querySelector('.tab[data-g="VOLUME"]').click());
@@ -207,5 +226,43 @@ describe('Gavetas com barra de dias com dado real (Etapa 6)', {skip: pular}, () 
       assert.deepEqual(erros, [], `${largura} ${tema}`);
       await ctx.close();
     }
+  });
+});
+
+describe('Evolução contra o mês anterior com dado real (Etapa 8c)', {skip: pular}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px: Diretoria, cada gerência, cada grupo no Total e uma supervisão: invariantes (a) a (e)`, async (t) => {
+    const {page, ctx, erros} = await abre(largura);
+    const info = await page.evaluate(() => ({gcs: gcsComDados(), grupos: gruposGc().map(g => g.chave).filter(temDados),
+      mes: P.MES_LABEL, dia: `${P.DIA_HOJE}/${P.TOTAL_DIAS_UTEIS}`, fech: !!P.FECHAMENTO, ma: P.MES_ANTERIOR ?
+      {mes: P.MES_ANTERIOR.MES_LABEL, dia: `${P.MES_ANTERIOR.DIA_UTIL}/${P.MES_ANTERIOR.TOTAL_DIAS_UTEIS}`, corte: P.MES_ANTERIOR.DATA_CORTE,
+       fechado: P.MES_ANTERIOR.FECHADO} : null}));
+    if(!info.ma){ await ctx.close(); t.skip('payload sem MES_ANTERIOR'); return; }
+    const linhas = [];
+    await entra(page, {perfil: 'dir'});
+    linhas.push(await confereEvolucao(page, 'BAND'));
+    for(const g of info.gcs){
+      await page.selectOption('#fgc', g);
+      linhas.push(await confereEvolucao(page, `GC.${g}`));
+    }
+    for(const g of info.grupos){
+      await entra(page, {perfil: 'gc', gc: g});
+      linhas.push(await confereEvolucao(page, `Total ${g}`));
+    }
+    const sv = await page.evaluate(() => { const g = gcsComDados()[0]; return {gc: g, sv: svsDaEntrada(g)[0]}; });
+    await entra(page, {perfil: 'sv', gc: sv.gc, sv: sv.sv});
+    linhas.push(await confereEvolucao(page, sv.sv));
+    const sub = await page.evaluate(() => document.getElementById('exSEvo').textContent);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    const ks = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MINERAL', 'VOL DEST+ART+CND'];
+    const cab = ['Escopo', 'Unidades (—)', 'Rotas fora', 'Refri: Real ant.', 'Meta ant.', 'Real atual', ...ks.map(k => k.replace('VOL ', 'Δ '))];
+    console.log(`# Evolução com dado real (${largura} px): ${info.ma.mes} dia útil ${info.ma.dia} (corte ${info.ma.corte}${info.ma.fechado ? ', fechado' : ''})` +
+      ` x ${info.mes} dia útil ${info.dia}${info.fech ? ' (fechamento)' : ''}. Subtítulo: ${sub}`);
+    console.log(`# | ${cab.join(' | ')} |`);
+    console.log(`# |${cab.map(() => '---').join('|')}|`);
+    const n = v => v.toLocaleString('pt-BR');
+    for(const l of linhas) console.log(`# | ${[l.onde, `${l.unidades} (${l.nd})`, l.fora, n(l.realAnt), n(l.metaAnt), n(l.real),
+                                              ...ks.map(k => l.cats[k])].join(' | ')} |`);
   });
 });

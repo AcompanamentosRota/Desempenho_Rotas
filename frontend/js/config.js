@@ -26,9 +26,9 @@ const CONFIG = Object.freeze({
   // Linha "Status" do card do topo (Todos a Bordo e Novos Negócios): false = item em 100% com Real >= Meta; true =
   // também com os clientes distintos no Real ou no online de hoje >= Meta (no fechamento, só o Real)
   STATUS_INCLUI_ONLINE: false,
-  // Aba Executiva: bloco "Evolução contra o mês anterior" (Etapa 8, depende de consulta nova do mês anterior no mesmo
-  // dia útil). false = o bloco não aparece (ainda não há o dado no payload)
-  EVOLUCAO_ATIVA: false,
+  // Aba Executiva: bloco "Evolução contra o mês anterior" (Etapa 8c; só Volume, pela chave MES_ANTERIOR do payload).
+  // false = o bloco não aparece; payload sem a chave (antigo ou com a consulta do mês anterior falhando) também não
+  EVOLUCAO_ATIVA: true,
   // Placa ATENÇÃO do Resumo: % mínimo de indicadores no ritmo; null = desligada (não aparece)
   LIMIAR_ATENCAO: null,
   // Resumo da Diretoria: gerências por faixa (acima disso, quebra em faixas)
