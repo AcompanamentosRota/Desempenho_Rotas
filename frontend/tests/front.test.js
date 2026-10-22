@@ -164,6 +164,17 @@ before(async () => {
     fs.copyFileSync(path.join(DADOS[origem], 'online.json'), path.join(dir, 'online.json'));
     DADOS[nome] = dir;
   }
+  // Parte AA: os 5 macros de volume com dado (o sintético só traz Refrigerantes e Água Mineral) e a evolução deles
+  for(const [nome, origem, fechado] of [['vol5', 'exec', false], ['vol5fech', 'incfech', true]]){
+    const dir = path.join(tmp, nome);
+    fs.mkdirSync(dir);
+    const pv = JSON.parse(fs.readFileSync(path.join(DADOS[origem], 'payload.json'), 'utf-8'));
+    montaVolume5(pv);
+    montaMesAnterior(pv, fechado);
+    fs.writeFileSync(path.join(dir, 'payload.json'), JSON.stringify(pv));
+    fs.copyFileSync(path.join(DADOS[origem], 'online.json'), path.join(dir, 'online.json'));
+    DADOS[nome] = dir;
+  }
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -176,7 +187,7 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' |
    'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm' | 'evo' | 'evogrupo' | 'evogrande' |
-   'evofech' | 'semevo');
+   'evofech' | 'semevo' | 'vol5' | 'vol5fech');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
@@ -2510,7 +2521,7 @@ describe('Parte L — aba Todos a Bordo', {skip: pular}, () => {
     let {page, ctx, erros, fonte} = await abre('inc', {entrar: 'dir'});
     // desde a Etapa 5 a Executiva é a primeira aba da barra (Parte W); Todos a Bordo continua ao lado de Novos Negócios
     assert.deepEqual(await page.$$eval('.tab', ts => ts.map(t => [t.dataset.g, t.textContent])),
-                     [['EXEC', 'Executiva'], ['VOLUME', 'Volume'], ['ICS_GC', 'ICS GC'], ['NOVOS_NEG', 'Novos Negócios'],
+                     [['EXEC', 'Diretoria'], ['VOLUME', 'Volume'], ['ICS_GC', 'ICS GC'], ['NOVOS_NEG', 'Novos Negócios'],
                       ['INCENTIVO', 'Todos a Bordo']]);
     assert.equal(await page.getAttribute('.tab[data-g="INCENTIVO"]', 'aria-label'), 'Todos a Bordo');
     const ics = await page.evaluate(() => { document.querySelector('.tab[data-g="ICS_GC"]').click();
@@ -4557,8 +4568,10 @@ describe('Parte V — cabeçalho das abas (Etapa 4)', {skip: pular}, () => {
         for(const {page} of [novo, velho]) await filtra(page, {aba});
         const onde = `${c.nome} ${aba}`;
         const [a, b] = [await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO)];
-        // só o rótulo do card de ritmo do Volume muda ("Categorias na tendência", mesma regra)
-        assert.deepEqual(a, {...b, rotulo: aba === 'VOLUME' ? 'Categorias na tendência' : b.rotulo}, onde);
+        // só o rótulo do card de ritmo do Volume muda ("Categorias na tendência", mesma regra) e, desde o ajuste de rótulos,
+        // o nome do card do macro VOL DEST+ART+CND ("Novos Negócios" com a 2ª linha "Dest+Art+Cnd")
+        assert.deepEqual(a, {...b, rotulo: aba === 'VOLUME' ? 'Categorias na tendência' : b.rotulo,
+          lista: b.lista.map(t => t.replace(/^Dest\+Art\+Cnd /, 'Novos Negócios Dest+Art+Cnd '))}, onde);
         if(a.puxa) vistos.add(a.puxa.quem);
         if(a.status) vistos.add('status');
         // Base e Sem compra só com supervisão (ou "Neutraliza") ou rota no filtro
@@ -4573,7 +4586,7 @@ describe('Parte V — cabeçalho das abas (Etapa 4)', {skip: pular}, () => {
         const cli = p => p.evaluate(() => document.getElementById('cli').innerHTML.replace(/ style="[^"]*"/g, ''));
         const [x, y] = [await cli(novo.page), await cli(velho.page)];
         assert.match(x, /class="cli"/, `${c.nome} ${aba}: ficha`);
-        assert.equal(x, y, `${c.nome} ${aba}: ficha do cliente`);
+        assert.equal(...igualRotulo(x, y), `${c.nome} ${aba}: ficha do cliente`);
         for(const {page} of [novo, velho]) await page.fill('#q', '');
       }
       assert.deepEqual(novo.erros, [], c.nome);
@@ -5058,7 +5071,9 @@ describe('Parte R — Painel de Ritmo: montaRitmo (função pura, sem navegador)
     const nv = t => t.replace(/sem vendedor/gi, 'Sem vendedor');
     const limpa = m => m.paginas.map(pg => ({...pg, titulo: nv(pg.titulo), puxa: nv(pg.puxa), colunas: pg.colunas.map(c => ({...c, nome: undefined, cob: c.cob.slice(0, 9)}))}));
     for(const escopo of [{tipo: 'band', nome: 'BAND'}, {tipo: 'sv', gcs: ['G2'], sv: 'SV.G2.1'}])
-      assert.deepEqual(JSON.parse(JSON.stringify(limpa(monta(p, escopo)))), JSON.parse(JSON.stringify(limpa(ctx.montaRitmo(p, escopo)))));
+      // desde o ajuste de rótulos o macro VOL DEST+ART+CND se chama "Novos Negócios"
+      assert.deepEqual(JSON.parse(JSON.stringify(limpa(monta(p, escopo)))),
+                       JSON.parse(JSON.stringify(limpa(ctx.montaRitmo(p, escopo))).replace(/Dest\+Art\+Cnd/g, 'Novos Negócios')));
   });
 
   test('células: x / 5 e x / 10, verde/vermelho (tendência >= 100; onPace), Meta dia, Meta batida! (volume e cobertura), faltam, reverter e "—"', () => {
@@ -5386,7 +5401,7 @@ describe('Parte R — Painel de Ritmo no navegador', {skip: pular}, () => {
         assert.ok(cls === 'rt-ok' ? /^▲0$/.test(v) && cor === 'rgb(20, 107, 79)' : /^▼[\d.]+$/.test(v) && cor === 'rgb(198, 40, 40)', `${onde}: ${cls} ${v} ${cor}`);
       }
       for(const t of ['VOLUME — TENDÊNCIA DO MÊS', 'NA TENDÊNCIA', 'COBERTURAS — ICS GC', 'NO RITMO', 'COMERCIAL BANDEIRANTES',
-                      'Refrigerantes', 'Dest+Art+Cnd', 'Refri Sab. Zero', 'Cerv. 600ml Ret.', 'Venda Zero (KO)'])
+                      'Refrigerantes', 'Novos Negócios', 'Refri Sab. Zero', 'Cerv. 600ml Ret.', 'Venda Zero (KO)'])
         assert.ok(r.texto.includes(t), `${onde}: ${t}`);
       if(alvo === 'SV.G1.1') assert.ok(r.texto.includes('Sem vendedor'), `${onde}: rota sem vendedor`);
       if(ncols === 9) assert.ok(/Meta dia 1\.234\.567/.test(r.texto) && /5 \/ 5/.test(r.texto), `${onde}: números grandes e x / 5`);
@@ -5461,7 +5476,9 @@ const FRONT_ETAPA4 = (() => {
   try {
     const arq = f => execSync(`git show ${REF_ETAPA5}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
     const [html, css, js, cfg] = ['index.html', 'css/app.css', 'js/app.js', 'js/config.js'].map(arq);
-    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js, '/js/config.js': () => cfg};
+    // o resumo.js e o ritmo.js servidos são os atuais: o config.js antigo ganha o rotuloFront de agora com o rótulo de antes
+    const shim = `\n;function rotuloFront(k, r){ return k === 'VOL DEST+ART+CND' ? 'Dest+Art+Cnd' : (r || k); }\n`;
+    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js, '/js/config.js': () => cfg + shim};
   } catch(e) { return null; }
 })();
 
@@ -5498,6 +5515,14 @@ const linhasDiv = (page, k) => page.evaluate(k => [...document.querySelectorAll(
 }), k);
 const VOL_EXEC = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MINERAL', 'VOL DEST+ART+CND'];
 
+/* Ajuste de rótulos (Parte AA): onde o front antigo mostra "Dest+Art+Cnd" o atual mostra "Novos Negócios" (no card de Volume,
+   com a 2ª linha .tsub "Dest+Art+Cnd"). As comparações com fronts antigos tiram a 2ª linha do atual e trocam o nome no antigo;
+   o resto continua igual, byte a byte. */
+const igualRotulo = (novo, velho) => {
+  const tiraSub = t => t.replace(/<div class=\\?"tsub\\?">[^<]*<\/div>/g, '').replace(/Novos Negócios(\s|\\n)+Dest\+Art\+Cnd/g, 'Novos Negócios');
+  const j = (o, f) => typeof o === 'string' ? f(o) : JSON.parse(f(JSON.stringify(o)));
+  return [j(novo, tiraSub), j(velho, t => t.replace(/Dest\+Art\+Cnd/g, 'Novos Negócios'))];
+};
 describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
   test('aba inicial: Executiva na Diretoria, na Gerência (e no grupo) e na Supervisão; a Rota não tem e abre no Volume; rota no filtro tira a aba', async () => {
     for(const [dados, entrar, inicial] of [['exec', 'dir', 'EXEC'], ['exec', {perfil: 'gc', gc: 'G1'}, 'EXEC'],
@@ -5512,8 +5537,10 @@ describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
         assert.equal(e.tabs[0], 'EXEC', `${onde}: primeira aba da barra`);
         assert.ok(e.exec && !e.lista, `${onde}: Executiva no lugar dos cards`);
         // do cabeçalho da aba ficam só o título e a etiqueta do dia (sem busca, cards do topo nem filtro rápido)
-        assert.deepEqual([e.tit, e.pil, e.topo], ['Resumo executivo', true, []], onde);
-        assert.equal(await page.getAttribute('.tab[data-g="EXEC"]', 'title'), 'Executiva');
+        // o título da aba é o nome dela, pelo perfil (Diretoria, Gerencial — também no grupo —, Supervisão)
+        const nomeExec = {dir: 'Diretoria', gc: 'Gerencial', sv: 'Supervisão'}[entrar === 'dir' ? 'dir' : entrar.perfil];
+        assert.deepEqual([e.tit, e.pil, e.topo], [nomeExec, true, []], onde);
+        assert.equal(await page.getAttribute('.tab[data-g="EXEC"]', 'title'), nomeExec);
       } else {
         assert.ok(!e.tabs.includes('EXEC') && !e.exec && e.lista, `${onde}: sem a Executiva`);
         assert.equal(e.tit, 'Volume');
@@ -5926,27 +5953,27 @@ describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         for(const {page} of [novo, velho]) await filtra(page, {aba});
         const [a, b] = [await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO)];
-        assert.deepEqual(a, b, `${onde} ${aba}: cabeçalho e cards`);
+        assert.deepEqual(...igualRotulo(a, b), `${onde} ${aba}: cabeçalho e cards`);
         // cascata do 1º card (1º nível) igual (na Rota, o 1º nível é a lista de clientes; a de volume tem, desde a Etapa 6, a
         // barra de dias, que fica fora da comparação)
         const k = await novo.page.$eval('#lista .ind[data-k]', el => el.dataset.k);
         const gav = async p => { await p.click(`#lista .ind[data-k="${k}"]`); const h = await p.evaluate(vol => { const d = document.getElementById('drw').cloneNode(true);
           if(vol) d.querySelectorAll('#dLista > .chips').forEach(x => x.remove()); return d.innerHTML; }, aba === 'VOLUME'); await p.keyboard.press('Escape'); return h; };
-        assert.equal(await gav(novo.page), await gav(velho.page), `${onde} ${aba}: cascata de ${k}`);
+        assert.equal(...igualRotulo(await gav(novo.page), await gav(velho.page)), `${onde} ${aba}: cascata de ${k}`);
       }
       // gavetas Base e Sem compra iguais (desde a Etapa 6 com a barra de dias, que abre no "Hoje": sem a barra, a gaveta de antes)
       for(const id of ['cBase', 'cSem']){
         const gav = async p => { await abreCardTopo(p, id); const h = await p.evaluate(() => { const d = document.getElementById('drw').cloneNode(true);
           d.querySelectorAll('#dCorpo > .chips').forEach(x => x.remove()); return d.innerHTML; }); await p.keyboard.press('Escape'); return h; };
-        assert.equal(await gav(novo.page), await gav(velho.page), `${onde}: gaveta ${id}`);
+        assert.equal(...igualRotulo(await gav(novo.page), await gav(velho.page)), `${onde}: gaveta ${id}`);
       }
       if(entrar.perfil !== 'rota'){
         // Resumo de vendas (a folha) e Painel de Ritmo (escopo e o modelo das páginas, só payload) iguais
         const rs = async p => { await p.click('#btnResumo'); await p.waitForSelector('#rsFolha h2'); const h = await p.innerHTML('#rsFolha');
           await p.click('#rsVoltar'); return h; };
-        assert.equal(await rs(novo.page), await rs(velho.page), `${onde}: Resumo`);
+        assert.equal(...igualRotulo(await rs(novo.page), await rs(velho.page)), `${onde}: Resumo`);
         const rt = p => p.evaluate(() => JSON.stringify(montaRitmo(P, RT.escopoRitmo())));
-        assert.equal(await rt(novo.page), await rt(velho.page), `${onde}: Painel de Ritmo`);
+        assert.equal(...igualRotulo(await rt(novo.page), await rt(velho.page)), `${onde}: Painel de Ritmo`);
       }
       assert.deepEqual(novo.erros, [], onde);
       await novo.ctx.close(); await velho.ctx.close();
@@ -6250,12 +6277,12 @@ describe('Parte X — gavetas com barra de dias (Etapa 6)', {skip: pular}, () =>
             .forEach(n => { n.previousSibling.remove(); n.nextSibling.remove(); n.remove(); });
           c.querySelector('#exEvo').remove();
           return c.innerHTML; };
-        assert.equal(await novo.page.evaluate(semEvo), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        assert.equal(...igualRotulo(await novo.page.evaluate(semEvo), await velho.page.innerHTML('#exec')), `${onde}: Executiva`);
       }
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         for(const {page} of [novo, velho]) await filtra(page, {aba});
-        assert.deepEqual(await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO), `${onde} ${aba}: cabeçalho e cards`);
-        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${onde} ${aba}: cards`);
+        assert.deepEqual(...igualRotulo(await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO)), `${onde} ${aba}: cabeçalho e cards`);
+        assert.equal(...igualRotulo(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista')), `${onde} ${aba}: cards`);
         // cascata dos 2 primeiros cards, do 1º nível até os clientes
         const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))).slice(0, 2);
         for(const k of ks){
@@ -6263,7 +6290,7 @@ describe('Parte X — gavetas com barra de dias (Etapa 6)', {skip: pular}, () =>
           for(let nivel = 0; nivel < 5; nivel++){
             // a barra nova é só a da lista de volume; as das coberturas (ICS GC, Novos Negócios, Todos a Bordo) já existiam
             const vol = aba === 'VOLUME';
-            assert.equal(await gaveta(novo.page, vol), await gaveta(velho.page, vol), `${onde} ${aba} ${k} nível ${nivel}`);
+            assert.equal(...igualRotulo(await gaveta(novo.page, vol), await gaveta(velho.page, vol)), `${onde} ${aba} ${k} nível ${nivel}`);
             if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
             for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
           }
@@ -6273,14 +6300,14 @@ describe('Parte X — gavetas com barra de dias (Etapa 6)', {skip: pular}, () =>
       // gavetas Base e Sem compra: no "Hoje" (padrão), sem a barra, as de antes
       for(const id of ['cBase', 'cSem']){
         const g = async p => { await abreCardTopo(p, id); const h = await gaveta(p, true); await p.keyboard.press('Escape'); return h; };
-        assert.equal(await g(novo.page), await g(velho.page), `${onde}: gaveta ${id}`);
+        assert.equal(...igualRotulo(await g(novo.page), await g(velho.page)), `${onde}: gaveta ${id}`);
       }
       if(entrar.perfil !== 'rota'){
         const rs = async p => { await p.click('#btnResumo'); await p.waitForSelector('#rsFolha h2'); const h = await p.innerHTML('#rsFolha');
           await p.click('#rsVoltar'); return h; };
-        assert.equal(await rs(novo.page), await rs(velho.page), `${onde}: Resumo`);
+        assert.equal(...igualRotulo(await rs(novo.page), await rs(velho.page)), `${onde}: Resumo`);
         const rt = p => p.evaluate(() => JSON.stringify(montaRitmo(P, RT.escopoRitmo())));
-        assert.equal(await rt(novo.page), await rt(velho.page), `${onde}: Painel de Ritmo`);
+        assert.equal(...igualRotulo(await rt(novo.page), await rt(velho.page)), `${onde}: Painel de Ritmo`);
       }
       assert.deepEqual(novo.erros, [], onde);
       await novo.ctx.close(); await velho.ctx.close();
@@ -6517,6 +6544,216 @@ describe('Parte Z — Evolução contra o mês anterior (Etapa 8c)', {skip: pula
         assert.deepEqual(erros, [], onde);
         await ctx.close();
       }
+    });
+  }
+});
+
+/* ---------- Parte AA — rótulos: "Novos Negócios" no macro de volume, nome da aba EXEC por perfil, notas menores ----------
+   O macro VOL DEST+ART+CND aparece como CONFIG.ROTULO_VOLUME_NOVOS em todo o painel; CONFIG.ROTULO_VOLUME_SUB ("Dest+Art+Cnd")
+   só como 2ª linha do card da aba Volume. A aba/grupo de coberturas "Novos Negócios" (NOVOS_NEG) não muda. Antes x depois
+   contra o front de REF_ROTULOS (main antes do ajuste), com o mesmo payload. */
+const ROT = require('./rotulos_invariantes.js');
+const VOL_AA = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MINERAL', 'VOL DEST+ART+CND'];
+const REF_ROTULOS = '20728ac';
+const FRONT_PRE_ROTULOS = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_ROTULOS}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const fs_ = ['index.html', 'css/app.css', 'js/config.js', 'js/nucleo.js', 'js/app.js', 'js/resumo.js', 'js/ritmo.js', 'js/main.js'];
+    return Object.fromEntries(fs_.map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+const PERFIS_AA = [
+  {nome: 'Diretoria', entrar: 'dir', perfil: 'dir'},
+  {nome: 'Gerência G1', entrar: {perfil: 'gc', gc: 'G1'}, perfil: 'gc'},
+  {nome: 'grupo IT+MO', entrar: {perfil: 'gc', gc: 'IT+MO'}, perfil: 'gc'},
+  {nome: 'Supervisão', entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, perfil: 'sv'},
+  {nome: 'Rota', entrar: {perfil: 'rota', gc: 'G2', rota: 'G211'}, perfil: 'rota'},
+];
+const {TEXTOS_TELA_PAGINA: TEXTOS_TELA} = ROT;
+// os macros de volume sem dado no sintético ganham o bloco de Refrigerantes da rota em escala (os % ficam iguais)
+function montaVolume5(p){
+  const fat = {'VOL CERVEJAS': .6, 'VOL STILL': .3, 'VOL AGUA MINERAL': .4, 'VOL DEST+ART+CND': .15};
+  for(const gc in p.DATA) for(const sv in p.DATA[gc]) for(const r in p.DATA[gc][sv]){
+    const ind = p.DATA[gc][sv][r].indicators, b = ind['VOL REFRIGERANTES'];
+    if(!b || b.unavailable) continue;
+    for(const [k, f] of Object.entries(fat)){
+      if(ind[k] && !ind[k].unavailable) continue;
+      const c = JSON.parse(JSON.stringify(b));
+      for(const x in c) if(typeof c[x] === 'number' && !/^pct/.test(x)) c[x] = Math.round(c[x] * f * 10) / 10;
+      ind[k] = c;
+    }
+  }
+}
+const {semNaN, comNomeNovo} = ROT;
+
+describe('Parte AA — rótulo "Novos Negócios" do volume, aba por perfil e notas menores', {skip: pular}, () => {
+  for(const largura of [1440, 390]){
+    test(`card de Volume "${ROT.NOVOS}" com a 2ª linha "${ROT.SUB}" (menor, mais clara, AA) em todos os perfis; os outros 4 sem ela (${largura} px)`, async () => {
+      const {page, ctx, erros} = await abre('vol5', {entrar: 'dir', largura, aba: 'VOLUME'});
+      for(const c of PERFIS_AA){
+        await vaiPara(page, c.entrar, 'VOLUME');
+        for(const fator of [0.2, 3]){        // fundo rosa (abaixo) e verde claro (no ritmo)
+          await page.evaluate(([k, f]) => { for(const r of Object.keys(P.DATA).flatMap(g => Object.values(P.DATA[g]).flatMap(Object.values)))
+            if(r.indicators && r.indicators[k] && !r.indicators[k].unavailable){ const b = r.indicators[k];
+              b.real = b.meta * f / 3; if(b.tendencia != null) b.tendencia = b.meta * f; } render(); }, [ROT.K_NOVOS, fator]);
+          const cs = await page.evaluate(ROT.CARDS_VOLUME_PAGINA, ROT.K_NOVOS), onde = `${c.nome} ${largura} fator ${fator}`;
+          const vol = cs.filter(x => x.vol), nn = vol.find(x => x.k === ROT.K_NOVOS);
+          // os 5 macros (na G2 também o Del Valle Frut, sem a linha)
+          for(const k of VOL_AA) assert.ok(vol.some(x => x.k === k), `${onde}: card ${k}`);
+          assert.ok(nn, `${onde}: card ${ROT.NOVOS}`);
+          assert.deepEqual([nn.tit, nn.sub, nn.sVisivel, nn.sDepois], [ROT.NOVOS, ROT.SUB, true, true], onde);
+          assert.ok(nn.sFs < nn.tFs && nn.sFs >= 10.5 && nn.sFs <= 11.5, `${onde}: tamanho ${nn.sFs} x ${nn.tFs}`);
+          assert.equal(nn.sPeso, '400', onde);
+          assert.ok(nn.sLum > nn.tLum, `${onde}: 2ª linha mais clara`);
+          assert.ok(nn.sContraste >= 4.5, `${onde}: contraste ${nn.sContraste.toFixed(2)}`);
+          assert.deepEqual(cs.filter(x => x !== nn).map(x => x.sub), cs.filter(x => x !== nn).map(() => null), `${onde}: só um card com a linha`);
+          // a linha extra não deforma a grade: cards de volume da mesma linha com a mesma altura; nenhum abaixo da mínima
+          const porLinha = {};
+          for(const x of vol) (porLinha[x.topo] = porLinha[x.topo] || []).push(x.h);
+          for(const hs of Object.values(porLinha)) assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `${onde}: alturas ${hs}`);
+          const hMin = Math.min(...vol.filter(x => x !== nn).map(x => x.h));
+          assert.ok(nn.h - hMin <= 1, `${onde}: card ${ROT.NOVOS} ${nn.h} x ${hMin}`);
+        }
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test(`nenhum "${ROT.SUB}" visível fora da 2ª linha do card: abas, visão executiva, gaveta, Resumo e Painel de Ritmo só com "${ROT.NOVOS}"`, async () => {
+    for(const dados of ['vol5', 'vol5fech']){
+      const {page, ctx, erros} = await abre(dados, {entrar: 'dir', largura: 1440, aba: null});
+      for(const c of PERFIS_AA){
+        await vaiPara(page, c.entrar, null);
+        for(const aba of ['EXEC', 'VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          if(!await page.evaluate(a => { const t = document.querySelector(`.tab[data-g="${a}"]`); return !t.hidden; }, aba)) continue;
+          await filtra(page, {aba});
+          const onde = `${dados} ${c.nome} ${aba}`;
+          // dicas da visão executiva e das linhas: todas com o nome novo
+          assert.deepEqual(await page.evaluate(ROT.RASTRO_PAGINA, ROT.SUB), [], onde);
+          if(aba === 'EXEC'){
+            const t = await page.evaluate(() => document.getElementById('exec').textContent);
+            assert.ok(t.includes(ROT.NOVOS), `${onde}: medidor/linhas com ${ROT.NOVOS}`);
+            // categoria em análise = o macro: Foco do fechamento, Meta do dia e Tendência x Meta com o nome novo
+            await page.evaluate(k => escolheCat(k, 'exGauges'), ROT.K_NOVOS);
+            const f = await page.evaluate(() => [document.getElementById('exFocoTxt').textContent, document.getElementById('exDiaTxt').textContent,
+              document.querySelector('#exDivs .dv.sel h4').textContent]);
+            assert.ok(f[0].startsWith(ROT.NOVOS) && f[2] === ROT.NOVOS, `${onde}: ${f}`);
+            if(dados === 'vol5') assert.ok(f[1].startsWith(ROT.NOVOS), `${onde}: ${f[1]}`);
+            assert.deepEqual(await page.evaluate(ROT.RASTRO_PAGINA, ROT.SUB), [], `${onde} (categoria ${ROT.NOVOS})`);
+          }
+          if(aba === 'VOLUME'){
+            const g = await cascata(page, ROT.K_NOVOS, 'VOLUME');
+            assert.ok(g.tit.startsWith(`${ROT.NOVOS} · `), `${onde}: gaveta ${g.tit}`);
+            assert.equal(await page.$$eval('#drw .tsub', e => e.length), 0, `${onde}: gaveta só com o nome`);
+            assert.deepEqual(await page.evaluate(ROT.RASTRO_PAGINA, ROT.SUB), [], `${onde} gaveta`);
+            await page.click('#dX');
+          }
+        }
+        if(c.perfil !== 'rota'){
+          await page.click('#btnResumo');
+          const r = await page.evaluate(() => document.getElementById('rsFolha').innerText);
+          if(dados === 'vol5') assert.ok(r.includes(ROT.NOVOS), `${dados} ${c.nome}: Resumo`);
+          assert.deepEqual(await page.evaluate(ROT.RASTRO_PAGINA, ROT.SUB), [], `${dados} ${c.nome} Resumo`);
+          await page.click('#rsVoltar');
+        }
+        // Painel de Ritmo: modelo (função pura) e páginas desenhadas
+        const rt = await page.evaluate(() => { const e = RT.escopoRitmo(); if(!e) return null;
+          const m = montaRitmo(P, e), html = m.paginas.map(pg => { const x = RT.desenhaPagina(pg); return typeof x === 'string' ? x : x.outerHTML; }).join('');
+          return {m: JSON.stringify(m), html}; });
+        if(c.perfil === 'rota') assert.equal(rt, null);
+        else for(const [n, t] of Object.entries(rt)){
+          assert.ok(!t.includes(ROT.SUB), `${dados} ${c.nome}: Painel de Ritmo (${n})`);
+          assert.ok(t.includes(ROT.NOVOS), `${dados} ${c.nome}: Painel de Ritmo (${n}) com ${ROT.NOVOS}`);
+        }
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  for(const largura of [1440, 390]){
+    test(`nome da aba EXEC por perfil: Diretoria, Gerencial (também no grupo), Supervisão; a Rota sem a aba (${largura} px)`, async () => {
+      const {page, ctx, erros} = await abre('vol5', {entrar: 'dir', largura, aba: null});
+      for(const c of PERFIS_AA){
+        await vaiPara(page, c.entrar, null);
+        const a = await page.evaluate(ROT.ABA_EXEC_PAGINA), onde = `${c.nome} ${largura}`;
+        if(c.perfil === 'rota'){ assert.equal(a.visivel, false, onde); continue; }
+        const n = ROT.NOME_EXEC[c.perfil];
+        assert.deepEqual([a.visivel, a.on, a.span, a.title, a.aria, a.abTit], [true, true, n, n, n, n], onde);
+        // painel lateral (PC) ou topo do celular: o rótulo visível do botão; o recolhido guarda o nome no title
+        assert.equal(await page.evaluate(() => document.querySelector('.tab[data-g="EXEC"]').innerText.trim()), n, onde);
+        // a aba de coberturas "Novos Negócios" continua com o nome dela
+        assert.equal(await page.getAttribute('.tab[data-g="NOVOS_NEG"]', 'title'), 'Novos Negócios');
+        await filtra(page, {aba: 'VOLUME'});
+        assert.equal(await page.textContent('#abTit'), 'Volume', onde);
+        await filtra(page, {aba: 'EXEC'});
+        assert.equal(await page.textContent('#abTit'), n, onde);
+      }
+      if(largura === 1440){
+        await vaiPara(page, PERFIS_AA[3].entrar, null);
+        await page.click('#ladoMenu');                 // recolhido: só os ícones, o nome no title
+        assert.equal(await page.getAttribute('.tab[data-g="EXEC"]', 'title'), 'Supervisão');
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test('antes x depois (mesmo payload): cards, cabeçalho, visão executiva, gavetas e Resumo iguais aos da main, exceto o nome novo, a 2ª linha e o nome da aba', {skip: !FRONT_PRE_ROTULOS && `sem o commit ${REF_ROTULOS}`}, async () => {
+    const vistos = [];
+    for(const c of PERFIS_AA){
+      const [novo, velho] = [await abre('vol5', {entrar: c.entrar, largura: 1280, aba: null}),
+                             await abre('vol5', {entrar: c.entrar, largura: 1280, aba: null, troca: FRONT_PRE_ROTULOS})];
+      for(const aba of ['EXEC', 'VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        const tem = await novo.page.evaluate(a => !document.querySelector(`.tab[data-g="${a}"]`).hidden, aba);
+        assert.equal(await velho.page.evaluate(a => !document.querySelector(`.tab[data-g="${a}"]`).hidden, aba), tem);
+        if(!tem) continue;
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        const onde = `${c.nome} ${aba}`;
+        const [a, b] = [await novo.page.evaluate(TEXTOS_TELA), await velho.page.evaluate(TEXTOS_TELA)];
+        assert.deepEqual(a, comNomeNovo(b), onde);
+        assert.ok(a.lista.length || a.exec, onde);
+        vistos.push(onde);
+        // gavetas: o macro de volume e o 1º card de coberturas da aba (Novos Negócios: Campari...)
+        const ks = await novo.page.$$eval('#lista .ind[data-k]', e => e.map(x => x.dataset.k));
+        for(const k of aba === 'VOLUME' ? [ROT.K_NOVOS] : aba === 'EXEC' ? [] : ks.slice(0, 1)){
+          const [ga, gb] = [await cascata(novo.page, k, aba), await cascata(velho.page, k, aba)];
+          const [ta, tb] = [await novo.page.evaluate(() => document.getElementById('drw').innerText),
+                            await velho.page.evaluate(() => document.getElementById('drw').innerText)];
+          assert.deepEqual(semNaN([ga, ta]), comNomeNovo([gb, tb]), `${onde} gaveta ${k}`);
+          for(const {page} of [novo, velho]) await page.click('#dX');
+        }
+      }
+      if(c.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        const [ra, rb] = [await novo.page.evaluate(() => document.getElementById('rsFolha').innerText),
+                          await velho.page.evaluate(() => document.getElementById('rsFolha').innerText)];
+        assert.equal(ra, comNomeNovo([rb])[0], `${c.nome} Resumo`);
+      }
+      assert.deepEqual([...novo.erros, ...velho.erros], []);
+      for(const {ctx} of [novo, velho]) await ctx.close();
+    }
+    assert.ok(vistos.length >= 20, vistos.join(', '));
+  });
+
+  for(const largura of [1440, 390]){
+    test(`notas menores que as da main (rodapé, crédito, legendas da visão executiva), com contraste AA; notas da gaveta iguais (${largura} px)`, {skip: !FRONT_PRE_ROTULOS && `sem o commit ${REF_ROTULOS}`}, async () => {
+      const [novo, velho] = [await abre('evo', {entrar: 'dir', largura, aba: null}),
+                             await abre('evo', {entrar: 'dir', largura, aba: null, troca: FRONT_PRE_ROTULOS})];
+      const [a, b] = [await novo.page.evaluate(ROT.NOTAS_PAGINA), await velho.page.evaluate(ROT.NOTAS_PAGINA)];
+      const esperadas = largura >= 1000 ? ['rodape', 'creditos', 'legenda', 'ladoCred'] : ['rodape', 'creditos', 'legenda'];
+      assert.deepEqual(Object.keys(a).sort(), esperadas.slice().sort());
+      for(const n of esperadas){
+        assert.ok(a[n].fs < b[n].fs && a[n].fs >= b[n].fs - 1.01 && a[n].fs >= b[n].fs * 0.9 - 0.01, `${n}: ${a[n].fs} x ${b[n].fs}`);
+        assert.ok(a[n].contraste >= 4.5, `${n}: contraste ${a[n].contraste.toFixed(2)}`);
+      }
+      // notas da gaveta (rotas virtuais e eventuais) e o resto da cascata: mesmo tamanho de letra que na main
+      for(const {page} of [novo, velho]){ await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'}, 'VOLUME'); await page.click('.ind[data-k="VOL REFRIGERANTES"]'); }
+      const fsGaveta = () => [...document.querySelectorAll('#drw, #drw *')].map(e => getComputedStyle(e).fontSize);
+      assert.deepEqual(await novo.page.evaluate(fsGaveta), await velho.page.evaluate(fsGaveta));
+      assert.deepEqual([...novo.erros, ...velho.erros], []);
+      for(const {ctx} of [novo, velho]) await ctx.close();
     });
   }
 });

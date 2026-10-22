@@ -20,7 +20,7 @@ const RS = (()=>{
   const blocos = {vol:true, ics:true, nov:false};
   let aberto = false, COMPACTO = false, LARG_MIN = 380;
   const n = v => { const r = Math.round(v); return (r===0?0:r).toLocaleString('pt-BR'); };
-  const nome = k => CURTO_X[k] || (P.LABELS_CURTO||{})[k] || LABELS[k] || k;
+  const nome = k => rotuloFront(k, CURTO_X[k] || (P.LABELS_CURTO||{})[k] || LABELS[k]);
 
   /* ---- soma de um conjunto de rotas (mesma conta da Parcial) ---- */
   function soma(gc, rotas){
@@ -173,8 +173,8 @@ const RS = (()=>{
     LARG_MIN = Math.max(380, 130 + Math.max(...fx.map(f=>f.length))*(COMPACTO?112:150));
     folha.style.minWidth = (innerWidth >= 700 && innerWidth < 1000) ? LARG_MIN + 'px' : '';
     const volT = fx.map((fc,fi)=>{
-      const volTab = `<table>${thead('Agrupador', fc, fi===0)}<tbody>${VOL_ORD.map(k=>`<tr><td class="rs-nome">${LABELS[k]||k}</td>${fc.map(c=>`<td>${c.vazio?'':celVol(c[2].v[k])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-      const volCards = fc.filter(c=>!c.vazio).map((c,i)=>`<div class="rs-card ${i===0&&fi===0?'rs-foco':''}"><div class="rs-cardh"><span>${cab(c)}</span></div>${VOL_ORD.map(k=>{ const x=c[2].v[k]; return (!x||x.indisp||!x.meta) ? '' : `<div class="rs-lin"><span class="rs-nome">${LABELS[k]||k}</span>${celVol(x)}</div>`; }).join('')}</div>`).join('');
+      const volTab = `<table>${thead('Agrupador', fc, fi===0)}<tbody>${VOL_ORD.map(k=>`<tr><td class="rs-nome">${rotuloFront(k, LABELS[k])}</td>${fc.map(c=>`<td>${c.vazio?'':celVol(c[2].v[k])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+      const volCards = fc.filter(c=>!c.vazio).map((c,i)=>`<div class="rs-card ${i===0&&fi===0?'rs-foco':''}"><div class="rs-cardh"><span>${cab(c)}</span></div>${VOL_ORD.map(k=>{ const x=c[2].v[k]; return (!x||x.indisp||!x.meta) ? '' : `<div class="rs-lin"><span class="rs-nome">${rotuloFront(k, LABELS[k])}</span>${celVol(x)}</div>`; }).join('')}</div>`).join('');
       return `<div class="rs-faixa"><div class="rs-tab">${volTab}</div><div class="rs-cards">${volCards}</div></div>`;
     }).join('');
     const ics = fx.map((fc,fi)=>tabela(ICS_ORD, fc, true, fi===0)), nov = fx.map((fc,fi)=>tabela(GROUPS.NOVOS_NEG, fc, false, fi===0));

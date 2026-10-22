@@ -19,7 +19,7 @@ function montaRitmo(P, escopo){
   const COB = ['CCTM 2L PET','KS TT','REFRI SABORES ZERO','POWERADE','KAPO','CERVEJAS','CERVEJAS 600ML RETORNAVEL',
                'EISENBAHN','ARTD KO','VENDAZERO'];
   const NOMES = {'VOL REFRIGERANTES':'Refrigerantes','VOL CERVEJAS':'Cervejas','VOL STILL':'Still',
-    'VOL AGUA MINERAL':'Água Mineral','VOL DEST+ART+CND':'Dest+Art+Cnd','CCTM 2L PET':'CCTM 2L Pet','KS TT':'KS TT',
+    'VOL AGUA MINERAL':'Água Mineral','VOL DEST+ART+CND':rotuloFront('VOL DEST+ART+CND'),'CCTM 2L PET':'CCTM 2L Pet','KS TT':'KS TT',
     'REFRI SABORES ZERO':'Refri Sab. Zero','POWERADE':'Powerade','KAPO':'Kapo','CERVEJAS':'Cervejas',
     'CERVEJAS 600ML RETORNAVEL':'Cerv. 600ml Ret.','EISENBAHN':'Eisenbahn','ARTD KO':'Artd KO','VENDAZERO':'Venda Zero (KO)'};
   const fmt0 = n => { const r = Math.round(n||0); return (r===0 ? 0 : r).toLocaleString('pt-BR'); };

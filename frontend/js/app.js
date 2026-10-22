@@ -5,7 +5,7 @@ let P = null;
 let DATA,LABELS,GROUPS,CLIENT_ROSTER,CLIENTES_HOJE,OPORTUNIDADES_DIA,VISITAS_DIA,SEGS,DIAS,COBERTOS,SEM_COMPRA_HOJE,VENDAZERO_CLIENTES,COMODATO_ATIVOS,REVERTIDO_HOJE,OPORTUNIDADE_HOJE;
 const KSTT_SEG = new Set(['LANCHONETE','RESTAURANTE','BOTECO','PADARIAS']);
 
-// aba ativa: 'EXEC' (Executiva) | 'VOLUME' | 'ICS_GC' | 'NOVOS_NEG' | 'INCENTIVO'; ao entrar, Executiva (Rota: Volume)
+// aba ativa: 'EXEC' (visão executiva: aba Diretoria, Gerencial ou Supervisão, pelo perfil) | 'VOLUME' | 'ICS_GC' | 'NOVOS_NEG' | 'INCENTIVO'; ao entrar, Executiva (Rota: Volume)
 let ONLINE = null, aba='EXEC';
 let filtroCards = 'todos';     // filtro rápido dos cards da aba: 'todos' | 'abaixo' | 'ritmo' (ver filtraCards)
 
@@ -44,8 +44,9 @@ const ehOculta = sv => !semOcultas(sv) && ((P && P.OCULTAS) ? P.OCULTAS.includes
 // não entram na comparação "quem mais puxa a média para baixo"
 const svExcluido = sv => sv===SV_NEUTRA || (!semOcultas(sv) && (ehOculta(sv)
   || /SEM VENDEDOR/i.test(((P && P.NOME_SUPERVISOR)||{})[sv]||'')));
-// rótulo de indicador: LABELS do payload ou, para o volume extra (Del Valle Frut), VOLUME_EXTRA
-const rotuloInd = k => (LABELS||{})[k] || (((P && P.VOLUME_EXTRA)||{})[k]||{}).label || k;
+// rótulo de indicador: LABELS do payload ou, para o volume extra (Del Valle Frut), VOLUME_EXTRA; rotuloFront (config.js)
+// troca o do macro VOL DEST+ART+CND por CONFIG.ROTULO_VOLUME_NOVOS
+const rotuloInd = k => rotuloFront(k, (LABELS||{})[k] || (((P && P.VOLUME_EXTRA)||{})[k]||{}).label);
 const volExtras = () => Object.keys((P && P.VOLUME_EXTRA) || {});
 const ehVolume = k => GROUPS.VOLUME.includes(k) || volExtras().includes(k);
 // números: volume inteiro e coberturas com até 1 casa, sempre no formato pt-BR (490.003, nunca 490002.69999)
@@ -304,6 +305,8 @@ function render(){
   // aba Executiva: Diretoria, Gerência e Supervisão; com uma rota no filtro (perfil Rota) não existe e o painel vai ao Volume
   const tabExec = document.querySelector('.tab[data-g="EXEC"]');
   tabExec.hidden = !temExecutiva();
+  const nExec = nomeAbaExec();
+  tabExec.title = nExec; tabExec.setAttribute('aria-label', nExec); tabExec.querySelector('span').textContent = nExec;
   if(aba===EXEC && tabExec.hidden) marcaAba('VOLUME');
   montaFiltros();
   const rotas = rotasAtuais();
@@ -318,8 +321,8 @@ function render(){
     (sel.sv?` · ${esc(rotuloSv(sel.sv))}`:'') +
     (sel.rota?` · Rota ${esc(sel.rota)} — ${esc(titulo(nodo(sel.gc,sel.rota).consultor))}`:'') + '</span>';
   $('sub').classList.toggle('dir', sel.modo==='dir');
-  // cabeçalho da aba: o nome (o da aba na barra; na Executiva, "Resumo executivo") e a etiqueta do dia, sem subtítulo
-  $('abTit').textContent = aba===EXEC ? 'Resumo executivo' : (document.querySelector(`.tab[data-g="${aba}"]`) || {}).title || '';
+  // cabeçalho da aba: o nome da aba na barra (na visão executiva, o do perfil) e a etiqueta do dia, sem subtítulo
+  $('abTit').textContent = (document.querySelector(`.tab[data-g="${aba}"]`) || {}).title || '';
   pintaEtiquetaDia($('pilDia'));
   const paceHoje = Math.round(P.DIA_HOJE / P.TOTAL_DIAS_UTEIS * 100);
   // caixa de ritmo de hoje (painel lateral) e a linha curta do topo do celular
@@ -597,6 +600,10 @@ const CURTO_COB = {'CCTM 2L PET':'CCTM 2L Pet', 'KS TT':'KS TT', 'REFRI SABORES 
   'APEROL':'Aperol', 'INC HEINEKEN':'Heineken', 'INC EISENBAHN 600ML':'Eisenb. 600ml', 'INC HEINEKEN 600ML':'Heinek. 600ml'};
 let catExec = '';      // categoria em análise (chave de GROUPS.VOLUME); '' = a primeira (Refrigerantes)
 const temExecutiva = () => !(sel.modo!=='dir' && sel.rota);
+// nome visível da aba EXEC pelo perfil (CONFIG.ABA_EXEC_NOME: Diretoria, Gerencial, Supervisão); sem acesso (link do
+// Resumo), pelo modo do filtro
+const nomeAbaExec = () => { const n = CONFIG.ABA_EXEC_NOME;
+  return n[ACESSO ? ACESSO.perfil : (sel.modo==='dir' ? 'dir' : 'gc')] || n.gc; };
 const catAtual = () => GROUPS.VOLUME.includes(catExec) ? catExec : GROUPS.VOLUME[0];
 const comMeta = b => !!b && !b.unavailable && b.meta > 0;
 // desvio da categoria: Tendência / Meta - 1 (no fechamento, Real / Meta - 1), sem arredondar
@@ -919,9 +926,12 @@ function pintaEvolucao(us, tot, k){
 }
 
 function linha(k, b, rotas){
-  const nome = esc(rotuloInd(k));
+  // card do macro VOL DEST+ART+CND: o nome (CONFIG.ROTULO_VOLUME_NOVOS) e, embaixo, CONFIG.ROTULO_VOLUME_SUB menor e mais
+  // claro (.tsub); só aqui: Executiva, gaveta, Resumo e Painel de Ritmo mostram só o nome
+  const tit = `<div class="tit">${esc(rotuloInd(k))}</div>` +
+    (k===CHAVE_VOLUME_NOVOS ? `<div class="tsub">${esc(CONFIG.ROTULO_VOLUME_SUB)}</div>` : '');
   if(!b || b.unavailable)
-    return `<div class="ind off"><div class="tit">${nome}</div>
+    return `<div class="ind off">${tit}
       <div class="semdado">indisponível — falta a fonte deste indicador</div></div>`;
   const bom = b.onPace;
   const ini = `<div class="ind ${ehVolume(k)?'vol ':''}${bom?'ok':''}" data-k="${esc(k)}" role="button" tabindex="0">`;
@@ -929,7 +939,7 @@ function linha(k, b, rotas){
     const dif = b.real - b.meta;                 // positivo = mais equip. zerado que a meta = ruim
     const oportHoje = rotas.reduce((a,r)=>a+((OPORTUNIDADE_HOJE||{})[r]||0),0);
     return `${ini}
-      <div class="tit">${nome}</div>
+      ${tit}
       <div class="row">
         <div class="cl">
           <div>Meta ${b.meta.toLocaleString('pt-BR',{maximumFractionDigits:1})}</div>
@@ -946,14 +956,14 @@ function linha(k, b, rotas){
   }
   if(ehVolume(k)){
     if(rotas.length===1 && b.semDadoHoje){
-      return `<div class="ind off"><div class="tit">${nome}</div>
+      return `<div class="ind off">${tit}
         <div class="semdado">indisponível — sem venda hoje pra essa rota</div></div>`;
     }
     const dif = b.real - b.meta;
     // fechamento do mês: % realizado no lugar da tendência (que não existe com o mês fechado)
     const fech = !!P.FECHAMENTO, big = fech ? b.pctReal : b.pctTendencia;
     return `${ini}
-      <div class="tit">${nome}</div>
+      ${tit}
       <div class="row">
         <div class="cl">
           <div>Meta ${Math.round(b.meta).toLocaleString('pt-BR')}</div>
@@ -971,7 +981,7 @@ function linha(k, b, rotas){
   const dif = b.real - b.meta;
   const opo = rotas.reduce((a,r)=>a+((OPORTUNIDADES_DIA[r]||{})[k]||0),0);
   return `${ini}
-    <div class="tit">${nome}</div>
+    ${tit}
     <div class="row">
       <div class="cl">
         <div>Meta ${b.meta.toLocaleString('pt-BR')}</div>
