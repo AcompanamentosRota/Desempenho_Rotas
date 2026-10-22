@@ -1457,22 +1457,27 @@ function linhaStatus(st){
 }
 
 /* ---------- entrada com perfis (Diretoria / Gerência / Supervisão / Rota), por seleção ----------
-   Controle de acesso INTERNO: a entrada só organiza o que cada perfil vê, sem usuário nem senha; NÃO é segurança
-   (os dados estão em data/*.json). Diretoria entra direto ("Todas as gerências"). Gerência, Supervisão e Rota abrem a
+   Controle de acesso INTERNO: a entrada só organiza o que cada perfil vê, sem usuário; NÃO é segurança (os dados
+   estão em data/*.json). Diretoria ("Todas as gerências") pede senha na mesma caixa (campo "Senha", conferido pelo
+   hash contra CONFIG.DIRETORIA_SENHAS_HASH; duas senhas valem). Gerência, Supervisão e Rota abrem a
    caixa de seleção com as gerências (cada grupo de CONFIG.GC_GRUPOS numa opção só, "GC.IT + GC.MO"); na Supervisão e
    na Rota, a 2ª etapa lista as supervisões ou as rotas da gerência escolhida (no grupo, das duas). Todos abrem a visão
    de hoje: Gerência com a gerência travada (supervisão e rota livres; no grupo, o total das duas e o seletor Total /
    uma delas); Supervisão com gerência e supervisão travadas (só o filtro das rotas dela); Rota com tudo travado (sem
-   filtros nem Resumo). O acesso {perfil, gc, sv, rota, dia} fica em localStorage 'drotas_sessao' até a virada do dia
+   filtros nem Resumo). O acesso {perfil, gc, sv, rota, dia, v} fica em localStorage 'drotas_sessao' (nunca a senha nem
+   o hash; v = SESSAO_VERSAO; Diretoria guardada sem v, de antes da senha, é descartada) até a virada do dia
    de trabalho (CONFIG.SESSAO_VIRADA_HORA, horário de Brasília) ou até a casa: recarregar reabre o mesmo perfil e
    contexto (no grupo, no Total); sem armazenamento, a entrada aparece a cada visita. O sol/lua troca só o fundo da
    entrada (preto, padrão, ou branco), guardado à parte em 'drotas_entrada'. */
 const TEMA_ENTRADA = 'drotas_entrada', SESSAO = 'drotas_sessao';
 const PERFIS = {dir:'Diretoria', gc:'Gerência', sv:'Supervisão', rota:'Rota'};
+const SESSAO_VERSAO = 2;  // 2 = desde a senha da Diretoria
 const MSG_ENTRADA = {
   reiniciado: 'Acesso reiniciado, entre novamente',
   indisponivel: 'O acesso anterior não está mais disponível',
+  senha: 'Digite a senha para entrar na Diretoria',
 };
+const MSG_SENHA = {incorreta: 'Senha incorreta', seguro: 'Abra o painel pelo endereço seguro (https)'};
 let ACESSO = null;        // acesso em uso; null = na entrada (ou no Resumo aberto por link, sem acesso)
 
 function temaEntrada(){
@@ -1506,7 +1511,8 @@ function leSessao(){
   try { const v = JSON.parse(s); return (v && typeof v==='object') ? v : {}; } catch(e) { return {}; }
 }
 function gravaSessao(a){
-  try { localStorage.setItem(SESSAO, JSON.stringify({perfil:a.perfil, gc:a.gc, sv:a.sv, rota:a.rota, dia:a.dia})); }
+  try { localStorage.setItem(SESSAO, JSON.stringify({perfil:a.perfil, gc:a.gc, sv:a.sv, rota:a.rota, dia:a.dia,
+                                                      v:SESSAO_VERSAO})); }
   catch(e) { /* sem armazenamento: o acesso vale só nesta visita */ }
 }
 function apagaSessao(){ try { localStorage.removeItem(SESSAO); } catch(e) { /* sem armazenamento */ } }
@@ -1579,10 +1585,12 @@ function saiDoAcesso(msg){
   mostraEntrada(msg);
 }
 /* Ao carregar (depois do payload) e ao fechar o Resumo aberto por link: reabre o acesso guardado ou mostra a entrada.
-   Guardado de outro dia de trabalho (ou sem 'dia'): apaga e avisa; que não vale mais no payload: apaga e avisa. */
+   Diretoria guardada antes da senha (sem v): apaga e pede a senha; guardado de outro dia de trabalho (ou sem 'dia'):
+   apaga e avisa; que não vale mais no payload: apaga e avisa. */
 function entradaOuAcesso(){
   const s = leSessao();
   if(!s) return mostraEntrada('');
+  if(s.perfil==='dir' && s.v!==SESSAO_VERSAO){ apagaSessao(); return mostraEntrada(MSG_ENTRADA.senha); }
   if(!s.dia || s.dia!==diaTrabalho()){ apagaSessao(); return mostraEntrada(MSG_ENTRADA.reiniciado); }
   const v = validaAcesso(s);
   if(!v){ apagaSessao(); return mostraEntrada(MSG_ENTRADA.indisponivel); }
@@ -1609,7 +1617,7 @@ function confereAcesso(){
 }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') confereDia(); });
 
-// escolha feita (Diretoria ou a última etapa da caixa): grava o acesso do dia e abre o painel
+// escolha feita (senha da Diretoria ou a última etapa da caixa): grava o acesso do dia e abre o painel
 function entraCom(escolha){
   const v = validaAcesso(escolha);
   fechaCaixa(false);
@@ -1620,8 +1628,9 @@ function entraCom(escolha){
 }
 
 /* Caixa de seleção (diálogo): 1ª etapa = gerências; na Supervisão e na Rota, 2ª etapa = a lista da gerência escolhida,
-   com "← Gerências". Sem campo de texto. Foco na primeira opção, Tab preso na caixa, setas entre as opções, ESC, × e
-   clique fora fecham (o foco volta ao botão do perfil); a lista rola dentro da caixa. */
+   com "← Gerências". Na Diretoria, a mesma caixa com o campo "Senha" e "Entrar" (o único campo de texto da entrada) e
+   "← Voltar" (fecha). Foco na primeira opção (no campo, na Diretoria), Tab preso na caixa, setas entre as opções, ESC,
+   × e clique fora fecham (o foco volta ao botão do perfil); a lista rola dentro da caixa. */
 let CAIXA = null, _focoCaixa = null;     // {perfil, gc}: gc '' = 1ª etapa; senão a gerência (ou grupo) escolhida
 function abreCaixa(perfil){
   _focoCaixa = document.activeElement;
@@ -1633,6 +1642,7 @@ function abreCaixa(perfil){
 function fechaCaixa(devolveFoco = true){
   if($('entCaixa').hidden) return;
   $('entCaixa').hidden = true;
+  if(CAIXA && CAIXA.perfil==='dir') $('entOpcoes').innerHTML = '';    // descarta o campo (e o que foi digitado)
   CAIXA = null;
   if(devolveFoco && _focoCaixa && _focoCaixa.focus) _focoCaixa.focus({preventScroll:true});
 }
@@ -1641,7 +1651,9 @@ const opcaoCaixa = (attr, valor, rotulo, off) =>
 function pintaCaixa(){
   const {perfil, gc} = CAIXA, nome = perfil==='sv' ? 'supervisão' : 'rota';
   $('entCaixaTit').textContent = PERFIS[perfil].toUpperCase();
-  $('entVoltar').hidden = !gc;
+  $('entVoltar').textContent = perfil==='dir' ? '← Voltar' : '← Gerências';
+  $('entVoltar').hidden = !gc && perfil!=='dir';
+  if(perfil==='dir') return pintaSenha();
   let html;
   if(!gc){
     $('entCaixaSub').textContent = 'Escolha a gerência';
@@ -1661,9 +1673,44 @@ function pintaCaixa(){
   $('entOpcoes').scrollTop = 0;
   ($('entOpcoes').querySelector('button:not([disabled])') || $('entFechar')).focus({preventScroll:true});
 }
+// Diretoria: campo de senha (o Enter e o "Entrar" enviam o formulário)
+function pintaSenha(){
+  $('entCaixaSub').textContent = 'Digite a senha';
+  $('entOpcoes').innerHTML = `<form class="entSenha" id="entSenhaForm" novalidate>
+    <input id="entSenha" class="entCampo" type="password" placeholder="Senha" aria-label="Senha" autocomplete="off"
+      autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="entSenhaMsg" id="entSenhaMsg" role="alert"></div>
+    <button type="submit" class="entEntrar" id="entEntrar">Entrar</button></form>`;
+  $('entOpcoes').scrollTop = 0;
+  $('entSenha').focus({preventScroll:true});
+  $('entSenhaForm').onsubmit = e => { e.preventDefault(); confereSenha(); };
+}
+/* hash da senha (hex minúsculo): SHA-256 de "drotas:" + senha normalizada (sem espaços nas pontas, MAIÚSCULAS), UTF-8 */
+const normalizaSenha = s => String(s == null ? '' : s).trim().toUpperCase();
+async function hashSenha(s){
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('drotas:' + normalizaSenha(s)));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+const temCripto = () => !!(window.isSecureContext !== false && window.crypto && crypto.subtle && window.TextEncoder);
+let _conferindo = false;
+async function confereSenha(){
+  if(_conferindo || !CAIXA || CAIXA.perfil!=='dir') return;
+  const campo = $('entSenha'), msg = $('entSenhaMsg'), valor = campo.value;
+  msg.textContent = '';
+  const falha = texto => { campo.value = ''; msg.textContent = texto; campo.focus({preventScroll:true}); };
+  if(!temCripto()) return falha(MSG_SENHA.seguro);
+  let ok = false;
+  _conferindo = true;
+  try { ok = !!normalizaSenha(valor) && (CONFIG.DIRETORIA_SENHAS_HASH || []).includes(await hashSenha(valor)); }
+  catch(e) { ok = false; }
+  finally { _conferindo = false; }
+  if(!CAIXA || CAIXA.perfil!=='dir' || $('entSenha')!==campo) return;      // a caixa fechou enquanto conferia
+  if(ok) return entraCom({perfil:'dir'});
+  falha(MSG_SENHA.incorreta);
+}
 $('entOpcoes').onclick = e => {
   const b = e.target.closest('button');
-  if(!b || b.disabled || !CAIXA) return;
+  if(!b || b.disabled || !CAIXA || CAIXA.perfil==='dir') return;
   const {perfil} = CAIXA;
   if(b.dataset.gc!=null){
     if(perfil==='gc') return entraCom({perfil, gc:b.dataset.gc});
@@ -1672,26 +1719,25 @@ $('entOpcoes').onclick = e => {
   }
   entraCom({perfil, gc:CAIXA.gc, sv:b.dataset.sv || '', rota:b.dataset.rota || ''});
 };
-$('entVoltar').onclick = () => { CAIXA = {...CAIXA, gc:''}; pintaCaixa(); };
+$('entVoltar').onclick = () => { if(CAIXA && CAIXA.perfil==='dir') return fechaCaixa(); CAIXA = {...CAIXA, gc:''}; pintaCaixa(); };
 $('entFechar').onclick = () => fechaCaixa();
 $('entCaixa').onclick = e => { if(e.target===$('entCaixa')) fechaCaixa(); };     // clique fora do painel
 $('entCaixa').addEventListener('keydown', e=>{
   if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); fechaCaixa(); return; }
   if(e.key==='Tab'){
-    const f = [...$('entCaixa').querySelectorAll('button')].filter(b => !b.disabled && !b.hidden);
+    const f = [...$('entCaixa').querySelectorAll('button, input')].filter(b => !b.disabled && !b.hidden);
     const i = f.indexOf(document.activeElement);
     if(e.shiftKey && i<=0){ e.preventDefault(); f[f.length-1].focus(); }
     else if(!e.shiftKey && i===f.length-1){ e.preventDefault(); f[0].focus(); }
     return;
   }
-  if((e.key==='ArrowDown' || e.key==='ArrowUp') && e.target.closest('#entOpcoes')){
+  if((e.key==='ArrowDown' || e.key==='ArrowUp') && e.target.closest('#entOpcoes') && !e.target.closest('.entSenha')){
     const ops = [...$('entOpcoes').querySelectorAll('button:not([disabled])')];
     const prox = ops[ops.indexOf(document.activeElement) + (e.key==='ArrowDown' ? 1 : -1)];
     if(prox){ e.preventDefault(); prox.focus(); }
   }
 });
-document.querySelectorAll('#entrada [data-perfil]').forEach(b => b.onclick = () =>
-  b.dataset.perfil==='dir' ? entraCom({perfil:'dir'}) : abreCaixa(b.dataset.perfil));
+document.querySelectorAll('#entrada [data-perfil]').forEach(b => b.onclick = () => abreCaixa(b.dataset.perfil));
 $('btnCasa').onclick = () => saiDoAcesso('');
 aplicaTemaEntrada(temaEntrada());
 $('entRod').textContent = CONFIG.CREDITOS;

@@ -30,6 +30,7 @@ const {confereExecutiva} = require('./executiva_invariantes.js');
 const {confereGavetas, leChips} = require('./gavetas_invariantes.js');
 const {confereEvolucao} = require('./evolucao_invariantes.js');
 const ROT = require('./rotulos_invariantes.js');
+const {trocaHash, digitaSenha} = require('./senha_teste.js');
 
 const FRONT = path.resolve(__dirname, '..');
 const PAYLOAD = process.env.PAYLOAD_REAL, ONLINE = process.env.ONLINE_REAL;
@@ -58,16 +59,17 @@ async function abre(largura = 1440, tema, troca = {}){
   const erros = [];
   page.on('pageerror', e => erros.push(String(e)));
   page.on('console', m => { if(m.type() === 'error') erros.push(m.text()); });
-  await page.route('http://painel.test/**', rota => {
+  await page.route('https://painel.test/**', rota => {
     const url = new URL(rota.request().url());
     const arq = url.pathname === '/data/payload.json' ? PAYLOAD : url.pathname === '/data/online.json' ? ONLINE
       : path.join(FRONT, url.pathname);
     if(!troca[url.pathname] && !fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
-    rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream',
-                  body: troca[url.pathname] ? troca[url.pathname]() : fs.readFileSync(arq)});
+    let body = troca[url.pathname] ? troca[url.pathname]() : fs.readFileSync(arq);
+    if(url.pathname === '/js/config.js') body = trocaHash(body);     // senha da Diretoria: hashes de teste (senha_teste.js)
+    rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream', body});
   });
   await page.route(/cdnjs\.cloudflare\.com/, r => r.abort());
-  await page.goto('http://painel.test/index.html');
+  await page.goto('https://painel.test/index.html');
   await page.waitForFunction(() => typeof P !== 'undefined' && P && document.getElementById('carga').hidden);
   return {page, ctx, erros};
 }
@@ -76,7 +78,7 @@ async function abre(largura = 1440, tema, troca = {}){
 async function entra(page, {perfil, gc, sv, rota}){
   if(await page.isHidden('#entrada')) await page.click('#btnCasa');
   await page.click(`#entrada [data-perfil="${perfil}"]`);
-  if(perfil === 'dir') return;
+  if(perfil === 'dir') return digitaSenha(page);
   await page.click(`#entOpcoes [data-gc="${gc}"]`);
   if(perfil === 'sv') await page.click(`#entOpcoes [data-sv="${sv}"]`);
   if(perfil === 'rota') await page.click(`#entOpcoes [data-rota="${rota}"]`);

@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, execSync} = require('node:child_process');
+const {SENHAS_TESTE, hashTeste, HASHES_TESTE, trocaHash, digitaSenha} = require('./senha_teste.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const FRONT = path.join(RAIZ, 'frontend');
@@ -201,13 +202,16 @@ async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entra
   const erros = [], fonte = {nome};     // fonte.nome pode mudar no meio do teste (payload novo)
   page.on('pageerror', e => erros.push(String(e)));
   page.on('console', m => { if(m.type() === 'error') erros.push(m.text()); });
-  await page.route('http://painel.test/**', rota => {
+  // https: contexto seguro, como o GitHub Pages (a senha da Diretoria usa crypto.subtle, que o http não tem)
+  await page.route('https://painel.test/**', rota => {
     const url = new URL(rota.request().url());
     let arq = url.pathname.startsWith('/data/') ? path.join(DADOS[fonte.nome], url.pathname.slice(6))
                                                  : path.join(FRONT, url.pathname);
     if(!fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
     // `troca` = {'/js/config.js': texto => texto alterado} (ex.: CONFIG.INCENTIVO_ATIVO = false)
-    const corpo = troca[url.pathname] ? troca[url.pathname](fs.readFileSync(arq, 'utf-8')) : fs.readFileSync(arq);
+    let corpo = troca[url.pathname] ? troca[url.pathname](fs.readFileSync(arq, 'utf-8')) : fs.readFileSync(arq);
+    // senha da Diretoria: o config.js servido leva os hashes das senhas de teste (senha_teste.js), nunca as reais
+    if(url.pathname === '/js/config.js') corpo = trocaHash(corpo);
     rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream', body: corpo});
   });
   // bibliotecas do PDF (CDN) não são usadas nos testes
@@ -216,7 +220,7 @@ async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entra
   await page.addInitScript(itens => { try { if(!sessionStorage.getItem('_teste')){ sessionStorage.setItem('_teste', '1');
     for(const k in itens) localStorage.setItem(k, itens[k]); } } catch(e){} }, armazenado);
   if(antes) await antes(page);
-  await page.goto('http://painel.test/index.html' + busca);
+  await page.goto('https://painel.test/index.html' + busca);
   await esperaCarga(page);
   // sem acesso guardado a página abre na entrada; entrar = 'gc' | 'dir' | {perfil, ...} entra, null fica na entrada
   if(entrar) await entra(page, entrar, aba);
@@ -247,7 +251,8 @@ async function entra(page, entrar, aba = 'ICS_GC'){
   const {perfil, gc = '', sv = '', rota = ''} = entrar;
   if(await page.isVisible('#entCaixa')) await page.click('#entFechar');     // de volta aos quatro botões
   await page.click(`#entrada [data-perfil="${perfil}"]`);
-  if(perfil !== 'dir'){
+  if(perfil === 'dir') await digitaSenha(page);
+  else {
     const opcao = await page.$$eval('#entOpcoes [data-gc]', (bs, gc) => ((bs.find(b => b.dataset.gc === gc)
       || bs.find(b => b.dataset.gc.split('+').includes(gc))) || {dataset: {gc}}).dataset.gc, gc);
     await page.click(`#entOpcoes [data-gc="${opcao}"]`);
@@ -609,13 +614,13 @@ describe('Parte D — entrada', {skip: pular}, () => {
     await page.addInitScript(() => {
       Object.defineProperty(window, 'localStorage', {get(){ throw new Error('bloqueado'); }});
     });
-    await page.route('http://painel.test/**', r => {
+    await page.route('https://painel.test/**', r => {
       const u = new URL(r.request().url());
       const a = u.pathname.startsWith('/data/') ? path.join(DADOS.normal, u.pathname.slice(6)) : path.join(FRONT, u.pathname);
       fs.existsSync(a) ? r.fulfill({status: 200, body: fs.readFileSync(a), contentType: TIPOS[path.extname(a)]})
                        : r.fulfill({status: 404, body: ''});
     });
-    await page.goto('http://painel.test/index.html');
+    await page.goto('https://painel.test/index.html');
     await page.waitForFunction(() => typeof P !== 'undefined' && P);
     assert.equal(await page.evaluate(() => document.getElementById('entrada').className), 'entrada');
     await page.click('#btnTema');      // não quebra sem armazenamento
@@ -1299,8 +1304,9 @@ const REINICIADO = 'Acesso reiniciado, entre novamente', INDISPONIVEL = 'O acess
 // relógio fixo: 13/10/2026 10:00 de Brasília (dia de trabalho 2026-10-13)
 const HOJE = new Date('2026-10-13T13:00:00Z'), DIA = '2026-10-13';
 const fixo = (quando = HOJE) => page => page.clock.setFixedTime(quando);
-/* acesso guardado em 'drotas_sessao' (dia = null: sem o campo) */
-const sessao = (a, dia = DIA) => JSON.stringify({gc: '', sv: '', rota: '', ...a, ...(dia ? {dia} : {})});
+/* acesso guardado em 'drotas_sessao' (dia = null: sem o campo), no formato atual (v: 2, desde a senha da Diretoria; o
+   formato antigo, sem v, está na Parte AB) */
+const sessao = (a, dia = DIA) => JSON.stringify({gc: '', sv: '', rota: '', ...a, ...(dia ? {dia} : {}), v: 2});
 /* estado da tela: entrada, aviso, acesso em uso, filtro, filtros visíveis, cabeçalho, botão do Resumo e acesso guardado */
 const estado = page => page.evaluate(() => ({
   entrada: !document.getElementById('entrada').hidden,
@@ -1333,7 +1339,8 @@ const OPCOES_GC = [...['AN', 'AP', 'AT', 'G1', 'G2', 'G3'].map(g => [g, ROTULO(g
 const GRUPO_IT_MO = 'GC.IT + GC.MO · Itumbiara + Morrinhos';
 
 describe('Parte I — entrada por seleção', {skip: pular}, () => {
-  test('quatro botões; Diretoria entra direto, sem usuário, senha nem campo de texto', async () => {
+  // desde 22/10/2026 a Diretoria pede senha (Parte AB); o único campo da entrada é o dela, só com a caixa da Diretoria aberta
+  test('quatro botões; Diretoria pela senha, sem usuário; nenhum campo de texto fora da caixa da Diretoria', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
     assert.deepEqual(await page.$$eval('#entBotoes button', bs => bs.map(b => b.textContent)),
                      ['DIRETORIA', 'GERÊNCIA', 'SUPERVISÃO', 'ROTA']);
@@ -1342,12 +1349,14 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
     assert.equal((await caixa(page)).campos, 0, 'sem campo de texto');
     assert.doesNotMatch(await page.textContent('#entrada'), /usu[aá]rio|senha|DICOM/i);
     await page.click('#entrada [data-perfil="dir"]');
+    assert.equal((await caixa(page)).campos, 2, 'só o formulário e o campo da senha');
+    await digitaSenha(page);
     e = await estado(page);
     assert.ok(!e.entrada);
     assert.deepEqual([e.sel, e.filtros, e.resumo], [['dir', '', '', ''], ['fgc'], true]);
     assert.equal(await page.inputValue('#fgc'), '', '"Todas as gerências"');
     assert.match(e.sub, /· Diretoria$/);
-    assert.deepEqual(e.guardado, {perfil: 'dir', gc: '', sv: '', rota: '', dia: DIA});
+    assert.deepEqual(e.guardado, {perfil: 'dir', gc: '', sv: '', rota: '', dia: DIA, v: 2});
     assert.equal((await caixa(page)).vis, false);
     assert.deepEqual(erros, []);
     await ctx.close();
@@ -1413,7 +1422,7 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
     let e = await estado(page);
     assert.deepEqual([e.entrada, e.sel, e.filtros, e.resumo], [false, ['gc', 'G2', '', ''], ['fsv', 'frota'], true]);
     assert.ok(e.sub.endsWith('· Gerência · GC.G2 · Goiânia 02'), e.sub);
-    assert.deepEqual(e.guardado, {perfil: 'gc', gc: 'G2', sv: '', rota: '', dia: DIA});
+    assert.deepEqual(e.guardado, {perfil: 'gc', gc: 'G2', sv: '', rota: '', dia: DIA, v: 2});
     await page.selectOption('#fsv', 'SV.G2.1');
     await page.selectOption('#frota', 'G212');
     e = await estado(page);
@@ -1434,7 +1443,7 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
     let e = await estado(page);
     assert.deepEqual([e.entrada, e.sel, e.filtros, e.resumo], [false, ['gc', 'IT+MO', '', ''], ['fgc', 'fsv', 'frota'], true]);
     assert.ok(e.sub.endsWith(`· Gerência · ${GRUPO_IT_MO}`), e.sub);
-    assert.deepEqual(e.guardado, {perfil: 'gc', gc: 'IT+MO', sv: '', rota: '', dia: DIA});
+    assert.deepEqual(e.guardado, {perfil: 'gc', gc: 'IT+MO', sv: '', rota: '', dia: DIA, v: 2});
     assert.deepEqual(await opcoesGc(page), [['IT+MO', 'Total (GC.IT + GC.MO)', false], ['IT', ROTULO('IT'), false],
                                             ['MO', ROTULO('MO'), false]]);
     // cards = soma das duas gerências inteiras (normais, Neutraliza, a virtual I32 e a eventual MO-EV)
@@ -1501,7 +1510,7 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
       assert.deepEqual(g.linhas.map(l => l.nome), linhas);
       assert.deepEqual(g.nota.map(n => n.texto.split(':')[0]), notas);
       await page.keyboard.press('Escape');
-      assert.deepEqual((await estado(page)).guardado, {perfil: 'gc', gc: 'IT+MO', sv: '', rota: '', dia: DIA});
+      assert.deepEqual((await estado(page)).guardado, {perfil: 'gc', gc: 'IT+MO', sv: '', rota: '', dia: DIA, v: 2});
     }
     // supervisão e rota dentro da escolha
     await page.selectOption('#fsv', 'SV.IT.1');
@@ -1569,7 +1578,7 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
     await page.click('#entOpcoes [data-sv="SV.MO.1"]');
     let e = await estado(page);
     assert.deepEqual([e.entrada, e.sel, e.filtros, e.guardado],
-                     [false, ['gc', 'MO', 'SV.MO.1', ''], ['frota'], {perfil: 'sv', gc: 'MO', sv: 'SV.MO.1', rota: '', dia: DIA}]);
+                     [false, ['gc', 'MO', 'SV.MO.1', ''], ['frota'], {perfil: 'sv', gc: 'MO', sv: 'SV.MO.1', rota: '', dia: DIA, v: 2}]);
     assert.ok(e.sub.endsWith('· Supervisão · GC.MO · Morrinhos · SV.MO.1 · Supervisor'), e.sub);
     await page.click('#btnCasa');
     // SV.G2.1: só o filtro das rotas dela; cascata card -> rotas -> clientes; "puxa a média" das rotas; Resumo dela
@@ -1623,7 +1632,7 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
     await page.click('#entOpcoes [data-rota="G211"]');
     let e = await estado(page);
     assert.deepEqual([e.entrada, e.sel, e.filtros, e.resumo, e.guardado],
-      [false, ['gc', 'G2', 'SV.G2.1', 'G211'], [], false, {perfil: 'rota', gc: 'G2', sv: 'SV.G2.1', rota: 'G211', dia: DIA}]);
+      [false, ['gc', 'G2', 'SV.G2.1', 'G211'], [], false, {perfil: 'rota', gc: 'G2', sv: 'SV.G2.1', rota: 'G211', dia: DIA, v: 2}]);
     assert.ok(e.sub.endsWith('· Rota · GC.G2 · Goiânia 02 · SV.G2.1 · Supervisor · Rota G211 — Consultor G211'), e.sub);
     assert.equal(await page.innerHTML('#puxa'), '');
     let g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
@@ -1637,7 +1646,7 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
     await vaiPara(page, {perfil: 'rota', gc: 'IT+MO', rota: 'MO21'});
     e = await estado(page);
     assert.deepEqual([e.sel, e.filtros, e.guardado], [['gc', 'MO', 'SV.MO.2', 'MO21'], [],
-                                                       {perfil: 'rota', gc: 'MO', sv: 'SV.MO.2', rota: 'MO21', dia: DIA}]);
+                                                       {perfil: 'rota', gc: 'MO', sv: 'SV.MO.2', rota: 'MO21', dia: DIA, v: 2}]);
     assert.ok(e.sub.endsWith('· Rota · GC.MO · Morrinhos · SV.MO.2 · Supervisor · Rota MO21 — Consultor Mo21'), e.sub);
     // rota Neutraliza: clientes dentro, sem Venda Zero
     await vaiPara(page, {perfil: 'rota', gc: 'AT', rota: '431'});
@@ -1709,7 +1718,7 @@ describe('Parte I — acesso guardado e virada diária', {skip: pular}, () => {
       [{perfil: 'rota', gc: 'AT', rota: '431'}, {perfil: 'rota', gc: 'AT', sv: 'Neutraliza', rota: '431'},
        ['gc', 'AT', 'Neutraliza', '431'], []]]){
       await entra(page, login);
-      assert.deepEqual(JSON.parse(await guardadoTxt(page)), {...guardado, dia: DIA});
+      assert.deepEqual(JSON.parse(await guardadoTxt(page)), {...guardado, dia: DIA, v: 2});
       // mexe nos filtros livres e abre a cascata: ao recarregar, voltam ao padrão
       if(login.perfil === 'dir') await page.selectOption('#fgc', 'IT');
       if(login.perfil === 'gc') await page.selectOption('#fsv', 'SV.G2.2');
@@ -1719,7 +1728,7 @@ describe('Parte I — acesso guardado e virada diária', {skip: pular}, () => {
       await esperaCarga(page);
       let e = await estado(page);
       assert.ok(!e.entrada, login.perfil);
-      assert.deepEqual([e.sel, e.filtros, e.guardado], [ctxSel, filtros, {...guardado, dia: DIA}], login.perfil);
+      assert.deepEqual([e.sel, e.filtros, e.guardado], [ctxSel, filtros, {...guardado, dia: DIA, v: 2}], login.perfil);
       assert.ok(!(await page.evaluate(() => document.getElementById('drw').classList.contains('on'))), 'cascata fechada');
       await page.click('#btnCasa');
       e = await estado(page);
@@ -1894,7 +1903,7 @@ describe('Parte I — acesso guardado e virada diária', {skip: pular}, () => {
 describe('Parte I — grupos: acesso guardado, virada diária e link do Resumo', {skip: pular}, () => {
   test('grupo: recarregar reabre no Total (mesmo com uma das duas no seletor); payload novo mantém a escolha; casa', async () => {
     const {page, ctx, erros} = await abre('grupo', {entrar: {perfil: 'gc', gc: 'IT+MO'}, antes: fixo()});
-    const guardado = {perfil: 'gc', gc: 'IT+MO', sv: '', rota: '', dia: DIA};
+    const guardado = {perfil: 'gc', gc: 'IT+MO', sv: '', rota: '', dia: DIA, v: 2};
     await page.selectOption('#fgc', 'MO');
     await page.selectOption('#fsv', 'SV.MO.1');
     let e = await estado(page);
@@ -1960,7 +1969,7 @@ describe('Parte I — grupos: acesso guardado, virada diária e link do Resumo',
       assert.deepEqual(linhas, ACESSOS.flatMap(([a, gc]) => [[a.perfil, '07:59', false, '', gc],
                                                              [a.perfil, '08:00', true, REINICIADO, null]]), fuso);
       await entra(page, {perfil: 'gc', gc: 'UR+RI'});
-      assert.deepEqual((await estado(page)).guardado, {perfil: 'gc', gc: 'UR+RI', sv: '', rota: '', dia: '2026-10-14'});
+      assert.deepEqual((await estado(page)).guardado, {perfil: 'gc', gc: 'UR+RI', sv: '', rota: '', dia: '2026-10-14', v: 2});
       assert.deepEqual(erros, []);
       await ctx.close();
     }
@@ -2125,7 +2134,7 @@ describe('Parte Y — entrada com logos (Etapa 7)', {skip: pular}, () => {
         const e = await estado(page);
         assert.ok(!e.entrada, `${tema} ${acesso[0]}: entrou`);
         assert.deepEqual(e.acesso, acesso, tema);
-        assert.deepEqual(e.guardado, {perfil: acesso[0], gc: acesso[1], sv: acesso[2], rota: acesso[3], dia: DIA});
+        assert.deepEqual(e.guardado, {perfil: acesso[0], gc: acesso[1], sv: acesso[2], rota: acesso[3], dia: DIA, v: 2});
         // aba inicial (Etapa 5): Executiva na Diretoria, na Gerência e na Supervisão; Volume na Rota (que não tem a Executiva)
         const inicial = acesso[0] === 'rota' ? 'VOLUME' : 'EXEC';
         assert.equal(await page.$eval('.tab.on', t => t.dataset.g), inicial, `${tema} ${acesso[0]}: aba inicial`);
@@ -6756,4 +6765,274 @@ describe('Parte AA — rótulo "Novos Negócios" do volume, aba por perfil e not
       for(const {ctx} of [novo, velho]) await ctx.close();
     });
   }
+});
+
+/* ---------- Parte AB: senha da Diretoria (controle de acesso interno, NÃO é segurança) ----------
+   As senhas reais nunca ficam no repositório: o config.js servido leva os hashes das senhas FICTÍCIAS de senha_teste.js
+   (trocaHash, em abre()). */
+const MSG_SENHA_DIR = 'Digite a senha para entrar na Diretoria';
+// caixa de senha: visível, título, mensagem, valor do campo, foco e atributos do campo
+const caixaSenha = page => page.evaluate(() => {
+  const c = document.getElementById('entCaixa'), i = document.getElementById('entSenha'), a = document.activeElement || {};
+  const m = document.getElementById('entSenhaMsg');
+  return {vis: !c.hidden, tit: document.getElementById('entCaixaTit').textContent, campo: !!i,
+    valor: i ? i.value : null, msg: m ? m.textContent : null, papel: m ? m.getAttribute('role') : null,
+    foco: a.id || a.textContent, voltar: document.getElementById('entVoltar').hidden ? null : document.getElementById('entVoltar').textContent,
+    attrs: i ? ['type', 'autocomplete', 'autocapitalize', 'aria-label'].map(n => i.getAttribute(n)) : null,
+    entrar: [...c.querySelectorAll('button[type="submit"]')].map(b => b.textContent)};
+});
+// tenta uma senha (Enter ou o botão "Entrar") e espera a resposta (mensagem ou saída da entrada)
+async function tentaSenha(page, senha, como = 'enter'){
+  await page.fill('#entSenha', senha);
+  await page.evaluate(() => { const m = document.getElementById('entSenhaMsg'); if(m) m.textContent = ''; });
+  if(como === 'enter') await page.press('#entSenha', 'Enter'); else await page.click('#entEntrar');
+  await page.waitForFunction(() => document.getElementById('entrada').hidden
+    || (document.getElementById('entSenhaMsg') || {}).textContent);
+}
+
+describe('Parte AB — senha da Diretoria', {skip: pular}, () => {
+  test('config.js: dois hashes SHA-256 hex minúsculos (64), nada além dos hashes; a conta do teste = hashSenha do front', async () => {
+    const cfg = fs.readFileSync(path.join(FRONT, 'js', 'config.js'), 'utf-8');
+    const m = cfg.match(/DIRETORIA_SENHAS_HASH:\s*\[([^\]]*)\]/);
+    assert.ok(m, 'CONFIG.DIRETORIA_SENHAS_HASH');
+    const hashes = [...m[1].matchAll(/'([^']*)'/g)].map(x => x[1]);
+    assert.equal(hashes.length, 2);
+    for(const h of hashes) assert.match(h, /^[0-9a-f]{64}$/);
+    assert.notEqual(hashes[0], hashes[1]);
+    assert.match(cfg, /NÃO é segurança/);
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    // o front servido leva os hashes de teste; a função dele dá o mesmo hash que o teste (normalização inclusive)
+    assert.deepEqual(await page.evaluate(() => CONFIG.DIRETORIA_SENHAS_HASH), HASHES_TESTE);
+    for(const s of [...SENHAS_TESTE, '  ' + SENHAS_TESTE[0].toLowerCase() + ' ', 'Ação ÚNICA'])
+      assert.equal(await page.evaluate(s => hashSenha(s), s), hashTeste(s), s);
+    assert.equal(hashTeste(' abc '), hashTeste('ABC'));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('DIRETORIA abre a caixa com o campo Senha (foco nele) e "Entrar"; GERÊNCIA, SUPERVISÃO e ROTA sem senha', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    assert.deepEqual(await page.$$eval('#entBotoes button', bs => bs.map(b => b.textContent)),
+                     ['DIRETORIA', 'GERÊNCIA', 'SUPERVISÃO', 'ROTA']);
+    await page.click('#entrada [data-perfil="dir"]');
+    let c = await caixaSenha(page);
+    assert.deepEqual([c.vis, c.tit, c.campo, c.valor, c.msg, c.papel, c.foco, c.voltar, c.entrar],
+                     [true, 'DIRETORIA', true, '', '', 'alert', 'entSenha', '← Voltar', ['Entrar']]);
+    assert.deepEqual(c.attrs, ['password', 'off', 'off', 'Senha']);
+    assert.equal(await page.getAttribute('#entCaixa', 'role'), 'dialog');
+    assert.equal(await page.getAttribute('#entCaixa', 'aria-modal'), 'true');
+    let e = await estado(page);
+    assert.deepEqual([e.entrada, e.guardado, e.acesso], [true, null, null], 'ainda na entrada');
+    // os outros perfis: a caixa de seleção de sempre, sem campo
+    for(const perfil of ['gc', 'sv', 'rota']){
+      await page.keyboard.press('Escape');
+      await page.click(`#entrada [data-perfil="${perfil}"]`);
+      assert.deepEqual([(await caixa(page)).campos, (await caixa(page)).voltar], [0, false], perfil);
+    }
+    await page.keyboard.press('Escape');
+    for(const [entrar, perfil] of [[{perfil: 'gc', gc: 'G2'}, 'gc'], [{perfil: 'sv', gc: 'G2', sv: '1'}, 'sv'],
+                                   [{perfil: 'rota', gc: 'G2', rota: 'G211'}, 'rota']]){
+      await page.click(`#entrada [data-perfil="${perfil}"]`);
+      assert.equal(await page.isVisible('#entSenha'), false, perfil);
+      await page.keyboard.press('Escape');
+      await entra(page, entrar, null);
+      e = await estado(page);
+      assert.deepEqual([e.entrada, e.acesso[0], e.guardado.v], [false, perfil, 2], perfil);
+      await page.click('#btnCasa');
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('incorreta, vazia e só espaços: "Senha incorreta" (alert), campo limpo, foco nele, fica na entrada', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    await page.click('#entrada [data-perfil="dir"]');
+    for(const [senha, como] of [['errada', 'enter'], ['', 'enter'], ['   ', 'botao'], [SENHAS_TESTE[0] + 'x', 'botao'],
+                                ['Teste Painel', 'enter']]){
+      await tentaSenha(page, senha, como);
+      const c = await caixaSenha(page);
+      assert.deepEqual([c.vis, c.msg, c.papel, c.valor, c.foco], [true, 'Senha incorreta', 'alert', '', 'entSenha'], JSON.stringify(senha));
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.guardado, e.acesso], [true, null, null]);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('as duas senhas, em minúsculas e com espaços nas pontas, por Enter ou "Entrar": entra na Diretoria; sessão v:2 sem senha nem hash', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    const casos = [[SENHAS_TESTE[0], 'enter'], [SENHAS_TESTE[1], 'botao'], [SENHAS_TESTE[0].toLowerCase(), 'enter'],
+                   [SENHAS_TESTE[1].toUpperCase(), 'botao'], ['  ' + SENHAS_TESTE[1] + '\t ', 'enter'], [' ' + SENHAS_TESTE[0] + ' ', 'botao']];
+    for(const [senha, como] of casos){
+      await page.click('#entrada [data-perfil="dir"]');
+      await tentaSenha(page, senha, como);
+      const e = await estado(page);
+      assert.ok(!e.entrada, JSON.stringify(senha));
+      assert.deepEqual([e.sel, e.filtros, e.acesso], [['dir', '', '', ''], ['fgc'], ['dir', '', '', '']]);
+      assert.equal(await page.inputValue('#fgc'), '', '"Todas as gerências"');
+      assert.match(e.sub, /· Diretoria$/);
+      assert.deepEqual(e.guardado, {perfil: 'dir', gc: '', sv: '', rota: '', dia: DIA, v: 2});
+      const txt = await guardadoTxt(page);
+      for(const s of [...SENHAS_TESTE, ...HASHES_TESTE]) assert.ok(!txt.toUpperCase().includes(s.toUpperCase()), 'sem senha nem hash');
+      assert.equal(await page.evaluate(() => document.getElementById('entSenha')), null, 'a caixa fechou (campo descartado)');
+      assert.equal(await page.isVisible('#entCaixa'), false);
+      await page.click('#btnCasa');
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('ESC, × e "← Voltar" fecham a caixa (foco de volta no DIRETORIA); Tab preso na caixa; campo novo a cada abertura', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
+    for(const fecha of [p => p.keyboard.press('Escape'), p => p.click('#entFechar'), p => p.click('#entVoltar')]){
+      await page.click('#entrada [data-perfil="dir"]');
+      await page.fill('#entSenha', 'qualquer');
+      await fecha(page);
+      assert.equal(await page.isVisible('#entCaixa'), false);
+      assert.equal(await page.evaluate(() => document.activeElement.dataset.perfil), 'dir');
+      assert.deepEqual([(await estado(page)).entrada, (await estado(page)).guardado], [true, null]);
+      await page.click('#entrada [data-perfil="dir"]');
+      assert.deepEqual([(await caixaSenha(page)).valor, (await caixaSenha(page)).msg], ['', ''], 'campo novo');
+      await page.keyboard.press('Escape');
+    }
+    // Tab: campo -> Entrar -> × -> ← Voltar -> campo (e o Shift+Tab ao contrário), sem sair da caixa
+    await page.click('#entrada [data-perfil="dir"]');
+    const focos = [];
+    for(let i = 0; i < 5; i++){ await page.keyboard.press('Tab'); focos.push(await page.evaluate(() => document.activeElement.id)); }
+    assert.deepEqual(focos, ['entEntrar', 'entFechar', 'entVoltar', 'entSenha', 'entEntrar']);
+    await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Shift+Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'entVoltar');
+    // setas no campo não pulam para o botão
+    await page.focus('#entSenha');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'entSenha');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('recarregar não pede a senha; a casa e a virada das 05:00 voltam à entrada e pedem de novo', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(new Date('2026-10-14T07:58:00Z'))});
+    await entra(page, 'dir', null);
+    assert.deepEqual((await estado(page)).guardado, {perfil: 'dir', gc: '', sv: '', rota: '', dia: '2026-10-13', v: 2});
+    await page.reload();
+    await esperaCarga(page);
+    let e = await estado(page);
+    assert.deepEqual([e.entrada, e.acesso && e.acesso[0]], [false, 'dir'], 'reabre sem senha');
+    assert.equal(await page.isVisible('#entCaixa'), false);
+    // casa: apaga e pede a senha
+    await page.click('#btnCasa');
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.guardado], [true, null]);
+    await page.click('#entrada [data-perfil="dir"]');
+    assert.equal((await caixaSenha(page)).campo, true, 'pede a senha depois da casa');
+    await tentaSenha(page, SENHAS_TESTE[1]);
+    assert.equal((await estado(page)).entrada, false);
+    // virada às 05:00 de Brasília com o painel aberto (ao voltar para a aba) e ao recarregar
+    await page.clock.setFixedTime(new Date('2026-10-14T08:00:00Z'));
+    await page.evaluate(() => confereDia());
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado], [true, REINICIADO, null]);
+    await page.click('#entrada [data-perfil="dir"]');
+    assert.equal((await caixaSenha(page)).campo, true, 'pede a senha depois da virada');
+    await tentaSenha(page, SENHAS_TESTE[0]);
+    assert.deepEqual((await estado(page)).guardado, {perfil: 'dir', gc: '', sv: '', rota: '', dia: '2026-10-14', v: 2});
+    await page.evaluate(s => localStorage.setItem('drotas_sessao', s), sessao({perfil: 'dir', v: 2}, '2026-10-13'));
+    await page.reload();
+    await esperaCarga(page);
+    e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado], [true, REINICIADO, null]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('sessão de Diretoria antiga (sem v) é descartada com o aviso; Gerência, Supervisão e Rota antigas continuam', async () => {
+    const antiga = a => JSON.stringify({gc: '', sv: '', rota: '', ...a, dia: DIA});      // formato de antes, sem v
+    for(const s of [antiga({perfil: 'dir'}), JSON.stringify({perfil: 'dir', gc: '', sv: '', rota: '', dia: DIA, v: 1}),
+                    JSON.stringify({perfil: 'dir', gc: '', sv: '', rota: ''})]){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), armazenado: {drotas_sessao: s}});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, MSG_SENHA_DIR, null, null], s);
+      await page.click('#entrada [data-perfil="dir"]');
+      assert.equal((await caixaSenha(page)).campo, true);
+      await tentaSenha(page, SENHAS_TESTE[0]);
+      assert.deepEqual((await estado(page)).guardado, {perfil: 'dir', gc: '', sv: '', rota: '', dia: DIA, v: 2});
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+    for(const [a, esperado] of [[{perfil: 'gc', gc: 'G2'}, ['gc', 'G2', '', '']],
+                                [{perfil: 'gc', gc: 'IT+MO'}, ['gc', 'IT+MO', '', '']],
+                                [{perfil: 'sv', gc: 'G2', sv: 'SV.G2.1'}, ['gc', 'G2', 'SV.G2.1', '']],
+                                [{perfil: 'rota', gc: 'G2', rota: 'G211'}, ['gc', 'G2', 'SV.G2.1', 'G211']]]){
+      const s = antiga(a);
+      const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), armazenado: {drotas_sessao: s}});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.sel], [false, '', esperado], s);
+      assert.equal(await guardadoTxt(page), s, 'o guardado antigo não é reescrito ao reabrir');
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  test('sem crypto.subtle (endereço não seguro): "Abra o painel pelo endereço seguro (https)" e não entra', async () => {
+    const semCripto = p => p.addInitScript(() => {
+      try { Object.defineProperty(Crypto.prototype, 'subtle', {get(){ return undefined; }, configurable: true}); } catch(e){}
+    });
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: async p => { await fixo()(p); await semCripto(p); }});
+    assert.equal(await page.evaluate(() => typeof crypto.subtle), 'undefined');
+    await page.click('#entrada [data-perfil="dir"]');
+    for(const senha of [SENHAS_TESTE[0], SENHAS_TESTE[1], '']){
+      await tentaSenha(page, senha);
+      const c = await caixaSenha(page);
+      assert.deepEqual([c.vis, c.msg, c.valor, c.foco], [true, 'Abra o painel pelo endereço seguro (https)', '', 'entSenha']);
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.guardado, e.acesso], [true, null, null]);
+    }
+    // os outros perfis entram normalmente
+    await page.keyboard.press('Escape');
+    await entra(page, {perfil: 'gc', gc: 'G2'}, null);
+    assert.equal((await estado(page)).entrada, false);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('?resumo= continua sem pedir senha nem mexer no acesso', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), busca: '?resumo=vol,ics&modo=dir'});
+    assert.match(await page.textContent('#rsFolha h2'), /^Resumo de vendas/);
+    assert.equal(await page.isVisible('#entSenha'), false);
+    assert.equal(await guardadoTxt(page), null);
+    await page.click('#rsVoltar');
+    const e = await estado(page);
+    assert.deepEqual([e.entrada, e.msg, e.guardado], [true, '', null]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [360, 390, 1440])
+  test(`${largura} px: caixa de senha nos dois fundos sem rolagem lateral, dentro da tela, sem erro`, async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), largura, altura: largura < 1000 ? 740 : 900});
+    for(const tema of ['preta', 'branca']){
+      if(await page.evaluate(() => temaEntrada()) !== tema) await page.click('#btnTema');
+      await page.click('#entrada [data-perfil="dir"]');
+      await tentaSenha(page, 'errada');
+      const m = await page.evaluate(() => {
+        const r = el => el.getBoundingClientRect(), d = document.documentElement;
+        const ids = ['entSenha', 'entEntrar', 'entSenhaMsg', 'entVoltar', 'entFechar'];
+        return {rolagem: [d.scrollWidth, d.clientWidth, document.getElementById('entrada').scrollWidth,
+                          document.getElementById('entrada').clientWidth],
+          fora: ids.filter(id => { const b = r(document.getElementById(id)); return b.left < 0 || b.right > innerWidth || b.width === 0; }),
+          fonte: parseFloat(getComputedStyle(document.getElementById('entSenha')).fontSize),
+          cor: [getComputedStyle(document.getElementById('entSenha')).color, getComputedStyle(document.getElementById('entSenha')).backgroundColor]};
+      });
+      assert.ok(m.rolagem[0] <= m.rolagem[1] && m.rolagem[2] <= m.rolagem[3], `${tema}: ${m.rolagem}`);
+      assert.deepEqual(m.fora, [], tema);
+      assert.ok(m.fonte >= 16, 'campo com 16 px (sem zoom no iPhone)');
+      assert.notEqual(m.cor[0], m.cor[1], 'texto do campo visível');
+      await page.keyboard.press('Escape');
+    }
+    await entra(page, 'dir', null);
+    const r = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+    assert.ok(r[0] <= r[1], `${r}`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
 });

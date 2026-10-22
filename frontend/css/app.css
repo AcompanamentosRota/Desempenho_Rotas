@@ -66,6 +66,7 @@
   --fs-ex-rot:11.5px; --fs-ex-cel:12px; --fs-ex-mini:10.5px; --fs-ex-th:10px;
   /* entrada: "COMERCIAL" / "BANDEIRANTES" embaixo do elmo (igual no PC e no celular) */
   --fs-ent-marca:9.5px;
+  --fs-ent-senha:16px;              /* campo de senha da Diretoria (>= 16 px: sem zoom no iPhone) */
   --seguro-b:env(safe-area-inset-bottom,0px);
 }
 @media (max-width:640px){
@@ -155,6 +156,19 @@ body.na-entrada{overflow:hidden}
 .entrada.branca .entSub,.entrada.branca .entVoltar,.entrada.branca .entVazio{color:var(--cinza-escuro)}
 .entrada.branca .entSecao{color:var(--txt-apoio)}
 .entrada.branca .entOpcoes button{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
+/* Diretoria: campo de senha e "Entrar" na mesma caixa (16 px no campo: o iPhone não aproxima a tela no foco) */
+.entSenha{display:flex;flex-direction:column;gap:10px;margin:0}
+.entOpcoes .entCampo{font:inherit;font-size:var(--fs-ent-senha);width:100%;box-sizing:border-box;padding:13px 14px;border-radius:12px;
+  border:1px solid var(--escuro-borda2);background:var(--escuro-2);color:#fff;min-width:0}
+.entOpcoes .entCampo::placeholder{color:var(--topo-sub);opacity:1}
+.entOpcoes .entCampo:focus-visible{outline:2px solid var(--vermelho);outline-offset:1px}
+.entSenhaMsg{font-size:var(--fs-valor);font-weight:600;color:#ffb3bf}
+.entSenhaMsg:empty{display:none}
+.entOpcoes .entEntrar{text-align:center;background:var(--vermelho);border-color:var(--vermelho);color:#fff}
+.entrada.branca .entOpcoes .entCampo{background:var(--papel);color:var(--preto);border-color:var(--linha-forte)}
+.entrada.branca .entOpcoes .entCampo::placeholder{color:var(--cinza-escuro)}
+.entrada.branca .entSenhaMsg{color:var(--vermelho2)}
+.entrada.branca .entOpcoes .entEntrar{background:var(--vermelho);border-color:var(--vermelho);color:#fff}
 /* casa: volta para a entrada */
 .topo{position:relative}
 /* botões do canto do cabeçalho: ↻ atualizar o painel (sempre visível) e a casa */
