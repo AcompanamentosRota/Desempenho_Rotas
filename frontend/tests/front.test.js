@@ -5729,7 +5729,14 @@ describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
     assert.match(c.dia, /^Refrigerantes: /);
     // PC: as 5 categorias lado a lado, sem os chips
     assert.deepEqual([c.dv, c.chips], [VOL_EXEC, false]);
+    // desde a gaveta "Categoria por unidade" o medidor também abre a gaveta da categoria (foco no ×); ao fechar, o foco volta
+    // ao medidor escolhido (Parte AC)
+    const fechaGavetaCat = async tit => {
+      assert.equal(await page.evaluate(() => document.getElementById('drw').classList.contains('on') && document.getElementById('dTit').textContent), tit);
+      await page.keyboard.press('Escape');
+    };
     await page.click('#exGauges .gCard[data-k="VOL AGUA MINERAL"]');
+    await fechaGavetaCat('Água Mineral por supervisão');
     c = await cat();
     assert.deepEqual([c.sel, c.dvSel, c.ativo], [['VOL AGUA MINERAL'], ['VOL AGUA MINERAL'], 'VOL AGUA MINERAL']);
     assert.match(c.foco, /^Água Mineral /);
@@ -5737,6 +5744,7 @@ describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
     // teclado: Enter no medidor
     await page.focus('#exGauges .gCard[data-k="VOL REFRIGERANTES"]');
     await page.keyboard.press('Enter');
+    await fechaGavetaCat('Refrigerantes por supervisão');
     c = await cat();
     assert.deepEqual([c.sel, c.ativo], [['VOL REFRIGERANTES'], 'VOL REFRIGERANTES']);
     // os textos dos quadros com números conhecidos: tendências e meta do dia por supervisão, online igual em todas as rotas
@@ -7276,5 +7284,447 @@ describe('Parte AB — senha da Diretoria', {skip: pular}, () => {
     assert.ok(r[0] <= r[1], `${r}`);
     assert.deepEqual(erros, []);
     await ctx.close();
+  });
+});
+
+/* ---------- Parte AC — gaveta "Categoria por unidade" na Executiva (tocar num medidor do bloco "Categorias") ----------
+   Cenários: 'vol5'/'vol5fech' (os 5 macros de volume com dado), 'exec' (só Refrigerantes e Água Mineral: as outras sem meta)
+   e 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV). Invariantes (a)-(f) em categoria_invariantes.js (as mesmas da
+   conferência com dado real); antes x depois contra a main antes da etapa (REF_PRE_CAT, via `git show`), com o mesmo payload. */
+const CAT = require('./categoria_invariantes.js');
+const REF_PRE_CAT = 'ec60a88';
+const FRONT_PRE_CAT = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_CAT}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
+    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+  } catch(e) { return null; }
+})();
+/* status por gerência (na ordem de GC_ATIVAS), em todas as categorias de volume: [Real, Tendência] em fração da meta, com um
+   pouco de diferença entre as rotas; o padrão dá verde (Real 108%), âmbar (Real 60%, tendência 103%) e vermelho (Real 50%,
+   tendência 90%) */
+const variaCat = (page, fs = [[1.08, 1.2], [0.6, 1.03], [0.5, 0.9]]) => page.evaluate(fs => {
+  gcsComDados().forEach((g, i) => rotasDe(g, '').forEach((r, j) => {
+    const [fr, ft] = fs[i % fs.length];
+    for(const k of GROUPS.VOLUME){ const b = nodo('', r).indicators[k];
+      if(!b || b.unavailable || !b.meta) continue;
+      b.real = b.meta * fr * (1 + 0.01 * j);
+      if(b.tendencia != null) b.tendencia = b.meta * ft * (1 + 0.01 * j); }
+  }));
+  render(); }, fs);
+// fixa [Real, Tendência] (fração da meta) de uma categoria nas rotas dadas
+const fixaCat = (page, k, rotas, fr, ft) => page.evaluate(([k, rotas, fr, ft]) => { rotas.forEach(r => { const b = nodo('', r).indicators[k];
+  b.real = b.meta * fr; if(ft != null) b.tendencia = b.meta * ft; }); render(); }, [k, rotas, fr, ft]);
+const abreCat = (page, k) => page.click(`#exGauges .gCard[data-k="${k}"]`);
+const gavetaAberta = page => page.evaluate(() => document.getElementById('drw').classList.contains('on'));
+const estadoDica = page => page.evaluate(() => { const d = document.querySelector('.dica');
+  return {n: document.querySelectorAll('.dica').length, on: !!d && d.classList.contains('on') && getComputedStyle(d).visibility === 'visible',
+    linhas: d ? d.innerText.split('\n').map(x => x.trim()).filter(Boolean) : [], pos: d ? [parseFloat(d.style.left), parseFloat(d.style.top)] : [],
+    emFoco: [...document.querySelectorAll('.emFoco')].map(e => e.dataset.u || e.id)}; });
+// estilo do "cromo" da gaveta (moldura, cabeçalho, título, subtítulo, ×, corpo): o mesmo em qualquer conteúdo
+const CROMO = props => ['#drw', '.drwCab', '#dTit', '#dSub', '#dX', '#dCorpo'].map(s => { const cs = getComputedStyle(document.querySelector(s));
+  return [s, Object.fromEntries(props.map(p => [p, cs.getPropertyValue(p)]))]; });
+
+describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pular}, () => {
+  test('Diretoria: tocar em Refrigerantes abre "Refrigerantes por gerência": total + uma por gerência com meta, do maior para o menor % real; totais = card de Volume; cores pela regra; as 5 categorias', async () => {
+    const {page, ctx, erros} = await abre('vol5', {entrar: 'dir', aba: null, largura: 1440});
+    await variaCat(page);
+    // a RI sem meta de Refrigerantes (Real fica no total): fora da lista dela e das contas por unidade
+    await page.evaluate(() => { rotasDe('RI', '').forEach(r => { nodo('', r).indicators['VOL REFRIGERANTES'].meta = 0; }); render(); });
+    await abreCat(page, 'VOL REFRIGERANTES');
+    const g = await page.evaluate(CAT.LE_GAVETA);
+    const gcs = await page.evaluate(() => gcsComDados());
+    assert.equal(g.tit, 'Refrigerantes por gerência');
+    assert.equal(g.sub, `Real até ontem ÷ Meta · cor pela tendência do SAC · ${gcs.length - 1} gerências`);
+    assert.deepEqual([g.cards[0].tot, g.cards[0].nome, g.cards[0].sub, g.cards[0].u], [true, 'BAND · Diretoria', `${gcs.length} gerências`, 'BAND']);
+    const us = g.cards.slice(1);
+    assert.deepEqual(us.map(c => c.u).sort(), gcs.filter(x => x !== 'RI').map(x => 'GC.' + x).sort(), 'uma por gerência com meta (a RI fora)');
+    for(let i = 1; i < us.length; i++) assert.ok(us[i - 1].real / us[i - 1].meta >= us[i].real / us[i].meta, `ordem ${us[i - 1].u} ${us[i].u}`);
+    // nome com a praça e "N supervisões"
+    const an = us.find(c => c.u === 'GC.AN');
+    assert.deepEqual([an.nome, an.sub], ['GC.AN · Anápolis', '2 supervisões']);
+    // as três cores aparecem: verde (Real >= Meta), âmbar (Real < Meta e tendência >= 100) e vermelho
+    const porSt = s => us.filter(c => c.st === s);
+    assert.ok(porSt('bat').length && porSt('tend').length && porSt('abx').length, us.map(c => c.st).join());
+    for(const c of porSt('bat')) assert.ok(c.real >= c.meta, c.u);
+    for(const c of porSt('tend')) assert.ok(c.real < c.meta && c.pctTend >= 100, c.u);
+    for(const c of porSt('abx')) assert.ok(c.real < c.meta && c.pctTend < 100, c.u);
+    // totais = card de Volume com o mesmo filtro
+    await page.keyboard.press('Escape');
+    await vaiAba(page, 'VOLUME');
+    const card = await page.$eval('#lista .ind[data-k="VOL REFRIGERANTES"]', el => [el.querySelector('.cl').innerText.split('\n').slice(0, 2).join(' '),
+      el.querySelector('.big').textContent.replace(/[▲▼]/, ''), el.querySelector('.opo').textContent]);
+    assert.deepEqual(card, [g.cards[0].vals, `${g.cards[0].pctTend}%`, `${g.cards[0].pct}% real`]);
+    await vaiAba(page, 'EXEC');
+    // invariantes (a)-(f) nas 5 categorias
+    const r = await CAT.confereCategoria(page, 'Diretoria');
+    assert.deepEqual(Object.keys(r.cats), VOL_AA);
+    assert.ok(Object.values(r.cats).every(c => c !== 'sem meta'), JSON.stringify(r.cats));
+    assert.equal(r.cats['VOL REFRIGERANTES'].semMeta, 1, 'RI sem meta de Refrigerantes');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('gerência: supervisões + "Neutraliza" por último (mesmo com o maior %); total com o nome da gerência; virtuais e EV* fora da lista e dentro do total', async () => {
+    const {page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    await variaCat(page);
+    await fixaCat(page, 'VOL REFRIGERANTES', ['151'], 2, 2.1);         // a Neutraliza com o maior % real
+    await abreCat(page, 'VOL REFRIGERANTES');
+    let g = await page.evaluate(CAT.LE_GAVETA);
+    assert.equal(g.tit, 'Refrigerantes por supervisão');
+    assert.equal(g.sub, 'Real até ontem ÷ Meta · cor pela tendência do SAC · 3 supervisões');
+    assert.deepEqual(g.cards.map(c => [c.u, c.nome, c.sub]).slice(0, 1), [['GC.G1', 'GC.G1 · Goiânia 01', '2 supervisões']]);
+    assert.deepEqual(g.cards.slice(1).map(c => c.u).slice(-1), ['Neutraliza']);
+    assert.deepEqual(g.cards.find(c => c.u === 'Neutraliza').sub, '1 rota');
+    assert.ok(g.cards.find(c => c.u === 'Neutraliza').pct > Math.max(...g.cards.slice(1, -1).map(c => c.pct)), 'Neutraliza com o maior %, mas por último');
+    assert.equal(g.cards.find(c => c.u === 'Neutraliza').st, 'bat');
+    await page.keyboard.press('Escape');
+    const linhas = [await CAT.confereCategoria(page, 'G1')];
+    // AN (Diretoria com a gerência no filtro): as virtuais A42-A44 fora da lista e dentro do total; SL: clientes em EV*
+    for(const [gc, fora] of [['AN', ['A42', 'A43', 'A44']], ['SL', ['SL-EV']]]){
+      await vaiPara(page, 'dir', null);
+      await page.selectOption('#fgc', gc);
+      await abreCat(page, 'VOL REFRIGERANTES');
+      g = await page.evaluate(CAT.LE_GAVETA);
+      assert.equal(g.cards[0].nome, gc === 'AN' ? 'GC.AN · Anápolis' : 'GC.SL · São Luís');
+      assert.ok(!g.cards.some(c => fora.some(r => c.u.includes(r))), `${gc}: ${fora} fora da lista`);
+      const esp = await page.evaluate(CAT.ESPERADO, 'VOL REFRIGERANTES');
+      assert.ok(esp.fora.real > 0 && esp.nFora === fora.length, `${gc}: rotas fora com Real ${JSON.stringify(esp.fora)}`);
+      await page.keyboard.press('Escape');
+      linhas.push(await CAT.confereCategoria(page, gc));
+    }
+    assert.ok(linhas.every(l => l.cats['VOL REFRIGERANTES'].n >= 2));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('grupo IT+MO no Total ("GC.IT + GC.MO", as supervisões das duas + "Neutraliza"), uma gerência do grupo, supervisão -> rotas e "Neutraliza" no filtro -> rotas', async () => {
+    let {page, ctx, erros} = await abre('grupo', {entrar: {perfil: 'gc', gc: 'IT+MO'}, aba: null, largura: 1440});
+    await abreCat(page, 'VOL REFRIGERANTES');
+    let g = await page.evaluate(CAT.LE_GAVETA);
+    assert.equal(g.tit, 'Refrigerantes por supervisão');
+    assert.deepEqual([g.cards[0].nome, g.cards[0].sub, g.cards[0].u], ['GC.IT + GC.MO', '4 supervisões', 'GC.IT+MO']);
+    assert.deepEqual(g.cards.slice(1).map(c => c.u).sort(), ['Neutraliza', 'SV.IT.1', 'SV.IT.2', 'SV.MO.1', 'SV.MO.2']);
+    assert.equal(g.cards[g.cards.length - 1].u, 'Neutraliza');
+    assert.ok(!(await page.textContent('#dCorpo')).match(/I32|MO-EV/), 'virtual e EV* fora da lista');
+    await page.keyboard.press('Escape');
+    await CAT.confereCategoria(page, 'IT+MO');
+    // uma gerência do grupo no seletor
+    await page.selectOption('#fgc', 'IT');
+    await abreCat(page, 'VOL REFRIGERANTES');
+    g = await page.evaluate(CAT.LE_GAVETA);
+    assert.deepEqual([g.cards[0].nome, g.cards[0].u], ['GC.IT · Itumbiara', 'GC.IT']);
+    await page.keyboard.press('Escape');
+    await CAT.confereCategoria(page, 'IT');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // supervisão -> rotas ("N clientes"); total "SV.G2.1 · nome" com "N rotas"
+    ({page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, aba: null}));
+    await abreCat(page, 'VOL AGUA MINERAL');
+    g = await page.evaluate(CAT.LE_GAVETA);
+    const esp = await page.evaluate(() => ({nome: rotuloSv('SV.G2.1'), base: ['G211', 'G212'].map(r => `${nodo('', r).baseTotal} clientes`)}));
+    assert.equal(g.tit, 'Água Mineral por rota');
+    assert.deepEqual([g.cards[0].nome, g.cards[0].sub, g.cards[0].u], [esp.nome, '2 rotas', 'SV.G2.1']);
+    assert.deepEqual(g.cards.slice(1).map(c => c.u).sort(), ['Rota G211', 'Rota G212']);
+    assert.deepEqual(['Rota G211', 'Rota G212'].map(u => g.cards.find(c => c.u === u).sub), esp.base);
+    await page.keyboard.press('Escape');
+    await CAT.confereCategoria(page, 'SV.G2.1');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // "Neutraliza" no filtro da Gerência: as rotas Neutraliza
+    ({page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null}));
+    await page.selectOption('#fsv', 'Neutraliza');
+    await abreCat(page, 'VOL REFRIGERANTES');
+    g = await page.evaluate(CAT.LE_GAVETA);
+    assert.deepEqual([g.tit, g.cards[0].nome, g.cards.slice(1).map(c => c.u)], ['Refrigerantes por rota', 'Neutraliza · G1', ['Rota 151']]);
+    await page.keyboard.press('Escape');
+    await CAT.confereCategoria(page, 'Neutraliza G1');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('"faltam N" e "+X% s/ meta"; Real = Meta verde ("+0% s/ meta"); tendência de 99,6% = 100% âmbar (o pctTendencia do card); dica com os números', async () => {
+    const {page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    const k = 'VOL REFRIGERANTES';
+    const rs = await page.evaluate(() => ({s1: rotasNormais('G1', 'SV.G1.1'), s2: rotasNormais('G1', 'SV.G1.2')}));
+    await fixaCat(page, k, rs.s1, 1, 1.2);                 // Real = Meta
+    await fixaCat(page, k, rs.s2, 0.5, 0.996);             // tendência 99,6% -> pctTendencia 100
+    await fixaCat(page, k, ['151'], 1.234, 1.3);           // Real 123,4% da meta
+    await abreCat(page, k);
+    const g = await page.evaluate(CAT.LE_GAVETA), c = u => g.cards.find(x => x.u === u);
+    assert.deepEqual([c('SV.G1.1').st, c('SV.G1.1').v1], ['bat', '+0% s/ meta']);
+    assert.deepEqual([c('Neutraliza').st, c('Neutraliza').v1, c('Neutraliza').pctTxt], ['bat', '+23% s/ meta', '123% real']);
+    const s2 = c('SV.G1.2');
+    assert.deepEqual([s2.st, s2.pctTend, s2.v2, s2.v1], ['tend', 100, '100%', `faltam ${Math.round(s2.meta - s2.real).toLocaleString('pt-BR')}`]);
+    // como o card de Volume (verde em 100%), mesmo com o desvio exato da Tendência x Meta abaixo de 0
+    assert.ok(s2.tend < s2.meta);
+    // barras: Real limitado a 100% (123% -> cheia); Tendência
+    assert.deepEqual([c('Neutraliza').w1, c('SV.G1.1').w1, s2.w1], [100, 100, 50]);
+    // caixa de comentário: Meta / Real até ontem (X%) / Tendência (Y%) / Desvio
+    const dica = await page.evaluate(() => { const b = agrega(rotasNormais('G1', 'SV.G1.2')).ind['VOL REFRIGERANTES'], d = b.tendencia / b.meta - 1;
+      return ['Refrigerantes · SV.G1.2', `Meta ${fmt0(b.meta)}`, `Real até ontem ${fmt0(b.real)} (${b.pctReal}%)`, `Tendência ${fmt0(b.tendencia)} (${b.pctTendencia}%)`,
+              `Desvio ${d >= 0 ? '+' : '−'}${Math.abs(d * 100).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}%`]; });
+    const box = await page.locator('#dCorpo .cuCard[data-u="SV.G1.2"]').boundingBox();
+    await page.mouse.move(box.x + 40, box.y + 20);
+    assert.deepEqual((await estadoDica(page)).linhas, dica);
+    assert.equal(dica[4], 'Desvio −0,40%');
+    await page.keyboard.press('Escape');
+    await CAT.confereCategoria(page, 'G1 limites');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('categoria sem meta no escopo não abre (medidor "sem meta neste escopo", sem papel de botão); fechar (ESC, ×, toque fora) mantém a categoria em análise e devolve o foco ao medidor', async () => {
+    const {page, ctx, erros} = await abre('exec', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    // 'exec': só Refrigerantes e Água Mineral têm dado
+    for(const k of ['VOL CERVEJAS', 'VOL STILL', 'VOL DEST+ART+CND']){
+      const m = await page.$eval(`#exGauges .gCard[data-k="${k}"]`, g => [g.className, g.getAttribute('role'), g.getAttribute('tabindex'), g.textContent]);
+      assert.deepEqual(m.slice(0, 3), ['gCard off', null, null], k);
+      assert.match(m[3], /sem meta neste escopo/);
+      await abreCat(page, k);
+      assert.equal(await gavetaAberta(page), false, `${k}: não abre`);
+      assert.equal(await page.evaluate(() => catAtual()), 'VOL REFRIGERANTES', `${k}: não vira a categoria em análise`);
+    }
+    // fechar de três jeitos: a categoria em análise fica e o foco volta ao medidor
+    for(const como of ['Escape', '#dX', '#back']){
+      await abreCat(page, 'VOL REFRIGERANTES');
+      assert.equal(await gavetaAberta(page), true, como);
+      if(como === 'Escape') await page.keyboard.press('Escape');
+      else if(como === '#dX') await page.click('#dX');
+      else await page.click('#back', {position: {x: 1430, y: 6}});     // fora da gaveta (o fundo escuro)
+      const e = await page.evaluate(() => ({on: document.getElementById('drw').classList.contains('on'), cat: catAtual(),
+        sel: [...document.querySelectorAll('#exGauges .gCard.sel')].map(g => g.dataset.k), foco: document.activeElement.dataset.k}));
+      assert.deepEqual(e, {on: false, cat: 'VOL REFRIGERANTES', sel: ['VOL REFRIGERANTES'], foco: 'VOL REFRIGERANTES'}, como);
+    }
+    // teclado: Enter e Espaço no medidor abrem a gaveta da categoria (e a escolhem)
+    for(const tecla of ['Enter', ' ']){
+      await page.focus('#exGauges .gCard[data-k="VOL AGUA MINERAL"]');
+      await page.keyboard.press(tecla);
+      assert.deepEqual([await gavetaAberta(page), await page.textContent('#dTit'), await page.evaluate(() => catAtual())],
+        [true, 'Água Mineral por supervisão', 'VOL AGUA MINERAL'], `tecla ${JSON.stringify(tecla)}`);
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'dX', 'o foco vai para o fechar');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.evaluate(() => document.activeElement.dataset.k), 'VOL AGUA MINERAL');
+      await page.focus('#exGauges .gCard[data-k="VOL REFRIGERANTES"]');
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Escape');
+    }
+    // meta 0 no escopo (a G1 inteira sem meta de Água Mineral): o medidor fica "sem meta" e não abre
+    await page.evaluate(() => { rotasDe('G1', '').forEach(r => { nodo('', r).indicators['VOL AGUA MINERAL'].meta = 0; }); render(); });
+    assert.match(await page.textContent('#exGauges .gCard[data-k="VOL AGUA MINERAL"]'), /sem meta neste escopo/);
+    await abreCat(page, 'VOL AGUA MINERAL');
+    assert.equal(await gavetaAberta(page), false, 'meta 0: não abre');
+    // os chips do celular só escolhem (não abrem a gaveta)
+    await page.setViewportSize({width: 390, height: 844});
+    await page.click('#exChips .fchip[data-k="VOL AGUA MINERAL"]');
+    assert.deepEqual([await gavetaAberta(page), await page.evaluate(() => catAtual())], [false, 'VOL AGUA MINERAL']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('fechamento do mês: verde (Real >= Meta) ou vermelho, sem âmbar e sem a barra de Tendência; subtítulo "Realizado ÷ Meta"; legenda de 2 cores; dica sem Tendência', async () => {
+    const {page, ctx, erros} = await abre('vol5fech', {entrar: 'dir', aba: null, largura: 1440});
+    await variaCat(page, [[1.04, null], [0.97, null], [0.8, null]]);
+    await abreCat(page, 'VOL REFRIGERANTES');
+    const g = await page.evaluate(CAT.LE_GAVETA);
+    assert.match(g.sub, /^Realizado ÷ Meta · cor pelo realizado · \d+ gerências$/);
+    assert.ok(g.cards.every(c => c.st !== 'tend' && !c.b2 && c.tend == null), g.cards.map(c => c.st).join());
+    assert.ok(g.cards.some(c => c.st === 'bat') && g.cards.some(c => c.st === 'abx'));
+    assert.deepEqual(g.leg.map(x => x[1]), ['meta batida (Real ≥ Meta)', 'abaixo da meta']);
+    assert.ok(g.cards.every(c => /Realizado <b>/.test(c.dica) && !/Tendência/.test(c.dica)));
+    // a altura sem a barra da Tendência: menor que a do cartão com as duas
+    const h = await page.$eval('#dCorpo .cuCard', el => el.getBoundingClientRect().height);
+    assert.ok(h >= 60 && h <= 80, `altura ${h}`);
+    await page.keyboard.press('Escape');
+    await CAT.confereCategoria(page, 'Diretoria (fechamento)');
+    await page.selectOption('#fgc', 'G1');
+    await CAT.confereCategoria(page, 'G1 (fechamento)');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test(`rótulo central: "${ROT.NOVOS} por gerência" (sem "${ROT.SUB}" na gaveta nem nas dicas); perfil Rota sem a Executiva`, async () => {
+    let {page, ctx, erros} = await abre('vol5', {entrar: 'dir', aba: null});
+    await abreCat(page, ROT.K_NOVOS);
+    assert.equal(await page.textContent('#dTit'), `${ROT.NOVOS} por gerência`);
+    assert.deepEqual(await page.evaluate(ROT.RASTRO_PAGINA, ROT.SUB), []);
+    assert.ok((await page.evaluate(CAT.LE_GAVETA)).cards.every(c => c.dica.startsWith(`<div class="t">${ROT.NOVOS} · `)));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    ({page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'rota', gc: 'G2', rota: 'G211'}, aba: null}));
+    assert.deepEqual(await page.evaluate(() => [document.querySelector('.tab[data-g="EXEC"]').hidden, document.getElementById('exec').hidden, aba]),
+      [true, true, 'VOLUME']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('caixa de comentário: mouse (acompanha o cursor), teclado (Tab a partir do ×, ESC) e toque (abre/fecha, toque fora e rolar a lista fecham); um div.dica; emFoco', async () => {
+    let {page, ctx, erros} = await abre('vol5', {entrar: 'dir', aba: null, largura: 1440});
+    await variaCat(page);
+    await abreCat(page, 'VOL REFRIGERANTES');
+    const box = await page.locator('#dCorpo .cuCard[data-u="GC.G2"]').boundingBox();
+    await page.mouse.move(box.x + 30, box.y + 20);
+    let e = await estadoDica(page);
+    assert.ok(e.on && e.n === 1, 'hover: dica aberta');
+    assert.deepEqual(e.emFoco, ['GC.G2']);
+    assert.match(e.linhas[0], /^Refrigerantes · GC\.G2$/);
+    assert.deepEqual(e.linhas.slice(1).map(l => l.split(' ')[0]), ['Meta', 'Real', 'Tendência', 'Desvio']);
+    const p1 = e.pos;
+    await page.mouse.move(box.x + 120, box.y + 40);
+    assert.ok((await estadoDica(page)).pos[0] > p1[0], 'acompanha o cursor');
+    await page.mouse.move(5, 5);
+    assert.equal((await estadoDica(page)).on, false, 'sai: fecha');
+    // teclado: o foco começa no ×; Tab vai ao cartão de total e ao seguinte
+    await page.keyboard.press('Escape');
+    await page.focus('#exGauges .gCard[data-k="VOL REFRIGERANTES"]');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Tab');
+    e = await estadoDica(page);
+    assert.ok(e.on, 'foco: dica aberta');
+    assert.deepEqual(e.emFoco, ['BAND']);
+    assert.match(e.linhas[0], /^Refrigerantes · BAND$/);
+    await page.keyboard.press('Tab');
+    const seg = await page.evaluate(() => document.activeElement.dataset.u);
+    assert.deepEqual((await estadoDica(page)).emFoco, [seg]);
+    await page.keyboard.press('Shift+Tab');
+    assert.deepEqual((await estadoDica(page)).emFoco, ['BAND']);
+    await page.keyboard.press('Escape');
+    assert.deepEqual([(await estadoDica(page)).on, await gavetaAberta(page)], [false, false], 'ESC fecha a dica e a gaveta');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // toque (celular)
+    ({page, ctx, erros} = await abre('vol5', {entrar: 'dir', aba: null, largura: 390, altura: 844, toque: true}));
+    await page.tap('#exGauges .gCard[data-k="VOL REFRIGERANTES"]');
+    assert.equal(await gavetaAberta(page), true);
+    await page.tap('#dCorpo .cuCard[data-u="BAND"]');
+    assert.ok((await estadoDica(page)).on, 'toque abre');
+    await page.tap('#dCorpo .cuCard[data-u="BAND"]');
+    assert.equal((await estadoDica(page)).on, false, '2º toque fecha');
+    await page.tap('#dCorpo .cuCard[data-u="BAND"]');
+    await page.tap('.drwCab h2');
+    assert.equal((await estadoDica(page)).on, false, 'toque fora fecha');
+    const segundo = await page.$eval('#dCorpo .cuCard:nth-child(2)', el => el.dataset.u);
+    await page.tap(`#dCorpo .cuCard[data-u="${segundo}"]`);
+    assert.ok((await estadoDica(page)).on);
+    await page.evaluate(() => { const c = document.getElementById('dCorpo'); c.scrollTop += 120; });
+    await page.waitForTimeout(80);
+    assert.equal((await estadoDica(page)).on, false, 'rolar a lista fecha');
+    assert.equal(await gavetaAberta(page), true, 'a gaveta continua aberta');
+    assert.equal(await page.evaluate(() => document.querySelectorAll('.dica').length), 1);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [360, 390, 800, 1000, 1440])
+  test(`${largura} px, fundos preto e branco: cartão (faixa 6 px, borda, raio, padding, ~84 px, fontes, barras, rótulo 50 px), grade, sem rolagem lateral nem texto cortado; cromo da gaveta = o da cascata`, async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre('vol5', {entrar: 'dir', aba: null, largura, altura: 900, armazenado: {drotas_entrada: tema}});
+      await page.addStyleTag({content: '*{transition:none!important}'});
+      await variaCat(page);
+      const cores = await page.evaluate(CAT.CORES);
+      for(const [e, k] of [['dir', 'VOL REFRIGERANTES'], [{perfil: 'gc', gc: 'IT+MO'}, 'VOL CERVEJAS'], [{perfil: 'sv', gc: 'G2', sv: '1'}, ROT.K_NOVOS]]){
+        if(e !== 'dir') await vaiPara(page, e, null);
+        const onde = `${largura} ${tema} ${JSON.stringify(e)} ${k}`;
+        await abreCat(page, k);
+        await page.waitForTimeout(250);
+        assert.deepEqual(await page.evaluate(CAT.CORTES_CAT), [], `${onde}: texto cortado`);
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde}: rolagem lateral`);
+        const m = await page.evaluate(() => {
+          const cs = s => getComputedStyle(typeof s === 'string' ? document.querySelector(s) : s), c = document.querySelector('#dCorpo .cuCard:not(.cuTot)');
+          const q = s => cs(c.querySelector(s)), t = document.querySelector('#dCorpo .cuCard.cuTot');
+          return {cols: cs('.cuGrade').gridTemplateColumns.split(' ').map(parseFloat),
+            card: [cs(c).borderLeftWidth, cs(c).borderLeftStyle, cs(c).borderTopWidth, cs(c).borderTopColor, cs(c).borderRadius,
+                   [cs(c).paddingTop, cs(c).paddingRight, cs(c).paddingBottom, cs(c).paddingLeft].join(' '), cs(c).backgroundColor],
+            st: c.dataset.st, faixa: cs(c).borderLeftColor, h: Math.round(c.getBoundingClientRect().height),
+            totBg: cs(t).backgroundColor, papel: (() => { const s = document.createElement('span'); s.style.color = 'var(--papel)'; document.body.appendChild(s);
+              const x = getComputedStyle(s).color; s.remove(); return x; })(),
+            fontes: ['.cuNome', '.cuSub', '.cuPct b', '.cuPct small', '.cuVals small', '.cuVals b', '.cuRot', '.cuVal'].map(s => [s, q(s).fontSize, q(s).fontWeight]),
+            fam: [...new Set([...document.querySelectorAll('#dCorpo .cuGav, #dCorpo .cuGav *')].map(x => cs(x).fontFamily))],
+            num: cs(c).fontVariantNumeric, rot: q('.cuRot').width, tr: [...c.querySelectorAll('.cuTr')].map(x => cs(x).height),
+            tr2: [q('.cuB2 .cuTr').backgroundColor, q('.cuB2 .cuTr i').backgroundColor, q('.cuB1 .cuTr').backgroundColor],
+            alinha: (() => { const [a, b] = c.querySelectorAll('.cuTr'); const r1 = a.getBoundingClientRect(), r2 = b.getBoundingClientRect();
+              return [Math.round(r1.left - r2.left), Math.round(r1.width - r2.width)]; })()};
+        });
+        const nCol = largura >= 1440 ? 3 : largura >= 700 ? 2 : 1;
+        assert.equal(m.cols.length, nCol, `${onde}: colunas ${m.cols}`);
+        if(largura >= 1000) assert.ok(m.cols.every(x => x >= 300), `${onde}: minmax(300px, 1fr)`);
+        assert.deepEqual(m.card, ['6px', 'solid', '1px', 'rgb(227, 227, 230)', '10px', '7px 10px 7px 9px', 'rgb(255, 255, 255)'], onde);
+        assert.equal(m.faixa, cores[m.st], `${onde}: faixa na cor do status`);
+        assert.ok(m.h >= 80 && m.h <= 90, `${onde}: altura ${m.h}`);
+        assert.equal(m.totBg, m.papel, `${onde}: total com fundo --papel`);
+        assert.deepEqual(m.fontes, [['.cuNome', '12px', '700'], ['.cuSub', '10px', '400'], ['.cuPct b', '20px', '800'], ['.cuPct small', '9.5px', '400'],
+          ['.cuVals small', '9.5px', '400'], ['.cuVals b', '10.5px', '600'], ['.cuRot', '9.5px', '400'], ['.cuVal', '10.5px', '600']], onde);
+        assert.ok(m.fam.length === 1 && /^Inter,/.test(m.fam[0]), `${onde}: ${m.fam}`);
+        assert.equal(m.num, 'lining-nums tabular-nums', onde);
+        assert.deepEqual([m.rot, m.tr], ['50px', ['5px', '5px']], onde);
+        assert.equal(m.tr2[0], 'rgb(232, 232, 236)', `${onde}: trilho da Tendência`);
+        assert.deepEqual(m.alinha, [0, 0], `${onde}: as duas barras alinhadas`);
+        // hover: anel de 3 px no tom claro do status
+        const box = await page.locator('#dCorpo .cuCard:not(.cuTot)').first().boundingBox();
+        if(largura >= 1000){
+          await page.mouse.move(box.x + 20, box.y + 15);
+          const sh = await page.$eval('#dCorpo .cuCard:not(.cuTot)', c => [getComputedStyle(c).boxShadow, c.dataset.st]);
+          const clr = await page.evaluate(st => { const s = document.createElement('i'); s.className = {bat: 'cuBat', tend: 'cuTend', abx: 'cuAbx'}[st];
+            s.style.color = 'var(--cu-clr)'; document.body.appendChild(s); const x = getComputedStyle(s).color; s.remove(); return x; }, sh[1]);
+          assert.equal(sh[0], `${clr} 0px 0px 0px 3px`, `${onde}: anel no hover`);
+          await page.mouse.move(2, 2);
+        }
+        // o cromo da gaveta (moldura, cabeçalho, ×, corpo) é o mesmo da cascata
+        const cromo = await page.evaluate(CROMO, PROPS_CASCATA);
+        await page.keyboard.press('Escape');
+        await vaiAba(page, 'VOLUME');
+        await page.click('#lista .ind[data-k]');
+        await page.waitForTimeout(250);
+        assert.deepEqual(await page.evaluate(CROMO, PROPS_CASCATA), cromo, `${onde}: cromo da gaveta`);
+        await page.keyboard.press('Escape');
+        await vaiAba(page, 'EXEC');
+      }
+      assert.deepEqual(erros, [], `${largura} ${tema}`);
+      await ctx.close();
+    }
+  });
+
+  test('antes x depois (main antes da etapa, mesmo payload): Executiva, cabeçalho e cards das 4 abas, cascata, gavetas Base e Sem compra e Resumo iguais', {skip: !FRONT_PRE_CAT && `sem o commit ${REF_PRE_CAT}`}, async () => {
+    for(const dados of ['vol5', 'vol5fech']){
+      const [novo, velho] = [await abre(dados, {entrar: 'dir', aba: null}), await abre(dados, {entrar: 'dir', aba: null, troca: FRONT_PRE_CAT})];
+      for(const c of PERFIS_AA){
+        for(const {page} of [novo, velho]) await vaiPara(page, c.entrar, null);
+        const onde = `${dados} ${c.nome}`;
+        if(c.perfil !== 'rota'){
+          for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+          assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+          for(const id of ['exBase', 'exSem', 'exVis']){
+            const gav = async p => { await p.evaluate(id => document.getElementById(id).click(), id); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
+            assert.equal(await gav(novo.page), await gav(velho.page), `${onde}: gaveta do KPI ${id}`);
+          }
+        }
+        for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          for(const {page} of [novo, velho]) await vaiAba(page, ab);
+          const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').innerHTML, lista: document.getElementById('lista').innerHTML}));
+          assert.deepEqual(await tela(novo.page), await tela(velho.page), `${onde} ${ab}: cabeçalho e cards`);
+          const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
+          for(const k of ks){
+            for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+            for(let nivel = 0; nivel < 5; nivel++){
+              assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+              if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+              for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+            }
+            for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+          }
+          for(const id of ['cBase', 'cSem']){
+            const gav = async p => { await abreCardTopo(p, id); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
+            assert.equal(await gav(novo.page), await gav(velho.page), `${onde} ${ab}: gaveta ${id}`);
+          }
+        }
+        if(c.perfil !== 'rota'){
+          for(const {page} of [novo, velho]) await page.click('#btnResumo');
+          assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+          for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+        }
+      }
+      assert.deepEqual([...novo.erros, ...velho.erros], [], dados);
+      for(const {ctx} of [novo, velho]) await ctx.close();
+    }
   });
 });

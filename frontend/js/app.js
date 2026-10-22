@@ -617,10 +617,10 @@ const NIVEL_EXEC = {gc:['gerência', 'gerências', 'A gerência'], sv:['supervis
                     rota:['rota', 'rotas', 'A']};
 
 // unidades do 1º nível do filtro, cada uma com o agrega() das próprias rotas (gerências sem dados ficam fora);
-// cod = o código sem o nome (GC.AT, SV.AP.1, Neutraliza, Rota 111)
+// cod = o código sem o nome (GC.AT, SV.AP.1, Neutraliza, Rota 111); filho = o contexto da cascata dentro dela
 function unidadesExec(ctx){
   return gruposDo(ctx, null).filter(g=>!g.off)
-    .map(g=>({cod:g.nome.split(' · ')[0], nome:g.nome, rotas:g.rotas, a:agrega(g.rotas)}));
+    .map(g=>({cod:g.nome.split(' · ')[0], nome:g.nome, rotas:g.rotas, filho:g.filho, a:agrega(g.rotas)}));
 }
 // linha de total: BAND na Diretoria; com filtro, o código da própria unidade (GC.AT, GC.IT+MO, SV.AP.1, Neutraliza)
 function totalExec(ctx, rotas, a){
@@ -729,8 +729,75 @@ function pintaMedidores(rotas, ind, k){
       `<b data-fit="" data-fit-min="10">${fech ? (dif>0 ? '+' : '') + fmt0(dif) : fmt0(b.tendencia)}</b>`+
       `<span class="pill ${d>=0 ? 'pos' : 'neg'}">${d>=0 ? '↑' : '↓'} ${pctBR(Math.abs(d*100), 2)}%</span></div>${dia}</div>`;
   }).join('');
-  $('exGauges').querySelectorAll('.gCard[role="button"]').forEach(el=>clicavel(el, ()=>escolheCat(el.dataset.k, 'exGauges')));
+  // escolhe a categoria em análise (como sempre) e abre a gaveta dela por unidade; o medidor sem meta não é clicável
+  $('exGauges').querySelectorAll('.gCard[role="button"]').forEach(el=>clicavel(el, ()=>{
+    const k = el.dataset.k;
+    escolheCat(k, 'exGauges');
+    abreCategoria(k);
+  }));
 }
+
+/* Gaveta "[Categoria] por gerência / supervisão / rota" (tocar num medidor): um cartão de total e um por unidade, as mesmas
+   da Tendência x Meta (os grupos da cascata no 1º nível do filtro: gerências; supervisões + "Neutraliza"; rotas; virtuais e
+   EV* fora das listas e dentro do total). Nada é recalculado: Meta, Real, Tendência, pctReal e pctTendencia saem de agrega().
+   Unidade sem meta na categoria fica fora; ordem pelo Real / Meta exato, do maior para o menor, com a "Neutraliza" por
+   último. Cor (status): verde = Real >= Meta (meta batida); âmbar = pctTendencia >= 100 (na tendência: a regra do card de
+   Volume e do "Tendência x Meta", não o ritmo linear); vermelho = o resto. Fechamento do mês: verde (Real >= Meta) ou
+   vermelho, sem a barra de Tendência. Fechar a gaveta mantém a categoria em análise. */
+const ST_CAT = {bat:'cuBat', tend:'cuTend', abx:'cuAbx'};
+const statusCat = b => b.real >= b.meta ? 'bat' : !P.FECHAMENTO && b.pctTendencia!=null && b.pctTendencia >= 100 ? 'tend' : 'abx';
+const qtd = (n, um, varios) => `${n.toLocaleString('pt-BR')} ${n===1 ? um : varios}`;
+// subtítulo do cartão: o que há dentro (gerência: supervisões; supervisão e "Neutraliza": rotas; rota: clientes da base)
+const infoCat = (nivel, rotas, gc) => nivel==='gc' ? qtd(svsVisiveis(gc).length, 'supervisão', 'supervisões')
+  : nivel==='sv' ? qtd(rotas.filter(r=>!ehVirtual(r)).length, 'rota', 'rotas')
+  : qtd((nodo(gc, rotas[0]) || {}).baseTotal || 0, 'cliente', 'clientes');
+// nome do cartão de total: "BAND · Diretoria", a gerência ("GC.G2 · Goiânia 02"), o grupo ("GC.IT + GC.MO"), a supervisão
+// ("SV.G2.1 · Nome") ou a "Neutraliza" do filtro
+const nomeTotalCat = ctx => ctx.nivel==='gc' ? 'BAND · Diretoria'
+  : ctx.nivel==='sv' && ehGrupo(ctx.gc) ? membrosGc(ctx.gc).map(g=>'GC.'+g).join(' + ') : ctx.nome;
+
+function cartaoCat(nome, x, info, tot){
+  const {u, b, st} = x, fech = !!P.FECHAMENTO, r = b.real / b.meta, d = desvioVol(b);
+  const larg = v => `${Math.max(0, Math.min(100, v * 100)).toFixed(2)}%`;
+  const dica = `<div class="t">${esc(nome)} · ${esc(u.cod)}</div>Meta <b>${fmt0(b.meta)}</b><br>`+
+    `${fech ? 'Realizado' : 'Real até ontem'} <b>${fmt0(b.real)}</b> (${b.pctReal}%)<br>`+
+    (fech ? '' : `Tendência <b>${fmt0(b.tendencia)}</b> (${b.pctTendencia}%)<br>`)+
+    `Desvio <b class="${d >= 0 ? 'g' : 'v'}">${fmtDesvio(d, 2)}</b>`;
+  return `<div class="cuCard ${ST_CAT[st]}${tot ? ' cuTot' : ''}${fech ? ' cuFech' : ''}" tabindex="0" data-u="${esc(u.cod)}"`+
+    ` data-st="${st}" data-meta="${b.meta}" data-real="${b.real}" data-tend="${fech ? '' : b.tendencia}" data-pct="${b.pctReal}"`+
+    ` data-pct-tend="${fech ? '' : b.pctTendencia}" data-dica="${esc(dica)}">`+
+    `<div class="cuCab"><b class="cuNome">${esc(tot ? nomeTotalCat(x.ctx) : u.nome)}</b> <span class="cuSub">${esc(info)}</span></div> `+
+    `<div class="cuPct"><b>${b.pctReal}%</b> <small>real</small></div> `+
+    `<div class="cuVals"><span><small>Meta</small> <b>${fmt0(b.meta)}</b></span> <span><small>Real</small> <b>${fmt0(b.real)}</b></span></div> `+
+    `<div class="cuBar cuB1"><span class="cuRot">Real</span> <span class="cuTr"><i style="width:${larg(r)}"></i></span> `+
+    `<span class="cuVal">${st==='bat' ? `+${Math.round((r - 1) * 100)}% s/ meta` : `faltam ${fmt0(b.meta - b.real)}`}</span></div>`+
+    (fech ? '' : ` <div class="cuBar cuB2"><span class="cuRot">Tendência</span> <span class="cuTr"><i style="width:${larg(b.tendencia / b.meta)}"></i></span> `+
+      `<span class="cuVal">${b.pctTendencia}%</span></div>`) + '</div>';
+}
+
+function abreCategoria(k){
+  const ctx = ctxInicial(), rotas = rotasAtuais(), b = agrega(rotas).ind[k];
+  if(!comMeta(b)) return;                    // sem meta no escopo: o medidor mostra "sem meta neste escopo" e não abre
+  const fech = !!P.FECHAMENTO, niv = NIVEL_EXEC[ctx.nivel] || NIVEL_EXEC.rota, nome = rotuloInd(k);
+  const us = unidadesExec(ctx).map(u=>({u, b:u.a.ind[k]})).filter(x=>comMeta(x.b));
+  us.forEach(x=>{ x.st = statusCat(x.b); });
+  const ord = [...us.filter(x=>x.u.cod!==SV_NEUTRA).sort((p, q)=>q.b.real/q.b.meta - p.b.real/p.b.meta),
+               ...us.filter(x=>x.u.cod===SV_NEUTRA)];
+  // o total é a unidade do nível de cima: a gerência (ou o grupo) tem supervisões; a supervisão (ou a "Neutraliza"), rotas
+  const totInfo = ctx.nivel==='gc' ? qtd(gcsComDados().length, 'gerência', 'gerências') : infoCat(ctx.nivel==='sv' ? 'gc' : 'sv', ctx.rotas, ctx.gc);
+  const total = {u:totalExec(ctx, rotas, null), b, st:statusCat(b), ctx};
+  const leg = fech ? [['bat', 'meta batida (Real ≥ Meta)'], ['abx', 'abaixo da meta']]
+    : [['bat', 'meta batida (Real ≥ Meta)'], ['tend', 'na tendência (tendência ≥ 100% da meta)'], ['abx', 'abaixo da tendência']];
+  abre(`${nome} por ${niv[0]}`,
+    `${fech ? 'Realizado ÷ Meta · cor pelo realizado' : 'Real até ontem ÷ Meta · cor pela tendência do SAC'} · ${qtd(ord.length, niv[0], niv[1])}`,
+    `<div class="cuGav" data-k="${esc(k)}"><div class="cuGrade">${cartaoCat(nome, total, totInfo, true)}`+
+    ord.map(x=>cartaoCat(nome, x, infoCat(ctx.nivel, x.u.rotas, x.u.filho.gc), false)).join('') + '</div>'+
+    (ord.length ? '' : `<div class="vazio">Nenhuma ${esc(niv[0])} com meta nesta categoria.</div>`)+
+    `<div class="cuLeg">${leg.map(([s, t])=>`<span><i class="cuLg ${ST_CAT[s]}"></i>${t}</span>`).join('')}</div></div>`);
+  $('dCorpo').querySelectorAll('.cuCard').forEach(ativaDica);
+}
+// no toque, rolar a lista da gaveta fecha a caixa de comentário (como rolar a página); mouse e teclado ficam como estão
+$('dCorpo').addEventListener('scroll', () => { if(_dicaEl && toque() && $('dCorpo').contains(_dicaEl)) escondeDica(); }, {passive:true});
 
 /* Tendência x Meta por unidade: barras divergentes (desvio = Tendência / Meta - 1, 1 casa na tela), da maior para a
    menor, com a linha de total no meio da ordenação; escala própria de cada categoria (maior |desvio|, mínimo 10%);

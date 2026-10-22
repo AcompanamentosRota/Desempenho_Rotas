@@ -116,6 +116,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   sem o `#exEvo`, cabeçalho e cards das 4 abas, cascata e Resumo iguais (HTML).
   Ajuste de rótulos: Diretoria, G1, IT+MO, a 1ª supervisão e a 1ª rota da G2, em 1440 e 390 px nos dois fundos, e o antes x
   depois contra o front do `20728ac` com o mesmo payload (`frontend/tests/rotulos_invariantes.js`, as mesmas da Parte AA).
+  Gaveta "Categoria por unidade": Diretoria, cada gerência, cada grupo no Total e uma supervisão, nas 5 categorias
+  (`frontend/tests/categoria_invariantes.js`, as mesmas da Parte AC; tabela por escopo e categoria); 360/390/1000/1440 px nos
+  dois fundos sem corte nem rolagem lateral; e o antes x depois contra o front do `ec60a88` com o mesmo payload (Executiva,
+  abas, cascata, Base, Sem compra e Resumo iguais).
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -393,7 +397,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `--fs-card` 15, `--fs-valor` 11,5, `--fs-ind` 25, `--fs-legenda` 11, `--fs-acao` 12,5, `--fs-online` 19,
   `--fs-online-rot` 9,5; `--h-card-*` 136 (PC) / 134 (celular). Grade da `.lista` no PC: `repeat(auto-fill,
   minmax(340px, 1fr))` (3 colunas em 1440 px). Testes: Parte T. Escala só por variáveis de `:root` (`--fs-titulo/card/ind/valor/legenda`, celular até
-  640 px; a Executiva tem `--fs-ex-*` em `:root`): não pôr tamanho de letra solto fora dela (exceções: caixas `.rs-k` do Resumo/PDF e a página `.rt-*` do Painel de Ritmo). `%` de cards e linhas
+  640 px; a Executiva tem `--fs-ex-*` em `:root`; a gaveta Categoria por unidade, `--cu-fs-*` no escopo `.cuGav`): não pôr tamanho de letra solto fora dela (exceções: caixas `.rs-k` do Resumo/PDF e a página `.rt-*` do Painel de Ritmo). `%` de cards e linhas
   de grupo com `data-fit=""` (parte da escala, só reduz se não couber). Vermelho só no % abaixo, na Diferença
   negativa, no "faltam" (`.acao.falta`) e em alertas; Meta/Real/apoio em `--txt`/`--txt-apoio` (AA 4,5:1); rosa e verde
   claro dos cards e o verde do ritmo não mudam. Alturas mínimas por tipo (`--h-*`, card de volume com classe `vol`).
@@ -481,6 +485,23 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `7674ca2`, `FRONT_PRE_EVO`) e `conferencia_real.test.js` (invariantes (a)-(f) em `frontend/tests/evolucao_invariantes.js`,
   com as categorias abertas, e o mesmo antes x depois com o payload real). `TEXTOS_TELA_PAGINA` (antes x depois da Parte AA)
   deixa o `#exEvo` fora.
+  **Gaveta "Categoria por unidade" (22/10/2026; README, "Aba Executiva"; só front, versão "Destaque")**: clique/Enter/Espaço
+  no medidor (`pintaMedidores`) = `escolheCat(k)` (como antes) + `abreCategoria(k)`; os chips do celular só escolhem; sem
+  `comMeta` no escopo o medidor é `.off` (sem role/tabindex/clique) e a função também sai cedo; fechar não mexe em `catExec`.
+  Unidades = `unidadesExec(ctxInicial())` (ganhou `filho`), total = `agrega(rotasAtuais())` (`totalExec`); unidade sem meta
+  fora; ordem Real/Meta exato decrescente (empate: a da cascata), "Neutraliza" por último. Status `statusCat` (decisões de
+  22/10): 'bat' Real >= Meta; 'tend' `pctTendencia` (o do card, ARREDONDADO: 99,6% = âmbar) >= 100, fora do fechamento; 'abx'
+  o resto (`ST_CAT` → `.cuBat/.cuTend/.cuAbx`). `cartaoCat` = `.cuCard` (`tabindex=0`, `data-u/st/meta/real/tend/pct/pct-tend`
+  com os valores exatos, `data-dica` + `ativaDica`; `.cuTot` = total, fundo `--papel`; `.cuFech` = sem `.cuB2`); nome do total
+  `nomeTotalCat` ("BAND · Diretoria", `rotuloGc`, grupo "GC.IT + GC.MO", `rotuloSv`, "Neutraliza · G1"); `infoCat` ("N
+  supervisões" visíveis / "N rotas" / "N clientes"); título `${rotuloInd(k)} por ${nível}`; subtítulo "Real até ontem ÷ Meta ·
+  cor pela tendência do SAC · N <nível>" (N = cartões de unidade, com a "Neutraliza"; fechamento "Realizado ÷ Meta · cor pelo
+  realizado · N <nível>"). "faltam" = `fmt0(meta − real)`; "+X% s/ meta" = round((real/meta − 1)·100). Espaços entre os filhos
+  dos flex/grid (texto para leitor de tela). Rolar `#dCorpo` com a dica aberta pelo toque a fecha. CSS: bloco `.cu*` logo
+  depois do drawer; escala e cores no `.cuGav` (`--cu-fs-*`, `--cu-val-w` 80 px, `--cu-cor/esc/clr` por status, âmbar escuro
+  `#7d5a00`); 3 colunas (50 px | barra | valor) com as barras em `subgrid` (alinhadas; fallback sem subgrid); grade 1 / 2 (>=
+  700 px) / `auto-fill minmax(300px, 1fr)` (>= 1000 px). Nenhuma regra existente da gaveta muda. Testes: Parte AC
+  (`categoria_invariantes.js`, também na conferência com dado real; antes x depois contra o `ec60a88`, `FRONT_PRE_CAT`).
   **Gavetas com barra de dias (Etapa 6, 21/10/2026; README, "Gavetas com barra de dias")**: o `chipsHtml`/`DIAS_CHIP` das
   coberturas e a regra única `noDia(c, chip)` (Todos; Hoje = `c[4]===1`; dia = `DIAS[c[3]].includes(chip)`: "Seg - Qui"
   aparece na Seg e na Qui; `listaCobertura` usa a mesma). `listaVolume`: barra em `#dLista` acima do `.cCab`, padrão
@@ -497,6 +518,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   reprovado ali): bloco "drawer" do `app.css` copiado do 0a59eb4 (sem a serifa do `.cLin .cDir b`), cinzas antigos
   redefinidos em `.drw` (`--cinza`, `--cinza-escuro`), sem `var(--fs-*)`, alturas mínimas, `data-fit` nem `encaixa()`
   na gaveta. Não aplicar a escala/cores novas ali; se a Inter apertar uma célula, só `letter-spacing` (até -0.02em).
+  Conteúdo NOVO dentro da gaveta (a "Categoria por unidade" da Executiva) só com classes novas (`.cu*`, escala e cores
+  próprias); o cromo (moldura, cabeçalho, ×) é o de sempre (a Parte AC compara com o da cascata).
   A Parte N dos testes compara a gaveta com o front do 0a59eb4 (`git show`) elemento a elemento. Onde o atual tem a barra
   de dias e o 0a59eb4 não (lista de volume, Base, Sem compra; Etapa 6): a marcação fora da barra = a de lá (no estado que
   ele tem) e o `#dCorpo` do atual é posto na gaveta do 0a59eb4 (nós dele devolvidos depois) para comparar o estilo de cada
