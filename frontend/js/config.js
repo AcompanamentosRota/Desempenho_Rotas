@@ -34,6 +34,13 @@ const CONFIG = Object.freeze({
   // Resumo da Diretoria: gerências por faixa (acima disso, quebra em faixas)
   RS_COLUNAS_FAIXA: 8,
   CREDITOS: 'Karen Oliveira - Inteligência de Mercado',
+  /* Rótulo do macro de volume VOL DEST+ART+CND (chave interna e payload continuam "Dest+Art+Cnd"): todo o painel mostra
+     ROTULO_VOLUME_NOVOS (rotuloFront abaixo); ROTULO_VOLUME_SUB é a 2ª linha, menor, só no card da aba Volume. Não
+     confundir com a aba/grupo de coberturas "Novos Negócios" (NOVOS_NEG), que não muda. */
+  ROTULO_VOLUME_NOVOS: 'Novos Negócios',
+  ROTULO_VOLUME_SUB: 'Dest+Art+Cnd',
+  // nome da aba EXEC (visão executiva) por perfil; o perfil Rota não tem a aba
+  ABA_EXEC_NOME: {dir: 'Diretoria', gc: 'Gerencial', sv: 'Supervisão'},
   /* Controle de acesso interno: a entrada só organiza o que cada perfil vê, sem usuário nem senha; NÃO é
      segurança — os dados estão em frontend/data/*.json. O acesso fica guardado no aparelho até a virada do dia
      (05:00, horário de Brasília) ou até clicar na casa. */
@@ -54,3 +61,8 @@ const CONFIG = Object.freeze({
     }
   }
 });
+
+/* Rótulo exibido de um indicador (único ponto para os nomes que o front troca): o macro de volume VOL DEST+ART+CND vira
+   CONFIG.ROTULO_VOLUME_NOVOS; os demais ficam com o rótulo de quem chama (LABELS do payload, curto...) ou a chave. */
+const CHAVE_VOLUME_NOVOS = 'VOL DEST+ART+CND';
+function rotuloFront(k, rotulo){ return k===CHAVE_VOLUME_NOVOS ? CONFIG.ROTULO_VOLUME_NOVOS : (rotulo || k); }

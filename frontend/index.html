@@ -111,9 +111,10 @@
       <label class="sr-only" for="frota">Rota</label><select id="frota"></select>
     </div>
     <div class="ladoSec sTab" aria-hidden="true">Painéis</div>
-    <!-- Executiva: aba inicial de Diretoria, Gerência e Supervisão; não existe com uma rota no filtro (perfil Rota) -->
+    <!-- visão executiva (EXEC): aba inicial de Diretoria, Gerência e Supervisão, com o nome do perfil (CONFIG.ABA_EXEC_NOME:
+         Diretoria, Gerencial, Supervisão; render() troca); não existe com uma rota no filtro (perfil Rota) -->
     <div class="tabs" role="tablist" aria-label="Grupo de indicadores">
-      <button class="tab on" role="tab" aria-selected="true" data-g="EXEC" title="Executiva"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17V9M8 17V4M13 17v-6M18 17V7"/></svg><span>Executiva</span></button>
+      <button class="tab on" role="tab" aria-selected="true" data-g="EXEC" title="Diretoria" aria-label="Diretoria"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17V9M8 17V4M13 17v-6M18 17V7"/></svg><span>Diretoria</span></button>
       <button class="tab" role="tab" aria-selected="false" data-g="VOLUME" title="Volume"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3h8l-1 5h-6zM7 8v8a2 2 0 0 0 2 1h2a2 2 0 0 0 2-1V8"/></svg><span>Volume</span></button>
       <button class="tab" role="tab" aria-selected="false" data-g="ICS_GC" title="ICS GC"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 10 6 6"/><circle cx="10" cy="10" r="1.6"/></svg><span>ICS GC</span></button>
       <button class="tab" role="tab" aria-selected="false" data-g="NOVOS_NEG" title="Novos Negócios"><svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v14M3 10h14"/></svg><span>Novos Negócios</span></button>
@@ -161,8 +162,8 @@
     <div class="fchips" id="abFil" role="group" aria-label="Filtrar os cards"></div>
   </section>
 
-  <!-- aba Executiva: o cabeçalho é o da aba (título "Resumo executivo" e etiqueta do dia); 4 KPIs, dois quadros de destaque
-       e os blocos por unidade do filtro (gerências, supervisões ou rotas), preenchidos por pintaExecutiva() (app.js) -->
+  <!-- visão executiva (aba Diretoria, Gerencial ou Supervisão): o cabeçalho é o da aba (título = nome da aba e etiqueta do
+       dia); 4 KPIs, dois quadros de destaque e os blocos por unidade do filtro (gerências, supervisões ou rotas), preenchidos por pintaExecutiva() (app.js) -->
   <section class="exec" id="exec" aria-labelledby="abTit" hidden>
     <div class="cards exKpis">
       <div class="card kpi" id="exBase" role="button" tabindex="0"><div class="l">Base total de clientes</div>

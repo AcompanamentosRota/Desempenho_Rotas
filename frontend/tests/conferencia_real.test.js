@@ -29,6 +29,7 @@ const {execSync} = require('node:child_process');
 const {confereExecutiva} = require('./executiva_invariantes.js');
 const {confereGavetas, leChips} = require('./gavetas_invariantes.js');
 const {confereEvolucao} = require('./evolucao_invariantes.js');
+const ROT = require('./rotulos_invariantes.js');
 
 const FRONT = path.resolve(__dirname, '..');
 const PAYLOAD = process.env.PAYLOAD_REAL, ONLINE = process.env.ONLINE_REAL;
@@ -49,8 +50,8 @@ let browser;
 before(async () => { if(!pular) browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {}); });
 after(async () => { if(browser) await browser.close(); });
 
-// tema = fundo da entrada guardado ('preta' | 'branca'; sem ele, o padrão)
-async function abre(largura = 1440, tema){
+// tema = fundo da entrada guardado ('preta' | 'branca'; sem ele, o padrão); troca = {'/js/app.js': () => texto} (front antigo)
+async function abre(largura = 1440, tema, troca = {}){
   const ctx = await browser.newContext({viewport: {width: largura, height: 1000}});
   const page = await ctx.newPage();
   if(tema) await page.addInitScript(t => { try { localStorage.setItem('drotas_entrada', t); } catch(e){} }, tema);
@@ -61,21 +62,24 @@ async function abre(largura = 1440, tema){
     const url = new URL(rota.request().url());
     const arq = url.pathname === '/data/payload.json' ? PAYLOAD : url.pathname === '/data/online.json' ? ONLINE
       : path.join(FRONT, url.pathname);
-    if(!fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
-    rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream', body: fs.readFileSync(arq)});
+    if(!troca[url.pathname] && !fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
+    rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream',
+                  body: troca[url.pathname] ? troca[url.pathname]() : fs.readFileSync(arq)});
   });
   await page.route(/cdnjs\.cloudflare\.com/, r => r.abort());
   await page.goto('http://painel.test/index.html');
   await page.waitForFunction(() => typeof P !== 'undefined' && P && document.getElementById('carga').hidden);
   return {page, ctx, erros};
 }
-// entra pela tela de entrada (a casa volta para ela): {perfil: 'dir'} | {perfil: 'gc', gc} | {perfil: 'sv', gc, sv}
-async function entra(page, {perfil, gc, sv}){
+// entra pela tela de entrada (a casa volta para ela): {perfil: 'dir'} | {perfil: 'gc', gc} | {perfil: 'sv', gc, sv} |
+// {perfil: 'rota', gc, rota}
+async function entra(page, {perfil, gc, sv, rota}){
   if(await page.isHidden('#entrada')) await page.click('#btnCasa');
   await page.click(`#entrada [data-perfil="${perfil}"]`);
   if(perfil === 'dir') return;
   await page.click(`#entOpcoes [data-gc="${gc}"]`);
   if(perfil === 'sv') await page.click(`#entOpcoes [data-sv="${sv}"]`);
+  if(perfil === 'rota') await page.click(`#entOpcoes [data-rota="${rota}"]`);
 }
 
 describe('Conferência da Executiva com dado real (seção 7)', {skip: pular}, () => {
@@ -264,5 +268,122 @@ describe('Evolução contra o mês anterior com dado real (Etapa 8c)', {skip: pu
     const n = v => v.toLocaleString('pt-BR');
     for(const l of linhas) console.log(`# | ${[l.onde, `${l.unidades} (${l.nd})`, l.fora, n(l.realAnt), n(l.metaAnt), n(l.real),
                                               ...ks.map(k => l.cats[k])].join(' | ')} |`);
+  });
+});
+
+/* Ajuste de rótulos com dado real: o macro VOL DEST+ART+CND como "Novos Negócios" (card de Volume com a 2ª linha
+   "Dest+Art+Cnd"), o nome da aba EXEC por perfil e as notas menores (invariantes em rotulos_invariantes.js); antes x depois
+   contra o front da main antes do ajuste (REF_ROTULOS), com o mesmo payload: textos de cards, cabeçalho, visão executiva,
+   gavetas e Resumo iguais, fora o nome novo, a 2ª linha e o nome da aba. */
+const REF_ROTULOS = '20728ac';
+const FRONT_PRE_ROTULOS = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_ROTULOS}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const fs_ = ['index.html', 'css/app.css', 'js/config.js', 'js/nucleo.js', 'js/app.js', 'js/resumo.js', 'js/ritmo.js', 'js/main.js'];
+    return Object.fromEntries(fs_.map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+// perfis: Diretoria, G1, o grupo IT+MO no Total, a 1ª supervisão e a 1ª rota da G2 (pela própria entrada)
+const perfisRotulos = page => page.evaluate(() => [{perfil: 'dir'}, {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'},
+  {perfil: 'sv', gc: 'G2', sv: svsDaEntrada('G2')[0]}, {perfil: 'rota', gc: 'G2', rota: rotasDaEntrada('G2')[0]}].filter(e => !e.gc || temDados(e.gc)));
+const ABAS = ['EXEC', 'VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO'];
+const vaiAba = (page, a) => page.evaluate(a => { const t = document.querySelector(`.tab[data-g="${a}"]`); if(t.hidden) return false; t.click(); return true; }, a);
+
+describe('Ajuste de rótulos com dado real (Novos Negócios, aba por perfil, notas)', {skip: pular}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px, fundos preto e branco: 2ª linha só no card de Volume, nenhum "${ROT.SUB}" fora dela, nome da aba, notas AA`, async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre(largura, tema);
+      const linhas = [];
+      for(const e of await perfisRotulos(page)){
+        await entra(page, e);
+        const onde = `${largura} ${tema} ${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+        const a = await page.evaluate(ROT.ABA_EXEC_PAGINA);
+        if(e.perfil === 'rota') assert.equal(a.visivel, false, onde);
+        else assert.deepEqual([a.visivel, a.span, a.title, a.aria, a.abTit], [true, ...Array(4).fill(ROT.NOME_EXEC[e.perfil])], onde);
+        for(const ab of ABAS){
+          if(!await vaiAba(page, ab)) continue;
+          assert.deepEqual(await page.evaluate(ROT.RASTRO_PAGINA, ROT.SUB), [], `${onde} ${ab}`);
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde} ${ab}: rolagem lateral`);
+        }
+        await vaiAba(page, 'VOLUME');
+        const cs = await page.evaluate(ROT.CARDS_VOLUME_PAGINA, ROT.K_NOVOS);
+        const nn = cs.find(x => x.k === ROT.K_NOVOS || (x.off && x.tit === ROT.NOVOS));
+        assert.ok(nn && nn.sub === ROT.SUB, `${onde}: card ${ROT.NOVOS}`);
+        assert.deepEqual(cs.filter(x => x !== nn && x.sub).map(x => x.k), [], `${onde}: outro card com a 2ª linha`);
+        if(!nn.off){
+          assert.ok(nn.sFs < nn.tFs && nn.sLum > nn.tLum && nn.sContraste >= 4.5, `${onde}: estilo ${JSON.stringify(nn)}`);
+          const vol = cs.filter(x => x.vol), porLinha = {};
+          for(const x of vol) (porLinha[x.topo] = porLinha[x.topo] || []).push(x.h);
+          for(const hs of Object.values(porLinha)) assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `${onde}: alturas ${hs}`);
+        }
+        await page.click(`#lista .ind[data-k="${ROT.K_NOVOS}"]`).catch(() => {});
+        if(await page.isVisible('#drw')){
+          assert.ok((await page.textContent('#dTit')).startsWith(ROT.NOVOS + ' · '), `${onde}: gaveta`);
+          assert.deepEqual(await page.evaluate(ROT.RASTRO_PAGINA, ROT.SUB), [], `${onde} gaveta`);
+          await page.keyboard.press('Escape');
+        }
+        if(e.perfil !== 'rota'){
+          await page.click('#btnResumo');
+          assert.deepEqual(await page.evaluate(ROT.RASTRO_PAGINA, ROT.SUB), [], `${onde} Resumo`);
+          await page.click('#rsVoltar');
+          const rt = await page.evaluate(() => { const m = montaRitmo(P, RT.escopoRitmo());
+            return JSON.stringify(m) + m.paginas.map(pg => { const x = RT.desenhaPagina(pg); return typeof x === 'string' ? x : x.outerHTML; }).join(''); });
+          assert.ok(!rt.includes(ROT.SUB) && rt.includes(ROT.NOVOS), `${onde}: Painel de Ritmo`);
+        }
+        const notas = await page.evaluate(ROT.NOTAS_PAGINA);
+        for(const [n, v] of Object.entries(notas)) assert.ok(v.contraste >= 4.5, `${onde}: ${n} contraste ${v.contraste}`);
+        linhas.push([onde, a.visivel ? a.span : '(sem aba)', nn.off ? 'indisponível' : `${nn.sFs}px x ${nn.tFs}px, ${nn.sContraste.toFixed(2)}:1`,
+          Object.entries(notas).map(([n, v]) => `${n} ${v.fs}px ${v.contraste.toFixed(1)}:1`).join(', ')]);
+      }
+      assert.deepEqual(erros, [], `${largura} ${tema}`);
+      await ctx.close();
+      console.log(`# Rótulos com dado real (${largura} px, fundo ${tema})`);
+      console.log('# | Perfil | Aba EXEC | 2ª linha (tamanho x título, contraste) | Notas (tamanho, contraste) |');
+      console.log('# |---|---|---|---|');
+      for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+    }
+  });
+
+  test('antes x depois com o mesmo payload real: cards, cabeçalho, visão executiva, gavetas e Resumo iguais aos da main (fora o nome novo, a 2ª linha e o nome da aba); notas menores', {skip: !FRONT_PRE_ROTULOS && `sem o commit ${REF_ROTULOS}`}, async () => {
+    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_ROTULOS)];
+    const linhas = [];
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      const comp = [];
+      for(const ab of ABAS){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${onde} ${ab}`);
+        if(!ta) continue;
+        const [a, b] = [await novo.page.evaluate(ROT.TEXTOS_TELA_PAGINA), await velho.page.evaluate(ROT.TEXTOS_TELA_PAGINA)];
+        assert.deepEqual(a, ROT.comNomeNovo(b), `${onde} ${ab}`);
+        comp.push(`${ab} (${a.lista.length || 'visão executiva'})`);
+        // gavetas: o macro de volume e o 1º card de cada aba de coberturas
+        const k = ab === 'VOLUME' ? ROT.K_NOVOS : ab === 'EXEC' ? null : await novo.page.$eval('#lista .ind[data-k]', x => x.dataset.k).catch(() => null);
+        if(!k || !(await novo.page.$(`#lista .ind[data-k="${k}"]`))) continue;
+        const gav = async p => { await p.click(`#lista .ind[data-k="${k}"]`);
+          const t = await p.evaluate(() => [document.getElementById('dTit').textContent, document.getElementById('dCorpo').textContent]);
+          await p.keyboard.press('Escape'); return t; };
+        assert.deepEqual(await gav(novo.page), ROT.comNomeNovo(await gav(velho.page)), `${onde} ${ab} gaveta ${k}`);
+        comp.push(`gaveta ${k}`);
+      }
+      if(e.perfil !== 'rota'){
+        const rs = async p => { await p.click('#btnResumo'); const t = await p.evaluate(() => document.getElementById('rsFolha').textContent);
+          await p.click('#rsVoltar'); return t; };
+        assert.equal(await rs(novo.page), ROT.comNomeNovo([await rs(velho.page)])[0], `${onde} Resumo`);
+        comp.push('Resumo');
+      }
+      linhas.push([onde, comp.join(', ')]);
+    }
+    const [na, nb] = [await novo.page.evaluate(ROT.NOTAS_PAGINA), await velho.page.evaluate(ROT.NOTAS_PAGINA)];
+    for(const n of Object.keys(nb)) assert.ok(na[n].fs < nb[n].fs, `${n}: ${na[n].fs} x ${nb[n].fs}`);
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log('# Antes x depois (main antes do ajuste x branch), mesmo payload real: tudo igual fora o nome novo, a 2ª linha e o nome da aba');
+    console.log('# | Perfil | Comparado |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+    console.log(`# Notas (main -> branch): ${Object.keys(nb).map(n => `${n} ${nb[n].fs} -> ${na[n].fs}px`).join(', ')}`);
   });
 });

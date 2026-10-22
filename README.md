@@ -176,7 +176,8 @@ tamanho original, 560x251 e 140x263 px, otimizados: ~95 KB os quatro, eram ~220 
 Bandeirantes" (logo) e "Comercial Bandeirantes" (elmo e texto).
 
 **Aba inicial** (desde a Etapa 5): ao entrar (e ao reabrir pelo acesso guardado), Diretoria, Gerência e Supervisão abrem na
-aba **Executiva**; a Rota, que não tem a Executiva, abre no **Volume**.
+aba **Executiva** (visão executiva; o botão leva o nome do perfil: **Diretoria**, **Gerencial** ou **Supervisão**); a
+Rota, que não tem a Executiva, abre no **Volume**.
 
 | Perfil | Escolhe | Abre |
 |---|---|---|
@@ -431,6 +432,18 @@ em cada unidade dessas gerências (gerência, supervisões, "Neutraliza" e rotas
 rolagem lateral nem erro no console em 360, 390, 1000 e 1440 px nos dois fundos. Imprime tabelas-resumo só de totais e
 códigos.
 
+A **Parte AA** confere o ajuste de rótulos (cenários `vol5`/`vol5fech`: os 5 macros de volume com dado, `montaVolume5`):
+o card "Novos Negócios" com a 2ª linha "Dest+Art+Cnd" (menor, mais clara, contraste >= 4,5:1, no rosa e no verde) em
+Diretoria, Gerência, grupo, Supervisão e Rota, em 1440 e 390 px, e os outros cards sem ela, com a mesma altura; nenhum
+"Dest+Art+Cnd" visível (texto, `title`, `aria-label`, dicas) fora dessa linha em nenhuma aba, na visão executiva, na gaveta,
+no Resumo e no Painel de Ritmo (modelo e páginas desenhadas); o nome da aba por perfil (Diretoria, Gerencial, Supervisão;
+Rota sem a aba), no painel lateral, no recolhido e no celular; contra a main antes do ajuste (`20728ac` via `git show`),
+cards, cabeçalho, visão executiva, gavetas e Resumo iguais fora o nome novo, a 2ª linha e o nome da aba, e o rodapé, o
+crédito e as legendas menores (até 1 px, ~10%) com contraste AA, com a letra da gaveta igual. As invariantes ficam em
+`frontend/tests/rotulos_invariantes.js`, usadas também pela conferência com dado real (bloco "Ajuste de rótulos": 1440 e
+390 px, nos dois fundos, e o antes x depois com o mesmo payload real). Os "antes x depois" de etapas anteriores (Partes V,
+R, W e X) comparam com o nome antigo trocado pelo novo e sem a 2ª linha (`igualRotulo`).
+
 ```bash
 git show origin/main:frontend/data/payload.json > /tmp/real/payload.json
 git show origin/main:frontend/data/online.json > /tmp/real/online.json
@@ -454,7 +467,13 @@ PAYLOAD_REAL=/tmp/real/payload.json ONLINE_REAL=/tmp/real/online.json node --tes
   (Gerência, Supervisão, Rota) ele continua, para o contexto não sumir. Com a Executiva, as cinco abas não cabem numa
   linha em 360-640 px: a faixa das abas rola de lado (como a dos seletores) e a aba ativa fica sempre à vista.
 
-### Aba Executiva (resumo executivo)
+### Aba Executiva: visão executiva (aba Diretoria, Gerencial ou Supervisão)
+
+A chave interna continua `EXEC`; o nome visível segue o perfil (`CONFIG.ABA_EXEC_NOME`, `nomeAbaExec()` em app.js):
+**Diretoria** no perfil Diretoria, **Gerencial** no perfil Gerência (inclusive nos grupos de gerências) e **Supervisão** no
+perfil Supervisão; o perfil Rota não tem a aba. O nome vale no botão da aba (barra do celular e painel lateral do PC), no
+`title`/`aria-label` (o painel recolhido mostra só o ícone) e no título da aba (`#abTit`). Sem acesso guardado (link do
+Resumo), pelo modo do filtro.
 
 Desde a Etapa 5 (21/10/2026), a primeira aba da barra e a aba inicial de Diretoria, Gerência e Supervisão. A Rota não tem a
 Executiva (abre no Volume); com uma rota escolhida no filtro, a aba some e o painel vai para o Volume (volta a aparecer ao
@@ -464,7 +483,7 @@ uma supervisão → rotas; "Neutraliza" no filtro → as rotas Neutraliza. Rotas
 ficam fora das listas de unidades e dentro dos totais. Linha de total: **BAND** na Diretoria; com filtro, o código (GC.AT,
 GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai da mesma agregação dos cards.
 
-- **Cabeçalho**: "Resumo executivo" e a etiqueta do dia (a das abas, com a caixa de comentário). Sem busca e sem filtro
+- **Cabeçalho**: o nome da aba (Diretoria, Gerencial ou Supervisão; até o ajuste de rótulos, "Resumo executivo") e a etiqueta do dia (a das abas, com a caixa de comentário). Sem busca e sem filtro
   rápido.
 - **4 KPIs** (cards brancos, número em Source Serif 4): **Base total de clientes**, **Sem compra** ("X% da base · sem compra
   no mês"), **Visitas hoje** e **Categorias na tendência** ("x / 5", verde ou vermelho pela mesma regra do card do Volume, e
@@ -478,7 +497,7 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
 - **Meta do dia (SAP)**: online de hoje contra a meta do dia (a mesma do card) e quantas unidades já alcançaram (meta do
   dia batida ou online >= meta do dia, a regra da caixa Online). Sem meta do dia: "sem meta do dia do SAP neste escopo".
 - **Categorias**: um medidor (meia-lua) por categoria de volume (Refrigerantes, Cervejas, Still, Água Mineral,
-  Dest+Art+Cnd; Del Valle Frut fica fora), preenchido com Real ÷ Meta (até 100%) na cor da categoria; no centro o % real;
+  Novos Negócios; Del Valle Frut fica fora), preenchido com Real ÷ Meta (até 100%) na cor da categoria; no centro o % real;
   Meta | Real; Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
   valor exato, como o SAC: −0,03% é vermelho mesmo com o card do Volume verde em 100%); "meta do dia N · online N" (ou
   "meta do dia batida" / "meta do dia —"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os
@@ -589,6 +608,23 @@ Desde a Etapa 6 (21/10/2026), três listas de clientes ganharam a mesma barra de
   subtítulo traz sempre o total ("1.327 clientes na base", "182 de 1.327 clientes da base · nenhum faturamento no mês").
 - Cada vez que a gaveta abre, a barra volta ao padrão.
 
+### Rótulo "Novos Negócios" do macro de volume Dest+Art+Cnd
+
+O macro de volume `VOL DEST+ART+CND` (no payload e no back-end, rótulo "Dest+Art+Cnd"; nada muda lá) aparece no painel como
+**Novos Negócios**. O rótulo fica num lugar só, `config.js`: `CONFIG.ROTULO_VOLUME_NOVOS` ("Novos Negócios"),
+`CONFIG.ROTULO_VOLUME_SUB` ("Dest+Art+Cnd") e `rotuloFront(k, rotulo)`, que troca o nome desse macro e devolve o rótulo de
+quem chama nos demais (usada pelo `rotuloInd` do app.js, pelo resumo.js e pelo ritmo.js). Onde aparece:
+
+- **Card da aba Volume** (Diretoria, Gerência, grupos, Supervisão e Rota): "Novos Negócios" e, embaixo, "Dest+Art+Cnd" numa
+  2ª linha menor e mais clara (`.ind .tsub`: `--fs-card-sub` 11 px, `--fw-card-sub` 400, `--txt-apoio`, ~5,7:1 no rosa e
+  no verde claro). Só esse card tem a linha; para a grade não deformar, a lista que tem esse card dá a todos os cards de
+  volume a altura mínima `--h-card-vol` + a linha (os cards de volume continuam iguais entre si).
+- **Só o nome** ("Novos Negócios", sem a 2ª linha): visão executiva (medidores, Tendência x Meta, chips, Foco do fechamento,
+  Meta do dia, Evolução, dicas), título da gaveta (só o texto; nenhum estilo novo), ficha da busca, Resumo de vendas e PDF,
+  Painel de Ritmo.
+- Não confundir com a **aba/grupo de coberturas Novos Negócios** (`NOVOS_NEG`: Campari, Dreher, Perfetti TT, Artd KO,
+  Aperol), que não muda.
+
 ### Visual (fonte, escala e cores)
 
 - **Fonte**: Inter variável servida pelo próprio site, sem CDN nem Google Fonts:
@@ -619,9 +655,15 @@ Desde a Etapa 6 (21/10/2026), três listas de clientes ganharam a mesma barra de
   | `--fs-ind` | 30 px | 28 px | 700 | o % dos cards; números dos cards do topo |
   | `--fs-valor` | 15 px | 14 px | 500 | Meta e Real dos cards, opções |
   | `--fs-legenda` | 12,5 px | 12 px | 400 | legendas, hora de atualização, seletores e abas |
+  | `--fs-nota` | 11,5 px | 11 px | 400 | rodapé da página (rotas · mês · dias úteis, clientes que compraram, Online, Fonte) e crédito |
+  | `--fs-nota-mini` | 9,5 px | 9,5 px | 400 | legendas abaixo dos blocos da visão executiva e crédito do painel lateral |
+
+  As duas `--fs-nota*` (ajuste de rótulos) deixam as notas ~1 px menores (eram `--fs-legenda`, `--fs-ex-mini` e
+  `--fs-lado-sec`), com as mesmas cores (AA: rodapé 5,9:1, crédito 4,8:1, painel lateral 7,3:1). A gaveta (`.drw`, inclusive
+  as notas de rotas virtuais e eventuais), o Resumo, os PDFs e o Painel de Ritmo não usam.
 
   Os cards de indicador (`.ind`) redefinem a escala no próprio escopo, ~12% menor e igual no PC e no celular:
-  título 15 px (`--fs-card`), Meta/Real/Diferença 11,5 px (`--fs-valor`), % até 25 px (`--fs-ind`), oportunidades
+  título 15 px (`--fs-card`; a 2ª linha do card Novos Negócios 11 px, `--fs-card-sub`), Meta/Real/Diferença 11,5 px (`--fs-valor`), % até 25 px (`--fs-ind`), oportunidades
   11 px (`--fs-legenda`), "no ritmo"/"faltam" 12,5 px (`--fs-acao`), número do Online até 19 px (`--fs-online`) e
   rótulos do Online 9,5 px (`--fs-online-rot`).
   O % dos cards e o número do Online partem da escala e só diminuem se não couberem (`data-fit=""` + `encaixa()`). As tabelas do
@@ -632,7 +674,8 @@ Desde a Etapa 6 (21/10/2026), três listas de clientes ganharam a mesma barra de
   raio e peso fixos (`--ritmo-*`).
   A aba Executiva tem a própria escala, também em `:root` e igual no PC e no celular (`--fs-ex-*`): título dos blocos 16
   px, título dos medidores 13 px, % do medidor 20 px, Meta/Real 13,5 px (encaixa até 9 px), tendência 15 px, desvio 12 px,
-  linhas das barras 11,5 px, células da tabela 12 px, rótulos pequenos 10,5 px e cabeçalho da tabela 10 px.
+  linhas das barras 11,5 px, células da tabela 12 px, rótulos pequenos 10,5 px (as legendas abaixo dos blocos, 9,5 px:
+  `--fs-nota-mini`) e cabeçalho da tabela 10 px.
 - **Cascata (gaveta que abre no card)**: mantém a aparência de antes do ajuste visual (commit `0a59eb4`) em todos os
   níveis (gerências, supervisões, rotas, clientes, Visitas de hoje, Sem compra, Venda Zero): tamanhos, pesos,
   espaçamentos, colunas, alturas, bordas e cores de antes, e os cinzas antigos (`--cinza`, `--cinza-escuro`
@@ -656,7 +699,7 @@ Desde a Etapa 6 (21/10/2026), três listas de clientes ganharam a mesma barra de
 
 ## Volume: tendência pelo critério do SAC
 
-Por rota × macro de volume (Refrigerantes, Cervejas, Still, Água Mineral, Dest+Art+Cnd):
+Por rota × macro de volume (Refrigerantes, Cervejas, Still, Água Mineral, Novos Negócios = Dest+Art+Cnd):
 
 | Campo | Conta |
 |---|---|

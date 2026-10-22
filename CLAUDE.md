@@ -99,7 +99,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (payload sem o grupo INCENTIVO), 'semscm' (payload sem SEM_COMPRA_MES; Parte S), 'grande' (16 gerências, a DI
   copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`), 'exec' (o 'inc' com clientes sem compra no
   mês, `montaSemCompra`: o sintético compra tudo; Parte W) e 'dias'/'diasscm' (o 'exec' com dias de visita "Seg - Qui",
-  "Ter" e "Qua - Sex" por rota, `montaDias`; o 2º sem SEM_COMPRA_MES; Parte X e o cenário "barra de dias" da Parte N). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
+  "Ter" e "Qua - Sex" por rota, `montaDias`; o 2º sem SEM_COMPRA_MES; Parte X e o cenário "barra de dias" da Parte N) e
+  'vol5'/'vol5fech' (o 'exec'/'incfech' com os 5 macros de volume com dado, `montaVolume5`, + `montaMesAnterior`; Parte AA). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
   `require.resolve` (local, `NODE_PATH` ou global); sem eles, pulado. `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
   a Parte N serve o CSS e o app.js do 0a59eb4 assim).
 - Conferência da Executiva com DADO REAL (sob demanda, fora do CI): `PAYLOAD_REAL=/tmp/real/payload.json
@@ -111,6 +112,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   unidade dessas gerências (Hoje e Todos x cards); sem rolagem lateral nem erro em 360/390/1000/1440 px nos dois fundos.
   Evolução contra o mês anterior (Etapa 8c): Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px
   (`frontend/tests/evolucao_invariantes.js`, as mesmas da Parte Z; pula sem `MES_ANTERIOR`).
+  Ajuste de rótulos: Diretoria, G1, IT+MO, a 1ª supervisão e a 1ª rota da G2, em 1440 e 390 px nos dois fundos, e o antes x
+  depois contra o front do `20728ac` com o mesmo payload (`frontend/tests/rotulos_invariantes.js`, as mesmas da Parte AA).
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -348,6 +351,21 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `app.css` fixam os tamanhos (os da tela de 1000-1599 px, em qualquer aparelho) com menos folga; `encaixaPdf`
   (resumo.js) encaixa a fonte do número (`encaixa()`, mínimo 10 px) e, se ainda faltar, alarga W; `limpaPdf` desfaz.
   Nada disso muda a tela do Resumo (Parte O dos testes compara com o CSS do 2d5419a).
+- **Rótulos (ajuste de 22/10/2026; README, "Rótulo Novos Negócios" e "Aba Executiva")**: só front; chaves internas, payload
+  e back-end iguais. (1) O macro `VOL DEST+ART+CND` aparece como `CONFIG.ROTULO_VOLUME_NOVOS` ("Novos Negócios") em tudo:
+  `rotuloFront(k, rotulo)` em config.js (único ponto; `rotuloInd` do app.js, `nome`/tabela de volume do resumo.js e `NOMES`
+  do ritmo.js chamam). `CONFIG.ROTULO_VOLUME_SUB` ("Dest+Art+Cnd") só como 2ª linha `.tsub` do card da aba Volume (`linha()`,
+  `CHAVE_VOLUME_NOVOS`; também no card indisponível), `--fs-card-sub` 11 px / `--fw-card-sub` 400 no escopo `.ind`,
+  `--txt-apoio`; `.lista:has(.ind .tsub) .ind.vol` soma a linha à `--h-card-vol` (cards de volume iguais entre si). Fora do
+  card, só o nome (Executiva, gaveta só o texto do `#dTit`, ficha da busca, Resumo/PDF, Painel de Ritmo). A aba/grupo de
+  coberturas "Novos Negócios" (`NOVOS_NEG`) não muda. (2) Aba `EXEC` com o nome do perfil: `CONFIG.ABA_EXEC_NOME`
+  {dir: 'Diretoria', gc: 'Gerencial' (grupo também), sv: 'Supervisão'}, `nomeAbaExec()` (sem `ACESSO`, pelo `sel.modo`);
+  `render()` põe no `<span>`, `title` e `aria-label` do botão; `#abTit` = `title` da aba ativa (no EXEC também). (3) Notas
+  menores: `--fs-nota` (11,5 px PC / 11 px celular; `.rodape` e `.creditos`) e `--fs-nota-mini` (9,5 px; `.legenda` da
+  Executiva e `.ladoCred`), mesmas cores; nunca na gaveta, no Resumo, nos PDFs nem no Painel de Ritmo. Testes: Parte AA
+  (`rotulos_invariantes.js`); os "antes x depois" antigos (Partes V, R, W, X) comparam com `igualRotulo` (nome antigo →
+  novo, sem a 2ª linha); o `FRONT_ETAPA4` (config.js antigo com resumo.js/ritmo.js atuais) ganha um `rotuloFront` com o rótulo
+  de antes.
 - **Visual** (README, "Visual"): fonte Inter variável LOCAL em `frontend/assets/fonts/` (latin + latin-ext do
   `@fontsource-variable/inter` 5.3.0, licença `OFL.txt`; nunca CDN nem Google Fonts), `font-display: swap`, fallback
   `system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`; `encaixa()` remede no `loadingdone` das fontes e o PDF
@@ -406,7 +424,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   **Aba Executiva (Etapa 5, 21/10/2026; README, "Aba Executiva")**: `.tab[data-g="EXEC"]` (primeira da barra; `aba` começa
   em 'EXEC'), `section#exec` (KPIs `.card.kpi` `#exBase/#exSem/#exVis/#exCat`, quadros `.foco` `#exFoco`/`#exDia`, blocos
   `.bloco`: `#exGauges`, `#exChips` + `#exDivs`, `.dupla` com `#exSemc` e `#exAg`/`#exAgenda`, `table#exCob` em `.rolaX`);
-  no EXEC o `#abaTopo` fica só com `.abCab` (`.abaTopo.exec`, título "Resumo executivo") e `#lista` vazio e `hidden`
+  no EXEC o `#abaTopo` fica só com `.abCab` (`.abaTopo.exec`, título = nome da aba pelo perfil; era "Resumo executivo") e `#lista` vazio e `hidden`
   (`linhaResumo`/`filtraCards` não rodam; `buscaCliente` sai cedo). `temExecutiva()` = sem rota no filtro (modo 'gc'): com
   rota (perfil Rota) a aba some e `render` vai ao Volume. `pintaExecutiva(rotas, {ind, tot}, visitas)`: unidades =
   `gruposDo(ctxInicial(), null)` sem `off` (`unidadesExec`, cada uma com `agrega()` próprio; `cod` = nome sem " · ...");

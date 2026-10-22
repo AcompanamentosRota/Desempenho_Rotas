@@ -45,6 +45,10 @@
   --fs-ind:30px;     --fw-ind:700;         /* indicador principal (o %) dos cards; KPIs do topo */
   --fs-valor:15px;   --fw-valor:500;       /* meta e realizado */
   --fs-legenda:12.5px; --fw-legenda:400;   /* legendas e hora de atualização */
+  /* notas de rodapé da tela principal (rodapé da página e crédito; ~1px abaixo de --fs-legenda) e notas/legendas pequenas
+     (legendas dos blocos da visão executiva e crédito do painel lateral; ~1px abaixo de --fs-ex-mini/--fs-lado-sec);
+     a gaveta, o Resumo, os PDFs e o Painel de Ritmo não usam */
+  --fs-nota:11.5px; --fs-nota-mini:9.5px;
   /* alturas mínimas por tipo de conteúdo (o card não muda de altura por texto curto) */
   --h-card-vol:136px; --h-card-cob:136px; --h-kpi:124px;
   /* indicador de ritmo (caixa Online dos cards) */
@@ -65,7 +69,7 @@
   --seguro-b:env(safe-area-inset-bottom,0px);
 }
 @media (max-width:640px){
-  :root{--fs-titulo:24px; --fs-card:18px; --fs-ind:28px; --fs-valor:14px; --fs-legenda:12px;
+  :root{--fs-titulo:24px; --fs-card:18px; --fs-ind:28px; --fs-valor:14px; --fs-legenda:12px; --fs-nota:11px;
     --h-card-vol:134px; --h-card-cob:134px; --h-kpi:118px; --ritmo-w:80px}
 }
 html,body{margin:0;padding:0;background:var(--papel);color:var(--preto);
@@ -381,7 +385,7 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .hTr i{display:block;height:100%;flex:none}
 .hTr .sc,.lg.sc{background:rgba(198,40,40,.5)} .hTr .ph,.lg.ph{background:rgba(29,158,117,.5)} .hTr .jc,.lg.jc{background:#ececef}
 .hVal b{color:var(--vermelho2)}
-.legenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:var(--fs-ex-mini);color:var(--txt-apoio);padding:8px 2px 6px}
+.legenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:var(--fs-nota-mini);color:var(--txt-apoio);padding:8px 2px 6px}
 .legenda span{display:inline-flex;align-items:center;gap:5px}
 .lg{display:inline-block;width:12px;height:10px;border-radius:3px;flex:none}
 /* Coberturas por unidade: tabela de colunas iguais, a 1ª fixa (70 px), rolagem lateral dentro do bloco. A largura mínima
@@ -489,6 +493,7 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
    negativa e no "faltam"; Meta, Real e os textos de apoio em cor neutra; o verde do ritmo não muda.
    Escala própria dos cards (~12% menor), por variáveis no escopo .ind, igual no PC e no celular. */
 .ind{--fs-card:15px; --fs-valor:11.5px; --fs-ind:25px; --fs-legenda:11px;
+  --fs-card-sub:11px; --fw-card-sub:400; /* 2ª linha do título (só o card de volume Novos Negócios: "Dest+Art+Cnd") */
   --fs-acao:12.5px;      /* "no ritmo" / "faltam X hoje" / "abaixo da tendência" */
   --fs-online:19px;      /* número da caixa Online */
   --fs-online-rot:9.5px; /* rótulo "Online" e legenda da caixa */
@@ -497,11 +502,17 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   border-left:var(--faixa) solid var(--ruim);
   background:var(--rosa);color:var(--txt);min-width:0;display:flex;flex-direction:column;min-height:var(--h-card-cob)}
 .ind.vol{min-height:var(--h-card-vol)}
+/* lista com o card de volume Novos Negócios (2ª linha .tsub): todos os cards de volume dela ganham a altura dessa linha na
+   mínima, para ficarem iguais entre si (a linha extra não deforma a grade nem a coluna do celular) */
+.lista:has(.ind .tsub) .ind.vol{min-height:calc(var(--h-card-vol) + var(--fs-card-sub) * 1.25 + 1px)}
 .ind.ok{background:var(--menta);border-left-color:var(--verde)}
 .ind.off{background:var(--card);color:var(--txt-apoio);cursor:default;min-height:0;border-left:0;padding-left:var(--pad-esq)}
 .ind .tit{font-size:var(--fs-card);font-weight:var(--fw-card);color:var(--preto);letter-spacing:-.01em;line-height:1.25;
   overflow-wrap:anywhere}
 .ind.off .tit{color:var(--cinza-escuro)}
+/* 2ª linha do título, menor e mais clara (--txt-apoio: 5,7:1 no rosa e no verde claro; AA) */
+.ind .tsub{font-size:var(--fs-card-sub);font-weight:var(--fw-card-sub);color:var(--txt-apoio);line-height:1.25;margin-top:1px;
+  overflow-wrap:anywhere}
 .ind .row{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(var(--ritmo-w),22%);gap:12px;margin-top:10px;
   align-items:center;flex:1}
 .ind .cl{font-size:var(--fs-valor);font-weight:var(--fw-valor);color:var(--txt);line-height:1.5;white-space:nowrap}
@@ -614,9 +625,9 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .cLin .cNome{grid-column:1/-1}
   .cCab,.cCli{grid-template-columns:minmax(0,1fr) 54px 54px 60px 38px;font-size:11.5px}
 }
-.rodape{text-align:center;font-size:var(--fs-legenda);color:var(--txt-apoio);padding:20px 10px 0;line-height:1.6}
+.rodape{text-align:center;font-size:var(--fs-nota);color:var(--txt-apoio);padding:20px 10px 0;line-height:1.6}
 .rodape .fonte{color:var(--cinza-fraco)}
-.creditos{margin-top:12px;padding-top:10px;border-top:1px solid var(--linha-suave);font-size:var(--fs-legenda);color:var(--cinza-fraco);line-height:1.6}
+.creditos{margin-top:12px;padding-top:10px;border-top:1px solid var(--linha-suave);font-size:var(--fs-nota);color:var(--cinza-fraco);line-height:1.6}
 :focus-visible{outline:2px solid var(--vermelho);outline-offset:2px}
 
 /* ---------- resumo de vendas (botão no fim da consulta) ---------- */
@@ -812,7 +823,7 @@ body.rs-travado{overflow:hidden}
   .lado .casa,.lado .recarga{flex:1 1 0;min-width:0;width:auto;height:40px;gap:8px;padding:0 10px;border-radius:10px;
     font:inherit;font-size:var(--fs-legenda);font-weight:700;color:#fff}
   .lado .rotBtn{display:inline}
-  .ladoCred{display:block;order:10;flex:none;font-size:var(--fs-lado-sec);color:var(--topo-txt);line-height:1.5;
+  .ladoCred{display:block;order:10;flex:none;font-size:var(--fs-nota-mini);color:var(--topo-txt);line-height:1.5;
     border-top:1px solid var(--escuro-borda);padding-top:10px}
   /* recolhido: só os ícones (menu, abas, ↻ e casa), com o nome no title */
   body.recolhido .lado{padding:16px 10px;align-items:center}
