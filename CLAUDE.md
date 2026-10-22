@@ -110,8 +110,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   tabela-resumo só de totais e códigos. Gavetas com barra de dias (Etapa 6): Diretoria, G1, G2, AP, IT+MO e uma
   supervisão (cada chip x recontagem e x cards, `frontend/tests/gavetas_invariantes.js`, as mesmas da Parte X) e cada
   unidade dessas gerências (Hoje e Todos x cards); sem rolagem lateral nem erro em 360/390/1000/1440 px nos dois fundos.
-  Evolução contra o mês anterior (Etapa 8c): Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px
-  (`frontend/tests/evolucao_invariantes.js`, as mesmas da Parte Z; pula sem `MES_ANTERIOR`).
+  Evolução contra o mês anterior (Etapa 8c; barras pareadas): Diretoria, cada gerência, cada grupo no Total e uma supervisão, em
+  1440 e 390 px, com as categorias abertas (`frontend/tests/evolucao_invariantes.js`, as mesmas da Parte Z; pula sem
+  `MES_ANTERIOR`); e o antes x depois contra o front do `7674ca2` (main antes do redesenho) com o mesmo payload: Executiva
+  sem o `#exEvo`, cabeçalho e cards das 4 abas, cascata e Resumo iguais (HTML).
   Ajuste de rótulos: Diretoria, G1, IT+MO, a 1ª supervisão e a 1ª rota da G2, em 1440 e 390 px nos dois fundos, e o antes x
   depois contra o front do `20728ac` com o mesmo payload (`frontend/tests/rotulos_invariantes.js`, as mesmas da Parte AA).
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
@@ -381,8 +383,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`; `encaixa()` remede no `loadingdone` das fontes e o PDF
   espera `document.fonts.ready`. Números grandes em Source Serif 4 LOCAL (Etapa 2, 21/10/2026;
   `source-serif-4-latin-wght-normal.woff2`, 50 KB, `OFL-source-serif-4.txt`, mesmo unicode-range da Inter, sem preload):
-  `--serif` SÓ em `.ind .big` (a `.seta` fica em `--sans`), `.obox b`, `.card .n` (também os KPIs da Executiva) e `.gPct`
-  (% dos medidores da Executiva; o `small` "real" em `--sans`); nunca na
+  `--serif` SÓ em `.ind .big` (a `.seta` fica em `--sans`), `.obox b`, `.card .n` (também os KPIs da Executiva), `.gPct`
+  (% dos medidores da Executiva; o `small` "real" em `--sans`) e `.evPA` (% do mês de referência na Evolução); nunca na
   gaveta, no Resumo, nos PDFs, no Painel de Ritmo nem na entrada. `lining-nums tabular-nums` em `.abaTopo, .card, .ind, .topo,
   .puxa, .cli, .rodape` (fora da gaveta: a Parte N compara `font-variant-numeric`). `.card .n` com `data-fit` (mín. 16,
   `data-fit-quebra`; `encaixa()` também em `.cards`); `numObox` com `data-fit=""` (parte do `--fs-online`).
@@ -452,23 +454,33 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `.dRow`/`.hRow` com `tabindex=0`; fecha a aberta ao redesenhar). Celular: as 5 abas rolam de lado (`.tabs`
   overflow-x, `mostraAbaAtiva`); só a coluna `.dv.sel` com os chips. Medidores 5 colunas >= 1200 px, 3 >= 700, 2;
   tabela `min-width` 1140 px (rola dentro do bloco, 1ª coluna sticky). Escala `--fs-ex-*`. Testes: Parte W.
-  **Evolução contra o mês anterior (Etapa 8c, 22/10/2026; README, "Aba Executiva"; só Volume)**: `section#exEvo` (último
-  `.bloco` do `#exec`, `hidden` sem `evolucaoAtiva()` = `CONFIG.EVOLUCAO_ATIVA` (true) e `P.MES_ANTERIOR`; payload sem a
-  chave = oculto, sem erro). `pintaEvolucao(us, tot, k)`: as mesmas unidades e total da Tendência x Meta; anterior =
-  `NUCLEO.mesAnterior(P, rotas)` (soma simples dos pares de `MES_ANTERIOR.ROTAS` por item de `IND`; null = rota fora; o
-  `modelo.py` não agrega essa chave, nada a espelhar); % atual = Real/Meta do `agrega()` (exato); Δ p.p. = % atual −
-  % anterior; Δ Real = Real atual / Real anterior − 1 (só na dica). Linhas `.dRow` dentro de `.divs.ev#exEvDivs` (as
-  classes da Tendência x Meta; coluna do valor 54/52 px, cabe "−1.234,5"; `.dVal.zero/.nd` cinza; `.legenda` com "Δ em
-  pontos percentuais (p.p.)" e as cores: na linha só o número, `fmtDpp`; na dica com "p.p.", `fmtPP`), `data-dpp/pct/pct-ant/real/meta/
-  real-ant/meta-ant`; ordem decrescente do Δ com o total no meio, cor pelo sinal exato (0 = cinza "0,0 p.p."), escala pela
-  maior barra (mín. 10 p.p.), "0,0" com 0; sem meta anterior ou atual = "—" no fim. Chips `#exEvChips` no celular (`escolheCat`, a mesma
-  `catExec`). Subtítulo `#exSEvo`: "Setembro/26 até 20/09 (dia útil 13 de 21) x Outubro/26 até 20/10 (dia útil 13 de 21). % = Real ÷
-  meta do mês." (`MES_ANTERIOR.DIA_UTIL`/`TOTAL_DIAS_UTEIS` x `DATA_ONTEM` dd/mm e `DIA_ONTEM`/`TOTAL_DIAS_UTEIS`, o último dia útil
-  fechado, o do Real; sem `DATA_ONTEM`, sem a data); fechamento x fechamento:
-  "Agosto/26 (fechado) x Setembro/26 (fechado)" (decisão 2 da Karen; as 7 decisões no README). Inter (sem `--serif`).
-  Testes: Parte Z (variantes 'evo', 'evogrupo', 'evogrande', 'evofech' com `montaMesAnterior`; 'semevo' = 'exec' sem a
-  chave; o sintético do back-end já traz uma MES_ANTERIOR, que `montaMesAnterior` substitui) e `conferencia_real.test.js`
-  (invariantes (a)-(e) em `frontend/tests/evolucao_invariantes.js`).
+  **Evolução contra o mês anterior (Etapa 8c, 22/10/2026; barras pareadas desde o ajuste do mesmo dia; README, "Aba
+  Executiva"; só Volume)**: `section#exEvo` (último `.bloco` do `#exec`, `hidden` sem `evolucaoAtiva()` =
+  `CONFIG.EVOLUCAO_ATIVA` (true) e `P.MES_ANTERIOR`; payload sem a chave = oculto, sem erro). `pintaEvolucao(us, tot, niv)`:
+  as mesmas unidades e total da Tendência x Meta; anterior = `NUCLEO.mesAnterior(P, rotas)` (soma simples dos pares de
+  `MES_ANTERIOR.ROTAS` por item de `IND`; null = rota fora; o `modelo.py` não agrega essa chave, nada a espelhar); `evoDe`:
+  % atual = Real/Meta do `agrega()` (exato), % anterior = Real/Meta anterior, Δ p.p. = % atual − % anterior, Δ Real = Real
+  atual / Real anterior − 1 (só na dica). `#exEvLinhas`: uma `.evLin.cat` por categoria (`GROUPS.VOLUME`, `rotuloInd`;
+  `role=button`, `aria-expanded`/`aria-controls`, `clicavel` → `abreEvo`, que só troca `hidden`) e logo depois a
+  `.evDet#exEvDet<i>` (`hidden` fechada) com uma `.evLin.un` por unidade (Δ decrescente, "—" no fim). Linha = `.evNome`
+  (`svg.evSeta` só na categoria, gira aberta) | `.evBarras` (duas `.evTr`: `i.atu` sólida `--ruim`, `i.ant` hachurada
+  `--cinza-claro`; largura = mín(100, %); `::after` = marca preta de 100%) | `.evVal` (`b.evPA` % atual em `--serif`,
+  `.evPB` % anterior em `--txt-apoio`; 1 casa; "—") | `.evD` (`.evDN` "▲ +x,x" / "▼ −x,x" / "0,0" / "—" e `small` "p.p.";
+  `pos` `--verdeE`, `neg` `--vermelho2`, `zero`/`nd` `--txt-apoio`; sinal exato, `fmtDpp`; na dica `fmtPP`). Atributos
+  `data-k/u/dpp/pct/pct-ant/real/meta/real-ant/meta-ant` e `data-dica` (`ativaDica`). Estado `evoAberto` {chave, ks}:
+  `chaveEvo()` = perfil + filtro; outra chave ou `aplicaAcesso` recolhe; o render do online/payload e `escolheCat`
+  mantêm. Grade: abaixo de 700 px o nome numa linha e o Δ embaixo dos valores (área "d d"); a partir de 700 px
+  `150px | 1fr | 72px | 84px`, com "p.p." embaixo do Δ. Subtítulo `#exSEvo`: "% real até ontem: Outubro/26 (dia útil 14 de
+  21) contra Setembro/26 no mesmo dia útil (até 21/09)." (`DIA_ONTEM`/`TOTAL_DIAS_UTEIS`, `MES_ANTERIOR.MES_LABEL`,
+  `DATA_CORTE` dd/mm); limitado (`DIA_UTIL` < `DIA_ONTEM`, decisão 1): "… contra Setembro/26 inteiro (21 dias úteis, até
+  30/09)."; fechamento x fechamento (decisão 2; as 7 decisões no README): "% real: Setembro/26 (fechado) contra Agosto/26
+  (fechado)." Legenda `#exEvLeg` (`.lg.evAtu`/`.evAnt`/`.evCem`, a regra do Δ e "Clique ou toque numa categoria para abrir
+  por <nível>"). Os chips `#exEvChips` e as colunas divergentes `.divs.ev` saíram (com o CSS deles). Testes: Parte Z
+  (variantes 'evo', 'evogrupo', 'evogrande', 'evofech' e 'vol5' com `montaMesAnterior`; 'semevo' = 'exec' sem a chave; o
+  sintético do back-end já traz uma MES_ANTERIOR, que `montaMesAnterior` substitui; antes x depois contra o front do
+  `7674ca2`, `FRONT_PRE_EVO`) e `conferencia_real.test.js` (invariantes (a)-(f) em `frontend/tests/evolucao_invariantes.js`,
+  com as categorias abertas, e o mesmo antes x depois com o payload real). `TEXTOS_TELA_PAGINA` (antes x depois da Parte AA)
+  deixa o `#exEvo` fora.
   **Gavetas com barra de dias (Etapa 6, 21/10/2026; README, "Gavetas com barra de dias")**: o `chipsHtml`/`DIAS_CHIP` das
   coberturas e a regra única `noDia(c, chip)` (Todos; Hoje = `c[4]===1`; dia = `DIAS[c[3]].includes(chip)`: "Seg - Qui"
   aparece na Seg e na Qui; `listaCobertura` usa a mesma). `listaVolume`: barra em `#dLista` acima do `.cCab`, padrão

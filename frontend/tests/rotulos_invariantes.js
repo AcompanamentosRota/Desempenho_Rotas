@@ -74,9 +74,10 @@ const ABA_EXEC_PAGINA = () => {
     aria: t.getAttribute('aria-label'), on: t.classList.contains('on'), abTit: document.getElementById('abTit').textContent};
 };
 
-/* antes x depois: textos da tela (cards da lista sem a 2ª linha, cabeçalho da aba sem o título, visão executiva) */
+/* antes x depois: textos da tela (cards da lista sem a 2ª linha, cabeçalho da aba sem o título, visão executiva sem o bloco
+   "Evolução contra o mês anterior", redesenhado de propósito em barras pareadas em 22/10/2026) */
 const TEXTOS_TELA_PAGINA = () => {
-  const limpa = el => { const c = el.cloneNode(true); c.querySelectorAll('.tsub').forEach(s => s.remove()); return c.textContent.replace(/\s+/g, ' ').trim(); };
+  const limpa = el => { const c = el.cloneNode(true); c.querySelectorAll('.tsub, #exEvo').forEach(s => s.remove()); return c.textContent.replace(/\s+/g, ' ').trim(); };
   const topo = document.getElementById('abaTopo').cloneNode(true);
   topo.querySelector('#abTit').remove();
   const ex = document.getElementById('exec');

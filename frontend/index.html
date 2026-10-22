@@ -214,12 +214,11 @@
       <div class="bCab"><h3 id="exTCob"></h3><span class="s" id="exSCob"></span></div>
       <div class="rolaX"><table class="tCob" id="exCob"></table></div>
     </section>
-    <!-- Evolução contra o mês anterior (Etapa 8c; só Volume, chave MES_ANTERIOR; oculto sem ela ou com CONFIG.EVOLUCAO_ATIVA = false) -->
+    <!-- Evolução contra o mês anterior (Etapa 8c; só Volume, chave MES_ANTERIOR; oculto sem ela ou com CONFIG.EVOLUCAO_ATIVA = false): barras pareadas por categoria; clicar numa categoria abre as unidades logo abaixo -->
     <section class="bloco" id="exEvo" aria-labelledby="exTEvo" hidden>
       <div class="bCab"><h3 id="exTEvo">Evolução contra o mês anterior</h3><span class="s" id="exSEvo"></span></div>
-      <div class="exChips" id="exEvChips" role="group" aria-label="Categoria em análise"></div>
-      <div class="divs ev" id="exEvDivs"></div>
-      <div class="legenda"><span>Δ em pontos percentuais (p.p.): % do mês atual − % do mês anterior</span><span><i class="lg ev up"></i>subiu</span><span><i class="lg ev dn"></i>caiu</span></div>
+      <div class="evLista" id="exEvLinhas"></div>
+      <div class="legenda evLeg" id="exEvLeg"></div>
     </section>
   </section>
 

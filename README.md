@@ -537,34 +537,49 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
 - **Fechamento do mês**: medidores e barras pelo **realizado** (Real ÷ Meta − 1, "Realizado x Meta"); sem os quadros/blocos
   "Meta do dia" e "Agenda de hoje" (não há online nem agenda do mês fechado). O Foco do fechamento usa o realizado
   ("Refrigerantes fechou o mês em 95% da meta; faltaram …").
-- **Evolução contra o mês anterior** (Etapa 8c, 22/10/2026; **só Volume**): o último bloco, depois de "Coberturas por …".
+- **Evolução contra o mês anterior** (Etapa 8c, 22/10/2026; **barras pareadas** desde o ajuste do mesmo dia; **só Volume**):
+  o último bloco, depois de "Coberturas por …".
   Compara onde estamos com onde estávamos **no mesmo dia útil do mês anterior**, pela chave `MES_ANTERIOR` do payload
   (ver "Chave `MES_ANTERIOR`"). Aparece com `CONFIG.EVOLUCAO_ATIVA = true` **e** a chave no payload; sem ela (payload
   antigo, ou a consulta do mês anterior falhou ou passou de 60 s na rodada) o bloco fica oculto, sem erro. A Rota não tem
   (não tem a Executiva).
-  - Subtítulo: "Setembro/26 até 20/09 (dia útil 13 de 21) x Outubro/26 até 20/10 (dia útil 13 de 21). % = Real ÷ meta do mês."
-    (o 1º dia útil é o N do mês anterior, `MES_ANTERIOR.DIA_UTIL`; o 2º é o último dia útil fechado, o do Real:
-    `DATA_ONTEM` em dd/mm e `DIA_ONTEM`; sem `DATA_ONTEM`, sem a data). No fechamento: "Agosto/26 (fechado) x Setembro/26 (fechado)".
-  - Mesmas unidades e mesma linha de total da Tendência x Meta (Diretoria → gerências, total BAND; gerência → supervisões
-    + "Neutraliza"; grupo no Total → as supervisões das duas; supervisão → rotas); virtuais, "{GC}-EV" e ocultas dentro
-    dos totais e fora das listas. Para cada categoria (os 5 macros) e unidade: Real e Meta do mês anterior = soma dos pares
-    `[Real até o corte, Meta]` das rotas da unidade (`NUCLEO.mesAnterior`; item null = a rota fica fora); % anterior =
-    Real ÷ Meta; % atual = o % real do medidor (Real até ontem ÷ Meta do mês, sem arredondar); **Δ p.p.** = % atual −
-    % anterior (1 casa); **Δ Real** = Real atual ÷ Real anterior − 1 (só na caixa de comentário).
-  - Barras divergentes do Δ p.p., da maior para a menor, com o total no meio; verde para cima, vermelho para baixo, pelo
-    sinal exato (Δ exatamente 0 em cinza, "0,0"); à direita só o número (1 casa e o sinal; a unidade, p.p., fica na legenda
-    abaixo das barras e na caixa de comentário); escala de cada categoria pela maior barra (mínimo 10 p.p.). Unidade
-    sem meta anterior (ou sem meta no mês atual) na categoria: "—", no fim, fora da ordenação. No PC as 5 categorias lado a
-    lado; no celular uma por vez, pelos chips (a mesma categoria em análise dos medidores).
-  - Caixa de comentário (mouse, teclado e toque): "Refrigerantes · GC.UR / Setembro/26 até 20/09: Real 85.879 (66,6% da
-    meta 129.000) / Outubro/26 até 20/10: Real 92.207 (63,6% da meta 145.000) / Δ −3,0 p.p. · Real +7,4%".
+  - Subtítulo: "% real até ontem: Outubro/26 (dia útil 14 de 21) contra Setembro/26 no mesmo dia útil (até 21/09)."
+    (`MES_LABEL`, `DIA_ONTEM` e `TOTAL_DIAS_UTEIS` do payload; `MES_ANTERIOR.MES_LABEL` e `DATA_CORTE` em dd/mm; nada fixo).
+    Mês anterior com menos dias úteis que o `DIA_ONTEM` (vale ele inteiro, decisão 1): "… contra Setembro/26 inteiro (21
+    dias úteis, até 30/09)." No fechamento: "% real: Setembro/26 (fechado) contra Agosto/26 (fechado)."
+  - **Uma linha por categoria** (os 5 macros, na ordem de sempre, com o nome central: "Novos Negócios", sem a 2ª linha do
+    card), no **total do escopo**: BAND na Diretoria; com filtro, o total da gerência, do grupo no Total ou da supervisão (o
+    mesmo total dos outros blocos, com as rotas ocultas, virtuais, "{GC}-EV" e Neutraliza dentro). Mês anterior = soma dos
+    pares `[Real até o corte, Meta]` das rotas (`NUCLEO.mesAnterior`; item null = a rota fica fora); % anterior = Real ÷ Meta;
+    % atual = o % real do medidor (Real até ontem ÷ Meta do mês, sem arredondar); **Δ p.p.** = % atual − % anterior;
+    **Δ Real** = Real atual ÷ Real anterior − 1 (só na caixa de comentário).
+  - Cada linha tem **duas barras** empilhadas sobre trilhas de 0 a 100% da meta: **em cima, sólida** (vermelho escuro), o mês
+    de referência; **embaixo, hachurada em cinza**, o mês anterior no mesmo dia útil. Uma marca preta no fim da trilha
+    indica 100% da meta; acima de 100% a barra enche até o fim e o número mostra o valor (ex.: 112,0%).
+  - À direita, alinhados com as barras: o % do mês de referência (1 casa, negrito, Source Serif 4) e, embaixo, o do mês
+    anterior (cinza; "—" sem meta anterior); ao lado, numa coluna estreita, o **Δ** em p.p. com 1 casa: **▲ verde** quando
+    subiu, **▼ vermelho** quando caiu, **cinza sem seta** com 0,0 exato e "—" cinza sem dado (o sinal vem do valor exato, não
+    do texto arredondado). Abaixo de 700 px o nome da categoria fica numa linha própria e o Δ desce para baixo dos valores.
+  - Legenda: quadrado sólido = o mês de referência ("Outubro/26 até 21/10"), hachurado = o mês anterior no mesmo dia útil
+    ("Setembro/26 no mesmo dia útil (até 21/09)"), a marca de 100% e a regra do Δ.
+  - **Detalhe por clique**: clicar numa categoria (ou Enter/Espaço com o foco nela; a seta gira e `aria-expanded` muda) abre
+    logo abaixo, na própria página (não na gaveta), as unidades do escopo no mesmo desenho, menor: Diretoria → as
+    gerências; gerência ou grupo no Total → as supervisões (com a linha "Neutraliza") das gerências; supervisão → as rotas.
+    Ordem: Δ decrescente; unidade sem meta anterior (ou sem meta no mês) na categoria: "—", no fim. Clicar de novo recolhe;
+    várias categorias podem ficar abertas. Trocar o filtro ou o perfil (e cada entrada pela tela inicial) recolhe tudo; a
+    atualização do online e do payload não.
+  - Caixa de comentário (mouse, teclado e toque; na categoria e em cada unidade): "Refrigerantes · BAND / Setembro/26 até
+    21/09: Real 2.795.812 (47,1% da meta 5.933.000) / Outubro/26: Real 2.910.283 (41,2% da meta 7.065.000) / Δ −5,9 p.p. ·
+    Real +4,1%". No toque, tocar na categoria abre as unidades e mostra a caixa; o 2º toque recolhe e fecha.
   - Decisões da Karen (21/10/2026), as mesmas da chave: (1) mês anterior com menos dias úteis que o N de hoje = ele
     inteiro; (2) **fechamento x fechamento**: com o painel em fechamento, o mês fechado contra o anterior a ele INTEIRO
     (corte = o último dia dele), com as metas dele; (3) Real do mês anterior pela rota ATUAL do cliente, na gerência de
     hoje, e o das EV* na rota oculta "{GC}-EV"; (4) % = Real até o corte ÷ meta do mês anterior inteiro (META_VOLUME da
     rota da meta; sem ela, META_NEG), Δ p.p. e Δ Real como acima; (5) só Volume, coberturas fora; (6) fora também Todos a
     Bordo, Del Valle Frut, Imperdoáveis e Venda Zero; (7) KS TT pelo segmento de hoje só quando as coberturas entrarem.
-  - Conferência com dado real: `conferencia_real.test.js` (invariantes em `frontend/tests/evolucao_invariantes.js`).
+  - Conferência com dado real: `conferencia_real.test.js` (invariantes em `frontend/tests/evolucao_invariantes.js`, com as
+    categorias abertas: Real e Meta de cada linha = medidor; % e Δ; Σ unidades + rotas fora = total; "—"; largura das
+    barras) e o antes x depois contra a main de antes do redesenho, com o mesmo payload (as outras telas iguais).
 - **Layout**: KPIs em 4 colunas no PC e 2 no celular; os dois quadros lado a lado no PC; medidores 5 por linha a partir de
   1200 px, 3 entre 700 e 1199 px e 2 no celular; Sem compra e Agenda lado a lado no PC.
 

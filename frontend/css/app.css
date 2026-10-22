@@ -387,11 +387,51 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .dRow.tot .dEixo i{opacity:.55}
 .dVal,.hVal{font-size:var(--fs-ex-rot);text-align:right;white-space:nowrap}
 .dVal.neg{color:var(--vermelho2)} .dVal.pos{color:var(--verdeE)}
-/* Evolução contra o mês anterior: as barras da Tendência x Meta com o Δ em p.p. (só o número; cabe "−1.234,5"); 0 e "—" em
-   cinza; a legenda com as cores das barras */
-.divs.ev .dRow{grid-template-columns:66px minmax(0,1fr) 54px}
-.dVal.zero,.dVal.nd{color:var(--txt-apoio)}
-.lg.ev.up{background:var(--verde)} .lg.ev.dn{background:var(--vermelho2)}
+/* Evolução contra o mês anterior: barras pareadas por categoria (em cima, sólida, o mês de referência; embaixo, hachurada,
+   o mês anterior; trilhas de 0 a 100% da meta com a marca preta de 100% no fim); à direita o % atual (serifa) sobre o
+   anterior e o Δ p.p.; clicar numa categoria abre as unidades logo abaixo, no mesmo desenho, menor. No celular o nome da
+   categoria fica numa linha própria e o Δ desce para baixo do valor. --ev-l1/--ev-l2 = altura das duas linhas (barra e
+   valor alinhados), --ev-tr = espessura da barra */
+.evLista{display:flex;flex-direction:column}
+.evLin{--ev-l1:20px;--ev-l2:16px;--ev-tr:10px;display:grid;grid-template-columns:minmax(0,1fr) 72px;
+  grid-template-areas:"nome nome" "barras val" "d d";column-gap:10px;row-gap:2px;align-items:center;padding:8px 6px;
+  border-radius:8px;outline:none;transition:background .12s}
+.evLin.cat{cursor:pointer;border-top:1px solid var(--linha)}
+.evLista>.evLin.cat:first-child{border-top:0}
+.evLin.un{--ev-l1:17px;--ev-l2:14px;--ev-tr:7px;grid-template-columns:72px minmax(0,1fr) 72px;
+  grid-template-areas:"nome barras val" "d d d";padding:4px 6px}
+.evLin:hover,.evLin.emFoco,.evLin:focus-visible{background:#ececef}
+.evLin:focus-visible{box-shadow:inset 0 0 0 1.5px var(--preto)}
+.evNome{grid-area:nome;display:flex;align-items:center;gap:6px;min-width:0}
+.evTxt{min-width:0;overflow:hidden;white-space:nowrap}
+.evLin.cat .evTxt{font-size:var(--fs-ex-gtit);font-weight:800;color:var(--preto)}
+.evLin.un .evTxt{flex:1;font-size:var(--fs-ex-rot);color:var(--txt);text-align:right}
+.evSeta{flex:none;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;
+  stroke-linejoin:round;color:var(--txt-apoio);transition:transform .15s}
+.evLin[aria-expanded="true"] .evSeta{transform:rotate(90deg)}
+@media(prefers-reduced-motion:reduce){.evSeta{transition:none}}
+.evBarras{grid-area:barras;position:relative;display:grid;grid-template-rows:var(--ev-l1) var(--ev-l2);align-items:center;
+  align-self:start;padding-right:2px}
+.evBarras::after{content:'';position:absolute;right:0;top:2px;bottom:2px;width:2px;border-radius:1px;background:var(--preto)}
+.evTr{position:relative;height:var(--ev-tr);background:#ececef;border-radius:3px 0 0 3px;overflow:hidden}
+.evTr i{position:absolute;left:0;top:0;bottom:0}
+.evTr .atu,.lg.evAtu{background:var(--ruim)}
+.evTr .ant,.lg.evAnt{background:repeating-linear-gradient(135deg,var(--cinza-claro) 0 1.5px,transparent 1.5px 4px)}
+.lg.evAnt{box-shadow:inset 0 0 0 1px var(--cinza-claro)}
+.lg.evCem{width:2px;height:12px;border-radius:1px;background:var(--preto)}
+.evVal{grid-area:val;display:grid;grid-template-rows:var(--ev-l1) var(--ev-l2);align-items:center;justify-items:end;
+  align-self:start;white-space:nowrap;line-height:1}
+.evPA{font-family:var(--serif);font-size:var(--fs-ex-tend);font-weight:700;color:var(--preto)}
+.evPB{font-size:var(--fs-ex-rot);color:var(--txt-apoio)}
+.evLin.un .evPA{font-size:var(--fs-ex-valor)}
+.evLin.un .evPB{font-size:var(--fs-ex-mini)}
+.evD{grid-area:d;display:flex;align-items:baseline;justify-content:flex-end;gap:3px;white-space:nowrap;
+  font-size:var(--fs-ex-rot);font-weight:700;line-height:1.2}
+.evD small{font-size:var(--fs-ex-mini);font-weight:400}
+.evD.pos,.evLeg .pos{color:var(--verdeE)} .evD.neg,.evLeg .neg{color:var(--vermelho2)}
+.evD.zero,.evD.nd{color:var(--txt-apoio)}
+.evDet{padding:0 0 8px}
+.evDet[hidden]{display:none}
 /* Sem compra (barra = % da base) e Agenda de hoje (100% dos agendados: restam | pediram online | já compraram) */
 .dupla{display:flex;flex-direction:column;gap:12px}
 .hTr{position:relative;height:14px;border-radius:3px;overflow:hidden;display:flex;background:#f1f1f3}
@@ -440,13 +480,19 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .divs .dv{border-left:1px solid var(--linha);padding-left:14px}
   .divs .dv:first-child{border-left:0;padding-left:0}
   .divs .dRow{grid-template-columns:62px minmax(0,1fr) 46px}
-  .divs.ev .dRow{grid-template-columns:62px minmax(0,1fr) 52px}
   .dupla{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   .dupla.so1{grid-template-columns:minmax(0,1fr)}
 }
 /* a partir de 1200 px, as 5 categorias lado a lado (medidores e barras); entre 1000 e 1199 px o conteúdo (à direita do painel
    lateral) não dá largura para Meta e Real de 7 dígitos em 5 colunas: 3 medidores por linha */
 @media (min-width:1200px){ .gauges,.divs{grid-template-columns:repeat(5,minmax(0,1fr))} }
+/* Evolução a partir de 700 px: tudo numa linha (nome | barras | valores | Δ, com "p.p." embaixo do número) */
+@media (min-width:700px){
+  .evLin,.evLin.un{grid-template-columns:150px minmax(0,1fr) 72px 84px;grid-template-areas:"nome barras val d";row-gap:0}
+  .evLin.un .evNome{padding-left:18px}
+  .evLin.un .evTxt{text-align:left}
+  .evD{flex-direction:column;align-items:flex-end;gap:1px}
+}
 
 /* ---------- busca ---------- */
 .busca{background:var(--branco);border:1px solid var(--borda-card);border-radius:14px;padding:12px;min-width:0}
