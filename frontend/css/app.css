@@ -369,6 +369,9 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .dRow.tot .dEixo i{opacity:.55}
 .dVal,.hVal{font-size:var(--fs-ex-rot);text-align:right;white-space:nowrap}
 .dVal.neg{color:var(--vermelho2)} .dVal.pos{color:var(--verdeE)}
+/* Evolução contra o mês anterior: as barras da Tendência x Meta com o Δ em p.p. (coluna do valor mais larga); 0 e "—" em cinza */
+.divs.ev .dRow{grid-template-columns:66px minmax(0,1fr) 64px}
+.dVal.zero,.dVal.nd{color:var(--txt-apoio)}
 /* Sem compra (barra = % da base) e Agenda de hoje (100% dos agendados: restam | pediram online | já compraram) */
 .dupla{display:flex;flex-direction:column;gap:12px}
 .hTr{position:relative;height:14px;border-radius:3px;overflow:hidden;display:flex;background:#f1f1f3}
@@ -417,6 +420,7 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .divs .dv{border-left:1px solid var(--linha);padding-left:14px}
   .divs .dv:first-child{border-left:0;padding-left:0}
   .divs .dRow{grid-template-columns:62px minmax(0,1fr) 46px}
+  .divs.ev .dRow{grid-template-columns:62px minmax(0,1fr) 60px}
   .dupla{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   .dupla.so1{grid-template-columns:minmax(0,1fr)}
 }
