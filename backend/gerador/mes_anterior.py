@@ -158,13 +158,12 @@ def _linhas(cons: Consulta, sel: list[str], filtro: str | None, gcs: list[str], 
 def consulta_volume(cons: Consulta, anomes: str, gcs: list[str], corte: date | None = None,
                     col_rota: str = CM.ROTA, rota: str | None = None) -> list[dict]:
     """Vol Real do mês por rota x agrupador x NF_STATUS, agregado no servidor (sem cliente nem dia), com os filtros do Vol
-    Real do gerador (os 5 macros, FILTRO_PEDIDOS_ONLINE) e, com `corte`, DATA_MOVIMENTO <= corte. Pela rota do cliente,
-    também a gerência comercial (clientes em rotas EV*, como fontes.carregar_volume_real)."""
+    Real do gerador (os 5 macros) e, com `corte`, DATA_MOVIMENTO <= corte. Pela rota do cliente, também a gerência
+    comercial (clientes em rotas EV*, como fontes.carregar_volume_real)."""
     sel = fontes._colunas(cons, M.OBJ_META, [col_rota, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES],
                           [CM.GC_COMERCIAL] if col_rota == CM.ROTA else [])
     filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, [M.AGRUPADORES_VOLUME[k] for k in VOL]),
-               M.FILTRO_PEDIDOS_ONLINE, filtro_ate(cons, corte) if corte else None,
-               eq(col_rota, rota) if rota else None)
+               filtro_ate(cons, corte) if corte else None, eq(col_rota, rota) if rota else None)
     return _linhas(cons, sel, filtro, gcs, rota)
 
 

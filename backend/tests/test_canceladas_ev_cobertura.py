@@ -4,7 +4,9 @@ Decisões de 26/10/2026 (medição com dado real no mesmo dia):
   consulta de vendas (M.FILTRO_SEM_NF_CANCELADA); o Vol Real já ficava só com M.STATUS_NF_REAL;
 - a cobertura dos clientes que estão em rotas EV* entra no total da gerência comercial do cliente
   (M.ColMeta.GC_COMERCIAL), na rota oculta da gerência (M.rota_eventuais), com meta 0, no ICS GC, em Novos Negócios
-  e no Todos a Bordo (item sem cliente coberto: indisponível).
+  e no Todos a Bordo (item sem cliente coberto: indisponível);
+- online (pedidos de hoje, FONTE 'WF Online'): conta o pedido em qualquer situação ('Inc. e Exp.', 'Cancelado',
+  'Reprovado'); antes só 'Inc. e Exp.'.
 """
 import copy
 import unittest
@@ -148,6 +150,25 @@ class TestCoberturaDasEventuais(unittest.TestCase):
             f = fontes.carregar(SemGc(copy.deepcopy(self.d)), AGORA)
         self.assertEqual(f.eventuais, {})
         self.assertIn(f"{CM.GC_COMERCIAL} fora do $metadata", "\n".join(log.output))
+
+
+class TestOnlineEmQualquerSituacao(unittest.TestCase):
+    def test_pedido_cancelado_ou_reprovado_conta_no_online(self):
+        def _on(pv, ag, situacao, **kw):
+            return dict(_venda(pv, ag, **kw), **{CM.FONTE: "WF Online", CM.SITUACAO_PEDIDO: situacao,
+                                                 CM.NF_STATUS: "WF Online"})   # o online sempre vem com esse status
+        d = copy.deepcopy(DADOS)
+        d["vendas"] = DADOS["vendas"] + [
+            _on(1007382, "Refrigerantes", "Cancelado", vol_on=7.0),
+            _on(1015301, "Cctm 2l Pet", "Reprovado", on=1),
+            _on(1015300, "Refrigerantes", "Inc. e Exp.", vol_on=1.0),
+        ]
+        cons = ConsultaFalsa(d)
+        o = fontes.carregar(cons, AGORA).online
+        self.assertIn(1007382, o.qualquer["111"])                       # cancelado: compra hoje
+        self.assertIn(1015301, o.clientes["111"][CCTM])                 # reprovado: conta no item
+        self.assertEqual(o.volume["111"]["VOL REFRIGERANTES"], 2.5 + 1.25 + 7.0 + 1.0)
+        self.assertFalse([c for c in cons.chamadas if CM.SITUACAO_PEDIDO in (c[2] or "")])
 
 
 if __name__ == "__main__":

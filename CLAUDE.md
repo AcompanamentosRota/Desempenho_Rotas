@@ -172,9 +172,11 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   - A consulta de vendas SEMPRE filtra os agrupadores (sem filtro vira cliente × 748 agrupadores): os 17 do painel +
     Del Valle Frut, Sucos e Ades (`M.AGRUPADORES_CONSULTA_VENDAS`). Compras do mês, cobertura e "qualquer compra hoje"
     (Revertido da VZ) continuam só com os 17 (`M.agrupador_do_painel`).
-  - Pedidos de hoje (`FONTE = 'WF Online'`) só contam com `SITUACAO_Pedido = 'Inc. e Exp.'` (fora Cancelado/Reprovado).
-    Basis e Meta NEG vêm na mesma consulta: o filtro é `(FONTE ne 'WF Online' or SITUACAO_Pedido eq 'Inc. e Exp.')`,
-    nunca `SITUACAO_Pedido eq 'Inc. e Exp.'` puro (sumiria a meta por cliente, que tem situação 'Meta NEG').
+  - **Pedidos de hoje (`FONTE = 'WF Online'`) contam em qualquer situação** ('Inc. e Exp.', 'Cancelado', 'Reprovado';
+    decisão de 26/10/2026; até então só 'Inc. e Exp.' com o extinto `FILTRO_PEDIDOS_ONLINE`): nenhuma consulta filtra
+    `SITUACAO_Pedido` (o teste `TestOnlineEmQualquerSituacao` pega a volta do filtro). Toda linha do online tem
+    `NF_STATUS` 'WF Online', então o filtro de NF cancelada não a tira. Medição de 26/10 (13h): +77 clientes com pedido
+    hoje (2.157 → 2.234) e volume online dos 5 macros 220.062 → 259.662.
   - **NF cancelada não é venda** (decisão de 26/10/2026): a consulta de vendas tem `M.FILTRO_SEM_NF_CANCELADA`
     (`NF_STATUS_Nota_Fiscal ne 'Cancelada' or ... eq null`) no `$filter`: fora da cobertura do mês (todos os
     indicadores) e das compras do mês (Base/Sem compra, `SEM_COMPRA_MES`). Toda linha tem status ('Acertado', 'Em

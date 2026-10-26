@@ -730,7 +730,7 @@ class ConsultaE8:
         if CM.COB_MES in sel and CM.CLIENTE in sel:
             return [l for l in self._da_gc(self.cob, filtro) if f"'{l[CM.AGRUPADOR]}'" in filtro]
         if CM.COB_ONLINE in sel:
-            assert "FONTE eq 'WF Online'" in filtro and "SITUACAO_Pedido eq 'Inc. e Exp.'" in filtro
+            assert "FONTE eq 'WF Online'" in filtro and "SITUACAO_Pedido" not in filtro   # qualquer situação
             return [l for l in self._da_gc(self.ONLINE, filtro) if f"'{l[CM.AGRUPADOR]}'" in filtro]
         if sel[0] == "SKU_QUEBRA":
             raise RuntimeError("HTTP 500 (simulado)")

@@ -139,8 +139,10 @@ fechamento do mês; o cron não usa), `--fechamento "Setembro/26"` (só sobrepõ
   balcão (`Sv. Bl.`) e rotas eventuais (`EV*`) ficam fora, também na At. As gerências que vêm juntas na fonte
   (It_Mo, Pa_Di, Ur_Ri, Gu_Po) são separadas pelo código do supervisor. O Real de volume dos clientes que estão
   numa rota EV* entra no total da gerência deles (ver "Clientes em rotas eventuais" abaixo).
-- **Cobertura**: cliente com `FX_COBERTURA_REALIZADO > 0` no agrupador (13 agrupadores do painel).
-- **Online**: medidas `*_WF_ONLINE` (pedidos de hoje). Em dia útil, das 07:00 às 18:45, se a consulta vier sem
+- **Cobertura**: cliente com `FX_COBERTURA_REALIZADO > 0` no agrupador (13 agrupadores do painel), sem as notas
+  fiscais canceladas.
+- **Online**: medidas `*_WF_ONLINE` (pedidos de hoje), com o pedido em qualquer situação: "Inc. e Exp.", "Cancelado"
+  e "Reprovado" (desde 26/10/2026; antes só "Inc. e Exp."). Em dia útil, das 07:00 às 18:45, se a consulta vier sem
   nenhum cliente online (o Datasphere em recarga: 0 às 09:28 de 19/10/2026, 199 rotas às 10:13) e o
   `online.json` publicado for do mesmo dia e tiver dados, ele fica (o vazio não é gravado) e o log avisa.
 - **Metas**: `META_COBERTURA_Chave_Meta_SAP` (ICS e Novos Negócios), `META_VOLUME_Chave_Meta_SAP` (meta
@@ -902,8 +904,8 @@ Todos a Bordo; nada muda no painel. Gerência = a da rota no painel; `fora` = ro
   com · sem meta, supervisões por portfólio, as rotas com meta (gerência mista) e as sem meta (até 40); depois, a tabela
   das supervisões mistas, a divisão das gerências e as supervisões com portfólio diferente do da gerência. As rotas
   T<nn> (T07, T29...) sem meta contam como BARRACUDA; uma linha diz o que mudaria sem elas (observação do dado).
-- **E8d**: clientes com compra no WF Online de hoje ('Inc. e Exp.') por item e gerência, se a consulta de vendas do
-  gerador já traz o agrupador e se ele já vira indicador; para o que não vira, o que faltaria.
+- **E8d**: clientes com compra no WF Online de hoje (pedido em qualquer situação) por item e gerência, se a consulta
+  de vendas do gerador já traz o agrupador e se ele já vira indicador; para o que não vira, o que faltaria.
 - **E8e**: clientes distintos com cobertura realizada > 0, por item e gerência.
 - **E8f**: proposta de mapeamento: item → agrupador → chave interna sugerida (INC ...) → tem meta? → tem online? →
   observações.

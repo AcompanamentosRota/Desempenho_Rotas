@@ -9,7 +9,7 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
   vendas      AM_FAT_BND_ANALISE_META           rota x cliente x agrupador (os 17 agrupadores do painel, os
                                                 extras de volume/GDM e os 3 do incentivo, M.AGRUPADORES_CONSULTA_VENDAS;
                                                 uma consulta por gerência, em paralelo): cobertura do mês,
-                                                compras e volume de hoje (online, só pedidos 'Inc. e Exp.'),
+                                                compras e volume de hoje (online: pedidos em qualquer situação),
                                                 meta (META_NEG) por cliente, segmento do cliente; sem as NF
                                                 canceladas; clientes em rotas EV* pela gerência comercial
   vol_real    AM_FAT_BND_ANALISE_META           rota x cliente x macro de volume x NF_STATUS (por gerência):
@@ -177,11 +177,10 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
     sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_MES, CM.VOL_MES],
                    [CM.COB_ONLINE, CM.COB_ONLINE_GERAL, CM.VOL_ONLINE, CM.META_VOLUME_CLIENTE, CM.SEGMENTO,
                     CM.GC_COMERCIAL])
-    # só confere: entram no $filter, não no $select
-    _colunas(cons, obj, [CM.FONTE, CM.SITUACAO_PEDIDO, CM.NF_STATUS])
-    base = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_CONSULTA_VENDAS), M.FILTRO_PEDIDOS_ONLINE,
-             M.FILTRO_SEM_NF_CANCELADA, eq(CM.FONTE, "WF Online") if so_pedidos_hoje else None,
-             eq(CM.ROTA, rota) if rota else None)
+    # só confere: entram no $filter, não no $select (pedido de hoje em qualquer situação: sem filtro de SITUACAO_Pedido)
+    _colunas(cons, obj, [CM.FONTE, CM.NF_STATUS])
+    base = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_CONSULTA_VENDAS), M.FILTRO_SEM_NF_CANCELADA,
+             eq(CM.FONTE, "WF Online") if so_pedidos_hoje else None, eq(CM.ROTA, rota) if rota else None)
     partes = _por_gerencia(obj, sel, base, gcs_originais, rota)
     linhas = [l for ls in cons.em_paralelo(partes).values() for l in ls]
 
@@ -268,8 +267,7 @@ def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], 
     """
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES], [CM.GC_COMERCIAL])
-    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_VOL_REAL),
-               M.FILTRO_PEDIDOS_ONLINE, eq(CM.ROTA, rota) if rota else None)
+    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_VOL_REAL), eq(CM.ROTA, rota) if rota else None)
     linhas = [l for ls in cons.em_paralelo(_por_gerencia(obj, sel, filtro, gcs_originais, rota)).values() for l in ls]
     vm = VolumeMes()
     sem_gc: dict = defaultdict(float)    # Real de clientes em rotas EV* sem gerência comercial do painel

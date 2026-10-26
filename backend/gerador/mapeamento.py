@@ -130,14 +130,14 @@ FILTRO_BASE_CLIENTE = "FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'"
 # Supervisões que não entram no painel (balcão) e rotas eventuais
 SV_IGNORAR_PREFIXOS = ("SV.BL.",)
 ROTAS_IGNORAR_PREFIXOS = ("EV",)
-# Pedidos de hoje (WF Online): só a situação 'Inc. e Exp.' conta (fora 'Cancelado' e 'Reprovado').
-# As linhas Basis (faturado) e Meta NEG (meta por cliente) vêm da mesma consulta e não são filtradas.
-FILTRO_PEDIDOS_ONLINE = f"({ColMeta.FONTE} ne 'WF Online' or {ColMeta.SITUACAO_PEDIDO} eq 'Inc. e Exp.')"
+# Pedidos de hoje (WF Online): contam em qualquer situação ('Inc. e Exp.', 'Cancelado', 'Reprovado'; decisão de
+# 26/10/2026, antes só 'Inc. e Exp.'): nenhuma consulta filtra SITUACAO_Pedido. Medição de 26/10/2026: +77 clientes
+# com pedido hoje e volume online dos 5 macros 220.062 -> 259.662.
 # Nota fiscal cancelada não é venda (decisão de 26/10/2026): fora da consulta de vendas, ou seja, da cobertura do mês
-# (todos os indicadores) e das compras do mês ("sem compra"); as linhas do online ('WF Online') e da meta por cliente
-# ('Meta NEG') continuam. Toda linha tem NF_STATUS_Nota_Fiscal ('Acertado', 'Em Aberto', 'Cancelada', 'Meta NEG',
-# 'WF Online'; medição de 26/10/2026: a cobertura contava as 19.473 linhas canceladas); o "eq null" guarda uma linha
-# sem status. No $filter, e não no $select, para a consulta não crescer (com o status no $select, +66% de linhas).
+# (todos os indicadores) e das compras do mês ("sem compra"); as linhas do online (status 'WF Online' em qualquer
+# situação do pedido) e da meta por cliente ('Meta NEG') continuam. Toda linha tem NF_STATUS_Nota_Fiscal ('Acertado',
+# 'Em Aberto', 'Cancelada', 'Meta NEG', 'WF Online'; medição de 26/10/2026: a cobertura contava as 19.473 linhas
+# canceladas); o "eq null" guarda uma linha sem status. No $filter, e não no $select, para a consulta não crescer (com o status no $select, +66% de linhas).
 # O Vol Real já fica só com STATUS_NF_REAL.
 FILTRO_SEM_NF_CANCELADA = f"({ColMeta.NF_STATUS} ne 'Cancelada' or {ColMeta.NF_STATUS} eq null)"
 # Venda Zero = geladeiras Coca-Cola (Total Ko) em contrato vigente com giro zero no mês

@@ -80,6 +80,9 @@ class ConsultaFalsa:
             linhas = self._do_mes("vol_real" if CM.NF_STATUS in select else "vendas", filtro)
             if filtro and f"{CM.NF_STATUS} ne 'Cancelada'" in filtro:   # M.FILTRO_SEM_NF_CANCELADA (sem status passa)
                 linhas = [l for l in linhas if l.get(CM.NF_STATUS) != "Cancelada"]
+            if filtro and f"{CM.SITUACAO_PEDIDO} eq 'Inc. e Exp.'" in filtro:   # filtro antigo do online (até 26/10)
+                linhas = [l for l in linhas
+                          if l.get(CM.FONTE) != "WF Online" or l.get(CM.SITUACAO_PEDIDO) == "Inc. e Exp."]
             if filtro and f"{CM.GC} eq " in filtro:
                 gc = filtro.split(f"{CM.GC} eq '")[1].split("'")[0]
                 linhas = [l for l in linhas if l.get("_gc", "Gc. G1") == gc]
@@ -269,8 +272,8 @@ class TestFontes(unittest.TestCase):
         self.assertTrue(all("ANOMES_REF eq '202610'" in c[2] for c in vendas))
         self.assertTrue(any(f"{CM.GC} eq 'Gc. G1'" in c[2] for c in vendas))
         self.assertIn("DS_AGRUPADOR_Agrupador_Prod eq 'Cctm 2l Pet'", vendas[0][2])
-        # pedidos de hoje: só 'Inc. e Exp.'; Basis e Meta NEG passam sem filtro
-        self.assertTrue(all("(FONTE ne 'WF Online' or SITUACAO_Pedido eq 'Inc. e Exp.')" in c[2] for c in vendas))
+        # pedidos de hoje em qualquer situação (desde 26/10/2026): nenhum filtro de SITUACAO_Pedido
+        self.assertFalse([c for c in self.cons.chamadas if c[0] == M.OBJ_META and CM.SITUACAO_PEDIDO in (c[2] or "")])
         self.assertNotIn("Destilados", vendas[0][2])
         comodato = [c for c in self.cons.chamadas if c[0] == M.OBJ_COMODATO][0][2]
         self.assertIn("Concluído(Contrato)", comodato)

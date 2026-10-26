@@ -558,7 +558,7 @@ def consultas_e7(cons: Consulta, anomes: str, anomes_hoje: str, hoje: date, com_
     dims = [CM.ROTA, CM.AGRUPADOR] + [c for c in opcionais if c in existentes]
     refri = eq(CM.AGRUPADOR, M.AGRUPADORES_VOLUME[K_REFRI])
     tarefas = {
-        "real": (M.OBJ_META, dims + [CM.NF_STATUS, CM.VOL_MES], e(eq(CM.ANOMES, anomes), refri, M.FILTRO_PEDIDOS_ONLINE)),
+        "real": (M.OBJ_META, dims + [CM.NF_STATUS, CM.VOL_MES], e(eq(CM.ANOMES, anomes), refri)),
         "base": (M.OBJ_BASE_CLIENTE, [CB.ROTA, CB.GC, CB.SUPERVISOR, CB.QUANTIDADE], M.FILTRO_BASE_CLIENTE),
     }
     if com_dia:
@@ -949,7 +949,8 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
     colunas_gc = _gcs_com_dados(gc_rota)
     rel.p(f"Mês {anomes}, `{M.OBJ_META}`. Itens: " + "; ".join(n for n, *_ in ITENS_INCENTIVO) + ". Agrupador da venda "
           f"`{CM.AGRUPADOR}` (o de M.AGRUPADORES_COBERTURA), da meta `{CM.META_AGRUPADOR}`; cobertura realizada "
-          f"`{CM.COB_MES}` > 0; meta `{CM.META_COBERTURA}` (o maior valor por rota, como o gerador). Gerência = a da rota "
+          f"`{CM.COB_MES}` > 0, sem NF cancelada; meta `{CM.META_COBERTURA}` (o maior valor por rota, como o gerador). "
+          f"Gerência = a da rota "
           f"no painel; '{FORA}' = rota fora do painel. Só nomes de agrupador e de coluna, contagens e códigos de rota.")
 
     # E8a. agrupadores com os termos da campanha
@@ -961,7 +962,8 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
                    if contem_termo(l.get(CM.META_AGRUPADOR))}, key=chave_texto)
     cob = [l for ls in cons.em_paralelo(fontes._por_gerencia(
         M.OBJ_META, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_MES],
-        e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, venda)), gcs, None)).values() for l in ls] if venda else []
+        e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, venda), M.FILTRO_SEM_NF_CANCELADA), gcs, None)).values()
+        for l in ls] if venda else []
     metas = meta_por_rota(cons.linhas(M.OBJ_META, [CM.META_ROTA, CM.META_AGRUPADOR, CM.META_COBERTURA],
                                       e(eq(CM.META_ANOMES, anomes), ou(CM.META_AGRUPADOR, meta)))) if meta else {}
     cli = clientes_por_gc(cob, CM.AGRUPADOR, CM.COB_MES, gc_rota)
@@ -1094,12 +1096,12 @@ def descoberta_incentivo(rel: Relatorio, cons: Consulta, estado: dict, anomes: s
                   + (f"muda: {', '.join(mudam_sem_t[nome])}." if mudam_sem_t[nome] else "nenhuma classificação muda."))
 
     # E8d. online de hoje
-    rel.h3("E8d. Online de hoje (WF Online, 'Inc. e Exp.') por item")
+    rel.h3("E8d. Online de hoje (WF Online, pedidos em qualquer situação) por item")
     achados = {n: m["venda"] for n, m in mapa.items() if m["venda"]}
     on = [l for ls in cons.em_paralelo(fontes._por_gerencia(
         M.OBJ_META, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_ONLINE],
-        e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(achados.values())), M.FILTRO_PEDIDOS_ONLINE,
-          eq(CM.FONTE, "WF Online")), gcs, None)).values() for l in ls] if achados else []
+        e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(achados.values())), eq(CM.FONTE, "WF Online")),
+        gcs, None)).values() for l in ls] if achados else []
     cli_on = clientes_por_gc(on, CM.AGRUPADOR, CM.COB_ONLINE, gc_rota)
     na_consulta = {normalizar(a) for a in M.AGRUPADORES_CONSULTA_VENDAS}
     rel.p(f"Clientes com `{CM.COB_ONLINE}` > 0 hoje. A consulta de vendas do gerador filtra "
@@ -1484,18 +1486,18 @@ ARQ_E10 = "e10_mes_anterior.json"      # resumo da E10 para a E11 (gravado ao la
 def consulta_curva(cons: Consulta, anomes: str) -> list[dict]:
     """Vol Real da BAND por dia (DATA_MOVIMENTO x NF_STATUS, sem rota nem agrupador), para conferir o corte."""
     return cons.linhas(M.OBJ_META, [CM.DATA, CM.NF_STATUS, CM.VOL_MES],
-                       e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values())),
-                         M.FILTRO_PEDIDOS_ONLINE))
+                       e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, list(M.AGRUPADORES_VOLUME.values()))))
 
 
 def consulta_cobertura(cons: Consulta, anomes: str, gcs: list[str], corte: date | None = None,
                        por_cliente: bool = True) -> list[dict]:
     """Cobertura (FX_COBERTURA_REALIZADO) e volume do mês por rota x cliente x agrupador nos 13 itens do ICS GC e dos
-    Novos Negócios, uma consulta por gerência em paralelo (como fontes.carregar_vendas); com `corte`, DATA_MOVIMENTO <=
-    corte. por_cliente=False: só rota x agrupador (a medida já conta os clientes no servidor?)."""
+    Novos Negócios, uma consulta por gerência em paralelo (como fontes.carregar_vendas: sem NF cancelada); com
+    `corte`, DATA_MOVIMENTO <= corte. por_cliente=False: só rota x agrupador (a medida já conta os clientes no
+    servidor?)."""
     obrig = [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_MES, CM.VOL_MES] if por_cliente else [CM.ROTA, CM.AGRUPADOR, CM.COB_MES]
     sel = fontes._colunas(cons, M.OBJ_META, obrig, [CM.SEGMENTO] if por_cliente else [])
-    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, AGRUPADORES_COB_E10), M.FILTRO_PEDIDOS_ONLINE,
+    filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, AGRUPADORES_COB_E10), M.FILTRO_SEM_NF_CANCELADA,
                filtro_ate(cons, corte) if corte else None)
     return [l for ls in cons.em_paralelo(fontes._por_gerencia(M.OBJ_META, sel, filtro, gcs, None)).values() for l in ls]
 
@@ -1762,7 +1764,8 @@ def mes_anterior(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, hoje
     lab_ref, lab_ant = calmod.rotulo_mes(c.ref), calmod.rotulo_mes(c.anterior)
     rel.p(f"Mês de referência {lab_ref} ({anomes}{', fechado' if cal.fechamento else ''}) contra {lab_ant} ({ant}) no "
           f"mesmo dia útil. `{M.OBJ_META}`: Vol Real = `{CM.VOL_MES}` nos 5 macros com `{CM.NF_STATUS}` em "
-          f"M.STATUS_NF_REAL; cobertura = `{CM.COB_MES}` > 0 nos 13 itens do ICS GC e dos Novos Negócios; corte = "
+          f"M.STATUS_NF_REAL; cobertura = `{CM.COB_MES}` > 0, sem NF cancelada, nos 13 itens do ICS GC e dos Novos "
+          f"Negócios; corte = "
           f"`{CM.DATA}` <= data de corte. Gerência e rota = as do painel de hoje. Só relata: nada muda no gerador nem no "
           "payload. Só nomes de colunas, contagens, totais por gerência e códigos de rota.")
     rel.h3("E10a. Calendário: o mesmo dia útil no mês anterior")
@@ -2465,7 +2468,8 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
                 for s in sts:
                     a = ambos[(gc, k, s)]
                     linhas.append(base + [repr(s), a[0], _n(a[1]), _n(a[2])])
-        rel.p("Clientes com volume no WF Online de hoje ('Inc. e Exp.') e também em NF com DATA_MOVIMENTO = hoje. "
+        rel.p("Clientes com volume no WF Online de hoje (qualquer situação do pedido) e também em NF com "
+              "DATA_MOVIMENTO = hoje. "
               "Se houver muitos, somar o online ao Real da barra por cliente conta o mesmo pedido duas vezes.")
         rel.tabela(["gerência", "macro", "clientes online", "clientes NF hoje", "status NF", "clientes em ambos",
                     "vol online desses", "vol NF desses"], linhas)
