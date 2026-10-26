@@ -54,7 +54,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   calendário do Datasphere, sem as linhas do mês anterior pelo cálculo local; corte inclusive = véspera do dia útil N+1,
   com os dias não úteis logo depois do N). Até o corte (`DATA_MOVIMENTO le`,
   só no `$filter`): Vol Real (5 macros, status do Vol Real; por rota do cliente e da meta), META_NEG e cobertura (rota x
-  cliente e só rota x agrupador), cada filtro conferido contra o mês inteiro e a curva diária BAND, com linhas e tempo.
+  cliente e só rota x agrupador; sem NF cancelada, `M.FILTRO_SEM_NF_CANCELADA`, como o gerador e a E8e desde
+  26/10/2026), cada filtro conferido contra o mês inteiro e a curva diária BAND, com linhas e tempo.
   Amostra `E10_AMOSTRA` (G1 AP IT) + BAND e Refrigerantes por gerência, como o card (rota oculta das EV* com meta 0 nos
   macros com Real; cobertura só nas rotas com meta; KS TT). Custo no gerador (~64 s hoje) e peso da chave
   `MES_ANTERIOR` (com e sem coberturas), riscos (`DS_GERENCIA_COM_Chave_Meta_SAP` por mês;
