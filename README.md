@@ -276,9 +276,15 @@ Rota, que não tem a Executiva, abre no **Volume**.
 - **Clientes em rotas eventuais (EV*)** (desde 20/10/2026, como o SAC): a rota EV continua fora do painel, mas o
   Real de volume (os 5 grupos; Del Valle Frut só na G2) dos clientes que estão nela entra no total da gerência
   comercial do cliente (`DS_GERENCIA_COMERCIAL_AT_Clien`), numa rota oculta por gerência (ex.: `AP-EV`), sem meta,
-  sem clientes e fora de ICS, Novos Negócios, Venda Zero e online. A tendência da gerência sobe o mesmo valor (sem Neg
-  Restante). Na cascata, ao abrir as supervisões, uma nota mostra o valor: "Inclui clientes de rotas eventuais (EV*):
-  Real 149" (linhas + notas = card). Supervisões e rotas não mudam.
+  sem clientes e fora da Venda Zero e do online. A tendência da gerência sobe o mesmo valor (sem Neg Restante). Desde
+  26/10/2026 os **clientes cobertos** deles também entram no Real da gerência e da Diretoria no ICS GC, em Novos
+  Negócios e no Todos a Bordo (meta igual, então o % sobe; no Todos a Bordo, só onde a gerência tem rota com meta do
+  item). Na cascata, ao abrir as supervisões, uma nota mostra o valor: "Inclui clientes de rotas eventuais (EV*):
+  Real 149" (linhas + notas = card), no volume e nas coberturas. Supervisões e rotas não mudam.
+- **Notas fiscais canceladas não contam** (desde 26/10/2026): a cobertura do mês (todos os indicadores) e as compras do
+  mês (Base, Sem compra e as listas de sem compra) ignoram as notas com status "Cancelada". O Real de volume já não as
+  contava. Cliente que só tem nota cancelada no mês passa a aparecer como "sem compra". Na medição de 26/10, a cobertura
+  da BAND caiu de 2 a 6 pontos por item e o Sem compra subiu de 3.691 para 4.065 clientes.
 - Supervisão que só tem rotas Neutraliza ou virtuais (SV.G1.5, SV.AN.4...) não aparece; a que mistura soma só
   as rotas normais. SV.G3.3 continua oculta. Na gerência **AT** nenhuma supervisão é oculta (a 431 vai para a
   linha "Neutraliza"; a 411 é rota normal).
@@ -290,7 +296,8 @@ Rota, que não tem a Executiva, abre no **Volume**.
   Resumo nem no "ritmo de coberturas").
   - Regras de dado do ICS: meta de cobertura por rota; Real = clientes distintos com cobertura no mês; online =
     clientes com compra hoje. Rota sem meta do item fica fora de todas as somas e listas dele (as rotas BARRACUDA não
-    têm meta de Heineken). Neutraliza e virtuais entram no total da gerência, como nas coberturas.
+    têm meta de Heineken). Neutraliza e virtuais entram no total da gerência, como nas coberturas; os clientes de rotas
+    eventuais (EV*) também, junto das rotas com meta do item.
   - **Os cinco cards são os do ICS GC** (mesma função, mesmas métricas): Meta, Real e Diferença; % = Real / Meta, verde
     pela régua do ritmo (% >= o % do dia útil de ontem); "faltam X hoje" / "no ritmo"; oportunidades do dia; caixa do
     Online com a meta do dia do ICS ("meta do dia X" / "no ritmo" / "Meta batida!"). Escopo sem nenhuma rota com meta do

@@ -94,7 +94,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `vaiPara(page, e, aba)` vão para `aba` depois de entrar (padrão 'ICS_GC', a aba inicial de antes, de onde os testes
   antigos partem; `null` = fica na aba inicial do perfil); a Parte L passa 'INCENTIVO'. `esperaCarga` aceita os cards
   ou a Executiva desenhada (`#exGauges`).
-  Variantes do payload montadas no próprio teste: 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV), 'semdados'
+  Variantes do payload montadas no próprio teste: 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV), 'evcob'
+  (o 'inc' com cobertura na SL-EV e uma AP-EV só com Heineken; Parte B), 'semdados'
   (G3 e PA sem dados), 'semsv', 'antigo', 'inc'/'incfech' (cenários da aba Todos a Bordo, `montaIncentivo`), 'seminc'
   (payload sem o grupo INCENTIVO), 'semscm' (payload sem SEM_COMPRA_MES; Parte S), 'grande' (16 gerências, a DI
   copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`), 'exec' (o 'inc' com clientes sem compra no
@@ -174,6 +175,13 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   - Pedidos de hoje (`FONTE = 'WF Online'`) só contam com `SITUACAO_Pedido = 'Inc. e Exp.'` (fora Cancelado/Reprovado).
     Basis e Meta NEG vêm na mesma consulta: o filtro é `(FONTE ne 'WF Online' or SITUACAO_Pedido eq 'Inc. e Exp.')`,
     nunca `SITUACAO_Pedido eq 'Inc. e Exp.'` puro (sumiria a meta por cliente, que tem situação 'Meta NEG').
+  - **NF cancelada não é venda** (decisão de 26/10/2026): a consulta de vendas tem `M.FILTRO_SEM_NF_CANCELADA`
+    (`NF_STATUS_Nota_Fiscal ne 'Cancelada' or ... eq null`) no `$filter`: fora da cobertura do mês (todos os
+    indicadores) e das compras do mês (Base/Sem compra, `SEM_COMPRA_MES`). Toda linha tem status ('Acertado', 'Em
+    Aberto', 'Cancelada', 'Meta NEG', 'WF Online'): online e meta por cliente continuam. Nunca o status no `$select`
+    dessa consulta (+66% de linhas, 29 → 53 s em 26/10). O Vol Real já ficava só com `M.STATUS_NF_REAL`. Medição de
+    26/10/2026 (dia útil 17): as 19.473 linhas canceladas tinham cobertura > 0; sem elas, de −2 a −6 pontos por item na
+    BAND (4.113 clientes a menos no ICS GC + NN) e Sem compra 3.691 → 4.065.
   - `META_DIA` (meta do dia antiga) não é mais usada pelo gerador; só o `conferir_tendencia.py` a lê para comparar.
   - Meta de volume por cliente = `META_NEG` por `CD_CLIENTE` × `DS_AGRUPADOR_Agrupador_Prod`.
   - Venda Zero: `Concluído(Contrato)` + `AGRUPADOR_EQPTO = 'Total Ko'` + Fountain + `Giro Zero`, deduplicando por
@@ -183,7 +191,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (sem filtro de roster). Segmento: o da base (roster da rota); para quem saiu dela, `DS_SEGMENTO_Clien` da venda.
   O filtro fica em `payload.py` (`_filtra_ks_tt`, `online_ks_tt`), então o front recebe tudo pronto. O `QUALQUER`
   do online não é filtrado. `validacao.py` reprova KS TT com cliente da base de segmento não elegível; real > `baseKsTt`
-  só gera aviso (clientes que saíram da rota).
+  só gera aviso (clientes que saíram da rota; nunca nas rotas ocultas das EV*, que não têm base).
 - **Tendência de volume = critério do SAC** (`modelo.meta_e_restante` + `indicador_volume`, espelhada em
   `agrega()` do app.js e `soma()` do resumo.js), por rota × macro de volume:
   Meta = `META_VOLUME_Chave_Meta_SAP` da rota (é o que o SAC mostra como "Meta NEG"; a soma de `META_NEG` dos
@@ -235,11 +243,20 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   cliente** (`M.ColMeta.GC_COMERCIAL`, coluna opcional da consulta do Vol Real; `VolumeMes.eventuais`), numa rota oculta
   por gerência (`M.rota_eventuais`: `AP-EV`) e supervisão própria (`M.sv_eventuais`: `SV.AP.EV`, nunca aparece).
   Só nas gerências com rotas no painel (`fontes.volume_eventuais`; o resto e cliente sem gerência comercial vão para o
-  log). Meta 0, sem Neg Restante (tendência = Real), meta do dia 0, sem clientes; fora de cobertura, Venda Zero e
-  online. Payload: em `VIRTUAIS_ROTAS` (o front esconde como virtual, também o front antigo em cache) e em
-  `EVENTUAIS_ROTAS` (chave nova, obrigatória na validação); na cascata, nota "Inclui clientes de rotas eventuais (EV*):
-  Real X" (`notaVirtuais`). A validação não conta essas rotas na disponibilidade de cobertura nem nas quedas de rotas.
+  log). Meta 0, sem Neg Restante (tendência = Real), meta do dia 0, sem clientes; fora da Venda Zero e do online.
+  **Cobertura** (decisão de 26/10/2026): os clientes cobertos deles também entram, na mesma rota oculta, no ICS GC, em
+  Novos Negócios e no Todos a Bordo (`carregar_vendas` lê `GC_COMERCIAL`, coluna opcional, e junta em
+  `cobertos[M.rota_eventuais(gc)]`; `carregar` cria a rota oculta também sem Vol Real; `modelo.cobertura_eventuais`:
+  meta 0 e o Real nos itens com cliente coberto, os demais indisponíveis; KS TT pelo segmento da venda). Todos a Bordo:
+  o gerador só preenche o item na oculta da gerência que tem rota com meta dele (`payload.inc_da_gc`: nas BARRACUDA a
+  Heineken dos clientes EV* fica fora, e a Diretoria fecha com as linhas das gerências) e o front a soma só junto das
+  rotas com meta do item (`rotasInc`; escopo sem meta continua "Sem meta"/"Exclusivo portfólio Full"). Medição de
+  26/10: +168 clientes no ICS GC + NN da BAND (G3 +84, IT +23); Heineken +21, Heineken 600ml +11. Payload: em
+  `VIRTUAIS_ROTAS` (o front esconde como virtual, também o front antigo em cache) e em `EVENTUAIS_ROTAS` (chave nova,
+  obrigatória na validação); na cascata, nota "Inclui clientes de rotas eventuais (EV*): Real X" (`notaVirtuais`, também
+  nas coberturas). A validação não conta essas rotas na disponibilidade de cobertura nem nas quedas de rotas.
   Outras rotas fora do painel (SV.BL.*, APE...) continuam fora (em 20/10 não tinham diferença contra o SAC).
+  Neutraliza já entrava inteira no total da gerência e da Diretoria (volume e cobertura; conferido em 26/10).
 - **Del Valle Frut** (`M.VOLUME_EXTRA`: `VOL DEL VALLE FRUT`, agrupador oficial "Del Valle Frut", conferido em 19/10/2026
   nas 18 rotas da G2; "Dv Frut" tem os mesmos números mas não é o oficial; só G2): todas as regras de volume; fora de
   `GROUPS`/`COV_GRUPO`/`INDICADORES_VOLUME` (nunca somado aos 5 macros; fora do Resumo, da Diretoria, do ritmo de
@@ -314,7 +331,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `validacao._incentivo`: aviso só para item sem meta em nenhuma rota da BAND (gerência BARRACUDA não avisa).
   Front (`app.js`, seção "aba Todos a Bordo"; só o texto exibido mudou, chaves INCENTIVO/INC*/INCENTIVO_ATIVO iguais):
   os 5 cards SÃO os do ICS GC (`cardIncItem` = `linha(k, agrega(rs).ind[k], rs)` com `rs = rotasInc(k, rotas)`, só as
-  rotas com meta, `temMetaInc`; `agrega()` soma também as chaves de `GROUPS.INCENTIVO`, mesma conta das coberturas):
+  rotas com meta, `temMetaInc`, e junto delas a oculta das EV* com cliente coberto; `agrega()` soma também as chaves
+  de `GROUPS.INCENTIVO`, mesma conta das coberturas):
   % = Real/Meta com a régua do ritmo, "faltam X hoje", oportunidades, caixa Online e "Meta batida!" do ICS; sem EF nem
   "real + hoje". Sem meta no escopo: "Exclusivo portfólio Full" (INC HEINEKEN/INC HEINEKEN 600ML) ou "Sem meta".
   Cascata = a do ICS com `CASC.inc` (`abreIncentivo` → `pintaCascata`, `metricas`/`notaVirtuais(k, gc, inc)` só nas

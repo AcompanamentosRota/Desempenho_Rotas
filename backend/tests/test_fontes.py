@@ -78,6 +78,8 @@ class ConsultaFalsa:
             if CM.META_COBERTURA in select:
                 return self._do_mes("metas", filtro)
             linhas = self._do_mes("vol_real" if CM.NF_STATUS in select else "vendas", filtro)
+            if filtro and f"{CM.NF_STATUS} ne 'Cancelada'" in filtro:   # M.FILTRO_SEM_NF_CANCELADA (sem status passa)
+                linhas = [l for l in linhas if l.get(CM.NF_STATUS) != "Cancelada"]
             if filtro and f"{CM.GC} eq " in filtro:
                 gc = filtro.split(f"{CM.GC} eq '")[1].split("'")[0]
                 linhas = [l for l in linhas if l.get("_gc", "Gc. G1") == gc]

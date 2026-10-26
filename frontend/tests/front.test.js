@@ -99,6 +99,27 @@ before(async () => {
     fs.writeFileSync(path.join(dir, 'online.json'), JSON.stringify(oi));
     DADOS[nome] = dir;
   }
+  // cobertura dos clientes de rotas eventuais (EV*): o 'inc' com a SL-EV coberta em CCTM 2L Pet (ICS GC), Campari (Novos
+  // Negócios) e Heineken (Todos a Bordo; a SL é Full) e uma AP-EV só com Heineken (a AP não tem meta do item), como o
+  // gerador monta (meta 0, só o Real)
+  const evcob = path.join(tmp, 'evcob');
+  fs.mkdirSync(evcob);
+  const pe = JSON.parse(fs.readFileSync(path.join(DADOS.inc, 'payload.json'), 'utf-8'));
+  const cobEv = (no, r, k, pvs) => {
+    no.indicators[k] = {meta: 0, real: pvs.length, pct: null, onPace: false, gap: 0, unavailable: false};
+    (pe.COBERTOS[r] = pe.COBERTOS[r] || {})[k] = pvs;
+  };
+  const slev = pe.DATA.SL['SV.SL.EV']['SL-EV'], apev = JSON.parse(JSON.stringify(slev));
+  cobEv(slev, 'SL-EV', 'CCTM 2L PET', [99001, 99002]);
+  cobEv(slev, 'SL-EV', 'CAMPARI', [99001]);
+  cobEv(slev, 'SL-EV', 'INC HEINEKEN', [99003]);
+  cobEv(apev, 'AP-EV', 'INC HEINEKEN', [99004]);
+  pe.DATA.AP['SV.AP.EV'] = {'AP-EV': apev};
+  pe.VIRTUAIS_ROTAS.push('AP-EV');
+  pe.EVENTUAIS_ROTAS.push('AP-EV');
+  fs.writeFileSync(path.join(evcob, 'payload.json'), JSON.stringify(pe));
+  fs.copyFileSync(path.join(DADOS.inc, 'online.json'), path.join(evcob, 'online.json'));
+  DADOS.evcob = evcob;
   const seminc = path.join(tmp, 'seminc');
   fs.mkdirSync(seminc);
   const si = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
@@ -186,7 +207,7 @@ after(async () => {
 const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json',
   '.png':'image/png', '.woff2':'font/woff2', '.webmanifest':'application/manifest+json'};
 
-/* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' |
+/* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' | 'evcob' |
    'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm' | 'evo' | 'evogrupo' | 'evogrande' |
    'evofech' | 'semevo' | 'vol5' | 'vol5fech');
    devolve {page, erros}.
@@ -747,6 +768,45 @@ describe('Parte D — cascata', {skip: pular}, () => {
     await page.click(`#dCorpo .cLin[data-i="${iSl}"]`);
     g = await lerGaveta(page);
     assert.deepEqual(g.nota.map(n => n.texto), ['Inclui clientes de rotas eventuais (EV*): Real 120']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('cobertura dos clientes de rotas eventuais (EV*): Real no total da gerência (ICS GC, Novos Negócios e Todos a Bordo), com nota', async () => {
+    const {page, ctx, erros} = await abre('evcob');
+    // diferença do total da gerência com e sem a rota oculta: [Meta, Real]
+    const dif = (k, inc) => page.evaluate(([k, inc]) => {
+      const todas = inc ? rotasInc(k, rotasAtuais()) : rotasAtuais(), normais = todas.filter(r => !ehEventual(r));
+      const a = agrega(todas).ind[k], b = agrega(normais).ind[k];
+      return [a.meta - b.meta, a.real - b.real];
+    }, [k, inc]);
+    const notas = g => g.nota.map(n => [n.texto, n.meta, n.real]);
+    await filtra(page, {gc: 'SL', aba: 'ICS_GC'});
+    assert.deepEqual(await dif('CCTM 2L PET'), [0, 2]);
+    let g = await cascata(page, 'CCTM 2L PET', 'ICS_GC');
+    assert.deepEqual(notas(g), [['Inclui clientes de rotas eventuais (EV*): Real 2', 0, 2]]);
+    const card = await page.evaluate(() => agrega(rotasAtuais()).ind['CCTM 2L PET']);
+    assert.equal(g.linhas.filter(l => !l.off).reduce((a, l) => a + l.real, 0) + 2, card.real, 'linhas + nota = card (Real)');
+    assert.ok(Math.abs(somaMeta(g.linhas) - card.meta) < 1e-6, 'sem meta');
+    await page.keyboard.press('Escape');
+    assert.deepEqual(await dif('CAMPARI'), [0, 1]);
+    g = await cascata(page, 'CAMPARI', 'NOVOS_NEG');
+    assert.deepEqual(notas(g), [['Inclui clientes de rotas eventuais (EV*): Real 1', 0, 1]]);
+    await page.keyboard.press('Escape');
+    // Todos a Bordo: a oculta soma junto das rotas com meta do item (a SL é Full)
+    await filtra(page, {aba: 'INCENTIVO'});
+    assert.deepEqual(await page.evaluate(() => rotasInc('INC HEINEKEN', rotasAtuais()).filter(ehEventual)), ['SL-EV']);
+    assert.deepEqual(await dif('INC HEINEKEN', true), [0, 1]);
+    const tot = await page.evaluate(() => agrega(rotasInc('INC HEINEKEN', rotasAtuais())).ind['INC HEINEKEN']);
+    assert.deepEqual(metaReal((await cardsInc(page))['INC HEINEKEN']), [tot.meta, tot.real]);
+    await page.click('.ind[data-k="INC HEINEKEN"]');
+    assert.deepEqual(notas(await lerGaveta(page)), [['Inclui clientes de rotas eventuais (EV*): Real 1', 0, 1]]);
+    await page.keyboard.press('Escape');
+    // AP (sem meta de Heineken): o cliente EV* coberto não cria o card; continua "Exclusivo portfólio Full"
+    await filtra(page, {gc: 'AP', aba: 'INCENTIVO'});
+    assert.deepEqual(await page.evaluate(() => rotasInc('INC HEINEKEN', rotasAtuais())), []);
+    const ap = (await cardsInc(page))['INC HEINEKEN'];
+    assert.deepEqual([ap.off, ap.semdado], [true, 'Exclusivo portfólio Full']);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
