@@ -14,7 +14,8 @@ Vol Real + Neg Restante. No fechamento do mês (FECHAMENTO = true) todo o payloa
 sem tendência e sem meta do dia, Venda Zero indisponível.
 
 Clientes em rotas EV* (Fontes.eventuais): uma rota oculta por gerência (M.rota_eventuais), sem clientes, só com o
-Real de volume (meta 0), numa supervisão própria (M.sv_eventuais); em VIRTUAIS_ROTAS e EVENTUAIS_ROTAS.
+Real de volume e de cobertura (meta 0; ICS GC, Novos Negócios e Todos a Bordo), numa supervisão própria
+(M.sv_eventuais); em VIRTUAIS_ROTAS e EVENTUAIS_ROTAS.
 """
 from __future__ import annotations
 
@@ -143,6 +144,10 @@ def montar_payload(f: Fontes) -> dict:
         visitas_geral[r] = len(clientes_hoje[r])
 
     ks_tt = _indices_ks_tt(segs.valores)
+    # incentivo: a rota oculta das EV* só soma o item na gerência com alguma rota com meta dele (as BARRACUDA não têm
+    # meta de Heineken: lá o item continua sem meta, e a Diretoria fecha com as linhas das gerências)
+    inc_da_gc = {gc: {k for rs in arvore[gc].values() for r in rs for k in M.INDICADORES_INCENTIVO
+                      if f.metas.get(r, {}).get(k)} for gc in arvore}
 
     # ---- Venda Zero (revertido = cliente com venda online hoje)
     vz_ativo = f.vendazero is not None
@@ -192,9 +197,12 @@ def montar_payload(f: Fontes) -> dict:
                 metas_rota = f.metas.get(r, {})
                 # "rota tem meta" (real informado nos indicadores sem meta) continua só pelo ICS/NN, sem o incentivo
                 tem_meta_cob = any(k not in M.INDICADORES_INCENTIVO for k in metas_rota)
+                # rota oculta dos clientes em rotas EV*: cobertura só com o Real (meta 0), em todos os itens
+                eventual = r in f.eventuais
                 for k in M.INDICADORES_COBERTURA:
-                    ind[k] = modelo.indicador_cobertura(metas_rota.get(k), len(cob.get(k, ())), cal,
-                                                        rota_tem_meta=tem_meta_cob)
+                    n = len(cob.get(k, ()))
+                    ind[k] = (modelo.cobertura_eventuais(n, cal) if eventual else
+                              modelo.indicador_cobertura(metas_rota.get(k), n, cal, rota_tem_meta=tem_meta_cob))
                 ind["IMPERDOAVEIS"] = modelo.cobertura_indisponivel()
                 vz_lista = vendazero_clientes.get(r, [])
                 ind["VENDAZERO"] = modelo.indicador_vendazero(
@@ -214,11 +222,12 @@ def montar_payload(f: Fontes) -> dict:
                 for k in M.INDICADORES_VOLUME:
                     ind[k] = volume_ind(k)
                 # incentivo (chaves INC): como o ICS, mas rota sem meta do item (ou com meta 0) fica indisponível
-                # com meta e real null; o volume extra continua no fim do nó
+                # com meta e real null (a oculta das EV*: só o Real, na gerência com meta do item); o volume extra
+                # continua no fim do nó
                 for k in M.INDICADORES_INCENTIVO:
-                    meta = metas_rota.get(k)
-                    ind[k] = (modelo.indicador_cobertura(meta, len(cob.get(k, ())), cal) if meta
-                              else modelo.cobertura_indisponivel())
+                    meta, n = metas_rota.get(k), len(cob.get(k, ()))
+                    ind[k] = (modelo.cobertura_eventuais(n if k in inc_da_gc[gc] else 0, cal) if eventual else
+                              modelo.indicador_cobertura(meta, n, cal) if meta else modelo.cobertura_indisponivel())
                 for k in extras:
                     ind[k] = volume_ind(k)
                 inc_com_meta = [k for k in M.INDICADORES_INCENTIVO if not ind[k]["unavailable"]]

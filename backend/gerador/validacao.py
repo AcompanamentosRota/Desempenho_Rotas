@@ -174,13 +174,15 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
             erros.append(f"rota {r}: indicadores fora do padrão")
             break
     ks_tt = {i for i, s in enumerate(novo["SEGS"]) if normalizar(s) in M.SEGMENTOS_KS_TT}
+    # rotas ocultas dos clientes em rotas EV*: sem base de clientes (o KS TT delas vem pelo segmento da venda)
+    eventuais = set(novo.get("EVENTUAIS_ROTAS") or [])
     ks_fora_seg, ks_acima = [], []
     for r, d in rotas.items():
         seg = {c[0]: c[2] for c in novo["CLIENT_ROSTER"].get(r, [])}
         if any(pv in seg and seg[pv] not in ks_tt for pv in (novo["COBERTOS"].get(r) or {}).get("KS TT", [])):
             ks_fora_seg.append(r)
         real = (d["indicators"].get("KS TT") or {}).get("real")
-        if real is not None and real > d["baseKsTt"]:
+        if real is not None and real > d["baseKsTt"] and r not in eventuais:
             ks_acima.append(r)
     if ks_fora_seg:
         erros.append(f"KS TT contando cliente de segmento não elegível em {len(ks_fora_seg)} rota(s): "
@@ -189,8 +191,7 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
         avisos.append(f"KS TT com real acima da base elegível (clientes que saíram da rota) em: {', '.join(ks_acima[:20])}")
 
     # disponibilidade só nas gerências com alguma meta (as sem meta já viram aviso em _gerencias); as rotas ocultas
-    # dos clientes em rotas EV* nunca têm cobertura e ficam fora da conta
-    eventuais = set(novo.get("EVENTUAIS_ROTAS") or [])
+    # dos clientes em rotas EV* não têm meta de cobertura (só o Real, nos itens com cliente coberto) e ficam fora
     com_meta = {r: d for g in _rotas_por_gc(novo).values() if _tem_meta(g) for r, d in g.items()
                 if r not in eventuais} or rotas
     cob = [d["indicators"][k] for d in com_meta.values() for k in M.INDICADORES_COBERTURA]

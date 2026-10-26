@@ -116,6 +116,7 @@ class Fontes:
     # Desempenho GDM e tag de geladeira: rota -> pv -> [meta, faturado GDM, situação, nº de geladeiras]
     comodato_cliente: dict[str, dict[int, list]] = field(default_factory=dict)
     # rota oculta com o Real dos clientes em rotas EV* (M.rota_eventuais) -> gerência; o volume dela está em `volume`
+    # e a cobertura em `cobertos`
     eventuais: dict[str, str] = field(default_factory=dict)
     # mês anterior no mesmo dia útil (mes_anterior.Dados; None = sem a chave MES_ANTERIOR nesta rodada)
     mes_anterior: object | None = None

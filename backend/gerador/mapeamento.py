@@ -133,6 +133,13 @@ ROTAS_IGNORAR_PREFIXOS = ("EV",)
 # Pedidos de hoje (WF Online): só a situação 'Inc. e Exp.' conta (fora 'Cancelado' e 'Reprovado').
 # As linhas Basis (faturado) e Meta NEG (meta por cliente) vêm da mesma consulta e não são filtradas.
 FILTRO_PEDIDOS_ONLINE = f"({ColMeta.FONTE} ne 'WF Online' or {ColMeta.SITUACAO_PEDIDO} eq 'Inc. e Exp.')"
+# Nota fiscal cancelada não é venda (decisão de 26/10/2026): fora da consulta de vendas, ou seja, da cobertura do mês
+# (todos os indicadores) e das compras do mês ("sem compra"); as linhas do online ('WF Online') e da meta por cliente
+# ('Meta NEG') continuam. Toda linha tem NF_STATUS_Nota_Fiscal ('Acertado', 'Em Aberto', 'Cancelada', 'Meta NEG',
+# 'WF Online'; medição de 26/10/2026: a cobertura contava as 19.473 linhas canceladas); o "eq null" guarda uma linha
+# sem status. No $filter, e não no $select, para a consulta não crescer (com o status no $select, +66% de linhas).
+# O Vol Real já fica só com STATUS_NF_REAL.
+FILTRO_SEM_NF_CANCELADA = f"({ColMeta.NF_STATUS} ne 'Cancelada' or {ColMeta.NF_STATUS} eq null)"
 # Venda Zero = geladeiras Coca-Cola (Total Ko) em contrato vigente com giro zero no mês
 FILTRO_COMODATO = ("STATUS_COMODATO eq 'Concluído(Contrato)' and AGRUPADOR_EQPTO eq 'Total Ko' "
                    "and TIPO_QUIPAMENTO_Equipame eq 'Foutain - Equip. de Mercado'")
@@ -271,8 +278,10 @@ VIRTUAIS_ROTAS = ["A42", "A43", "A44", "R32"]
 # Clientes que estão hoje numa rota eventual (EV*): a rota fica fora do painel, mas o Real de volume deles entra no
 # total da gerência, como no SAC (conferido em 20/10/2026, seção E7 do conferir_tendencia.py): uma rota oculta por
 # gerência (rota_eventuais), na gerência comercial do cliente (ColMeta.GC_COMERCIAL), numa supervisão própria
-# (sv_eventuais). Sem meta (as rotas EV não têm META_VOLUME nem META_NEG) e sem clientes; fora de cobertura, Venda
-# Zero e online. No payload vão em VIRTUAIS_ROTAS (ocultas como as virtuais) e em EVENTUAIS_ROTAS (nota própria).
+# (sv_eventuais). Sem meta (as rotas EV não têm META_VOLUME nem META_NEG) e sem clientes; fora da Venda Zero e do
+# online. A cobertura deles (ICS GC, Novos Negócios e Todos a Bordo) também entra no total da gerência, com meta 0
+# (decisão de 26/10/2026). No payload vão em VIRTUAIS_ROTAS (ocultas como as virtuais) e em EVENTUAIS_ROTAS (nota
+# própria).
 
 
 def rota_eventual(rota: str) -> bool:

@@ -27,7 +27,7 @@ const rotuloSv = sv => { const n = nomeSv(sv); return n ? `${sv} · ${n}` : sv; 
    supervisão aparecem juntas como "Neutraliza" (rotas e clientes dentro); fora das supervisões, do Resumo, do
    "puxa a média" e da Venda Zero (que já vem indisponível do back-end). Virtuais: ocultas em tudo, só no total.
    Clientes em rotas EV* (EVENTUAIS_ROTAS, também em VIRTUAIS_ROTAS): uma rota oculta por gerência, só com o Real
-   de volume (meta 0), tratada como virtual; na cascata, nota própria.
+   de volume e de cobertura (meta 0), tratada como virtual; na cascata, nota própria.
    Ocultas: fora do "puxa a média" e das listas de clientes; na gerência AT nenhuma supervisão é oculta.
    CONFIG.SV_EXCLUIDOS só vale para payload antigo, sem essas chaves. */
 const SV_NEUTRA = 'Neutraliza';    // "supervisão" do filtro e da cascata que junta as rotas Neutraliza da gerência
@@ -1327,7 +1327,8 @@ function gruposDo(ctx, k){
 }
 
 // rotas virtuais da gerência: sem linha, rota ou cliente; só a Meta e o Real, para a conta das linhas fechar com o card.
-// Os clientes em rotas EV* (rota oculta, sem meta) têm nota própria, só com o Real.
+// Os clientes em rotas EV* (rota oculta, sem meta) têm nota própria, só com o Real (volume e cobertura, também no
+// Todos a Bordo).
 function notaVirtuais(k, gc, inc){
   const f = ehVolume(k) ? fmt0 : fmtN;
   const nota = (rs, texto) => {
@@ -1335,7 +1336,7 @@ function notaVirtuais(k, gc, inc){
     if(!b || b.unavailable) return '';
     return `<div class="cNota" data-meta="${b.meta}" data-real="${b.real}">${texto(b)}</div>`;
   };
-  const todas = rotasDe(gc, '').filter(r=>ehVirtual(r) && (!inc || temMetaInc(k, r)));
+  const todas = rotasDe(gc, '').filter(r=>ehVirtual(r) && (!inc || temMetaInc(k, r) || ehEventual(r)));
   return nota(todas.filter(r=>!ehEventual(r)), b => `Inclui rotas virtuais: Meta ${f(b.meta)} · Real ${f(b.real)}`)
     + nota(todas.filter(ehEventual), b => `Inclui clientes de rotas eventuais (EV*): Real ${f(b.real)}`);
 }
@@ -1495,20 +1496,26 @@ function listaCobertura(k, rotas){
    Itens = GROUPS.INCENTIVO do payload, na ordem da aba (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS; INC
    HEINEKEN, INC EISENBAHN 600ML e INC HEINEKEN 600ML só existem aqui). Cada item soma só as rotas do escopo com meta do
    item (indicador disponível e meta > 0; as BARRACUDA não têm meta de Heineken); as demais ficam fora de todas as somas
-   e listas dele. Card, números e cascata são os do ICS GC (linha(), agrega(), metricas(), listaCobertura()): Meta, Real,
-   Diferença, % = Real / Meta com a régua do ritmo, oportunidades do dia e a caixa do Online.
+   e listas dele. Junto delas soma também a rota oculta dos clientes em rotas EV* com cliente coberto no item (meta 0,
+   só o Real; decisão de 26/10/2026). Card, números e cascata são os do ICS GC (linha(), agrega(), metricas(),
+   listaCobertura()): Meta, Real, Diferença, % = Real / Meta com a régua do ritmo, oportunidades do dia e a caixa do
+   Online.
    Escopo sem meta do item: "Exclusivo portfólio Full" (Heineken e Heineken - 600ml) ou "Sem meta".
    CONFIG.INCENTIVO_ATIVO = false ou payload sem GROUPS.INCENTIVO: aba oculta. */
 const INC_SO_FULL = ['INC HEINEKEN', 'INC HEINEKEN 600ML'];
 const incentivoAtivo = () => CONFIG.INCENTIVO_ATIVO !== false && !!(GROUPS && GROUPS.INCENTIVO);
 const itensInc = () => (GROUPS && GROUPS.INCENTIVO) || [];
 const msgSemMetaInc = k => INC_SO_FULL.includes(k) ? 'Exclusivo portfólio Full' : 'Sem meta';
+const indInc = (k, r) => ((nodo(sel.gc, r) || {}).indicators || {})[k];
 // rota com meta do item: indicador disponível e meta > 0
 function temMetaInc(k, r){
-  const b = ((nodo(sel.gc, r) || {}).indicators || {})[k];
+  const b = indInc(k, r);
   return !!b && !b.unavailable && b.meta > 0;
 }
-const rotasInc = (k, rotas) => rotas.filter(r=>temMetaInc(k, r));
+// rotas que somam no item: as com meta dele e, só junto delas, a oculta das EV* com cliente coberto no item (escopo
+// sem rota com meta continua "Sem meta")
+const rotasInc = (k, rotas) => !rotas.some(r=>temMetaInc(k, r)) ? []
+  : rotas.filter(r=>temMetaInc(k, r) || (ehEventual(r) && !(indInc(k, r) || {unavailable:true}).unavailable));
 
 // card do item: o mesmo do ICS GC, só com as rotas com meta dele
 function cardIncItem(k, rotas){

@@ -10,7 +10,8 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
                                                 extras de volume/GDM e os 3 do incentivo, M.AGRUPADORES_CONSULTA_VENDAS;
                                                 uma consulta por gerência, em paralelo): cobertura do mês,
                                                 compras e volume de hoje (online, só pedidos 'Inc. e Exp.'),
-                                                meta (META_NEG) por cliente, segmento do cliente
+                                                meta (META_NEG) por cliente, segmento do cliente; sem as NF
+                                                canceladas; clientes em rotas EV* pela gerência comercial
   vol_real    AM_FAT_BND_ANALISE_META           rota x cliente x macro de volume x NF_STATUS (por gerência):
                                                 Vol Real = FX_VOL_PADRAO_FAT com status em M.STATUS_NF_REAL;
                                                 clientes em rotas EV* também pela gerência comercial (eventuais)
@@ -166,15 +167,21 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
                     so_pedidos_hoje: bool = False):
     """Cobertura do mês, compras, meta por cliente e online de hoje.
 
+    Sem as NF canceladas (M.FILTRO_SEM_NF_CANCELADA no $filter): não contam na cobertura nem nas compras do mês.
+    Clientes em rotas EV*: a cobertura também vai para a rota oculta da gerência comercial do cliente
+    (M.rota_eventuais); `carregar` só a mantém nas gerências com rotas no painel.
     so_pedidos_hoje: só as linhas WF Online (fechamento do mês: o online de hoje é do mês atual,
     enquanto o resto do payload é do mês anterior).
     """
     obj = M.OBJ_META
     sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.COB_MES, CM.VOL_MES],
-                   [CM.COB_ONLINE, CM.COB_ONLINE_GERAL, CM.VOL_ONLINE, CM.META_VOLUME_CLIENTE, CM.SEGMENTO])
-    _colunas(cons, obj, [CM.FONTE, CM.SITUACAO_PEDIDO])   # só confere: entram no $filter, não no $select
+                   [CM.COB_ONLINE, CM.COB_ONLINE_GERAL, CM.VOL_ONLINE, CM.META_VOLUME_CLIENTE, CM.SEGMENTO,
+                    CM.GC_COMERCIAL])
+    # só confere: entram no $filter, não no $select
+    _colunas(cons, obj, [CM.FONTE, CM.SITUACAO_PEDIDO, CM.NF_STATUS])
     base = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_CONSULTA_VENDAS), M.FILTRO_PEDIDOS_ONLINE,
-             eq(CM.FONTE, "WF Online") if so_pedidos_hoje else None, eq(CM.ROTA, rota) if rota else None)
+             M.FILTRO_SEM_NF_CANCELADA, eq(CM.FONTE, "WF Online") if so_pedidos_hoje else None,
+             eq(CM.ROTA, rota) if rota else None)
     partes = _por_gerencia(obj, sel, base, gcs_originais, rota)
     linhas = [l for ls in cons.em_paralelo(partes).values() for l in ls]
 
@@ -182,6 +189,7 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
     compraram: dict = defaultdict(set)
     meta_cli: dict = defaultdict(lambda: defaultdict(dict))
     segmento: dict[int, str] = {}
+    ev_sem_gc: dict = defaultdict(set)   # cobertura de clientes em rotas EV* sem gerência comercial do painel
     for l in linhas:
         r, pv = _rota(l.get(CM.ROTA)), inteiro(l.get(CM.CLIENTE))
         if not r or pv is None:
@@ -201,6 +209,12 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
             compraram[r].add(pv)
         if k_cob and cob_mes > 0:
             cobertos[r][k_cob].add(pv)
+            if M.rota_eventual(r):
+                gc = _sigla_gc(l.get(CM.GC_COMERCIAL)) if CM.GC_COMERCIAL in sel else None
+                if gc:
+                    cobertos[M.rota_eventuais(gc)][k_cob].add(pv)
+                else:
+                    ev_sem_gc[k_cob].add(pv)
         if k_cob and cob_on > 0:
             online.clientes.setdefault(r, {}).setdefault(k_cob, set()).add(pv)
         if do_painel and (cob_on > 0 or cob_on_g > 0 or vol_on > 0):
@@ -218,6 +232,10 @@ def carregar_vendas(cons: Consulta, anomes: str, gcs_originais: list[str], rota:
             if meta_c not in (None, ""):
                 meta_cli[r][pv][k_vol] = meta_cli[r][pv].get(k_vol, 0.0) + numero(meta_c)
     log.info("Vendas: %d linhas, %d rotas, %d com venda online hoje", len(linhas), len(compraram), len(online.qualquer))
+    if ev_sem_gc:
+        log.warning("Cobertura de clientes em rotas EV* sem gerência comercial do painel (%s; fica fora): %s",
+                    CM.GC_COMERCIAL if CM.GC_COMERCIAL in sel else f"{CM.GC_COMERCIAL} fora do $metadata",
+                    {M.LABELS.get(k, k): len(v) for k, v in sorted(ev_sem_gc.items())})
     return cobertos, compraram, meta_cli, segmento
 
 
@@ -796,9 +814,20 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                 meta=meta, real=real or 0.0, meta_neg_clientes=nm,
                 neg_restante=None if cal.fechamento else rest,
                 meta_dia_hoje=None if meta_dia is None else meta_dia.get(r, {}).get(k, 0.0))
-    # clientes em rotas EV*: uma rota oculta por gerência com o Real deles (meta 0: só soma no total da gerência)
+    # clientes em rotas EV*: uma rota oculta por gerência com o Real deles (meta 0: só soma no total da gerência);
+    # a cobertura deles já veio na rota oculta (carregar_vendas): só nas gerências com rotas no painel
     ev = volume_eventuais(vm, gc_da_rota)
     eventuais = {r: gc for r, (gc, _) in ev.items()}
+    gcs_painel = set(gc_da_rota.values())
+    for gc in M.GC_NOMES:
+        r = M.rota_eventuais(gc)
+        if not cobertos.get(r):
+            continue
+        if gc in gcs_painel:
+            eventuais.setdefault(r, gc)
+        else:
+            log.warning("Cobertura de clientes em rotas EV* da %s fica fora: gerência sem rotas no painel (%s).", gc,
+                        {M.LABELS.get(k, k): len(v) for k, v in sorted(cobertos[r].items())})
     for r, (_, ks) in ev.items():
         for k, real in ks.items():
             volume[r][k] = VolumeRota(meta=0.0, real=real, neg_restante=None if cal.fechamento else 0.0,
@@ -846,7 +875,8 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     online.volume = so_painel(online.volume)
     online.volume_cliente = so_painel(online.volume_cliente)
     online.gdm_cliente = so_painel(online.gdm_cliente)
-    return Fontes(cal=cal, clientes=clientes, cobertos={r: dict(v) for r, v in so_painel(cobertos).items()},
+    return Fontes(cal=cal, clientes=clientes,
+                  cobertos={r: dict(v) for r, v in cobertos.items() if r in rotas_painel or r in eventuais},
                   compraram=so_painel(compraram), metas=so_painel(dict(metas)), volume=dict(volume),
                   volume_cliente=so_painel(vol_cli), online=online,
                   vendazero=so_painel(vendazero) if vendazero is not None else None,

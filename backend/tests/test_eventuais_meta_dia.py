@@ -1,8 +1,8 @@
 """
 Decisões de 20/10/2026 (seção E7 do conferir_tendencia.py contra a tela do SAC):
 - clientes que estão hoje em rotas EV*: o Real de volume deles entra no total da gerência comercial do cliente
-  (M.ColMeta.GC_COMERCIAL), numa rota oculta por gerência (M.rota_eventuais), sem meta, sem clientes e fora de
-  cobertura, Venda Zero e online;
+  (M.ColMeta.GC_COMERCIAL), numa rota oculta por gerência (M.rota_eventuais), sem meta, sem clientes e fora da
+  Venda Zero e do online (a cobertura deles entrou em 26/10/2026: test_canceladas_ev_cobertura.py);
 - meta do dia (META_RECUPERAVEL_ROTA) pela rota da meta (CD_ROTA_Chave_Meta_SAP); sem a dimensão, pela rota do
   cliente (regra anterior); sem as duas, null.
 """

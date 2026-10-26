@@ -51,6 +51,12 @@ def indicador_cobertura(meta: float | None, real: int, cal: Calendario, rota_tem
     }
 
 
+def cobertura_eventuais(real: int, cal: Calendario) -> dict:
+    """Rota oculta dos clientes em rotas EV*: o Real soma no total da gerência com meta 0 (como o volume dela);
+    item sem cliente coberto fica indisponível."""
+    return indicador_cobertura(0, real, cal) if real else cobertura_indisponivel()
+
+
 # ------------------------------------------------------------------ venda zero
 def indicador_vendazero(meta: float | None, real: int, revertido_hoje: int, oportunidade_hoje: int) -> dict:
     """Venda Zero é invertido: quanto MENOS equipamento zerado, melhor (no ritmo se real <= meta)."""
