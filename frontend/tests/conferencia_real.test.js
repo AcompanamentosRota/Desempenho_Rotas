@@ -35,7 +35,7 @@ const {confereExecutiva} = require('./executiva_invariantes.js');
 const {confereGavetas, leChips} = require('./gavetas_invariantes.js');
 const {confereEvolucao, ABRE_TODAS} = require('./evolucao_invariantes.js');
 const ROT = require('./rotulos_invariantes.js');
-const {trocaHash, digitaSenha} = require('./senha_teste.js');
+const {trocaHash, trocaLiberadas, digitaSenha} = require('./senha_teste.js');
 
 const FRONT = path.resolve(__dirname, '..');
 const PAYLOAD = process.env.PAYLOAD_REAL, ONLINE = process.env.ONLINE_REAL;
@@ -70,7 +70,8 @@ async function abre(largura = 1440, tema, troca = {}){
       : path.join(FRONT, url.pathname);
     if(!troca[url.pathname] && !fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
     let body = troca[url.pathname] ? troca[url.pathname]() : fs.readFileSync(arq);
-    if(url.pathname === '/js/config.js') body = trocaHash(body);     // senha da Diretoria: hashes de teste (senha_teste.js)
+    // senha da Diretoria: hashes de teste; e todas as gerências liberadas na entrada (senha_teste.js)
+    if(url.pathname === '/js/config.js') body = trocaLiberadas(trocaHash(body));
     rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream', body});
   });
   await page.route(/cdnjs\.cloudflare\.com/, r => r.abort());

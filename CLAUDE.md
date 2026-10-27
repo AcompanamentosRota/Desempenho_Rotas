@@ -291,15 +291,20 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `confereSenha`) e entra em "Todas as gerências" com uma das DUAS senhas; GERÊNCIA, SUPERVISÃO e ROTA abrem a caixa de seleção (`#entCaixa`: `abreCaixa` /
   `pintaCaixa`, diálogo com foco, Tab preso, setas, ESC, × e clique fora). 1ª etapa (`opcoesGc`): as 16 na ordem de
   `GC_NOMES`/`GC_ATIVAS` com os grupos de `CONFIG.GC_GRUPOS` (PA+DI, GU+PO, IT+MO, UR+RI, os pares que o Datasphere
-  junta) numa opção só, na posição do 1º membro; sem dados = desabilitada (grupo: se nenhuma das duas tiver). 2ª etapa
+  junta) numa opção só, na posição do 1º membro; sem dados = desabilitada (grupo: se nenhuma das duas tiver).
+  **Gerências liberadas** (pedido da Karen, 27/10/2026, "por enquanto"): `CONFIG.GC_LIBERADAS` = G1 G2 G3 AP IT MO
+  (`gcLiberada`: grupo só com as duas na lista; null = todas); fora dela, desabilitada com "· em breve" (antes do
+  "· sem dados") e `validaAcesso` recusa (acesso guardado volta para a entrada). A Diretoria (`fgc`) vê todas. Os
+  testes servem o config.js com todas liberadas (`trocaLiberadas` em senha_teste.js; `abre(nome, {liberadas})`:
+  'config' = a lista real; Parte AD). 2ª etapa
   (Supervisão e Rota): `svsDaEntrada`/`rotasDaEntrada` da gerência (no grupo, das duas, por gerência), só o que
   aparece no painel (`svNoPainel`: sem SV.G3.3 nem "Neutraliza"; `rotaNoPainel`: Neutraliza sim, virtual e '-EV' não).
   Grupo = "gerência" com a chave 'IT+MO': `membrosGc`/`ehGrupo`/`temDados`, e `rotasDe`, `svsDe`, `svsVisiveis`,
   `rotasNeutraliza`, `ctxGerencia`, `ctxNeutraliza`, `notaVirtuais`, `rotuloGc` aceitam a chave (rotas das duas; uma
   linha "Neutraliza"). Na Gerência de um grupo, `sel.gc` = chave (Total) ou uma das duas; `fgc` só com "Total (GC.IT +
   GC.MO)" e as duas (`grupoDoFiltro`); Resumo do Total = total + as duas lado a lado (`colunas()` em resumo.js).
-  `validaAcesso` (caixa, reabertura e payload novo): Gerência = uma opção da caixa com dados (`opcaoValida`; a MO
-  sozinha não vale); Supervisão/Rota = gerência (ou grupo) com dados e sv/rota no painel de uma delas, devolvendo a
+  `validaAcesso` (caixa, reabertura e payload novo): Gerência = uma opção da caixa liberada e com dados (`opcaoValida`; a
+  MO sozinha não vale); Supervisão/Rota = gerência (ou grupo) liberada, com dados e sv/rota no painel de uma delas, devolvendo a
   gerência da sv/rota. Os perfis Gerência, Supervisão e Rota usam o modo 'gc' com parte do filtro travada (`ACESSO`;
   `montaFiltros` esconde os selects; Rota sem Resumo). Acesso em `localStorage 'drotas_sessao'` {perfil, gc, sv, rota,
   dia} (no grupo, gc = 'IT+MO'; Supervisão/Rota guardam a gerência delas): `entradaOuAcesso()` ao carregar (atrás da
