@@ -803,7 +803,7 @@ A rota da meta é a mesma que o SAC usa: pela rota atual do cliente, quem foi tr
 para outra rota. Se a consulta pela rota da meta não funcionar, o gerador volta à curva pela rota do cliente
 (sempre escalonada) e avisa. Casos-limite: rota com META_VOLUME mas sem META_NEG usa os dias úteis restantes (contando hoje) no lugar da
 curva; rota sem META_VOLUME usa a soma de META_NEG como meta; sem nenhuma das duas, o indicador fica
-indisponível, a não ser que a rota tenha Real na categoria: aí, desde 27/10/2026, entra com meta 0 e tendência = Real,
+indisponível, a não ser que a rota tenha Real na categoria (diferente de zero com 1 casa): aí, desde 27/10/2026, entra com meta 0 e tendência = Real,
 para o Real somar no total da gerência como no SAC (ex.: R31 Cervejas, T07; só os 5 grupos, Del Valle Frut não). Cada caso aparece nos avisos da execução, assim como a meta da rota não distribuída nos
 clientes, por gerência (META_VOLUME − soma de META_NEG).
 
