@@ -230,7 +230,10 @@ class TestFontes(unittest.TestCase):
         self.assertEqual((vol["meta"], vol["real"], vol["dif"], vol["negRestante"], vol["tendencia"],
                           vol["pctTendencia"], vol["onPace"], vol["metaDia"], vol["metaNegClientes"]),
                          (120.0, 13.0, -107.0, 36.0, 49.0, 41, False, 5.0, 100.0))
-        self.assertTrue(d["indicators"]["VOL CERVEJAS"]["unavailable"])     # venda sem Meta NEG
+        # venda sem META_VOLUME nem META_NEG: meta 0 e tendência = Real, para somar no total como o SAC (27/10/2026)
+        cerv = d["indicators"]["VOL CERVEJAS"]
+        self.assertEqual([cerv[c] for c in ("unavailable", "meta", "real", "negRestante", "tendencia", "pctTendencia",
+                                            "onPace", "metaDia")], [False, 0.0, 4.0, 0.0, 4.0, None, False, 0.0])
         self.assertFalse(self.p["FECHAMENTO"])
         vz = d["indicators"]["VENDAZERO"]
         self.assertEqual((vz["meta"], vz["real"], vz["revertidoHoje"], vz["oportunidadeHoje"]), (1, 2, 1, 0))

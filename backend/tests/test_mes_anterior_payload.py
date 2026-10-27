@@ -139,10 +139,11 @@ class TestChaveNoPayload(unittest.TestCase):
         self.assertEqual(self.ma["ROTAS"][NEUTRALIZA][0], [9.0, 60.0])
         self.assertEqual(self.ma["ROTAS"][VIRTUAL][0], [6.0, 50.0])
 
-    def test_rota_sem_meta_fica_null_e_o_real_nao_entra(self):
-        self.assertEqual(self.ma["ROTAS"][SEM_META], [None] * 5)
+    def test_rota_sem_meta_com_real_entra_com_meta_zero(self):
+        # 27/10/2026, como o card: sem META_VOLUME nem META_NEG, mas com Real -> [Real, 0]
+        self.assertEqual(self.ma["ROTAS"][SEM_META], [[77.0, 0.0], None, None, None, None])
         band = sum(par[0] for vs in self.ma["ROTAS"].values() for par in vs if par)
-        self.assertEqual(round(band, 1), 120.0 + 7 + 12 + 9 + 6 + 15)   # sem o 77 da rota sem meta, o EV2 e o Z99
+        self.assertEqual(round(band, 1), 120.0 + 7 + 12 + 9 + 6 + 15 + 77)   # sem o EV2 e o Z99
 
     def test_rota_oculta_das_ev(self):
         self.assertEqual(self.p["EVENTUAIS_ROTAS"], [OCULTA])
@@ -279,8 +280,10 @@ class TestChavePura(unittest.TestCase):
     def test_meta_zero_conta_como_indicador(self):
         d = MA.Dados(self.c, {NORMAL: {REFRI: 8.0}}, {}, {}, {NORMAL: {REFRI: 0.0, STILL: 2.0}})
         ch, _ = MA.chave(d, [NORMAL], {})
-        self.assertEqual(ch["ROTAS"][NORMAL][0], None)                     # META_VOLUME e META_NEG zeradas: indisponível
+        self.assertEqual(ch["ROTAS"][NORMAL][0], [8.0, 0.0])               # metas zeradas, com Real: meta 0 (27/10)
         self.assertEqual(ch["ROTAS"][NORMAL][2], [0.0, 2.0])
+        sem_real = MA.chave(MA.Dados(self.c, {}, {}, {}, {NORMAL: {REFRI: 0.0}}), [NORMAL], {})[0]
+        self.assertIsNone(sem_real["ROTAS"][NORMAL][0])                    # metas zeradas e sem Real: indisponível
 
 
 class TestValidacao(unittest.TestCase):
@@ -354,7 +357,8 @@ class TestE11(unittest.TestCase):
     def test_reconcilia_com_a_consulta_direta_e_a_curva(self):
         txt = self._txt(self.p, self.ref, {"mes_anterior_s": 12.3, "mes_anterior_espera_s": 0.0}, 70)
         self.assertIn("**Bate**", txt)
-        self.assertIn("| Refrigerantes | 162,0 | 247,0 | 147,0 | 15,0 | 77,0 | 3,0 | 5,0 | 0,0 | 0,0 |", txt)
+        # a rota sem meta (77) entra na chave com meta 0 (27/10/2026): "rotas sem o indicador" fica 0
+        self.assertIn("| Refrigerantes | 239,0 | 247,0 | 224,0 | 15,0 | 0,0 | 3,0 | 5,0 | 0,0 | 0,0 |", txt)
         self.assertIn("curva diária até o corte 254: **igual**.", txt)
         self.assertIn("Chave e payload iguais à E10d em todas as gerências.", txt)
         self.assertIn("Consultas do mês anterior (em paralelo com as do mês): 12.3 s (limite 60 s)", txt)
@@ -410,7 +414,7 @@ class TestE11(unittest.TestCase):
             ct.mes_anterior(rel, ConsultaE10(F10, M10), estado, estado["cal_ref"].anomes, date(2026, 10, 21), None)
         r = rel.anexos[ct.ARQ_E10]
         self.assertEqual((r["DATA_CORTE"], r["DIA_UTIL"], r["MES_LABEL"]), ("2026-09-20", 13, "Setembro/26"))
-        self.assertEqual(r["REFRI_GC"]["BAND"]["ant"], [350.0, 710.0])    # = E10d
+        self.assertEqual(r["REFRI_GC"]["BAND"]["ant"], [375.0, 710.0])    # = E10d (a I12, sem meta, com meta 0)
         self.assertEqual(r["EV"], {"AP": {"VOL REFRIGERANTES": 15.0}})
         self.assertEqual(r["CURVA_ATE_CORTE"], 388.0)
         for pv in ("9100001", "9200003", "910000"):                         # nenhum código de cliente

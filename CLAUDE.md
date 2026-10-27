@@ -204,7 +204,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (Meta × restante / mês) e a rota vai para o aviso. Se a consulta pela rota da meta falhar ou vier sem rota, volta
   à curva pela rota do cliente, sempre escalonada (`fontes.carregar_curva_neg`); Tendência = Vol Real + Neg Restante; % = Tendência / Meta, verde com % >= 100; Dif = Vol Real − Meta.
   Casos-limite (aviso por rota × macro): META_VOLUME sem META_NEG → Neg Restante = Meta × dias úteis restantes
-  (com hoje) / dias úteis do mês; sem META_VOLUME → Meta e restante = somas de META_NEG; nenhuma → indisponível.
+  (com hoje) / dias úteis do mês; sem META_VOLUME → Meta e restante = somas de META_NEG; nenhuma → indisponível,
+  exceto com Real nos 5 macros (decisão de 27/10/2026, como o SAC soma): meta 0, Neg Restante 0, tendência = Real
+  (`modelo.SEM_META`, aviso "Real sem META_VOLUME nem META_NEG"; também no `MES_ANTERIOR`: [Real, 0]). Em 27/10: R31
+  (Neutraliza RV) Cervejas 605 cx, T07 (G3) DAC 3,2 e Cerv 0,3. No front, o card da rota sozinha mostra Meta 0 e "—".
   Meta do dia = `META_RECUPERAVEL_ROTA` por **rota da meta** (`CD_ROTA_Chave_Meta_SAP`, como o SAC; decisão de
   20/10/2026: pela rota do cliente, a meta de cliente em rota EV* sumia, AP −783 e PO −137) × agrupador com
   `DATA_MOVIMENTO` = hoje (se der HTTP 500, repete por gerência; se falhar ou vier sem rota, pela rota do cliente,

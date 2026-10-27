@@ -829,7 +829,13 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                                                       direto=fonte_neg == ROTA_META)
             if meta is None and real is None:
                 continue
-            if caso in (modelo.SEM_CURVA, modelo.SEM_META_ROTA) or (caso == modelo.CURVA and fonte_neg == ROTA_META):
+            if meta is None and modelo._r1(real or 0.0) and k in M.INDICADORES_VOLUME:
+                # Real sem meta nenhuma na rota (R31 Cervejas, T07 em 27/10/2026): meta 0 e tendência = Real, para
+                # somar no total da gerência como o SAC (antes: indisponível, fora do total). Real que arredonda para
+                # 0,0 (resíduo de decimais) continua indisponível, sem card "Meta 0 · Real 0". Del Valle Frut não.
+                meta, rest, caso = 0.0, 0.0, modelo.SEM_META
+            if (caso in (modelo.SEM_CURVA, modelo.SEM_META_ROTA, modelo.SEM_META)
+                    or (caso == modelo.CURVA and fonte_neg == ROTA_META)):
                 casos[caso].append(f"{r}/{M.LABELS.get(k) or M.VOLUME_EXTRA[k]['label']}")
             volume[r][k] = VolumeRota(
                 meta=meta, real=real or 0.0, meta_neg_clientes=nm,
@@ -871,6 +877,9 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                       + ", ".join(casos[modelo.SEM_CURVA]))
     if casos[modelo.SEM_META_ROTA]:
         avisos.append("meta = soma de META_NEG (sem META_VOLUME da rota) em: " + ", ".join(casos[modelo.SEM_META_ROTA]))
+    if casos[modelo.SEM_META]:
+        avisos.append("Real sem META_VOLUME nem META_NEG (meta 0, entra no total como o SAC) em: "
+                      + ", ".join(casos[modelo.SEM_META]))
     # volume extra (Del Valle Frut): gerência sem META_VOLUME nem META_NEG fica sem o card (indicador indisponível)
     for k in M.INDICADORES_VOLUME_EXTRA:
         for gc in M.VOLUME_EXTRA[k]["gcs"]:

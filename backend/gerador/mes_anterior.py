@@ -217,14 +217,18 @@ def carregar_meta_neg(cons: Consulta, anomes: str, gcs: list[str], rota: str | N
 def meta_volume_por_rota(metas_vol: dict, neg_mes: dict | None, gc_rota: dict[str, str],
                          real: dict | None = None) -> dict[str, dict]:
     """{rota: {VOL: meta ou None}} como o gerador (modelo.meta_e_restante: META_VOLUME; sem ela, a soma de META_NEG da
-    rota da meta; None = indicador indisponível). A rota oculta das EV* tem meta 0 (só soma o Real) nos macros com Real."""
+    rota da meta; None = indicador indisponível). Sem nenhuma das duas mas com Real (e na rota oculta das EV*): meta 0
+    (só soma o Real), como fontes.carregar (modelo.SEM_META)."""
     out = {}
     for r, gc in gc_rota.items():
+        com_real = {k: bool(modelo._r1((real or {}).get(r, {}).get(k) or 0.0)) for k in VOL}
         if r == M.rota_eventuais(gc):
-            out[r] = {k: 0.0 if (real or {}).get(r, {}).get(k) else None for k in VOL}
+            out[r] = {k: 0.0 if com_real[k] else None for k in VOL}
         else:
-            out[r] = {k: modelo.meta_e_restante(metas_vol.get(r, {}).get(k), (neg_mes or {}).get(r, {}).get(k),
-                                                0.0, 0, 1)[0] for k in VOL}
+            out[r] = {}
+            for k in VOL:
+                m = modelo.meta_e_restante(metas_vol.get(r, {}).get(k), (neg_mes or {}).get(r, {}).get(k), 0.0, 0, 1)[0]
+                out[r][k] = 0.0 if m is None and com_real[k] else m
     return out
 
 
@@ -302,7 +306,8 @@ def chave(d: Dados, rotas: list[str], eventuais: dict[str, str]) -> tuple[dict |
     virtuais e as ocultas das EV* inclusive); `eventuais` = rota oculta -> gerência (as do payload de hoje).
 
     Por rota, um par [Real até o corte, Meta do mês anterior] por macro de IND, ou null onde a rota não tem o indicador
-    no mês anterior (sem META_VOLUME nem META_NEG: o Real dela não entra, como o card). A rota oculta "{GC}-EV" leva o
+    no mês anterior (sem META_VOLUME, META_NEG nem Real; sem as metas e com Real: [Real, 0], como o card). A rota
+    oculta "{GC}-EV" leva o
     Real das rotas EV* da gerência comercial, com meta 0 nos macros com Real. Rota do mês anterior que não existe hoje
     fica fora. Real negativo ou valor não finito: a chave fica fora (aviso), nunca reprova a rodada."""
     real = {r: ks for r, ks in d.real.items()}

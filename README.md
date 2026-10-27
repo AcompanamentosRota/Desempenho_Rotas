@@ -803,7 +803,8 @@ A rota da meta é a mesma que o SAC usa: pela rota atual do cliente, quem foi tr
 para outra rota. Se a consulta pela rota da meta não funcionar, o gerador volta à curva pela rota do cliente
 (sempre escalonada) e avisa. Casos-limite: rota com META_VOLUME mas sem META_NEG usa os dias úteis restantes (contando hoje) no lugar da
 curva; rota sem META_VOLUME usa a soma de META_NEG como meta; sem nenhuma das duas, o indicador fica
-indisponível. Cada caso aparece nos avisos da execução, assim como a meta da rota não distribuída nos
+indisponível, a não ser que a rota tenha Real na categoria: aí, desde 27/10/2026, entra com meta 0 e tendência = Real,
+para o Real somar no total da gerência como no SAC (ex.: R31 Cervejas, T07; só os 5 grupos, Del Valle Frut não). Cada caso aparece nos avisos da execução, assim como a meta da rota não distribuída nos
 clientes, por gerência (META_VOLUME − soma de META_NEG).
 
 Supervisão e gerência somam as rotas e recalculam o % (rotas Neutraliza e virtuais entram no total da
@@ -1039,8 +1040,8 @@ Decisões da Karen (21/10/2026):
 Regras da chave:
 - `ROTAS` tem todas as rotas do payload de hoje, na ordem dele (Neutraliza, virtuais e as ocultas "{GC}-EV" inclusive).
   Por rota, um par `[Real até o corte, Meta]` por item de `IND` (1 casa), ou `null` onde a rota não tem o indicador no
-  mês anterior (sem META_VOLUME nem META_NEG): o Real dela não entra, como no card. A rota oculta "{GC}-EV" tem meta 0
-  nos macros com Real. Rota do mês anterior que não existe hoje fica fora (a E10 mediu 0 casos); Real de EV* de uma
+  mês anterior (sem META_VOLUME, META_NEG nem Real). Sem as metas mas com Real, `[Real, 0]` (desde 27/10/2026, como no
+  card). A rota oculta "{GC}-EV" tem meta 0 nos macros com Real. Rota do mês anterior que não existe hoje fica fora (a E10 mediu 0 casos); Real de EV* de uma
   gerência sem a rota oculta hoje também (vai para o log).
 - Consultas (agregadas no servidor, `DATA_MOVIMENTO` só no `$filter`): Vol Real até o corte por rota do cliente x
   agrupador x NF_STATUS (os status do Vol Real; com a gerência comercial para as EV*), META_VOLUME por rota da meta e

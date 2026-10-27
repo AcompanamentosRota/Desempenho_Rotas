@@ -93,13 +93,19 @@ class TestMetaDaRota(unittest.TestCase):
         d["metas"] = DADOS["metas"] + [_meta("Still", vol="44")]                 # sem curva
         d["meta_neg"] = DADOS["meta_neg"] + [_dia("Agua Mineral", "2026-10-01", CM.META_NEG, 8.0),
                                              _dia("Agua Mineral", "2026-10-20", CM.META_NEG, 2.0)]   # sem meta da rota
+        d["vol_real"] = DADOS["vol_real"] + [_vr(1015300, "Dest+Art+Cnd", "Acertado", 0.04)]       # resíduo de decimais
         f = fontes.carregar(ConsultaFalsa(d), datetime(2026, 10, 13, 9, 0))
         ind = montar_payload(f)["DATA"]["G1"]["SV.G1.1"]["111"]["indicators"]
         # 21 dias úteis, 7 fechados: restam 14 contando hoje -> 44 x 14/21
         self.assertEqual((ind["VOL STILL"]["meta"], ind["VOL STILL"]["negRestante"]), (44.0, 29.3))
         self.assertIsNone(ind["VOL STILL"]["metaNegClientes"])
         self.assertEqual((ind["VOL AGUA MINERAL"]["meta"], ind["VOL AGUA MINERAL"]["negRestante"]), (10.0, 2.0))
-        self.assertTrue(ind["VOL CERVEJAS"]["unavailable"])                     # sem nenhuma das metas
+        self.assertTrue(ind["VOL DEST+ART+CND"]["unavailable"])                 # sem metas, Real 0,04 arredonda p/ 0
+        # sem nenhuma das metas, com Real (4): meta 0 e tendência = Real (27/10/2026, como o SAC soma)
+        self.assertEqual([ind["VOL CERVEJAS"][c] for c in ("unavailable", "meta", "real", "tendencia")],
+                         [False, 0.0, 4.0, 4.0])
+        self.assertTrue(any(a.startswith("Real sem META_VOLUME nem META_NEG") and "111/Cervejas" in a
+                            for a in f.avisos), f.avisos)
         self.assertTrue(any("dias úteis" in a and "111/Still" in a for a in f.avisos), f.avisos)
         self.assertTrue(any("sem META_VOLUME" in a and "111/Água Mineral" in a for a in f.avisos), f.avisos)
 
