@@ -155,6 +155,15 @@ class TestAgregacoes(unittest.TestCase):
         self.assertEqual(por_gc["G1"]["KAPO"], [0, 0.0, 0])                       # 112 sem meta: fora da soma
         self.assertEqual(ct.clientes_na_amostra(cob, {"111"}), 3)
 
+    def test_consulta_de_cobertura_sem_nf_cancelada(self):
+        # como fontes.carregar_vendas: o cliente que só tem NF cancelada no item não conta
+        fatos = [_cob(OUT, "2026-10-05", "111", 1, "Kapo"),
+                 dict(_cob(OUT, "2026-10-06", "111", 2, "Kapo"), **{CM.NF_STATUS: "Cancelada"})]
+        cons = ConsultaE10(fatos, [])
+        linhas = ct.consulta_cobertura(cons, OUT, ["Gc. G1"])
+        self.assertEqual(sorted(l[CM.CLIENTE] for l in linhas), ["0000000001"])
+        self.assertTrue(all(M.FILTRO_SEM_NF_CANCELADA in c[2] for c in cons.chamadas))
+
     def test_cobertura_somada_no_servidor_sem_cliente(self):
         sem_cli = ct.cobertura_sem_cliente([{CM.ROTA: "111", CM.AGRUPADOR: "Cctm 2l Pet", CM.COB_MES: 2},
                                             {CM.ROTA: "111", CM.AGRUPADOR: "Kapo", CM.COB_MES: 1},
@@ -251,6 +260,7 @@ class ConsultaE10:
             if (anomes and l.get(CM.ANOMES) != anomes.group(1) or anomes_meta and l.get(CM.META_ANOMES) != anomes_meta.group(1)
                     or ags and l.get(CM.AGRUPADOR) not in ags or mags and l.get(CM.META_AGRUPADOR) not in mags
                     or gc and l.get(CM.GC) != gc.group(1)
+                    or M.FILTRO_SEM_NF_CANCELADA in f and l.get(CM.NF_STATUS) == "Cancelada"
                     or not all(data(l.get(CM.DATA)) and self.OPS[op](data(l.get(CM.DATA)), date.fromisoformat(v))
                                for op, v in datas)
                     or all(l.get(m) in (None, "") for m in medidas)):

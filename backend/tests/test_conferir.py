@@ -687,7 +687,8 @@ class ConsultaE8:
            _cob("211", 8880008, "Coca-Cola - 600ml", 1, "Gc. G2"),             # entra pelo "600"
            _cob("211", 8880008, "Cervejas Descartável", 1, "Gc. G2"),          # acento: entra pelo "CERVEJ"
            _cob("211", 8880009, "HEINEKEN - 600ML VR", 1, "Gc. G2"),           # caixa alta: parecido do Heineken 600
-           _cob("111", 8880001, "Refrigerantes", 1, "Gc. G1")]                 # sem os termos: fora da E8
+           _cob("111", 8880001, "Refrigerantes", 1, "Gc. G1"),                 # sem os termos: fora da E8
+           dict(_cob("C11", 8880010, "Heineken", 1, "Gc. An"), **{CM.NF_STATUS: "Cancelada"})]   # NF cancelada: fora
     METAS = [("111", "Cervejas", 10), ("112", "Cervejas", 5), ("C11", "Heineken", 8), ("C11", "Heineken", 3),
              ("C11", "Heineken - 600ml", 3), ("R11", "Heineken", 6), ("R11", "Heineken - 600ml", 2),
              ("A11", "Cervejas 600ml Retornavel", 4), ("A12", "Cervejas 600ml Retornavel", 0),
@@ -728,7 +729,9 @@ class ConsultaE8:
             return [{CM.META_ROTA: r, CM.META_AGRUPADOR: a, CM.META_COBERTURA: m} for r, a, m in self.metas
                     if f"'{a}'" in filtro]
         if CM.COB_MES in sel and CM.CLIENTE in sel:
-            return [l for l in self._da_gc(self.cob, filtro) if f"'{l[CM.AGRUPADOR]}'" in filtro]
+            canc = M.FILTRO_SEM_NF_CANCELADA in filtro
+            return [l for l in self._da_gc(self.cob, filtro) if f"'{l[CM.AGRUPADOR]}'" in filtro
+                    and not (canc and l.get(CM.NF_STATUS) == "Cancelada")]
         if CM.COB_ONLINE in sel:
             assert "FONTE eq 'WF Online'" in filtro and "SITUACAO_Pedido eq 'Inc. e Exp.'" in filtro
             return [l for l in self._da_gc(self.ONLINE, filtro) if f"'{l[CM.AGRUPADOR]}'" in filtro]
@@ -773,7 +776,9 @@ class TestE8Funcoes(unittest.TestCase):
         self.assertEqual(m["Cervejas 600ml Retornável"]["venda"], "Cervejas 600ml Retornavel")
 
     def test_agregacao_por_gerencia(self):
-        cli = ct.clientes_por_gc(ConsultaE8.COB, CM.AGRUPADOR, CM.COB_MES, GC_ROTA_E8)
+        # as linhas como a consulta devolve (o $filter já tira as NF canceladas)
+        cob = [l for l in ConsultaE8.COB if l.get(CM.NF_STATUS) != "Cancelada"]
+        cli = ct.clientes_por_gc(cob, CM.AGRUPADOR, CM.COB_MES, GC_ROTA_E8)
         self.assertEqual({k: len(v) for k, v in cli.items() if k[0] == "Cervejas"},
                          {("Cervejas", "G1"): 2, ("Cervejas", ct.FORA): 1})        # cobertura 0 não conta
         self.assertEqual(len(cli[("Heineken", "AN")]), 2)
@@ -874,7 +879,10 @@ class TestSecaoE8(unittest.TestCase):
         self.assertNotIn("- Cervejas (`Cervejas`): faltaria", self.txt)
 
     def test_e8e_e_e8f(self):
+        # AN: 8880004 e 8880005; o 8880010 só tem NF cancelada (fora, como no gerador)
         self.assertIn("| Heineken | 'Heineken' | 2 | 0 | 0 | 0 | 0 | 0 | 2 |", self.txt)
+        cob = [f for _, sel, f in self.cons.chamadas if CM.COB_MES in sel and CM.CLIENTE in sel]
+        self.assertTrue(cob and all(M.FILTRO_SEM_NF_CANCELADA in f for f in cob))
         self.assertIn("| Heineken | 'Heineken' | INC HEINEKEN | sim (5 rotas) | sim (1 clientes hoje) | já é o indicador "
                       "INC HEINEKEN do painel; também existe: "
                       "'HEINEKEN - 600ML VR'; portfólio (maioria das rotas normais) BARRACUDA: AP, G1, G2 "

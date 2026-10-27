@@ -904,7 +904,8 @@ Todos a Bordo; nada muda no painel. Gerência = a da rota no painel; `fora` = ro
   T<nn> (T07, T29...) sem meta contam como BARRACUDA; uma linha diz o que mudaria sem elas (observação do dado).
 - **E8d**: clientes com compra no WF Online de hoje ('Inc. e Exp.') por item e gerência, se a consulta de vendas do
   gerador já traz o agrupador e se ele já vira indicador; para o que não vira, o que faltaria.
-- **E8e**: clientes distintos com cobertura realizada > 0, por item e gerência.
+- **E8e**: clientes distintos com cobertura realizada > 0, sem as notas fiscais canceladas (como o painel), por item e
+  gerência.
 - **E8f**: proposta de mapeamento: item → agrupador → chave interna sugerida (INC ...) → tem meta? → tem online? →
   observações.
 
@@ -963,8 +964,9 @@ input `hoje` simula outra data, ex.: um dia de fechamento). Local (precisa do `b
     do mês anterior (BAND por dia);
   - o mesmo pela rota da meta;
   - META_NEG do mês e até o corte;
-  - cobertura (`FX_COBERTURA_REALIZADO`) por rota x cliente até o corte (todas as gerências) e no mês inteiro (amostra),
-    e também só por rota x agrupador (se a medida já contar clientes no servidor, a consulta fica pequena);
+  - cobertura (`FX_COBERTURA_REALIZADO`, sem as notas fiscais canceladas, como o painel) por rota x cliente até o
+    corte (todas as gerências) e no mês inteiro (amostra), e também só por rota x agrupador (se a medida já contar
+    clientes no servidor, a consulta fica pequena);
   - a gerência da chave de meta por rota nos dois meses.
 
   Resultados possíveis: "sim (bate com a curva diária)", "sim (menor que o mês inteiro)", "**não**: igual ao mês inteiro
