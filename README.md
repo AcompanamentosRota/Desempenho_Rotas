@@ -277,6 +277,9 @@ Rota, que não tem a Executiva, abre no **Volume**.
   Real de volume (os 5 grupos; Del Valle Frut só na G2) dos clientes que estão nela entra no total da gerência
   comercial do cliente (`DS_GERENCIA_COMERCIAL_AT_Clien`), numa rota oculta por gerência (ex.: `AP-EV`), sem meta,
   sem clientes e fora da Venda Zero e do online. A tendência da gerência sobe o mesmo valor (sem Neg Restante). Desde
+  27/10/2026, só as vendas com chave de meta (rota da meta preenchida), como o Flash de Vendas do SAC: as vendas sem
+  meta nessas rotas (quase todas "Venda A Consumidor Final", como a venda a funcionário da EVF na G3) ficam fora do
+  volume; o log do gerador lista o que saiu por gerência e rota ("Vol Real de rotas EV* sem rota da meta"). Desde
   26/10/2026 os **clientes cobertos** deles também entram no Real da gerência e da Diretoria no ICS GC, em Novos
   Negócios e no Todos a Bordo (meta igual, então o % sobe; no Todos a Bordo, só onde a gerência tem rota com meta do
   item). Na cascata, ao abrir as supervisões, uma nota mostra o valor: "Inclui clientes de rotas eventuais (EV*):
@@ -865,8 +868,9 @@ Real ±0,1%; Meta exata (inteiros arredondados); Tendência ±0,2%; % ±0,1 p.p.
   G*E / G*F / APE`, `sem cliente corrente e ativo`, `oculta: SV.G3.3`, `Neutraliza (entra no total)`, `virtual
   (entra no total)`, `clientes em rotas EV* (rota oculta, entra no total)`, `gerência do modelo ≠ gerência do painel
   (rota atribuída a outra gerência)`, `rota da meta ≠ rota do cliente` ou `outra: ...`. Sinal: − = só o SAC conta
-  naquela gerência; + = só o painel. A E7 imita o painel: clientes em EV* na rota oculta da gerência comercial e
-  meta do dia pela rota da meta.
+  naquela gerência; + = só o painel. A E7 imita o painel: clientes em EV* na rota oculta da gerência comercial (só a
+  venda com rota da meta; a sem rota da meta aparece como `fora do painel: EV*`, "venda sem rota da meta") e meta do
+  dia pela rota da meta.
 - **E7c**: rotas do painel que o modelo põe em outra gerência e rotas fora do painel com clientes de outra gerência
   (ex.: a EV1 é da G1 na base, mas o cliente é da G2 no modelo), com uma linha sobre o par G2/G3.
 - **E7d**: uma linha por gerência: "explicado por: <causa> (<valor> cx)" e o resíduo.
@@ -875,6 +879,9 @@ Real ±0,1%; Meta exata (inteiros arredondados); Tendência ±0,2%; % ±0,1 p.p.
   (`DS_GERENCIA_COMERCIAL_AT_Clien`) e inclui os clientes que estão em rotas EV*; o painel não incluía (Real −407 cx
   nas 16; meta do dia −1.071 cx, que é de rotas do painel mas estava em clientes das EV*). No mesmo dia o painel passou
   a somar o Real desses clientes na rota oculta da gerência e a meta do dia pela rota da meta; a E7 imita essas regras.
+- Em 27/10/2026, contra o Flash de Vendas, o SAC bateu (≤ 0,5 cx nas 16 gerências x 5 macros) somando pela gerência
+  da meta (`DS_GERENCIA_COM_Chave_Meta_SAP`): a venda em rota EV* sem rota da meta não entra. O painel passou a deixá-la
+  fora no mesmo dia (Refri −442, Água −1.478, Still −117, DAC −49, Cerv −27 cx na BAND).
 
 ### Descoberta do incentivo Todos a Bordo 3.0 (seção E8)
 

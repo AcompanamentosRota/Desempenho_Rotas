@@ -8,7 +8,7 @@ Vol Real com corte e a meta por rota. Decisões da Karen de 21/10/2026:
      logo depois do dia útil N, como o Real do mês de referência traz as NF desses dias. DIA_ONTEM = 0: sem corte.
   2. Fechamento: FECHAMENTO x FECHAMENTO. O mês de referência é o fechado e o anterior a ele entra INTEIRO.
   3. Real pela rota ATUAL do cliente (CD_ROTA_Clien): conta na gerência de hoje; o Real das rotas EV* entra na rota
-     oculta "{GC}-EV" da gerência comercial, como o Real do mês de referência.
+     oculta "{GC}-EV" da gerência comercial, como o Real do mês de referência (só as vendas com rota da meta, 27/10).
   4. % = Real até o corte ÷ meta do mês anterior INTEIRO (META_VOLUME da rota da meta; sem ela, META_NEG): o mesmo
      "% real" dos medidores da Executiva. Δ p.p. e Δ Real ficam para o front.
   5-7. Só os 5 macros de volume (M.INDICADORES_MES_ANTERIOR): coberturas, Todos a Bordo, Del Valle Frut, Imperdoáveis e
@@ -159,9 +159,9 @@ def consulta_volume(cons: Consulta, anomes: str, gcs: list[str], corte: date | N
                     col_rota: str = CM.ROTA, rota: str | None = None) -> list[dict]:
     """Vol Real do mês por rota x agrupador x NF_STATUS, agregado no servidor (sem cliente nem dia), com os filtros do Vol
     Real do gerador (os 5 macros, FILTRO_PEDIDOS_ONLINE) e, com `corte`, DATA_MOVIMENTO <= corte. Pela rota do cliente,
-    também a gerência comercial (clientes em rotas EV*, como fontes.carregar_volume_real)."""
+    também a gerência comercial e a rota da meta (clientes em rotas EV*, como fontes.carregar_volume_real)."""
     sel = fontes._colunas(cons, M.OBJ_META, [col_rota, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES],
-                          [CM.GC_COMERCIAL] if col_rota == CM.ROTA else [])
+                          [CM.GC_COMERCIAL, CM.META_ROTA] if col_rota == CM.ROTA else [])
     filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, [M.AGRUPADORES_VOLUME[k] for k in VOL]),
                M.FILTRO_PEDIDOS_ONLINE, filtro_ate(cons, corte) if corte else None,
                eq(col_rota, rota) if rota else None)
@@ -169,8 +169,8 @@ def consulta_volume(cons: Consulta, anomes: str, gcs: list[str], corte: date | N
 
 
 def real_por_rota(linhas: list[dict], col_rota: str = CM.ROTA) -> tuple[dict, dict]:
-    """({rota: {VOL: Vol Real}}, {sigla da gerência comercial: {VOL: Vol Real}} dos clientes em rotas EV*), só com os
-    NF_STATUS do Vol Real (M.status_nf_real), como fontes.carregar_volume_real."""
+    """({rota: {VOL: Vol Real}}, {sigla da gerência comercial: {VOL: Vol Real}} dos clientes em rotas EV*, só as vendas
+    com rota da meta), só com os NF_STATUS do Vol Real (M.status_nf_real), como fontes.carregar_volume_real."""
     por_rota: dict = defaultdict(dict)
     ev: dict = defaultdict(dict)
     for l in linhas:
@@ -179,7 +179,8 @@ def real_por_rota(linhas: list[dict], col_rota: str = CM.ROTA) -> tuple[dict, di
             continue
         v = numero(l.get(CM.VOL_MES))
         por_rota[r][k] = por_rota[r].get(k, 0.0) + v
-        gc = fontes._sigla_gc(l.get(CM.GC_COMERCIAL)) if M.rota_eventual(r) else None
+        gc = (fontes._sigla_gc(l.get(CM.GC_COMERCIAL)) if M.rota_eventual(r) and not fontes.sem_rota_da_meta(l)
+              else None)
         if gc:
             ev[gc][k] = ev[gc].get(k, 0.0) + v
     return dict(por_rota), dict(ev)

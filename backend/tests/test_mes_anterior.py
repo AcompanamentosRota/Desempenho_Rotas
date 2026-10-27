@@ -101,8 +101,11 @@ class TestCorteMesAnterior(unittest.TestCase):
 
 
 # ---------------------------------------------------------------- agregações (sem rede)
-def _vr(rota, ag, vol, status="Acertado", gcc=None):
-    return {CM.ROTA: rota, CM.AGRUPADOR: ag, CM.NF_STATUS: status, CM.VOL_MES: vol, CM.GC_COMERCIAL: gcc}
+def _vr(rota, ag, vol, status="Acertado", gcc=None, meta=None):
+    l = {CM.ROTA: rota, CM.AGRUPADOR: ag, CM.NF_STATUS: status, CM.VOL_MES: vol, CM.GC_COMERCIAL: gcc}
+    if meta is not None:
+        l[CM.META_ROTA] = meta
+    return l
 
 
 def _cb(rota, pv, ag, cob=1, vol=0.0, seg=None):
@@ -118,6 +121,14 @@ class TestAgregacoes(unittest.TestCase):
         self.assertEqual(real, {"111": {"VOL REFRIGERANTES": 10.0, "VOL AGUA MINERAL": 2.0},
                                 "EV1": {"VOL REFRIGERANTES": 7.0}, "EV2": {"VOL REFRIGERANTES": 1.0}})
         self.assertEqual(ev, {"AP": {"VOL REFRIGERANTES": 7.0}})                  # EV2 sem gerência do painel
+
+    def test_real_das_eventuais_so_com_rota_da_meta(self):
+        # 27/10/2026, como o SAC: venda em rota EV* sem rota da meta ('--') fica fora da rota oculta
+        real, ev = ct.real_por_rota([_vr("EV1", "Refrigerantes", 7, gcc="Gc. Ap", meta="A11"),
+                                     _vr("EVF", "Refrigerantes", 4, gcc="Gc. Ap", meta="--"),
+                                     _vr("EVF", "Agua Mineral", 6, gcc="Gc. Ap", meta="")])
+        self.assertEqual(ev, {"AP": {"VOL REFRIGERANTES": 7.0}})
+        self.assertEqual(real["EVF"], {"VOL REFRIGERANTES": 4.0, "VOL AGUA MINERAL": 6.0})   # a rota EV continua na fonte
 
     def test_meta_e_volume_por_gerencia_como_o_card(self):
         gc_rota = {"111": "G1", "112": "G1", "113": "G1", "G1-EV": "G1", "A11": "AP"}

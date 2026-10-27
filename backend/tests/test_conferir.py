@@ -422,9 +422,11 @@ class TestCausas(unittest.TestCase):
         p = self.P
         self.assertEqual(ct.rota_no_painel(_l("111", "G1", 1), p, False), ("111", "G1"))
         self.assertEqual(ct.rota_no_painel(_l("111", "G1", 1, no_escopo=False), p, False), ("111", None))
-        # cliente em rota EV*: na rota oculta da gerência comercial dele (se a gerência tem a rota oculta)
-        self.assertEqual(ct.rota_no_painel(_l("EV5", "AP", 1, gc_comercial="AP"), p, False), ("AP-EV", "AP"))
-        self.assertEqual(ct.rota_no_painel(_l("EV5", "G3", 1, gc_comercial="G3"), p, False), ("EV5", None))
+        # cliente em rota EV*: na rota oculta da gerência comercial dele (se a gerência tem a rota oculta), só a venda
+        # com rota da meta (27/10/2026, como o SAC)
+        self.assertEqual(ct.rota_no_painel(_l("EV5", "AP", 1, "A11", gc_comercial="AP"), p, False), ("AP-EV", "AP"))
+        self.assertEqual(ct.rota_no_painel(_l("EV5", "AP", 1, gc_comercial="AP"), p, False), ("EV5", None))
+        self.assertEqual(ct.rota_no_painel(_l("EV5", "G3", 1, "311", gc_comercial="G3"), p, False), ("EV5", None))
         self.assertEqual(ct.rota_no_painel(_l("EV5", "AP", 1), p, False), ("EV5", None))
         self.assertEqual(ct.rota_no_painel(_l("GAP", "AP", 1, gc_comercial="AP"), p, False), ("GAP", None))
         # meta do dia: pela rota da meta, sem escopo
@@ -434,8 +436,8 @@ class TestCausas(unittest.TestCase):
     def test_contribuicoes_do_real(self):
         linhas = [_l("111", "G1", 100), _l("111", "G2", 30, sv="SV.G2.1"),             # rota atribuída a outra gerência
                   _l("EV5", "AP", 50, "535", sv="SV.BL.AP", gc_comercial="AP"),        # na rota oculta da AP: bate
-                  _l("EV5", "G3", 9, gc_comercial="G3"),                              # a G3 não tem rota oculta
-                  _l("EV6", "G1", 7, gc_comercial="AP"),                              # rota oculta da AP, modelo G1
+                  _l("EV5", "G3", 9, "EV5", gc_comercial="G3"),                       # a G3 não tem rota oculta
+                  _l("EV6", "G1", 7, "A11", gc_comercial="AP"),                       # rota oculta da AP, modelo G1
                   _l("GAP", "AP", 7), _l("APE", "AP", 3), _l("X99", "AP", 2),
                   _l("151", None, 4, cod="ME"), _l("A42", None, 8, cod="ME"), _l("311", None, 6, cod="ME"),
                   _l("111", "G1", 5, no_escopo=False), _l("EV5", None, 9, cod="ME")]  # ninguém conta a última
@@ -456,6 +458,12 @@ class TestCausas(unittest.TestCase):
         det = {k[0]: k[3] for g in ("G3", "AP") for k in r.por_gc[g]}
         self.assertEqual(det["EV5"], "a G3 não tem rota oculta das EV*; rota da AP na base")
         self.assertIn("rota AP-EV no painel; clientes em rotas EV* (rota oculta, entra no total)", det["EV6"])
+
+    def test_venda_em_rota_ev_sem_rota_da_meta(self):
+        # o painel não soma na rota oculta; pela gerência comercial o modelo soma (contribuição), pela da meta não
+        r = ct.contribuicoes([_l("EVF", "AP", 5, gc_comercial="AP"),
+                              _l("EVF", None, 3, cod="--", gc_comercial="AP")], self.P, por_rota_meta=False)
+        self.assertEqual(r.por_gc, {"AP": {("EVF", "", ct.CAUSA_EV, "venda sem rota da meta (fora da rota oculta)"): -5}})
 
     def test_contribuicoes_da_meta_do_dia_pela_rota_da_meta(self):
         p = _p(gc_rota={"A11": "AP", "112": "G1", "211": "G2", "111": "G1", "151": "G1"},
@@ -532,7 +540,7 @@ def _dados_e7():
         vr("151", "Gc. G1", "Gc. Me", 4.0, "151"), vr("A42", "Gc. An", "Gc. Me", 8.0, "A42"),
         vr("111", "Gc. G1", "Gc. G1", 999.0, "111", status="Cancelada"),
         vr("111", "--", "Gc. G1", 5.0, "111"),                              # fora do escopo da consulta do painel
-        vr("EV5", "Gc. Ap", "Gc. G3", 9.0, sv="Sv. G3. 2"),                 # rota da AP na base, cliente da G3
+        vr("EV5", "Gc. Ap", "Gc. G3", 9.0, "311", sv="Sv. G3. 2"),          # rota da AP na base, cliente da G3
         vr("211", "Gc. G2", "Gc. G2", 70.0, "211"),
     ]
     d["meta_dia"] = [md("111", "Gc. G1", 20.0, "111"), md("EV5", "Gc. Ap", 15.0, "A11"),

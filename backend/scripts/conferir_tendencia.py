@@ -418,7 +418,8 @@ def rota_no_painel(l: Linha, p: Painel, por_rota_meta: bool) -> tuple[str, str |
     """(rota em que o gerador conta a linha, gerência dela; None se o painel não conta).
 
     Real: rota do cliente, no escopo da consulta (gerência agrupada do cliente do painel); cliente em rota EV*: a
-    rota oculta da gerência comercial dele. Meta do dia: rota da meta, sem filtro de gerência.
+    rota oculta da gerência comercial dele, só a venda com rota da meta. Meta do dia: rota da meta, sem filtro de
+    gerência.
     """
     if por_rota_meta:
         return l.rota_meta, (p.gc_rota.get(l.rota_meta) if l.rota_meta else None)
@@ -426,7 +427,8 @@ def rota_no_painel(l: Linha, p: Painel, por_rota_meta: bool) -> tuple[str, str |
         return l.rota, None
     if l.rota in p.gc_rota:
         return l.rota, p.gc_rota[l.rota]
-    if M.rota_eventual(l.rota) and l.gc_comercial and p.gc_rota.get(M.rota_eventuais(l.gc_comercial)):
+    if (M.rota_eventual(l.rota) and l.gc_comercial and l.rota_meta
+            and p.gc_rota.get(M.rota_eventuais(l.gc_comercial))):
         return M.rota_eventuais(l.gc_comercial), l.gc_comercial
     return l.rota, None
 
@@ -479,6 +481,7 @@ def contribuicoes(linhas: list[Linha], p: Painel, por_rota_meta: bool) -> Contri
                 if gb and gb != gm:
                     fora_gc[(l.rota, gb, gm)] -= l.valor
                 fora_oculta = ("" if not M.rota_eventual(l.rota) else
+                               "venda sem rota da meta (fora da rota oculta)" if not l.rota_meta else
                                f"a {l.gc_comercial} não tem rota oculta das EV*" if l.gc_comercial else
                                "cliente sem gerência comercial do painel (fora da rota oculta)")
                 det = "; ".join(x for x in [
@@ -1317,7 +1320,8 @@ def reconcilia(ma: dict, ref: dict, rotas_gc: dict[str, str]) -> dict[str, dict[
             v = ks.get(k, 0.0)
             par = rotas.get(M.rota_eventuais(g), [None] * len(ind))[i] if g in ocultas else None
             t["ev_oculta" if par is not None else "ev_fora"] += v
-        t["ev_fora"] += ev_total - sum(ks.get(k, 0.0) for ks in ev.values())   # EV* sem gerência comercial do painel
+        # EV* sem gerência comercial do painel ou sem rota da meta
+        t["ev_fora"] += ev_total - sum(ks.get(k, 0.0) for ks in ev.values())
         t["residuo"] = t["direta"] - (t["nas_rotas"] + t["sem_meta"] + t["ev_oculta"] + t["ev_fora"] + t["fora"])
         t["dif_chave"] = t["chave"] - (t["nas_rotas"] + t["ev_oculta"])
         out[k] = t
