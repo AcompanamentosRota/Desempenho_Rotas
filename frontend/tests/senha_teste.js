@@ -12,6 +12,11 @@ const RE_HASHES = /DIRETORIA_SENHAS_HASH:\s*\[[^\]]*\]/;
 // config.js servido nos testes: os hashes de teste no lugar dos reais (config.js sem a chave, de um front antigo, fica igual)
 const trocaHash = (texto, hashes = HASHES_TESTE) =>
   String(texto).replace(RE_HASHES, `DIRETORIA_SENHAS_HASH: ${JSON.stringify(hashes)}`);
+/* Também no config.js servido: CONFIG.GC_LIBERADAS (gerências que abrem na entrada) = `lista` (padrão null = todas, para
+   os testes entrarem por qualquer gerência); 'config' = a lista do config.js. */
+const RE_LIBERADAS = /GC_LIBERADAS:\s*(null|\[[^\]]*\])/;
+const trocaLiberadas = (texto, lista = null) =>
+  lista === 'config' ? String(texto) : String(texto).replace(RE_LIBERADAS, `GC_LIBERADAS: ${JSON.stringify(lista)}`);
 /* Na caixa de senha aberta (botão DIRETORIA já clicado): digita a senha, Enter e espera sair da entrada. Front antigo
    (Diretoria sem senha, já entrou): não faz nada. */
 async function digitaSenha(page, senha = SENHAS_TESTE[0]){
@@ -21,4 +26,4 @@ async function digitaSenha(page, senha = SENHAS_TESTE[0]){
   await page.waitForFunction(() => document.getElementById('entrada').hidden);
 }
 
-module.exports = {SENHAS_TESTE, hashTeste, HASHES_TESTE, RE_HASHES, trocaHash, digitaSenha};
+module.exports = {SENHAS_TESTE, hashTeste, HASHES_TESTE, RE_HASHES, trocaHash, RE_LIBERADAS, trocaLiberadas, digitaSenha};

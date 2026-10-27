@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, execSync} = require('node:child_process');
-const {SENHAS_TESTE, hashTeste, HASHES_TESTE, trocaHash, digitaSenha} = require('./senha_teste.js');
+const {SENHAS_TESTE, hashTeste, HASHES_TESTE, trocaHash, trocaLiberadas, digitaSenha} = require('./senha_teste.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const FRONT = path.join(RAIZ, 'frontend');
@@ -213,9 +213,10 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
-   aba depois de entrar (padrão ICS GC, a aba inicial de antes da Executiva; null = fica na aba inicial do perfil). */
+   aba depois de entrar (padrão ICS GC, a aba inicial de antes da Executiva; null = fica na aba inicial do perfil);
+   `liberadas` = CONFIG.GC_LIBERADAS servido (padrão null = todas; 'config' = a do config.js; ver trocaLiberadas). */
 async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entrar = 'gc', busca = '', fuso, antes,
-                           troca = {}, toque = false, aba = 'ICS_GC'} = {}){
+                           troca = {}, toque = false, aba = 'ICS_GC', liberadas = null} = {}){
   // toque = tela de toque (page.tap; os ponteiros chegam como pointerType 'touch')
   const ctx = await browser.newContext({viewport: {width: largura, height: altura}, ...(fuso ? {timezoneId: fuso} : {}),
                                         ...(toque ? {hasTouch: true} : {})});
@@ -231,8 +232,9 @@ async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entra
     if(!fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
     // `troca` = {'/js/config.js': texto => texto alterado} (ex.: CONFIG.INCENTIVO_ATIVO = false)
     let corpo = troca[url.pathname] ? troca[url.pathname](fs.readFileSync(arq, 'utf-8')) : fs.readFileSync(arq);
-    // senha da Diretoria: o config.js servido leva os hashes das senhas de teste (senha_teste.js), nunca as reais
-    if(url.pathname === '/js/config.js') corpo = trocaHash(corpo);
+    // senha da Diretoria: o config.js servido leva os hashes das senhas de teste (senha_teste.js), nunca as reais; e as
+    // gerências liberadas na entrada de `liberadas`
+    if(url.pathname === '/js/config.js') corpo = trocaLiberadas(trocaHash(corpo), liberadas);
     rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream', body: corpo});
   });
   // bibliotecas do PDF (CDN) não são usadas nos testes
@@ -7786,5 +7788,93 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
       assert.deepEqual([...novo.erros, ...velho.erros], [], dados);
       for(const {ctx} of [novo, velho]) await ctx.close();
     }
+  });
+});
+
+/* ---------- Parte AD: gerências liberadas na entrada (CONFIG.GC_LIBERADAS, 27/10/2026) ----------
+   Gerência, Supervisão e Rota só abrem nas gerências da lista (grupo: com as duas); as demais ficam na caixa desabilitadas
+   ("· em breve") e um acesso guardado delas volta para a entrada. A Diretoria vê todas. Os outros testes servem o
+   config.js com todas liberadas (trocaLiberadas); aqui, a lista do config.js ('config') ou uma lista do teste. */
+const LIBERADAS = ['G1', 'G2', 'G3', 'AP', 'IT', 'MO'];
+const ABREM = ['AP', 'G1', 'G2', 'G3', 'IT+MO'];
+describe('Parte AD — gerências liberadas na entrada', {skip: pular}, () => {
+  test('config.js: só G1, G2, G3, AP e IT+MO abrem por Gerência, Supervisão e Rota; as demais "em breve"; a Diretoria vê todas', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), liberadas: 'config'});
+    assert.deepEqual(await page.evaluate(() => CONFIG.GC_LIBERADAS), LIBERADAS);
+    for(const perfil of ['gc', 'sv', 'rota']){
+      await page.click(`#entrada [data-perfil="${perfil}"]`);
+      const c = await caixa(page);
+      assert.deepEqual(c.gcs, OPCOES_GC.map(([g, r]) => ABREM.includes(g) ? [g, r, false] : [g, r + ' · em breve', true]), perfil);
+      assert.equal(c.foco, 'AP', `${perfil}: foco na primeira opção liberada`);
+      // travada não abre (nem a 2ª etapa)
+      for(const g of ['AN', 'PA+DI', 'UR+RI']) await page.$eval(`#entOpcoes [data-gc="${g}"]`, b => b.click());
+      const d = await caixa(page);
+      assert.deepEqual([d.vis, d.sub, (await estado(page)).acesso], [true, 'Escolha a gerência', null], perfil);
+      await page.click('#entFechar');
+    }
+    for(const [entrar, sel] of [[{perfil: 'gc', gc: 'G3'}, ['gc', 'G3', '', '']], [{perfil: 'gc', gc: 'IT+MO'}, ['gc', 'IT+MO', '', '']],
+      [{perfil: 'sv', gc: 'AP', sv: '1'}, ['gc', 'AP', 'SV.AP.1', '']], [{perfil: 'sv', gc: 'IT+MO', sv: 'SV.MO.1'}, ['gc', 'MO', 'SV.MO.1', '']],
+      [{perfil: 'rota', gc: 'G1', rota: 'G111'}, ['gc', 'G1', 'SV.G1.1', 'G111']]]){
+      if(!(await estado(page)).entrada) await page.click('#btnCasa');
+      await entra(page, entrar, null);
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.sel], [false, sel], JSON.stringify(entrar));
+    }
+    // Diretoria: as 16 no filtro (só a DI, sem dados, desabilitada) e qualquer uma abre
+    await vaiPara(page, 'dir', null);
+    assert.deepEqual((await opcoesGc(page)).filter(o => o[2]).map(o => o[0]), ['DI']);
+    await page.selectOption('#fgc', 'AN');
+    assert.deepEqual((await estado(page)).sel, ['dir', 'AN', '', '']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('acesso guardado: o de gerência travada volta para a entrada; o das liberadas e o da Diretoria reabrem', async () => {
+    const TRAVADOS = [{perfil: 'gc', gc: 'AN'}, {perfil: 'gc', gc: 'PA+DI'}, {perfil: 'sv', gc: 'SL', sv: 'SV.SL.1'},
+                      {perfil: 'sv', gc: 'RI', sv: 'SV.RI.1'}, {perfil: 'rota', gc: 'PO', rota: 'PO11'}];
+    for(const a of TRAVADOS){
+      for(const liberadas of [null, 'config']){      // com todas liberadas o acesso vale: quem trava é a lista
+        const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), liberadas,
+                                                         armazenado: {drotas_sessao: sessao(a)}});
+        const e = await estado(page);
+        if(liberadas) assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, INDISPONIVEL, null, null], JSON.stringify(a));
+        else assert.equal(e.entrada, false, JSON.stringify(a));
+        assert.deepEqual(erros, []);
+        await ctx.close();
+      }
+    }
+    for(const [a, sel] of [[{perfil: 'gc', gc: 'G2'}, ['gc', 'G2', '', '']], [{perfil: 'gc', gc: 'IT+MO'}, ['gc', 'IT+MO', '', '']],
+      [{perfil: 'sv', gc: 'MO', sv: 'SV.MO.1'}, ['gc', 'MO', 'SV.MO.1', '']], [{perfil: 'rota', gc: 'AP', rota: 'AP11'}, ['gc', 'AP', 'SV.AP.1', 'AP11']],
+      [{perfil: 'dir'}, ['dir', '', '', '']]]){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), liberadas: 'config',
+                                                       armazenado: {drotas_sessao: sessao(a)}});
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.sel], [false, sel], JSON.stringify(a));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  test('grupo só com as duas liberadas; travada sem dados = "em breve", liberada sem dados = "sem dados"', async () => {
+    {
+      const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo(), liberadas: ['G1', 'IT'],
+                                                       armazenado: {drotas_sessao: sessao({perfil: 'sv', gc: 'IT', sv: 'SV.IT.1'})}});
+      let e = await estado(page);
+      assert.deepEqual([e.entrada, e.msg, e.guardado], [true, INDISPONIVEL, null], 'supervisão da IT com a MO travada');
+      await page.click('#entrada [data-perfil="sv"]');
+      const c = await caixa(page);
+      assert.deepEqual(c.gcs.filter(o => !o[2]).map(o => o[0]), ['G1']);
+      assert.deepEqual(c.gcs.find(o => o[0] === 'IT+MO'), ['IT+MO', GRUPO_IT_MO + ' · em breve', true]);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+    const {page, ctx, erros} = await abre('semdados', {entrar: null, antes: fixo(), liberadas: 'config'});
+    await page.click('#entrada [data-perfil="gc"]');
+    const c = await caixa(page);
+    assert.deepEqual(c.gcs.find(o => o[0] === 'G3'), ['G3', ROTULO('G3') + ' · sem dados', true]);
+    assert.deepEqual(c.gcs.find(o => o[0] === 'PA+DI'), ['PA+DI', 'GC.PA + GC.DI · Palmas + Dianópolis · em breve', true]);
+    assert.deepEqual(c.gcs.filter(o => !o[2]).map(o => o[0]), ['AP', 'G1', 'G2', 'IT+MO']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
   });
 });

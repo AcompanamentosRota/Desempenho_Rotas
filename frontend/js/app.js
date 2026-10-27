@@ -1570,7 +1570,8 @@ function linhaStatus(st){
    Controle de acesso INTERNO: a entrada só organiza o que cada perfil vê, sem usuário; NÃO é segurança (os dados
    estão em data/*.json). Diretoria ("Todas as gerências") pede senha na mesma caixa (campo "Senha", conferido pelo
    hash contra CONFIG.DIRETORIA_SENHAS_HASH; duas senhas valem). Gerência, Supervisão e Rota abrem a
-   caixa de seleção com as gerências (cada grupo de CONFIG.GC_GRUPOS numa opção só, "GC.IT + GC.MO"); na Supervisão e
+   caixa de seleção com as gerências (cada grupo de CONFIG.GC_GRUPOS numa opção só, "GC.IT + GC.MO"; só abrem as de
+   CONFIG.GC_LIBERADAS); na Supervisão e
    na Rota, a 2ª etapa lista as supervisões ou as rotas da gerência escolhida (no grupo, das duas). Todos abrem a visão
    de hoje: Gerência com a gerência travada (supervisão e rota livres; no grupo, o total das duas e o seletor Total /
    uma delas); Supervisão com gerência e supervisão travadas (só o filtro das rotas dela); Rota com tudo travado (sem
@@ -1627,16 +1628,24 @@ function gravaSessao(a){
 }
 function apagaSessao(){ try { localStorage.removeItem(SESSAO); } catch(e) { /* sem armazenamento */ } }
 
+/* Gerência liberada na entrada (CONFIG.GC_LIBERADAS; null = todas): a gerência na lista; num grupo (pela chave ou por
+   uma gerência dele), as duas. */
+function gcLiberada(u){
+  const lista = CONFIG.GC_LIBERADAS;
+  if(!Array.isArray(lista)) return true;
+  const gr = gruposGc().find(g => g.chave===u || g.membros.includes(u));
+  return (gr ? gr.membros : [u]).every(g => lista.includes(g));
+}
 /* Opções de gerência da entrada: as 16 na ordem de GC_NOMES/GC_ATIVAS, cada grupo na posição do seu primeiro membro
-   (AN, AP, AT, G1, G2, G3, PA+DI, RV, SL, GU+PO, IT+MO, UR+RI). Sem dados: desabilitada (o grupo, se nenhuma das
-   duas tiver). */
+   (AN, AP, AT, G1, G2, G3, PA+DI, RV, SL, GU+PO, IT+MO, UR+RI). Fora de CONFIG.GC_LIBERADAS ou sem dados:
+   desabilitada (o grupo, se nenhuma das duas tiver). */
 function opcoesGc(){
   const grupos = gruposGc(), vistas = new Set(), out = [];
   todasGcs().forEach(g=>{
     if(vistas.has(g)) return;
-    const gr = grupos.find(x => x.membros.includes(g)), chave = gr ? gr.chave : g;
+    const gr = grupos.find(x => x.membros.includes(g)), chave = gr ? gr.chave : g, livre = gcLiberada(chave);
     membrosGc(chave).forEach(m => vistas.add(m));
-    out.push({chave, rotulo:rotuloGc(chave), ok:temDados(chave)});
+    out.push({chave, rotulo:rotuloGc(chave), livre, ok:livre && temDados(chave)});
   });
   return out;
 }
@@ -1647,12 +1656,12 @@ const rotaNoPainel = (gc, r) => !ehVirtual(r) && rotasDe(gc, '').includes(r);
 // 2ª etapa da caixa, por gerência: supervisões pelo número e rotas em ordem natural (no grupo, uma gerência e depois a outra)
 const svsDaEntrada = gc => svsEmOrdem(gc).filter(s => svNoPainel(gc, s));
 const rotasDaEntrada = gc => rotasDe(gc, '').filter(r => rotaNoPainel(gc, r)).sort(ordemNatural);
-// Gerência: uma opção da 1ª etapa com dados (gerência ou grupo); Supervisão e Rota: também uma gerência do grupo
+// Gerência: uma opção da 1ª etapa liberada e com dados (gerência ou grupo); Supervisão e Rota: também uma gerência do grupo
 const opcaoValida = u => opcoesGc().some(o => o.chave===u && o.ok);
-const gcValida = u => typeof u==='string' && (ehGrupo(u) || todasGcs().includes(u)) && temDados(u);
+const gcValida = u => typeof u==='string' && (ehGrupo(u) || todasGcs().includes(u)) && gcLiberada(u) && temDados(u);
 
 /* Confere um acesso com as regras da entrada: o escolhido na caixa ou o guardado (ao reabrir e a cada payload novo).
-   Gerência ou grupo com dados; supervisão ou rota que aparece no painel da gerência (no grupo, de uma das duas).
+   Gerência ou grupo liberado e com dados; supervisão ou rota que aparece no painel da gerência (no grupo, de uma das duas).
    Devolve o acesso com os códigos do painel (na Supervisão e na Rota, a gerência delas) ou null. */
 function validaAcesso(a){
   const perfil = a && a.perfil;
@@ -1768,7 +1777,8 @@ function pintaCaixa(){
   let html;
   if(!gc){
     $('entCaixaSub').textContent = 'Escolha a gerência';
-    html = opcoesGc().map(o => opcaoCaixa('gc', o.chave, o.rotulo + (o.ok ? '' : ' · sem dados'), !o.ok)).join('');
+    html = opcoesGc().map(o => opcaoCaixa('gc', o.chave, o.rotulo + (!o.livre ? ' · em breve' : o.ok ? '' : ' · sem dados'),
+                                          !o.ok)).join('');
   } else {
     $('entCaixaSub').textContent = `${rotuloGc(gc)} · escolha a ${nome}`;
     const gcs = membrosGc(gc).filter(g => DATA[g]);

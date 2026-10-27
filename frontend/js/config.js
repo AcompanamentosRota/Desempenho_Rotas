@@ -57,6 +57,10 @@ const CONFIG = Object.freeze({
   // GC_ORIGEM e GC_SIGLAS_ORIGEM em backend/gerador/mapeamento.py). Na entrada viram uma opção "GC.IT + GC.MO"
   // que abre o total das duas, com o seletor Total / uma delas no cabeçalho.
   GC_GRUPOS: [['PA', 'DI'], ['GU', 'PO'], ['IT', 'MO'], ['UR', 'RI']],
+  /* Entrada por Gerência, Supervisão e Rota: só estas gerências abrem por enquanto (27/10/2026); as demais ficam na
+     caixa desabilitadas ("em breve") e um acesso guardado delas volta para a entrada. Grupo de GC_GRUPOS: só com as
+     duas na lista. null = todas. A Diretoria vê todas. */
+  GC_LIBERADAS: ['G1', 'G2', 'G3', 'AP', 'IT', 'MO'],
   LIMITE_LISTA: 400,
   CDN: {
     html2canvas: {

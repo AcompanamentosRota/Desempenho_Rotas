@@ -204,6 +204,11 @@ Rota, que não tem a Executiva, abre no **Volume**.
   numa gerência só (Pa_Di, Gu_Po, It_Mo, Ur_Ri; `CONFIG.GC_GRUPOS` em `frontend/js/config.js`) e ficam na posição
   da primeira gerência do par. Gerência sem dados aparece desabilitada; o grupo fica habilitado se uma das duas
   tiver dados.
+- **Gerências liberadas** (desde 27/10/2026, por enquanto): por Gerência, Supervisão e Rota só abrem **GC.G1, GC.G2,
+  GC.G3, GC.AP e GC.IT + GC.MO**. As demais continuam na caixa, desabilitadas, com "· em breve" (no lugar de "· sem
+  dados"), e um acesso guardado delas volta para a entrada com "O acesso anterior não está mais disponível". A
+  Diretoria continua vendo todas. A lista é `CONFIG.GC_LIBERADAS` em `frontend/js/config.js`: para liberar outra
+  gerência, acrescente a sigla (num grupo, as duas: `'PA', 'DI'`); `null` libera todas.
 - **Grupo na Gerência**: abre com o **Total** das duas gerências (cards, cascata e listas somam as rotas das duas,
   com as Neutraliza, virtuais e eventuais de cada uma; uma linha "Neutraliza" só, com as das duas; o "puxa a média"
   compara as supervisões das duas). O seletor do cabeçalho tem três opções, "Total (GC.IT + GC.MO)", "GC.IT ·
