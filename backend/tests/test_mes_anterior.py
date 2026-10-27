@@ -101,8 +101,11 @@ class TestCorteMesAnterior(unittest.TestCase):
 
 
 # ---------------------------------------------------------------- agregações (sem rede)
-def _vr(rota, ag, vol, status="Acertado", gcc=None):
-    return {CM.ROTA: rota, CM.AGRUPADOR: ag, CM.NF_STATUS: status, CM.VOL_MES: vol, CM.GC_COMERCIAL: gcc}
+def _vr(rota, ag, vol, status="Acertado", gcc=None, meta=None):
+    l = {CM.ROTA: rota, CM.AGRUPADOR: ag, CM.NF_STATUS: status, CM.VOL_MES: vol, CM.GC_COMERCIAL: gcc}
+    if meta is not None:
+        l[CM.META_ROTA] = meta
+    return l
 
 
 def _cb(rota, pv, ag, cob=1, vol=0.0, seg=None):
@@ -119,6 +122,14 @@ class TestAgregacoes(unittest.TestCase):
                                 "EV1": {"VOL REFRIGERANTES": 7.0}, "EV2": {"VOL REFRIGERANTES": 1.0}})
         self.assertEqual(ev, {"AP": {"VOL REFRIGERANTES": 7.0}})                  # EV2 sem gerência do painel
 
+    def test_real_das_eventuais_so_com_rota_da_meta(self):
+        # 27/10/2026, como o SAC: venda em rota EV* sem rota da meta ('--') fica fora da rota oculta
+        real, ev = ct.real_por_rota([_vr("EV1", "Refrigerantes", 7, gcc="Gc. Ap", meta="A11"),
+                                     _vr("EVF", "Refrigerantes", 4, gcc="Gc. Ap", meta="--"),
+                                     _vr("EVF", "Agua Mineral", 6, gcc="Gc. Ap", meta="")])
+        self.assertEqual(ev, {"AP": {"VOL REFRIGERANTES": 7.0}})
+        self.assertEqual(real["EVF"], {"VOL REFRIGERANTES": 4.0, "VOL AGUA MINERAL": 6.0})   # a rota EV continua na fonte
+
     def test_meta_e_volume_por_gerencia_como_o_card(self):
         gc_rota = {"111": "G1", "112": "G1", "113": "G1", "G1-EV": "G1", "A11": "AP"}
         metas_vol = {"111": {"VOL REFRIGERANTES": 100.0}, "A11": {"VOL REFRIGERANTES": 50.0}}
@@ -128,14 +139,16 @@ class TestAgregacoes(unittest.TestCase):
         meta = ct.meta_volume_por_rota(metas_vol, neg, gc_rota, real)
         self.assertEqual(meta["111"]["VOL REFRIGERANTES"], 100.0)
         self.assertEqual(meta["112"]["VOL REFRIGERANTES"], 30.0)                  # sem META_VOLUME: a META_NEG
-        self.assertIsNone(meta["113"]["VOL REFRIGERANTES"])                       # sem nenhuma: indisponível
+        # sem nenhuma, com Real: meta 0 (27/10/2026, como o gerador); sem o Real: indisponível
+        self.assertEqual(meta["113"]["VOL REFRIGERANTES"], 0.0)
+        self.assertIsNone(ct.meta_volume_por_rota(metas_vol, neg, gc_rota)["113"]["VOL REFRIGERANTES"])
         # rota oculta das EV*: meta 0 só nos macros com Real (como o gerador)
         self.assertEqual(meta["G1-EV"], {k: 0.0 if k == "VOL REFRIGERANTES" else None for k in M.INDICADORES_VOLUME})
         por_gc = ct.volume_por_gc(real, meta, gc_rota)
-        self.assertEqual(por_gc["G1"]["VOL REFRIGERANTES"], [42.0, 130.0, 3])    # 113 (sem meta) e Z99 (fora) não somam
+        self.assertEqual(por_gc["G1"]["VOL REFRIGERANTES"], [51.0, 130.0, 4])    # 113 (meta 0) soma; Z99 (fora) não
         self.assertEqual(por_gc["G1"]["VOL STILL"], [0.0, 0.0, 0])                # nenhuma rota com o indicador
         band = ct.com_band(por_gc, M.INDICADORES_VOLUME, [0.0, 0.0, 0])["BAND"]
-        self.assertEqual(band["VOL REFRIGERANTES"], [62.0, 180.0, 4])
+        self.assertEqual(band["VOL REFRIGERANTES"], [71.0, 180.0, 5])
         self.assertEqual(ct._soma_vol(real, {"111", "A11"}), 60.0)
         self.assertIsNone(ct._soma_vol(None))
 
@@ -427,10 +440,10 @@ class TestSecaoE10(unittest.TestCase):
         # AP: A11 70 + a rota oculta dos clientes em EV* (15); meta 150 + 50 + 0
         self.assertIn("| AP | Refrigerantes | 85 | 200 | 42,50% | 100 | 85,00% | 102 | 220 | 46,36% | +3,9 | +20,0% |",
                       self.txt)
-        # IT: a I12 não tinha meta em setembro (o card não soma); em outubro tem meta e nenhuma venda
-        self.assertIn("| IT | Refrigerantes | 60 | 120 | 50,00% | 80 | 75,00% | 50 | 170 | 29,41% | -20,6 | -16,7% |",
+        # IT: a I12 não tinha meta em setembro (entra com meta 0, como o card); em outubro tem meta e nenhuma venda
+        self.assertIn("| IT | Refrigerantes | 85 | 120 | 70,83% | 80 | 106,25% | 50 | 170 | 29,41% | -41,4 | -41,2% |",
                       self.txt)
-        self.assertIn("| BAND | Refrigerantes | 350 | 710 | 49,30% | 330 | 106,06% | 352 | 820 | 42,93% | -6,4 | +0,6% |",
+        self.assertIn("| BAND | Refrigerantes | 375 | 710 | 52,82% | 330 | 113,64% | 352 | 820 | 42,93% | -9,9 | -6,1% |",
                       self.txt)
         self.assertIn("| G1 | Still | — | — | — | — | — | — | — | — | — | — |", self.txt)
         self.assertIn("| AP | Cervejas | — | — | — | — | — | — | — | — | — | — |", self.txt)   # a rota oculta só no Refri
@@ -444,15 +457,15 @@ class TestSecaoE10(unittest.TestCase):
 
     def test_refrigerantes_por_gerencia(self):
         self.assertIn("| MO | 35 | 90 | 38,89% | 40 | 100 | 40,00% | +1,1 | +14,3% |", self.txt)
-        self.assertIn("| BAND | 350 | 710 | 49,30% | 352 | 820 | 42,93% | -6,4 | +0,6% |", self.txt)
+        self.assertIn("| BAND | 375 | 710 | 52,82% | 352 | 820 | 42,93% | -9,9 | -6,1% |", self.txt)
 
     def test_custo_e_payload(self):
         self.assertIn("O gerador precisaria de 4 grupos de consultas", self.txt)
         self.assertIn("gerar.py hoje: ~64 s", self.txt)
         self.assertIn('`{"MES_LABEL": "Setembro/26", "DIA_UTIL": 13, "TOTAL_DIAS_UTEIS": 21, "DATA_CORTE": "2026-09-20"',
                       self.txt)
-        self.assertRegex(self.txt, r"\| 5 macros \+ 13 coberturas \| 7 \| \d+,\d KB \| sem o payload publicado para comparar \|")
-        self.assertRegex(self.txt, r"\| só os 5 macros \| 7 \| \d+,\d KB \|")
+        self.assertRegex(self.txt, r"\| 5 macros \+ 13 coberturas \| 8 \| \d+,\d KB \| sem o payload publicado para comparar \|")
+        self.assertRegex(self.txt, r"\| só os 5 macros \| 8 \| \d+,\d KB \|")
         self.assertIn("Payload publicado (`frontend/data/payload.json` do checkout): não encontrado.", self.txt)
 
     def test_peso_contra_o_limite_de_8_mb(self):
@@ -462,7 +475,7 @@ class TestSecaoE10(unittest.TestCase):
                 f.truncate(6_600_000)
             txt = _e10(ConsultaE10(FATOS, METAS), payload_base=base)
             self.assertIn("Payload publicado (`frontend/data/payload.json` do checkout): 6,60 MB.", txt)
-            self.assertRegex(txt, r"\| 5 macros \+ 13 coberturas \| 7 \| [\d,]+ KB \| 6,60 MB \|")
+            self.assertRegex(txt, r"\| 5 macros \+ 13 coberturas \| 8 \| [\d,]+ KB \| 6,60 MB \|")
             self.assertNotIn("acima do limite", txt)
             with base.open("wb") as f:
                 f.truncate(7_999_800)
@@ -480,7 +493,7 @@ class TestSecaoE10(unittest.TestCase):
                       "rotas 5 (Z99).", self.txt)
         self.assertIn("| G1 | 170 | 140 | -30 |", self.txt)                      # cliente da 111 com a meta na A11
         self.assertIn("| AP | 85 | 115 | 30 |", self.txt)
-        self.assertNotIn("| IT | 85 |", self.txt)                                # I12 -> I11: mesma gerência
+        self.assertNotIn("| IT | 85 | 85 |", self.txt)                           # I12 -> I11: mesma gerência
         for n in range(1, 8):
             self.assertIn(f"\n{n}. ", self.txt)
 

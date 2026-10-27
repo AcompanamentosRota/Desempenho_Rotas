@@ -418,7 +418,8 @@ def rota_no_painel(l: Linha, p: Painel, por_rota_meta: bool) -> tuple[str, str |
     """(rota em que o gerador conta a linha, gerência dela; None se o painel não conta).
 
     Real: rota do cliente, no escopo da consulta (gerência agrupada do cliente do painel); cliente em rota EV*: a
-    rota oculta da gerência comercial dele. Meta do dia: rota da meta, sem filtro de gerência.
+    rota oculta da gerência comercial dele, só a venda com rota da meta. Meta do dia: rota da meta, sem filtro de
+    gerência.
     """
     if por_rota_meta:
         return l.rota_meta, (p.gc_rota.get(l.rota_meta) if l.rota_meta else None)
@@ -426,7 +427,8 @@ def rota_no_painel(l: Linha, p: Painel, por_rota_meta: bool) -> tuple[str, str |
         return l.rota, None
     if l.rota in p.gc_rota:
         return l.rota, p.gc_rota[l.rota]
-    if M.rota_eventual(l.rota) and l.gc_comercial and p.gc_rota.get(M.rota_eventuais(l.gc_comercial)):
+    if (M.rota_eventual(l.rota) and l.gc_comercial and l.rota_meta
+            and p.gc_rota.get(M.rota_eventuais(l.gc_comercial))):
         return M.rota_eventuais(l.gc_comercial), l.gc_comercial
     return l.rota, None
 
@@ -479,6 +481,7 @@ def contribuicoes(linhas: list[Linha], p: Painel, por_rota_meta: bool) -> Contri
                 if gb and gb != gm:
                     fora_gc[(l.rota, gb, gm)] -= l.valor
                 fora_oculta = ("" if not M.rota_eventual(l.rota) else
+                               "venda sem rota da meta (fora da rota oculta)" if not l.rota_meta else
                                f"a {l.gc_comercial} não tem rota oculta das EV*" if l.gc_comercial else
                                "cliente sem gerência comercial do painel (fora da rota oculta)")
                 det = "; ".join(x for x in [
@@ -1293,8 +1296,8 @@ def real_hoje_gc(payload: dict, k: str) -> dict[str, list]:
 
 def reconcilia(ma: dict, ref: dict, rotas_gc: dict[str, str]) -> dict[str, dict[str, float]]:
     """Por macro: o Real da chave contra a consulta direta da E10 (todas as linhas por rota do cliente), separando o que
-    fica fora da chave: rotas do painel sem o indicador no mês anterior, EV* (na rota oculta ou fora dela) e rotas fora
-    do painel. resíduo = consulta direta - (na chave pelas rotas + EV* na rota oculta + o que fica fora)."""
+    fica fora da chave: rotas do painel sem o indicador no mês anterior (sem meta e sem Real; com Real entram com meta 0),
+    EV* (na rota oculta ou fora dela) e rotas fora do painel. resíduo = consulta direta - (na chave pelas rotas + EV* na rota oculta + o que fica fora)."""
     real, ev = ref.get("REAL_ROTA") or {}, ref.get("EV") or {}
     eventuais = {r for r in (ma.get("ROTAS") or {}) if r.endswith("-EV")}
     ocultas = {r[:-3] for r in eventuais}
@@ -1317,7 +1320,8 @@ def reconcilia(ma: dict, ref: dict, rotas_gc: dict[str, str]) -> dict[str, dict[
             v = ks.get(k, 0.0)
             par = rotas.get(M.rota_eventuais(g), [None] * len(ind))[i] if g in ocultas else None
             t["ev_oculta" if par is not None else "ev_fora"] += v
-        t["ev_fora"] += ev_total - sum(ks.get(k, 0.0) for ks in ev.values())   # EV* sem gerência comercial do painel
+        # EV* sem gerência comercial do painel ou sem rota da meta
+        t["ev_fora"] += ev_total - sum(ks.get(k, 0.0) for ks in ev.values())
         t["residuo"] = t["direta"] - (t["nas_rotas"] + t["sem_meta"] + t["ev_oculta"] + t["ev_fora"] + t["fora"])
         t["dif_chave"] = t["chave"] - (t["nas_rotas"] + t["ev_oculta"])
         out[k] = t
@@ -1359,7 +1363,7 @@ def secao_mes_anterior_payload(rel: Relatorio, payload: dict | None, ref: dict |
     if ref and ref.get("REAL_ROTA") is not None:
         rec = reconcilia(ma, ref, rotas_gc)
         rel.p("Consulta direta = Vol Real com o filtro de data por rota do cliente (todas as linhas). Fica fora da chave: "
-              "rota do painel sem o indicador no mês anterior (como o card), EV* sem a rota oculta de hoje (ou sem "
+              "rota do painel sem o indicador no mês anterior (sem meta e sem Real, como o card), EV* sem a rota oculta de hoje (ou sem "
               "gerência comercial do painel) e rota fora do painel. 'chave - (rotas + EV*)' deve ser só arredondamento.")
         rel.tabela(["macro", "chave (todas as rotas)", "consulta direta", "nas rotas da chave", "EV* na rota oculta",
                     "rotas sem o indicador (fora)", "EV* fora", "fora do painel", "resíduo", "chave - (rotas + EV*)"],
@@ -2018,11 +2022,12 @@ def mes_anterior(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, hoje
     rel.p(f"- **Rotas com meta de volume em {lab_ant} fora do painel de hoje**: {len(fora_meta)} ({_rotas_txt(fora_meta)}); "
           f"META_VOLUME de Refrigerantes delas: {_n(sum(metas_vol_ant[r].get(K_REFRI, 0.0) for r in fora_meta), 0)} "
           "(fica fora da comparação).")
+    sem_ind = meta_volume_por_rota(metas_vol_ant, neg_ant, gc_rota)   # sem o Real: None = sem META_VOLUME nem META_NEG
     sem_meta = sorted((r for r in gc_rota if r != M.rota_eventuais(gc_rota[r])
-                       and all(meta_ant.get(r, {}).get(k) is None for k in VOL)), key=_ordem_rota)
+                       and all(sem_ind[r][k] is None for k in VOL)), key=_ordem_rota)
     rel.p(f"- **Rotas do painel sem meta de volume em {lab_ant}** (novas?): {len(sem_meta)} ({_rotas_txt(sem_meta)}); Real "
           f"de {lab_ant} até o corte nelas (Refrigerantes): {_n(sum(real_ant.get(r, {}).get(K_REFRI, 0.0) for r in sem_meta), 0)}"
-          " (o card não soma rota sem o indicador).")
+          " (entra com meta 0, como o card, desde 27/10/2026).")
     ev_fora = _soma_vol({r: ks for r, ks in real_ant.items() if M.rota_eventual(r)})
     ocultas = _soma_vol({r: real_ant[r] for r, g in gc_rota_ant.items() if r == M.rota_eventuais(g) and r in real_ant})
     outras = sorted((r for r in real_ant if r not in gc_rota_ant and not M.rota_eventual(r)), key=_ordem_rota)

@@ -14,7 +14,8 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
                                                 canceladas; clientes em rotas EV* pela gerência comercial
   vol_real    AM_FAT_BND_ANALISE_META           rota x cliente x macro de volume x NF_STATUS (por gerência):
                                                 Vol Real = FX_VOL_PADRAO_FAT com status em M.STATUS_NF_REAL;
-                                                clientes em rotas EV* também pela gerência comercial (eventuais)
+                                                clientes em rotas EV* também pela gerência comercial (eventuais),
+                                                só as vendas com rota da meta (como o SAC)
   meta_neg    AM_FAT_BND_ANALISE_META           rota x macro: soma de META_NEG do mês e da parte restante
                                                 (DATA_MOVIMENTO de hoje ao fim do mês só no $filter)
   meta_dia    AM_FAT_BND_ANALISE_META           rota da meta x macro: META_RECUPERAVEL_ROTA com DATA_MOVIMENTO =
@@ -249,6 +250,7 @@ class VolumeMes:
     todos_status: dict = field(default_factory=dict)    # rota -> VOL -> soma sem filtro de status (Real antigo)
     por_status: dict = field(default_factory=dict)      # status como veio -> [linhas, volume, conta no Vol Real]
     # gerência (sigla) -> VOL -> Vol Real dos clientes que estão em rotas EV*, pela gerência comercial do cliente
+    # (só as vendas com rota da meta, como o SAC)
     eventuais: dict = field(default_factory=dict)
 
 
@@ -258,21 +260,32 @@ def _sigla_gc(valor: object) -> str | None:
     return g if g in M.GC_NOMES else None
 
 
+def sem_rota_da_meta(l: dict) -> bool:
+    """Venda sem chave de meta (CD_ROTA_Chave_Meta_SAP '--' ou vazia): o SAC não a soma em gerência nenhuma (conferido
+    em 27/10/2026 contra o Flash de Vendas: quase só 'Venda A Consumidor Final' em rotas EV*). Linha sem a coluna (fora
+    do $select): False, como antes."""
+    return CM.META_ROTA in l and _vazio(l.get(CM.META_ROTA))
+
+
 def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None) -> VolumeMes:
     """Vol Real por rota x cliente x macro: só NF com status em M.STATUS_NF_REAL (comparado por normalizar).
 
     Agregado no servidor por rota x cliente x agrupador x status (sem dia), uma consulta por gerência.
     O status entra no $select (e não no $filter) para a comparação não depender da grafia exata.
     Clientes em rotas EV* também vão para `eventuais`, pela gerência comercial do cliente (M.ColMeta.GC_COMERCIAL),
-    como o SAC soma; sem a coluna no $metadata, ficam fora (aviso no log).
+    como o SAC soma; sem a coluna no $metadata, ficam fora (aviso no log). Só as vendas com rota da meta
+    (M.ColMeta.META_ROTA; decisão de 27/10/2026, como o SAC): as sem chave de meta ficam fora (log por gerência e rota);
+    sem a coluna no $metadata, entram todas (aviso).
     """
     obj = M.OBJ_META
-    sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES], [CM.GC_COMERCIAL])
+    sel = _colunas(cons, obj, [CM.ROTA, CM.CLIENTE, CM.AGRUPADOR, CM.NF_STATUS, CM.VOL_MES],
+                   [CM.GC_COMERCIAL, CM.META_ROTA])
     filtro = e(eq(CM.ANOMES, anomes), ou(CM.AGRUPADOR, M.AGRUPADORES_VOL_REAL),
                M.FILTRO_PEDIDOS_ONLINE, eq(CM.ROTA, rota) if rota else None)
     linhas = [l for ls in cons.em_paralelo(_por_gerencia(obj, sel, filtro, gcs_originais, rota)).values() for l in ls]
     vm = VolumeMes()
     sem_gc: dict = defaultdict(float)    # Real de clientes em rotas EV* sem gerência comercial do painel
+    sem_meta: dict = defaultdict(lambda: defaultdict(float))   # "GC rota EV*" -> VOL -> Real sem rota da meta
     for l in linhas:
         r, pv, ag = _rota(l.get(CM.ROTA)), inteiro(l.get(CM.CLIENTE)), l.get(CM.AGRUPADOR)
         vol, status = numero(l.get(CM.VOL_MES)), l.get(CM.NF_STATUS)
@@ -299,7 +312,9 @@ def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], 
             rc[k] = rc.get(k, 0.0) + vol
         if M.rota_eventual(r) and CM.GC_COMERCIAL in sel:
             gc = _sigla_gc(l.get(CM.GC_COMERCIAL))
-            if gc:
+            if sem_rota_da_meta(l):
+                sem_meta[f"{M.codigo_gc(l.get(CM.GC_COMERCIAL)) or '--'} {r}"][k] += vol
+            elif gc:
                 ev = vm.eventuais.setdefault(gc, {})
                 ev[k] = ev.get(k, 0.0) + vol
             else:
@@ -309,12 +324,18 @@ def carregar_volume_real(cons: Consulta, anomes: str, gcs_originais: list[str], 
     if vm.eventuais:
         log.info("Vol Real de clientes em rotas EV* por gerência comercial: %s",
                  {g: {M.LABELS.get(k, k): round(v, 1) for k, v in ks.items()} for g, ks in sorted(vm.eventuais.items())})
+    if sem_meta:
+        log.info("Vol Real de rotas EV* sem rota da meta (fica fora, como o SAC): %s",
+                 {gr: {M.LABELS.get(k, k): round(v, 1) for k, v in ks.items()} for gr, ks in sorted(sem_meta.items())})
     if sem_gc:
         log.warning("Vol Real de clientes em rotas EV* sem gerência comercial do painel (%s; fica fora): %s",
                     CM.GC_COMERCIAL, {M.LABELS.get(k, k): round(v, 1) for k, v in sem_gc.items()})
     if linhas and CM.GC_COMERCIAL not in sel:
         log.warning("%s fora do $metadata: o Real dos clientes em rotas EV* fica fora do total da gerência.",
                     CM.GC_COMERCIAL)
+    elif linhas and CM.META_ROTA not in sel:
+        log.warning("%s fora do $metadata: o Real das rotas EV* entra inteiro, também as vendas sem rota da meta "
+                    "(o SAC não as soma).", CM.META_ROTA)
     if linhas and not vm.real:
         log.error("Nenhum NF_STATUS bateu com %s (vieram: %s). Ajuste M.STATUS_NF_REAL.",
                   M.STATUS_NF_REAL, sorted(vm.por_status))
@@ -808,7 +829,13 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                                                       direto=fonte_neg == ROTA_META)
             if meta is None and real is None:
                 continue
-            if caso in (modelo.SEM_CURVA, modelo.SEM_META_ROTA) or (caso == modelo.CURVA and fonte_neg == ROTA_META):
+            if meta is None and modelo._r1(real or 0.0) and k in M.INDICADORES_VOLUME:
+                # Real sem meta nenhuma na rota (R31 Cervejas, T07 em 27/10/2026): meta 0 e tendência = Real, para
+                # somar no total da gerência como o SAC (antes: indisponível, fora do total). Real que arredonda para
+                # 0,0 (resíduo de decimais) continua indisponível, sem card "Meta 0 · Real 0". Del Valle Frut não.
+                meta, rest, caso = 0.0, 0.0, modelo.SEM_META
+            if (caso in (modelo.SEM_CURVA, modelo.SEM_META_ROTA, modelo.SEM_META)
+                    or (caso == modelo.CURVA and fonte_neg == ROTA_META)):
                 casos[caso].append(f"{r}/{M.LABELS.get(k) or M.VOLUME_EXTRA[k]['label']}")
             volume[r][k] = VolumeRota(
                 meta=meta, real=real or 0.0, meta_neg_clientes=nm,
@@ -850,6 +877,9 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                       + ", ".join(casos[modelo.SEM_CURVA]))
     if casos[modelo.SEM_META_ROTA]:
         avisos.append("meta = soma de META_NEG (sem META_VOLUME da rota) em: " + ", ".join(casos[modelo.SEM_META_ROTA]))
+    if casos[modelo.SEM_META]:
+        avisos.append("Real sem META_VOLUME nem META_NEG (meta 0, entra no total como o SAC) em: "
+                      + ", ".join(casos[modelo.SEM_META]))
     # volume extra (Del Valle Frut): gerência sem META_VOLUME nem META_NEG fica sem o card (indicador indisponível)
     for k in M.INDICADORES_VOLUME_EXTRA:
         for gc in M.VOLUME_EXTRA[k]["gcs"]:

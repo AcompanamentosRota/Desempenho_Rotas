@@ -84,6 +84,8 @@ def indicador_vendazero(meta: float | None, real: int, revertido_hoje: int, opor
 # Supervisão e gerência somam as rotas e recalculam o % (agrega_volume = agrega() do app.js).
 # No fechamento do mês: sem tendência e sem meta do dia; no ritmo com % realizado (Real / Meta) >= 100.
 DIRETO, CURVA, SEM_CURVA, SEM_META_ROTA = "direto", "curva", "sem_curva", "sem_meta_rota"
+# rota x macro sem META_VOLUME nem META_NEG, mas com Real: meta 0 e tendência = Real (fontes.carregar), como o SAC soma
+SEM_META = "sem_meta"
 TOLERANCIA_DIRETO = 0.01   # META_NEG do mês (rota da meta) a até 1% da META_VOLUME: restante sem escalonar
 
 
@@ -97,7 +99,7 @@ def meta_e_restante(meta_rota: float | None, neg_mes: float | None, neg_restante
     curva         META_VOLUME > 0 e META_NEG do mês > 0: Meta x restante / mês da META_NEG (escalonado)
     sem_curva     META_VOLUME > 0 e META_NEG do mês = 0: Meta x dias úteis restantes (com hoje) / dias úteis
     sem_meta_rota META_VOLUME ausente ou 0 e META_NEG > 0: meta e restante = somas de META_NEG
-    None          as duas zeradas: indicador indisponível
+    None          as duas zeradas: indicador indisponível (nos 5 macros, com Real: meta 0, SEM_META, em fontes.carregar)
     """
     if meta_rota and meta_rota > 0:
         if neg_mes and neg_mes > 0:

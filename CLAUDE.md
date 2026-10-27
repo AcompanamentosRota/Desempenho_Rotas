@@ -204,7 +204,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (Meta × restante / mês) e a rota vai para o aviso. Se a consulta pela rota da meta falhar ou vier sem rota, volta
   à curva pela rota do cliente, sempre escalonada (`fontes.carregar_curva_neg`); Tendência = Vol Real + Neg Restante; % = Tendência / Meta, verde com % >= 100; Dif = Vol Real − Meta.
   Casos-limite (aviso por rota × macro): META_VOLUME sem META_NEG → Neg Restante = Meta × dias úteis restantes
-  (com hoje) / dias úteis do mês; sem META_VOLUME → Meta e restante = somas de META_NEG; nenhuma → indisponível.
+  (com hoje) / dias úteis do mês; sem META_VOLUME → Meta e restante = somas de META_NEG; nenhuma → indisponível,
+  exceto com Real ≠ 0 (1 casa) nos 5 macros (decisão de 27/10/2026, como o SAC soma): meta 0, Neg Restante 0, tendência = Real
+  (`modelo.SEM_META`, aviso "Real sem META_VOLUME nem META_NEG"; também no `MES_ANTERIOR`: [Real, 0]). Em 27/10: R31
+  (Neutraliza RV) Cervejas 605 cx, T07 (G3) DAC 3,2 e Cerv 0,3. No front, o card da rota sozinha mostra Meta 0 e "—".
   Meta do dia = `META_RECUPERAVEL_ROTA` por **rota da meta** (`CD_ROTA_Chave_Meta_SAP`, como o SAC; decisão de
   20/10/2026: pela rota do cliente, a meta de cliente em rota EV* sumia, AP −783 e PO −137) × agrupador com
   `DATA_MOVIMENTO` = hoje (se der HTTP 500, repete por gerência; se falhar ou vier sem rota, pela rota do cliente,
@@ -245,6 +248,14 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   por gerência (`M.rota_eventuais`: `AP-EV`) e supervisão própria (`M.sv_eventuais`: `SV.AP.EV`, nunca aparece).
   Só nas gerências com rotas no painel (`fontes.volume_eventuais`; o resto e cliente sem gerência comercial vão para o
   log). Meta 0, sem Neg Restante (tendência = Real), meta do dia 0, sem clientes; fora da Venda Zero e do online.
+  **Só as vendas com rota da meta** (decisão de 27/10/2026, Flash de Vendas do SAC): venda em rota EV* com
+  `CD_ROTA_Chave_Meta_SAP` '--'/vazia (sem chave de meta; quase só `DS_COD_OPER_Nota_Fiscal` = 'Venda A Consumidor
+  Final', ex.: EVF = venda a funcionário da G3) fica fora do Real, como o SAC (`fontes.sem_rota_da_meta`; `META_ROTA`
+  opcional na consulta do Vol Real e no `mes_anterior.consulta_volume`; sem a coluna, entra tudo com aviso; log "Vol Real
+  de rotas EV* sem rota da meta" por gerência e rota). Rotas normais não mudam: todas as vendas delas têm chave (27/10).
+  Medição de 27/10: o SAC bate somando por `DS_GERENCIA_COM_Chave_Meta_SAP` (= esta regra; |dif| ≤ 0,5 cx nas 16 x 5
+  macros); saíram Refri 442, Cerv 27, Água 1.478, Still 117, DAC 49 cx (G3 124/15/627/66/45; AN 176/4/420; SL Água
+  264; DI 63/0/24); ficam só AP EV5 e G2 EV1 (com chave de meta). A cobertura das EV* (abaixo) não mudou.
   **Cobertura** (decisão de 26/10/2026): os clientes cobertos deles também entram, na mesma rota oculta, no ICS GC, em
   Novos Negócios e no Todos a Bordo (`carregar_vendas` lê `GC_COMERCIAL`, coluna opcional, e junta em
   `cobertos[M.rota_eventuais(gc)]`; `carregar` cria a rota oculta também sem Vol Real; `modelo.cobertura_eventuais`:

@@ -277,6 +277,9 @@ Rota, que não tem a Executiva, abre no **Volume**.
   Real de volume (os 5 grupos; Del Valle Frut só na G2) dos clientes que estão nela entra no total da gerência
   comercial do cliente (`DS_GERENCIA_COMERCIAL_AT_Clien`), numa rota oculta por gerência (ex.: `AP-EV`), sem meta,
   sem clientes e fora da Venda Zero e do online. A tendência da gerência sobe o mesmo valor (sem Neg Restante). Desde
+  27/10/2026, só as vendas com chave de meta (rota da meta preenchida), como o Flash de Vendas do SAC: as vendas sem
+  meta nessas rotas (quase todas "Venda A Consumidor Final", como a venda a funcionário da EVF na G3) ficam fora do
+  volume; o log do gerador lista o que saiu por gerência e rota ("Vol Real de rotas EV* sem rota da meta"). Desde
   26/10/2026 os **clientes cobertos** deles também entram no Real da gerência e da Diretoria no ICS GC, em Novos
   Negócios e no Todos a Bordo (meta igual, então o % sobe; no Todos a Bordo, só onde a gerência tem rota com meta do
   item). Na cascata, ao abrir as supervisões, uma nota mostra o valor: "Inclui clientes de rotas eventuais (EV*):
@@ -800,7 +803,8 @@ A rota da meta é a mesma que o SAC usa: pela rota atual do cliente, quem foi tr
 para outra rota. Se a consulta pela rota da meta não funcionar, o gerador volta à curva pela rota do cliente
 (sempre escalonada) e avisa. Casos-limite: rota com META_VOLUME mas sem META_NEG usa os dias úteis restantes (contando hoje) no lugar da
 curva; rota sem META_VOLUME usa a soma de META_NEG como meta; sem nenhuma das duas, o indicador fica
-indisponível. Cada caso aparece nos avisos da execução, assim como a meta da rota não distribuída nos
+indisponível, a não ser que a rota tenha Real na categoria (diferente de zero com 1 casa): aí, desde 27/10/2026, entra com meta 0 e tendência = Real,
+para o Real somar no total da gerência como no SAC (ex.: R31 Cervejas, T07; só os 5 grupos, Del Valle Frut não). Cada caso aparece nos avisos da execução, assim como a meta da rota não distribuída nos
 clientes, por gerência (META_VOLUME − soma de META_NEG).
 
 Supervisão e gerência somam as rotas e recalculam o % (rotas Neutraliza e virtuais entram no total da
@@ -865,8 +869,9 @@ Real ±0,1%; Meta exata (inteiros arredondados); Tendência ±0,2%; % ±0,1 p.p.
   G*E / G*F / APE`, `sem cliente corrente e ativo`, `oculta: SV.G3.3`, `Neutraliza (entra no total)`, `virtual
   (entra no total)`, `clientes em rotas EV* (rota oculta, entra no total)`, `gerência do modelo ≠ gerência do painel
   (rota atribuída a outra gerência)`, `rota da meta ≠ rota do cliente` ou `outra: ...`. Sinal: − = só o SAC conta
-  naquela gerência; + = só o painel. A E7 imita o painel: clientes em EV* na rota oculta da gerência comercial e
-  meta do dia pela rota da meta.
+  naquela gerência; + = só o painel. A E7 imita o painel: clientes em EV* na rota oculta da gerência comercial (só a
+  venda com rota da meta; a sem rota da meta aparece como `fora do painel: EV*`, "venda sem rota da meta") e meta do
+  dia pela rota da meta.
 - **E7c**: rotas do painel que o modelo põe em outra gerência e rotas fora do painel com clientes de outra gerência
   (ex.: a EV1 é da G1 na base, mas o cliente é da G2 no modelo), com uma linha sobre o par G2/G3.
 - **E7d**: uma linha por gerência: "explicado por: <causa> (<valor> cx)" e o resíduo.
@@ -875,6 +880,9 @@ Real ±0,1%; Meta exata (inteiros arredondados); Tendência ±0,2%; % ±0,1 p.p.
   (`DS_GERENCIA_COMERCIAL_AT_Clien`) e inclui os clientes que estão em rotas EV*; o painel não incluía (Real −407 cx
   nas 16; meta do dia −1.071 cx, que é de rotas do painel mas estava em clientes das EV*). No mesmo dia o painel passou
   a somar o Real desses clientes na rota oculta da gerência e a meta do dia pela rota da meta; a E7 imita essas regras.
+- Em 27/10/2026, contra o Flash de Vendas, o SAC bateu (≤ 0,5 cx nas 16 gerências x 5 macros) somando pela gerência
+  da meta (`DS_GERENCIA_COM_Chave_Meta_SAP`): a venda em rota EV* sem rota da meta não entra. O painel passou a deixá-la
+  fora no mesmo dia (Refri −442, Água −1.478, Still −117, DAC −49, Cerv −27 cx na BAND).
 
 ### Descoberta do incentivo Todos a Bordo 3.0 (seção E8)
 
@@ -1032,8 +1040,8 @@ Decisões da Karen (21/10/2026):
 Regras da chave:
 - `ROTAS` tem todas as rotas do payload de hoje, na ordem dele (Neutraliza, virtuais e as ocultas "{GC}-EV" inclusive).
   Por rota, um par `[Real até o corte, Meta]` por item de `IND` (1 casa), ou `null` onde a rota não tem o indicador no
-  mês anterior (sem META_VOLUME nem META_NEG): o Real dela não entra, como no card. A rota oculta "{GC}-EV" tem meta 0
-  nos macros com Real. Rota do mês anterior que não existe hoje fica fora (a E10 mediu 0 casos); Real de EV* de uma
+  mês anterior (sem META_VOLUME, META_NEG nem Real). Sem as metas mas com Real, `[Real, 0]` (desde 27/10/2026, como no
+  card). A rota oculta "{GC}-EV" tem meta 0 nos macros com Real. Rota do mês anterior que não existe hoje fica fora (a E10 mediu 0 casos); Real de EV* de uma
   gerência sem a rota oculta hoje também (vai para o log).
 - Consultas (agregadas no servidor, `DATA_MOVIMENTO` só no `$filter`): Vol Real até o corte por rota do cliente x
   agrupador x NF_STATUS (os status do Vol Real; com a gerência comercial para as EV*), META_VOLUME por rota da meta e

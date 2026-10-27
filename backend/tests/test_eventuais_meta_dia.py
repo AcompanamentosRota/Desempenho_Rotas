@@ -5,6 +5,8 @@ Decisões de 20/10/2026 (seção E7 do conferir_tendencia.py contra a tela do SA
   Venda Zero e do online (a cobertura deles entrou em 26/10/2026: test_canceladas_ev_cobertura.py);
 - meta do dia (META_RECUPERAVEL_ROTA) pela rota da meta (CD_ROTA_Chave_Meta_SAP); sem a dimensão, pela rota do
   cliente (regra anterior); sem as duas, null.
+Decisão de 27/10/2026 (Flash de Vendas do SAC): no Real das rotas EV*, só as vendas com rota da meta; as sem chave de
+meta ('Venda A Consumidor Final', '--') ficam fora, como o SAC.
 """
 import copy
 import sys
@@ -22,10 +24,11 @@ REF = "VOL REFRIGERANTES"
 AGORA = datetime(2026, 10, 13, 10, 30)
 
 
-def _ev(vol, gc_comercial, ag="Refrigerantes", status="Acertado", rota="EV1"):
+def _ev(vol, gc_comercial, ag="Refrigerantes", status="Acertado", rota="EV1", meta_rota="111"):
     l = _vr(1300001, ag, status, vol, rota=rota)
     if gc_comercial is not None:
         l[CM.GC_COMERCIAL] = gc_comercial
+    l[CM.META_ROTA] = meta_rota
     return l
 
 
@@ -37,6 +40,7 @@ def _dados_ev():
         _ev(5.0, "Gc. Ap"),                              # AP sem rotas no painel: fica fora (log)
         _ev(3.0, None),                                  # sem a gerência comercial: fica fora (log)
         _ev(7.0, "Gc. G1", ag="Del Valle Frut"),         # Del Valle Frut só na G2: fora na G1
+        _ev(40.0, "Gc. G1", rota="EVF", meta_rota="--"),  # sem chave de meta (consumidor final): fora, como o SAC
     ]
     # meta do dia de um cliente que está numa rota EV*, com a meta da 111: entra na 111 (pela rota da meta)
     d["meta_dia"] = DADOS["meta_dia"] + [dict(_dia("Refrigerantes", "2026-10-13", CM.META_RECUPERAVEL, 4.0, rota="EV1"),
@@ -47,7 +51,7 @@ def _dados_ev():
 class TestRealDasEventuais(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with unittest.TestCase().assertLogs("gerador.fontes", "WARNING") as log:
+        with unittest.TestCase().assertLogs("gerador.fontes", "INFO") as log:
             cls.f = fontes.carregar(ConsultaFalsa(_dados_ev()), AGORA)
         cls.log = "\n".join(log.output)
         cls.p = montar_payload(cls.f)
@@ -60,6 +64,21 @@ class TestRealDasEventuais(unittest.TestCase):
         self.assertEqual(v["VOL CERVEJAS"].real, 2.0)
         self.assertIn("Real de clientes em rotas EV* da AP fica fora: gerência sem rotas no painel", self.log)
         self.assertIn("sem gerência comercial do painel", self.log)
+
+    def test_venda_sem_rota_da_meta_fica_fora(self):
+        # os 40 da EVF (sem chave de meta) não entram na G1-EV, mas o Real da EVF continua na fonte (fora do painel)
+        self.assertEqual(self.f.volume["G1-EV"][REF].real, 12.0)
+        self.assertIn("Vol Real de rotas EV* sem rota da meta (fica fora, como o SAC): {'G1 EVF': {'Refrigerantes': 40.0}}",
+                      self.log)
+
+    def test_sem_a_coluna_da_rota_da_meta_entra_tudo(self):
+        class SemMetaRota(ConsultaFalsa):
+            def colunas(self, objeto):
+                return [c for c in super().colunas(objeto) if c != CM.META_ROTA]
+        with self.assertLogs("gerador.fontes", "WARNING") as log:
+            vm = fontes.carregar_volume_real(SemMetaRota(_dados_ev()), "202610", [], None)
+        self.assertEqual(vm.eventuais["G1"][REF], 52.0)                 # 12 + 40 (regra anterior)
+        self.assertIn("o Real das rotas EV* entra inteiro", "\n".join(log.output))
 
     def test_no_payload_como_virtual(self):
         p = self.p
