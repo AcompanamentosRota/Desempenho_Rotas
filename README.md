@@ -284,8 +284,10 @@ Rota, que não tem a Executiva, abre no **Volume**.
   cabeçalho. Listas de cobertura e de Venda Zero como antes.
 - **Cards** (Volume e coberturas, também os do Todos a Bordo, só com as rotas com meta do item): 4ª linha no bloco da
   esquerda, abaixo de "Diferença": **"Real + online ±X"** (X = Real + online − Meta, a mesma conta da Dif da cascata:
-  `realOnline` em app.js), verde se >= 0 e vermelho se < 0, peso 600, um pouco menor que a Diferença (`--fs-valor-ro`).
-  Sem a linha na Venda Zero, no fechamento e sem online. A altura dos cards não muda.
+  `realOnline` em app.js), verde se >= 0 e vermelho se < 0, peso 600, um pouco menor que a Diferença (`--fs-valor-ro`,
+  10,5 px). A linha não alarga a coluna da esquerda (`contain: inline-size`; o % do centro fica do mesmo tamanho): se não
+  couber, `encaixa()` reduz a fonte até 9,5 px e, se ainda faltar, quebra em duas linhas ("Real + online" / "+24", comum nas
+  coberturas com números curtos). Sem a linha na Venda Zero, no fechamento e sem online. A altura dos cards não muda.
 - **"Meta batida!"**: no card e nas linhas da cascata (gerência, supervisão, rota e "Neutraliza"), o rótulo da caixa
   do Online vira "Meta batida!" e a caixa fica verde quando, no nível (números já somados):
   - **volume** (os 5 agrupadores e Del Valle Frut): a meta do dia é zero ou negativa;

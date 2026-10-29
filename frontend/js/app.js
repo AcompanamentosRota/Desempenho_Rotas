@@ -1137,7 +1137,8 @@ const sinal = (k, v) => `${v>0?'+':''}${(ehVolume(k) ? fmt0 : fmtN)(v)}`;
 function linhaRealOnline(k, b, ro){
   if(ro==null) return '';
   const v = difMostrada(k, ro - b.meta);
-  return `<div class="ro ${v>=0?'pos':'neg'}" data-ro="${ro}">Real + online ${sinal(k, v)}</div>`;
+  // (não alarga a coluna: fica na largura das 3 linhas de cima; encaixa() reduz a fonte e, no mínimo, quebra a linha; ver o CSS)
+  return `<div class="ro ${v>=0?'pos':'neg'}" data-ro="${ro}" data-fit="" data-fit-min="9.5" data-fit-quebra="">Real + online ${sinal(k, v)}</div>`;
 }
 // selo da linha da cascata (decisão B): Real + online >= Meta, com Meta > 0; no fechamento (e sem online), Real >= Meta
 const linhaBatida = (b, ro) => b.meta > 0 && (ro==null ? b.real : ro) >= b.meta;

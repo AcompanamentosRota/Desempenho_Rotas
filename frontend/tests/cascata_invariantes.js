@@ -185,7 +185,7 @@ const desfazCasc = x => {
   if(Array.isArray(x)) return x.map(desfazCasc);
   if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazCasc(v)]));
   if(typeof x !== 'string') return x;
-  return x.replace(/<div class="ro (?:pos|neg)" data-ro="[^"]*">[^<]*<\/div>/g, '')
+  return x.replace(/<div class="ro (?:pos|neg)" data-ro="[^"]*"[^>]*>[^<]*<\/div>/g, '')
     .replace(/<div class="cOrd v3"[^]*?<\/div><div class="cOrdCh v3"[^]*?<\/div>/g, '')
     .replace(LINHA_V3, (m, cor, i, meta, real, dir, nome, info, esq, pct, rot, meio) =>
       `<div class="cLin ${cor}" role="button" tabindex="0" data-i="${i}" data-meta="${meta}" data-real="${real}" data-dir="${dir}">\n` +

@@ -8414,6 +8414,9 @@ describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Real + 
       const alt = await page.$$eval('#lista .ind:not(.off)', els => els.map(el => [el.classList.contains('vol'), Math.round(el.getBoundingClientRect().height)]));
       for(const tipo of [true, false]){ const hs = alt.filter(x => x[0] === tipo).map(x => x[1]); assert.ok(new Set(hs).size <= 1, `${aba}: alturas ${hs}`); }
       assert.deepEqual(await page.$$eval('#lista .ind .cl', els => els.filter(el => el.scrollWidth > el.clientWidth + 1).map(el => el.textContent)), []);
+      // a linha nova não alarga a coluna da esquerda (largura = a das linhas de cima) e cabe nela (encaixa)
+      assert.deepEqual(await page.$$eval('#lista .ind .cl .ro', els => els.filter(el => el.scrollWidth > el.clientWidth + 1
+        || el.getBoundingClientRect().width > el.parentNode.getBoundingClientRect().width + 0.5).map(el => el.textContent)), []);
     }
     assert.deepEqual(erros, []);
     await ctx.close();

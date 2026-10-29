@@ -388,8 +388,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   "Cards"; só front)**: `realOnline(k, rotas, b, onl)` é a conta ÚNICA (cards, cascata, selo): volume = `b.real` + online de
   hoje (`onl` já somado ou `onlineVol`); coberturas = `realMaisOnline` (clientes distintos no Real ou no online); null no
   fechamento, sem ONLINE, na Venda Zero e indisponível. Card (`linha()`): 4ª linha `.ro` "Real + online ±X" (`linhaRealOnline`,
-  `difMostrada`/`sinal`: volume inteiro, coberturas 1 casa; `--fs-valor-ro` 10,5 px, 600; sem ela na VZ, no fechamento e
-  sem online). Cascata (`linhaGrupo` → `linhaCascata` fora da VZ; a VZ fica com a linha de antes; `meioLinha` = a caixa do
+  `difMostrada`/`sinal`: volume inteiro, coberturas 1 casa; `--fs-valor-ro` 10,5 px, 600, line-height 1.2; `contain:
+  inline-size` = não alarga a coluna (o % do centro e o `encaixa` dele ficam como antes), `data-fit` mínimo 9,5 px e
+  `data-fit-quebra`; sem ela na VZ, no fechamento e sem online). Cascata (`linhaGrupo` → `linhaCascata` fora da VZ; a VZ fica com a linha de antes; `meioLinha` = a caixa do
   Online de sempre): Nome (+ `.cSelo` "✓ Meta batida", maiúsculas pelo CSS) | Meta · Real | % (`.cPct`: o `dir` de sempre,
   cor pelo `onPace`; "tendência"/"realizado"/"real da meta" só no celular) | Dif (`.cDif`: Real + online − Meta, "x% da meta
   com online"; "—" "sem online" / "sem online no fechamento") | Online · meta do dia; `data-onl/ro/dif/bat` exatos. Selo
