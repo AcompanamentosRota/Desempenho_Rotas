@@ -100,7 +100,8 @@ const desfazAE = x => {
     .replace(/<label class="buscaRot" for="q">Busca por cliente<\/label>(\s*)<div class="buscaWrap">(\s*)<input/g,
              '<div class="buscaWrap">$2<label class="sr-only" for="q">Buscar cliente ou rede</label>$2<input')
     .replace('placeholder="Digite nome, código ou rede"', 'placeholder="Buscar cliente por nome, código ou rede"')
-    .replace(/faltam [\d.]+ para a meta|meta batida · \+[\d.]+/g, '')
+    // (só o texto da linha do medidor: o "; faltam X para a meta." do quadro Foco já existia antes)
+    .replace(/(?<!; )faltam [\d.]+ para a meta|meta batida · \+[\d.]+/g, '')
     .replace(/Busca por cliente/g, 'Buscar cliente ou rede');
 };
 

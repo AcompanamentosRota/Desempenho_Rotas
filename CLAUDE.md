@@ -501,7 +501,13 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `--vermelho2`; Real >= Meta: `.gFalta.ok` "meta batida · +X", `--verdeE`; `--fs-ex-mini`, 700; sem a linha no `.off`) e
   `data-meta`/`data-real` exatos no `.gCard`; rótulo `label.buscaRot` "Busca por cliente" (`--fs-busca-rot`, caixa alta,
   `--txt-apoio`) acima do `#q`, placeholder "Digite nome, código ou rede". Os "antes x depois" contra fronts antigos
-  desfazem isso no atual com `desfazAE` (rotulos_invariantes.js; `igualRotulo`, `igualSemFalta`). Dica = `ativaDica` em todo `[data-dica]` do `#exec` (linhas
+  desfazem isso no atual com `desfazAE` (rotulos_invariantes.js; `igualRotulo`, `igualSemFalta`; em texto, só o "faltam X para
+  a meta" do medidor: o "; faltam X para a meta." do quadro Foco já existia e fica). Na conferência com dado real, os antes x
+  depois contra fronts de antes de 26/10 (`20728ac`, `7674ca2`, `ec60a88`) servem aos dois fronts o payload sem os itens do
+  Todos a Bordo nas rotas ocultas das EV* (`SEM_INC_EV`; esses fronts não somam a oculta no `rotasInc`). Desvio por unidade
+  (`.dRow`): coluna do valor `minmax(50px, max-content)` (46 px no PC): um valor longo (ex.: rota 151, Neutraliza G1, com
+  META_VOLUME de 0,1 cx na fonte e "+28.715.800,0%" em 29/10/2026) alarga só a linha dele e a barra cede, sem rolagem lateral
+  (antes, 404 px de largura na Executiva da G1 a 390 px). Dica = `ativaDica` em todo `[data-dica]` do `#exec` (linhas
   `.dRow`/`.hRow` com `tabindex=0`; fecha a aberta ao redesenhar). Celular: as 5 abas rolam de lado (`.tabs`
   overflow-x, `mostraAbaAtiva`); só a coluna `.dv.sel` com os chips. Medidores 5 colunas >= 1200 px, 3 >= 700, 2;
   tabela `min-width` 1140 px (rola dentro do bloco, 1ª coluna sticky). Escala `--fs-ex-*`. Testes: Parte W.

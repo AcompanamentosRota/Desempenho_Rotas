@@ -481,6 +481,12 @@ crédito e as legendas menores (até 1 px, ~10%) com contraste AA, com a letra d
 `frontend/tests/rotulos_invariantes.js`, usadas também pela conferência com dado real (bloco "Ajuste de rótulos": 1440 e
 390 px, nos dois fundos, e o antes x depois com o mesmo payload real). Os "antes x depois" de etapas anteriores (Partes V,
 R, W e X) comparam com o nome antigo trocado pelo novo e sem a 2ª linha (`igualRotulo`).
+Na conferência com dado real, os antes x depois contra fronts anteriores a 26/10/2026 (`20728ac`, `7674ca2`, `ec60a88`)
+servem aos dois fronts o mesmo payload sem os itens do Todos a Bordo nas rotas ocultas das EV* (esses fronts ainda não somavam
+a oculta das EV* no Todos a Bordo, decisão de 26/10); o `desfazAE` tira só a linha "faltam X para a meta" do medidor (o
+"faltam" do quadro Foco já existia). No desvio por unidade da Executiva, a coluna do valor cresce quando o texto não cabe (ex.:
+a rota 151, Neutraliza da G1, tem META_VOLUME de 0,1 cx na fonte e desvio de "+28.715.800,0%" em 29/10/2026): só aquela linha
+fica com a barra mais curta, sem rolagem lateral no celular.
 
 A **Parte AC** confere a gaveta "Categoria por unidade" da visão executiva (cenários `vol5`/`vol5fech`, `exec` e `grupo`):
 tocar em "Refrigerantes" abre "Refrigerantes por gerência" com o total e uma por gerência com meta, do maior para o menor %

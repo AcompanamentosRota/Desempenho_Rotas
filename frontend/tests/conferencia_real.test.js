@@ -294,6 +294,18 @@ const FRONT_PRE_ROTULOS = (() => {
     return Object.fromEntries(fs_.map(f => { const t = arq(f); return ['/' + f, () => t]; }));
   } catch(e) { return null; }
 })();
+/* Fronts de antes de 26/10/2026 (REF_ROTULOS, REF_PRE_EVO, REF_PRE_CAT): o Todos a Bordo de hoje soma também a rota oculta
+   das EV* com cliente coberto no item (rotasInc; decisão de 26/10), que esses fronts não somam. Para o antes x depois
+   comparar só o que a etapa de cada um mudou, os dois fronts recebem o mesmo payload sem os itens do Todos a Bordo nessas
+   rotas ocultas (também Cervejas e Cervejas 600ml Retornável, que estão no ICS GC: os dois fronts somam o mesmo). */
+const SEM_INC_EV = {'/data/payload.json': (() => { let t = null; return () => {
+  if(t) return t;
+  const p = JSON.parse(fs.readFileSync(PAYLOAD, 'utf-8')), ev = new Set(p.EVENTUAIS_ROTAS || []), inc = new Set((p.GROUPS || {}).INCENTIVO || []);
+  for(const svs of Object.values(p.DATA)) for(const rotas of Object.values(svs)) for(const [r, d] of Object.entries(rotas)) if(ev.has(r))
+    for(const k of inc) if(d.indicators[k]){ d.indicators[k] = {meta: null, real: null, pct: null, onPace: null, gap: null, unavailable: true};
+      delete ((p.COBERTOS || {})[r] || {})[k]; }
+  return (t = JSON.stringify(p));
+}; })()};
 // perfis: Diretoria, G1, o grupo IT+MO no Total, a 1ª supervisão e a 1ª rota da G2 (pela própria entrada)
 const perfisRotulos = page => page.evaluate(() => [{perfil: 'dir'}, {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'},
   {perfil: 'sv', gc: 'G2', sv: svsDaEntrada('G2')[0]}, {perfil: 'rota', gc: 'G2', rota: rotasDaEntrada('G2')[0]}].filter(e => !e.gc || temDados(e.gc)));
@@ -357,7 +369,7 @@ describe('Ajuste de rótulos com dado real (Novos Negócios, aba por perfil, not
   });
 
   test('antes x depois com o mesmo payload real: cards, cabeçalho, visão executiva, gavetas e Resumo iguais aos da main (fora o nome novo, a 2ª linha e o nome da aba); notas menores', {skip: !FRONT_PRE_ROTULOS && `sem o commit ${REF_ROTULOS}`}, async () => {
-    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_ROTULOS)];
+    const [novo, velho] = [await abre(1440, undefined, SEM_INC_EV), await abre(1440, undefined, {...FRONT_PRE_ROTULOS, ...SEM_INC_EV})];
     const linhas = [];
     for(const e of await perfisRotulos(novo.page)){
       for(const {page} of [novo, velho]) await entra(page, e);
@@ -421,7 +433,7 @@ const TELA_ABA = () => ({topo: document.getElementById('abaTopo').innerHTML, lis
 
 describe('Antes x depois do redesenho da Evolução com dado real', {skip: pular || (!FRONT_PRE_EVO && `sem o commit ${REF_PRE_EVO}`)}, () => {
   test('Diretoria, G1, IT+MO, a 1ª supervisão e a 1ª rota da G2: Executiva sem o bloco, cabeçalho, cards, cascata e Resumo iguais aos da main', async () => {
-    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_EVO)];
+    const [novo, velho] = [await abre(1440, undefined, SEM_INC_EV), await abre(1440, undefined, {...FRONT_PRE_EVO, ...SEM_INC_EV})];
     const linhas = [];
     for(const e of await perfisRotulos(novo.page)){
       for(const {page} of [novo, velho]) await entra(page, e);
@@ -544,7 +556,7 @@ describe('Gaveta "Categoria por unidade" com dado real', {skip: pular}, () => {
   });
 
   test('antes x depois (main antes da etapa, mesmo payload real): Executiva, cabeçalho e cards das 4 abas, cascata, gavetas Base e Sem compra e Resumo iguais', {skip: !FRONT_PRE_CAT && `sem o commit ${REF_PRE_CAT}`}, async () => {
-    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_CAT)];
+    const [novo, velho] = [await abre(1440, undefined, SEM_INC_EV), await abre(1440, undefined, {...FRONT_PRE_CAT, ...SEM_INC_EV})];
     const linhas = [];
     const gaveta = async (p, abrir) => { await abrir(p); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
     const clica = id => p => p.evaluate(id => document.getElementById(id).click(), id);
