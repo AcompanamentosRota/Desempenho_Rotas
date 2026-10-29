@@ -77,7 +77,8 @@ const ABA_EXEC_PAGINA = () => {
 /* antes x depois: textos da tela (cards da lista sem a 2ª linha, cabeçalho da aba sem o título, visão executiva sem o bloco
    "Evolução contra o mês anterior", redesenhado de propósito em barras pareadas em 22/10/2026) */
 const TEXTOS_TELA_PAGINA = () => {
-  const limpa = el => { const c = el.cloneNode(true); c.querySelectorAll('.tsub, #exEvo').forEach(s => s.remove()); return c.textContent.replace(/\s+/g, ' ').trim(); };
+  // (.ro: a 4ª linha dos cards, "Real + online ±X", da Etapa 3 do pacote v3; não existe nos fronts de antes)
+  const limpa = el => { const c = el.cloneNode(true); c.querySelectorAll('.tsub, #exEvo, .ro').forEach(s => s.remove()); return c.textContent.replace(/\s+/g, ' ').trim(); };
   const topo = document.getElementById('abaTopo').cloneNode(true);
   topo.querySelector('#abTit').remove();
   const ex = document.getElementById('exec');

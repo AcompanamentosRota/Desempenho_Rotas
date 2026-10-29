@@ -256,14 +256,36 @@ Rota, que não tem a Executiva, abre no **Volume**.
 - **Diretoria**: filtro "Todas as gerências" (cards com o total das 16) ou uma gerência (cards só dela; a cascata
   começa nas supervisões, com a linha "Neutraliza" e a nota das virtuais). Volta para "Todas" ao reabrir a Diretoria.
 - **Cascata**: clicar num card abre gerências → supervisões → rotas → clientes, a partir do nível do filtro,
-  com botões para subir um nível. Cada linha mostra Meta e Real, Online e meta do dia (verde quando o online
-  bate a meta do dia) e a tendência (no fechamento do mês, o % realizado). **Ordem fixa, pelo código** (também no
-  fechamento): gerências na ordem acima; supervisões e rotas em ordem crescente natural (SV.G1.2 antes de SV.G1.10;
-  111, 112...; A11, A12...; I11...), com a linha "Neutraliza" sempre por último; num grupo, as supervisões de uma
-  gerência e depois as da outra (SV.UR.1, SV.UR.2, SV.RI.1...). Rotas virtuais e '-EV' nunca aparecem em lista.
-  Na lista de clientes de volume: Meta, Real (faturado + online de hoje), diferença e %, do mais negativo para o
-  mais positivo, com a barra de dias de visita (abre em "Todos"; ver "Gavetas com barra de dias"); listas de cobertura
-  e de Venda Zero como antes.
+  com botões para subir um nível. **Na Diretoria** ("Todas as gerências"), tocar numa gerência abre direto a lista de
+  clientes dela (GC > Clientes), em todas as abas, com a barra de dias e o limite das listas (`CONFIG.LIMITE_LISTA`); no
+  Todos a Bordo, só as rotas com meta do item; virtuais e ocultas fora, como sempre. As supervisões de uma gerência continuam
+  na Diretoria com a gerência no filtro; Gerência, Supervisão e Rota têm a cascata completa.
+  Linha da cascata (desde a Etapa 3 do pacote v3; todas as abas menos a Venda Zero, que continua como antes): **Nome |
+  Meta · Real | % | Dif (Real + Online) | Online · meta do dia**. % = o de sempre (volume: tendência; no fechamento, o
+  realizado; coberturas: Real ÷ Meta), verde/vermelho pelo ritmo, como a faixa lateral; no celular, com "tendência" /
+  "realizado" / "real da meta" embaixo. Dif = Real + online de hoje − Meta (volume: o faturado até ontem + o volume online;
+  coberturas: clientes DISTINTOS no Real ou no online, quem já está coberto e comprou hoje conta uma vez), verde se >= 0,
+  vermelho se < 0, e embaixo "x% da meta com online"; sem online: "—" e "sem online" (no fechamento, "sem online no
+  fechamento"). Online · meta do dia: a caixa de sempre. **Selo "✓ META BATIDA"** (fundo verde-claro, faixa verde) quando
+  Real + online >= Meta (Meta > 0); no fechamento (e sem online), Real >= Meta. A caixa do Online continua com o "Meta
+  batida!" de sempre (abaixo). **Ordem padrão fixa, pelo código** (também no fechamento): gerências na ordem acima;
+  supervisões e rotas em ordem crescente natural (SV.G1.2 antes de SV.G1.10; 111, 112...; A11, A12...; I11...), com a
+  linha "Neutraliza" sempre por último; num grupo, as supervisões de uma gerência e depois as da outra (SV.UR.1, SV.UR.2,
+  SV.RI.1...). Rotas virtuais e '-EV' nunca aparecem em lista. Reordenar é opção do usuário: no PC (>= 1000 px) o
+  cabeçalho de colunas (caixa alta pequena: nível | Meta · Real | % tendência ou % real da meta | Dif (Real + Online) |
+  Online · meta do dia) tem %, Dif e Online clicáveis (maior para o menor; 2º clique inverte; seta ↓/↑ em vermelho no
+  ativo; o título da 1ª coluna volta ao código); no celular, chips "Ordenar: Código · % · Dif · Online". "Neutraliza" e
+  grupos sem dados ficam no fim em qualquer ordem; a ordem vale enquanto a gaveta estiver aberta (descer e voltar mantém) e
+  volta ao código ao abrir de novo. Venda Zero: sem cabeçalho e sem ordenação.
+  Na lista de clientes de volume: **Cliente | Meta | Real | Online | Dif. Abs | %** (Real = só o faturado do mês; Online
+  = volume online de hoje do cliente, verde com valor, "—" no fechamento; Dif. Abs = (Real + Online) − Meta e % = (Real +
+  Online) ÷ Meta, como antes), do mais negativo para o mais positivo, com a barra de dias de visita (abre em "Todos"; ver
+  "Gavetas com barra de dias"); no celular, nome e "segmento · rota" em cima e os 5 números embaixo, alinhados ao
+  cabeçalho. Listas de cobertura e de Venda Zero como antes.
+- **Cards** (Volume e coberturas, também os do Todos a Bordo, só com as rotas com meta do item): 4ª linha no bloco da
+  esquerda, abaixo de "Diferença": **"Real + online ±X"** (X = Real + online − Meta, a mesma conta da Dif da cascata:
+  `realOnline` em app.js), verde se >= 0 e vermelho se < 0, peso 600, um pouco menor que a Diferença (`--fs-valor-ro`).
+  Sem a linha na Venda Zero, no fechamento e sem online. A altura dos cards não muda.
 - **"Meta batida!"**: no card e nas linhas da cascata (gerência, supervisão, rota e "Neutraliza"), o rótulo da caixa
   do Online vira "Meta batida!" e a caixa fica verde quando, no nível (números já somados):
   - **volume** (os 5 agrupadores e Del Valle Frut): a meta do dia é zero ou negativa;
@@ -399,7 +421,10 @@ simulado do Playwright, com o navegador em UTC e em America/Sao_Paulo). A Parte 
 390 px: Inter carregada, sem rolagem lateral, nenhum texto cortado, alturas por tipo, cabeçalho do celular,
 regra do vermelho, contraste AA e Resumo/PDF sem estouro. A Parte N abre cada nível da cascata no front atual e no
 do commit `0a59eb4` (CSS e app.js de antes do ajuste visual, via `git show`; sem o histórico, é pulada) e compara o
-estilo computado elemento a elemento: só a família pode mudar. A Parte O confere o Resumo e o PDF: sem assinatura,
+estilo computado elemento a elemento: só a família pode mudar (fora o que a Etapa 3 do pacote v3 trocou com autorização:
+a linha nova da cascata, o cabeçalho/chips de ordenação e a lista de clientes de volume, tudo em classes `.v3`, ficam fora;
+a caixa do Online da linha nova é comparada com a de antes; no PC, com a cascata aberta, o padding do cabeçalho e do corpo
+da gaveta e a margem automática; e, na Diretoria, só o 1º nível). A Parte O confere o Resumo e o PDF: sem assinatura,
 paginação (`RS.paginas`, também sem navegador), cenário `grande` (16 gerências e números de 6-7 dígitos, e o pior
 caso com 2.665.000 em todas as caixas) sem célula cortada nem caixas sobrepostas no PDF, e a tela do Resumo igual à
 do CSS do commit `2d5419a` em 390, 800, 1280 e 1700 px. Com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1`
@@ -531,6 +556,23 @@ real (2 → 3 páginas na Diretoria); os 4 botões sem corte em 360, 390, 1000 e
 `frontend/tests/resumo_tab_invariantes.js`, usadas também pela conferência com dado real (bloco "Resumo de vendas: bloco
 Todos a Bordo 3.0": Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px; e o antes x depois
 contra a main antes do bloco, `9f82f15`: Resumo sem o bloco, Executiva, cards e cascata iguais).
+A **Parte AG** confere a cascata com Dif (Real + Online), o selo e os cards com "Real + online" (Etapa 3 do pacote v3): a
+linha nova nos cards de Volume e coberturas (= `realOnline` − Meta, recontado do payload e do online; cor, peso, tamanho e
+alturas iguais), ausente na Venda Zero, no fechamento (`incfech`) e sem online, e a do Todos a Bordo só com as rotas com
+meta; a cascata com as 5 colunas, o cabeçalho só >= 1000 px e os chips só < 1000 px (1440, 1000, 390 e 360 px, colunas do
+cabeçalho alinhadas às linhas, sem texto cortado nem rolagem lateral); ordem padrão = código, % / Dif / Online decrescente
+e invertido com "Neutraliza" no fim, o foco de volta no título, a ordem mantida ao descer e voltar e o código ao reabrir;
+o selo num caso forçado (cobertura com Real 1 + 2 clientes novos online = Meta) e sem selo com o cliente coberto comprando
+de novo (Real + caixa do Online >= Meta, mas clientes distintos < Meta), também no volume; o fechamento (% realizado, "sem
+online no fechamento", lista com Online "—"); a Diretoria abrindo a lista de clientes da gerência em todas as abas, a
+Executiva (`unidadesExec`) com as supervisões e a cascata completa na Gerência e na Supervisão; a lista de clientes
+(colunas, Real = faturado, Dif = Real + Online − Meta, duas linhas no celular alinhadas ao cabeçalho); e o antes x depois
+contra a main antes da etapa (`515b1e9`): Executiva, Resumo e Venda Zero idênticos, cards e cada nível da cascata iguais
+depois de desfeito só o que a etapa trocou (`desfazCasc`, também usado pelos antes x depois antigos das Partes V, W, X, Z,
+AA e AC e da conferência com dado real). As invariantes (a)-(g) ficam em `frontend/tests/cascata_invariantes.js`, usadas
+também pela conferência com dado real (bloco "Cascata com Dif (Real + Online)": Diretoria, uma gerência, o grupo IT+MO e
+uma supervisão em 1440 e 390 px, com a ordenação e a (f) card x linha da Diretoria; 360/390/1000/1440 px nos dois fundos;
+antes x depois contra `515b1e9`).
 
 ```bash
 git show origin/main:frontend/data/payload.json > /tmp/real/payload.json
@@ -815,7 +857,8 @@ quem chama nos demais (usada pelo `rotuloInd` do app.js, pelo resumo.js e pelo r
   px, título dos medidores 13 px, % do medidor 20 px, Meta/Real 13,5 px (encaixa até 9 px), tendência 15 px, desvio 12 px,
   linhas das barras 11,5 px, células da tabela 12 px, rótulos pequenos 10,5 px (as legendas abaixo dos blocos, 9,5 px:
   `--fs-nota-mini`) e cabeçalho da tabela 10 px.
-- **Cascata (gaveta que abre no card)**: mantém a aparência de antes do ajuste visual (commit `0a59eb4`) em todos os
+- **Cascata (gaveta que abre no card)**: mantém a aparência de antes do ajuste visual (commit `0a59eb4`), fora o que a Karen
+  autorizou na Etapa 3 do pacote v3 (só classes novas, abaixo), em todos os
   níveis (gerências, supervisões, rotas, clientes, Visitas de hoje, Sem compra, Venda Zero): tamanhos, pesos,
   espaçamentos, colunas, alturas, bordas e cores de antes, e os cinzas antigos (`--cinza`, `--cinza-escuro`
   redefinidos em `.drw`). A única diferença é a fonte: Inter, herdada do body (o % da linha de grupo era serifado). A
@@ -824,7 +867,15 @@ quem chama nos demais (usada pelo `rotuloInd` do app.js, pelo resumo.js e pelo r
   A escala tipográfica, as alturas mínimas e a regra do vermelho NÃO valem dentro dela. Em 390 px o nome do cliente
   na lista de volume (`.cCli .nm`, coluna estreita) corta com reticências, como antes. A gaveta "Categoria por unidade" da
   visão executiva é conteúdo novo dentro dela, só com classes novas (`.cu…`, escala e cores próprias); nada do que está
-  acima muda.
+  acima muda. **Etapa 3 do pacote v3 (autorizada)**: a linha da cascata de todas as abas menos a Venda Zero (`.cLin.v3`, com
+  `.cNomeL`, `.cSelo`, `.cPct`, `.cDif`; fundo `--bat-bg` #eef8f2 e borda `--bat-borda` #cfe9db com o selo), o cabeçalho de
+  colunas (`.cOrd`, PC) e os chips "Ordenar:" (`.cOrdCh`, celular) e a lista de clientes de volume com Online
+  (`.cCab.v3`/`.cCli.v3`); no PC (>= 1000 px), com a cascata aberta (`#drw[data-casc]`; não na Venda Zero), a gaveta tem
+  `max-width: 860px` (centralizada à direita do painel lateral), menos padding no cabeçalho e no corpo e as linhas em
+  colunas fixas (`--casc-cols`: as do mockup, `minmax(190px,260px) 140px 92px 170px 140px`, com mínimos menores para caber a
+  1000 px, quando a gaveta tem 728 px). A caixa do Online (`.cOn`), as linhas sem dados (`.cLin.off`), a nota das
+  virtuais, o botão de voltar, a barra de dias, as listas de cobertura e de Venda Zero e as gavetas Base, Sem compra e
+  "Categoria por unidade" não mudam.
 - **Cards de indicador**: grade `repeat(auto-fill, minmax(340px, 1fr))` a partir de 1000 px (3 colunas em 1280-1440
   px, 2 em 1000 px); no celular, uma coluna. Faixa lateral de 5 px (`border-left`) na cor do status: `--ruim` abaixo,
   `--verde` no ritmo; o padding esquerdo desconta a faixa (o conteúdo começa onde começava) e o card indisponível

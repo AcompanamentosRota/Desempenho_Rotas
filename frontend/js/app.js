@@ -1080,7 +1080,7 @@ function linha(k, b, rotas){
         <div class="cl">
           <div>Meta ${Math.round(b.meta).toLocaleString('pt-BR')}</div>
           <div>Real ${Math.round(b.real).toLocaleString('pt-BR')}</div>
-          <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${Math.round(dif).toLocaleString('pt-BR')}</div>
+          <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${Math.round(dif).toLocaleString('pt-BR')}</div>${linhaRealOnline(k, b, realOnline(k, rotas, b))}
         </div>
         <div class="cm">
           <div class="big" data-fit="" data-fit-min="18"><span class="seta">${bom?'▲':'▼'}</span>${big==null?'—':big+'%'}</div>
@@ -1098,7 +1098,7 @@ function linha(k, b, rotas){
       <div class="cl">
         <div>Meta ${b.meta.toLocaleString('pt-BR')}</div>
         <div>Real ${b.real.toLocaleString('pt-BR')}</div>
-        <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${dif.toLocaleString('pt-BR')}</div>
+        <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${dif.toLocaleString('pt-BR')}</div>${linhaRealOnline(k, b, realOnline(k, rotas, b))}
       </div>
       <div class="cm">
         <div class="big" data-fit="" data-fit-min="18"><span class="seta">${bom?'▲':'▼'}</span>${b.pct==null?'—':b.pct+'%'}</div>
@@ -1119,6 +1119,28 @@ const metaBatida = md => md!=null && md <= 1e-9;
    do nível (já somada) foi alcançada, Real >= Meta com Meta > 0 (daí em diante não falta nada no dia). Só o rótulo e a
    cor; fora do fechamento (como no volume, o fechamento fica como antes). */
 const coberturaBatida = b => !P.FECHAMENTO && b.meta > 0 && b.real >= b.meta;
+
+/* Real + online de hoje (Etapa 3 do pacote v3), a conta única dos cards, da cascata e do selo "✓ META BATIDA":
+   volume = Real (faturado até ontem) + volume online de hoje (onl = já somado; sem ele, a soma das rotas); coberturas (ICS
+   GC, Novos Negócios, Todos a Bordo) = clientes distintos no Real ou no online de hoje (realMaisOnline: quem já está em
+   COBERTOS e comprou hoje conta uma vez). null no fechamento (o online já é do mês novo), sem online.json, na Venda Zero
+   e no indicador indisponível. */
+function realOnline(k, rotas, b, onl){
+  if(P.FECHAMENTO || !ONLINE || !b || b.unavailable || k==='VENDAZERO') return null;
+  if(ehVolume(k)) return b.real + (onl==null ? onlineVol(rotas, k) : onl);
+  return realMaisOnline(k, rotas);
+}
+// diferença mostrada (Real + online − Meta): volume em caixas inteiras, coberturas com até 1 casa (como fmt0/fmtN)
+const difMostrada = (k, d) => (ehVolume(k) ? Math.round(d) : Math.round(d*10)/10) || 0;
+const sinal = (k, v) => `${v>0?'+':''}${(ehVolume(k) ? fmt0 : fmtN)(v)}`;
+// 4ª linha do bloco da esquerda do card: "Real + online ±X" (sem a linha na Venda Zero, no fechamento e sem online)
+function linhaRealOnline(k, b, ro){
+  if(ro==null) return '';
+  const v = difMostrada(k, ro - b.meta);
+  return `<div class="ro ${v>=0?'pos':'neg'}" data-ro="${ro}">Real + online ${sinal(k, v)}</div>`;
+}
+// selo da linha da cascata (decisão B): Real + online >= Meta, com Meta > 0; no fechamento (e sem online), Real >= Meta
+const linhaBatida = (b, ro) => b.meta > 0 && (ro==null ? b.real : ro) >= b.meta;
 
 function caixaOnline(k, rotas, b){
   if(k==='VENDAZERO'){
@@ -1152,6 +1174,7 @@ let _focoAntes = null;
 function abre(tit, sub, html){
   _focoAntes = document.activeElement;
   $('dTit').textContent=tit; $('dSub').textContent=sub; $('dCorpo').innerHTML=html;
+  $('drw').removeAttribute('data-casc');      // a cascata põe de volta (gaveta mais larga no PC; ver pintaCascata)
   $('back').classList.add('on'); $('drw').classList.add('on');
   document.body.classList.add('drw-aberto');
   $('dX').focus({preventScroll:true});
@@ -1282,7 +1305,7 @@ clicavel($('exSem'), abreSemCompra);
    supervisões e rotas em ordem natural (ordemNatural), com a "Neutraliza" sempre por último. Clientes: volume
    pela Dif. Abs (mais negativo primeiro); cobertura e Venda Zero como antes. */
 const VOLTAR = {gc:'← Gerências', sv:'← Supervisões', rota:'← Rotas'};
-let CASC = null;     // {k, pilha:[{nivel, chave, gc, rotas, nome}]}
+let CASC = null;     // {k, inc?, pilha:[{nivel, chave, gc, rotas, nome}], ord:{col: '' (código) | 'pct' | 'dif' | 'onl', dir: -1 | 1}}
 
 // primeiro nível da cascata pelo filtro: Diretoria = gerências; gerência = supervisões; supervisão = rotas; rota = clientes
 function ctxInicial(){
@@ -1297,8 +1320,9 @@ function ctxInicial(){
 function abreIndicador(k){
   const b = agrega(rotasAtuais()).ind[k];
   if(!b || b.unavailable) return;
-  CASC = {k, pilha:[ctxInicial()]};
+  CASC = {k, pilha:[ctxInicial()], ord:{col:'', dir:-1}};
   abre('', '', '');
+  if(k!=='VENDAZERO') $('drw').dataset.casc = '';     // a Venda Zero fica com a gaveta de sempre
   pintaCascata();
 }
 
@@ -1310,13 +1334,15 @@ const ctxGerencia = gc => ({nivel:'sv', chave:gc, gc, rotas:rotasDe(gc,''), nome
 const ctxNeutraliza = gc => ({nivel:'rota', chave:SV_NEUTRA, gc, rotas:rotasNeutraliza(gc),
   nome:`${SV_NEUTRA} · ${membrosGc(gc).join(' + ')}`});
 
-// grupos do nível (cada um com as rotas que somam e o contexto do nível de baixo)
-function gruposDo(ctx, k){
+// grupos do nível (cada um com as rotas que somam e o contexto do nível de baixo). cascata = aberta pela cascata da
+// Diretoria (pintaCascata): a gerência abre direto a lista de clientes dela (GC > Clientes), em todas as abas; a Executiva
+// (unidadesExec) continua recebendo as supervisões como filho
+function gruposDo(ctx, k, cascata){
   if(ctx.nivel==='gc') return todasGcs().map(g=>{
     const rs = rotasDe(g,'');
     return {nome:rotuloGc(g), rotas:rs, off:!DATA[g],
       info: DATA[g] ? `${svsVisiveis(g).length} supervisões · ${rs.filter(r=>!ehVirtual(r)).length} rotas` : 'sem dados',
-      filho:ctxGerencia(g)};
+      filho: cascata ? {nivel:'cli', chave:g, gc:g, rotas:rs, nome:rotuloGc(g)} : ctxGerencia(g)};
   });
   if(ctx.nivel==='sv'){
     const grupos = svsEmOrdem(ctx.gc).map(s=>{
@@ -1356,28 +1382,82 @@ function metricas(k, rotas){
   if(!b || b.unavailable) return null;
   const fech = !!P.FECHAMENTO, soma = (obj, r) => (((ONLINE && ONLINE[obj]) || {})[r] || {})[k] || 0;
   if(k==='VENDAZERO') return {b, onl:b.revertidoHoje, md:null, dir:b.pct};
-  if(ehVolume(k)) return {b, onl:rotas.reduce((a,r)=>a+soma('volume', r),0), md:fech ? null : b.metaDia,
-                          dir:fech ? b.pctReal : b.pctTendencia};
-  return {b, onl:rotas.reduce((a,r)=>a+soma('rotas', r),0), md:fech ? null : NUCLEO.metaDiaCobertura(b, P.TOTAL_DIAS_UTEIS), dir:b.pct};
+  if(ehVolume(k)){
+    const onl = rotas.reduce((a,r)=>a+soma('volume', r),0);
+    return {b, onl, md:fech ? null : b.metaDia, dir:fech ? b.pctReal : b.pctTendencia, ro:realOnline(k, rotas, b, onl)};
+  }
+  return {b, onl:rotas.reduce((a,r)=>a+soma('rotas', r),0), md:fech ? null : NUCLEO.metaDiaCobertura(b, P.TOTAL_DIAS_UTEIS), dir:b.pct,
+          ro:realOnline(k, rotas, b)};
+}
+
+// caixa do Online da linha (a mesma regra da caixa do card): número e "meta do dia" / "Meta batida!" / "revertidos hoje"
+function meioLinha(m, k){
+  const {b, onl, md} = m, f = ehVolume(k) ? fmt0 : fmtN;
+  if(k==='VENDAZERO') return `<span class="cOn ok">${fmtN(onl)}</span><small>revertidos hoje</small>`;
+  // volume: meta do dia da linha <= 0; cobertura: Real >= Meta do mês (fora do fechamento)
+  const batida = ehVolume(k) ? metaBatida(md) : md!=null && coberturaBatida(b);
+  const cor = md==null ? 'nd' : (batida || onl>=md ? 'ok' : 'no');
+  return `<span class="cOn ${cor}">${f(onl)}</span><small>${md==null ? (P.FECHAMENTO ? 'online hoje' : 'meta do dia —')
+                                                        : batida ? META_BATIDA : 'meta do dia '+f(md)}</small>`;
 }
 
 function linhaGrupo(g, m, k, i){
   if(!m) return `<div class="cLin off"><div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
     <div class="cInd">${g.off ? 'sem dados' : 'indisponível'}</div></div>`;
-  const {b, onl, md, dir} = m, vz = k==='VENDAZERO', f = ehVolume(k) ? fmt0 : fmtN;
-  // volume: meta do dia da linha <= 0; cobertura: Real >= Meta do mês (fora do fechamento); Venda Zero não
-  const batida = !vz && (ehVolume(k) ? metaBatida(md) : md!=null && coberturaBatida(b));
-  const cor = vz ? 'ok' : (md==null ? 'nd' : (batida || onl>=md ? 'ok' : 'no'));
-  const meio = vz ? `<span class="cOn ok">${fmtN(onl)}</span><small>revertidos hoje</small>`
-    : `<span class="cOn ${cor}">${f(onl)}</span><small>${md==null ? (P.FECHAMENTO ? 'online hoje' : 'meta do dia —')
-                                                        : batida ? META_BATIDA : 'meta do dia '+f(md)}</small>`;
-  const rot = ehVolume(k) ? (P.FECHAMENTO ? 'realizado' : 'tendência') : 'do mês';
+  if(k!=='VENDAZERO') return linhaCascata(g, m, k, i);
+  // Venda Zero: a linha de sempre (Meta e Real | revertidos hoje | %)
+  const {b, dir} = m;
   return `<div class="cLin ${b.onPace?'ok':'no'}" role="button" tabindex="0" data-i="${i}"
       data-meta="${b.meta}" data-real="${b.real}" data-dir="${dir==null?'':dir}">
     <div class="cNome"><b>${esc(g.nome)}</b><small>${esc(g.info)}</small></div>
+    <div class="cEsq"><span>Meta ${fmtN(b.meta)}</span><span>Real ${fmtN(b.real)}</span></div>
+    <div class="cMeio">${meioLinha(m, k)}</div>
+    <div class="cDir"><b>${dir==null?'—':dir+'%'}</b><small>do mês</small></div></div>`;
+}
+
+/* Linha da cascata (Etapa 3 do pacote v3; todas as abas menos a Venda Zero): Nome (+ selo) | Meta · Real | % | Dif (Real +
+   Online) | Online · meta do dia. % = o de sempre (volume: tendência, no fechamento o realizado; coberturas: Real ÷ Meta),
+   cor pelo onPace. Dif = Real + online − Meta (realOnline), embaixo "x% da meta com online". Selo "✓ META BATIDA" e
+   fundo verde-claro com linhaBatida. Online · meta do dia: a caixa de sempre (meioLinha). */
+function linhaCascata(g, m, k, i){
+  const {b, onl, dir, ro} = m, vol = ehVolume(k), f = vol ? fmt0 : fmtN, fech = !!P.FECHAMENTO;
+  const bat = linhaBatida(b, ro), v = ro==null ? null : difMostrada(k, ro - b.meta);
+  const pctRo = ro!=null && b.meta > 0 ? Math.round(ro / b.meta * 100) : null;
+  const sub = ro==null ? (fech ? 'sem online no fechamento' : 'sem online') : pctRo==null ? 'sem meta' : `${pctRo}% da meta com online`;
+  const rot = vol ? (fech ? 'realizado' : 'tendência') : 'real da meta';
+  return `<div class="cLin v3 ${b.onPace?'ok':'no'}${bat?' bat':''}" role="button" tabindex="0" data-i="${i}"
+      data-meta="${b.meta}" data-real="${b.real}" data-dir="${dir==null?'':dir}" data-onl="${onl}"
+      data-ro="${ro==null?'':ro}" data-dif="${ro==null?'':ro-b.meta}" data-bat="${bat?1:0}">
+    <div class="cNome"><div class="cNomeL"><b>${esc(g.nome)}</b>${bat?' <span class="cSelo">✓ Meta batida</span>':''}</div><small>${esc(g.info)}</small></div>
     <div class="cEsq"><span>Meta ${f(b.meta)}</span><span>Real ${f(b.real)}</span></div>
-    <div class="cMeio">${meio}</div>
-    <div class="cDir"><b>${dir==null?'—':dir+'%'}</b><small>${rot}</small></div></div>`;
+    <div class="cPct"><b>${dir==null?'—':dir+'%'}</b><small>${rot}</small></div>
+    <div class="cDif ${v==null?'nd':v>=0?'pos':'neg'}"><b>${v==null?'—':sinal(k, v)}</b><small>${sub}</small></div>
+    <div class="cMeio">${meioLinha(m, k)}</div></div>`;
+}
+
+/* Ordenação da cascata (opção do usuário; o padrão é a ordem do código de gruposDo): % (data-dir), Dif (Real + online −
+   Meta) ou Online, do maior para o menor; 2º clique inverte; o título da 1ª coluna (chip "Código") volta ao código.
+   Em qualquer ordem, "Neutraliza" e os grupos sem dados ficam no fim (depois dos sem valor), na ordem do código. Vale
+   enquanto a gaveta estiver aberta (CASC.ord). Venda Zero: sem ordenação. */
+const VAL_ORDEM = {pct: m=>m.dir, dif: m=>m.ro==null ? null : m.ro - m.b.meta, onl: m=>m.onl};
+function ordenaGrupos(xs, ord){
+  if(!ord.col) return xs;
+  const val = x => x.m ? VAL_ORDEM[ord.col](x.m) : null;
+  const faixa = x => !x.m || x.g.fim ? 2 : val(x)==null ? 1 : 0;
+  return xs.slice().sort((a, b)=> faixa(a) - faixa(b) || (faixa(a)===0 ? (val(a) - val(b)) * ord.dir : 0) || a.i - b.i);
+}
+const NIVEL_CASC = {gc:'Gerência', sv:'Supervisão', rota:'Rota'};
+// cabeçalho de colunas (PC, >= 1000 px) e chips "Ordenar:" (celular); o CSS mostra um ou outro
+function ordemCascata(k, nivel){
+  const o = CASC.ord, seta = c => o.col===c && c ? ` <span class="cSeta" aria-hidden="true">${o.dir<0 ? '↓' : '↑'}</span>` : '';
+  const pct = ehVolume(k) ? (P.FECHAMENTO ? '% realizado' : '% tendência') : '% real da meta';
+  // título ativo (com a seta) em --vermelho2; o da 1ª coluna (ordem do código, o padrão) não ganha destaque
+  const bt = (c, txt) => `<button type="button" class="cOrdB${c && o.col===c?' on':''}" data-o="${c}" aria-pressed="${o.col===c}">${txt}${seta(c)}</button>`;
+  const ch = (c, txt) => `<button type="button" class="fchip${o.col===c?' on':''}" data-o="${c}" aria-pressed="${o.col===c}">${txt}${seta(c)}</button>`;
+  return `<div class="cOrd v3" role="group" aria-label="Ordenar">${bt('', NIVEL_CASC[nivel] || 'Nome')}<span>Meta · Real</span>`+
+    `${bt('pct', pct)}${bt('dif', 'Dif (Real + Online)')}${bt('onl', 'Online · meta do dia')}</div>`+
+    `<div class="cOrdCh v3" role="group" aria-label="Ordenar"><span class="cOrdL">Ordenar:</span>`+
+    `${ch('', 'Código')}${ch('pct', '%')}${ch('dif', 'Dif')}${ch('onl', 'Online')}</div>`;
 }
 
 // subtítulo da gaveta (número do card do nível)
@@ -1408,44 +1488,58 @@ function pintaCascata(){
   } else {
     // na ordem de gruposDo (pelo código; a "Neutraliza" por último), sem reordenar pelos números. No Todos a Bordo,
     // só os grupos com rota com meta do item
-    let gs = gruposDo(ctx, k);
+    let gs = gruposDo(ctx, k, true);
     if(inc) gs = gs.filter(g=>!g.off && rotasInc(k, g.rotas).length).map(g=>{
       // escopo misto: quantas rotas do grupo têm meta (só elas somam)
       const vis = g.rotas.filter(r=>!ehVirtual(r)), n = rotasInc(k, vis).length;
       return {...g, info: vis.length>1 && n<vis.length ? `${g.info} · ${n} com meta` : g.info};
     });
-    const grupos = gs.map(g=>({g, m: g.off ? null : metricas(k, doItem(g.rotas))}));
+    const grupos = gs.map((g, i)=>({g, i, m: g.off ? null : metricas(k, doItem(g.rotas))}));
     const nota = ctx.nivel!=='sv' ? '' : notaVirtuais(k, ctx.gc, inc);
-    $('dCorpo').innerHTML = volta + `<div class="cLista">${grupos.map((x,i)=>linhaGrupo(x.g, x.m, k, i)).join('')
+    // fora da Venda Zero: cabeçalho de colunas / chips de ordenação e a ordem escolhida (padrão: a do código)
+    const vz = k==='VENDAZERO', vis = vz ? grupos : ordenaGrupos(grupos, CASC.ord);
+    $('dCorpo').innerHTML = volta + (vz || !grupos.length ? '' : ordemCascata(k, ctx.nivel)) +
+      `<div class="cLista">${vis.map(x=>linhaGrupo(x.g, x.m, k, x.i)).join('')
       || '<div class="vazio">Nada neste filtro.</div>'}${nota}</div>`;
     $('dCorpo').querySelectorAll('.cLin[data-i]').forEach(el=>clicavel(el, ()=>{
       pilha.push(grupos[Number(el.dataset.i)].g.filho); pintaCascata();
     }));
+    $('dCorpo').querySelectorAll('[data-o]').forEach(el=>el.onclick=()=>{
+      const c = el.dataset.o, o = CASC.ord, chip = el.classList.contains('fchip');
+      if(!c){ o.col = ''; o.dir = -1; } else if(o.col===c) o.dir = -o.dir; else { o.col = c; o.dir = -1; }
+      pintaCascata();
+      const de = $('dCorpo').querySelector(`${chip ? '.fchip' : '.cOrdB'}[data-o="${c}"]`);
+      if(de) de.focus({preventScroll:true});
+    });
   }
   if($('cVolta')) $('cVolta').onclick = () => { pilha.pop(); pintaCascata(); };
   $('dCorpo').scrollTop = 0;
 }
 
-/* Clientes de volume: Meta (META_NEG do cliente), Real (faturado + online de hoje, fora do fechamento),
-   Dif. Abs (Real - Meta) e %, do mais negativo para o mais positivo; sem tendência; sem quem não tem meta.
+/* Clientes de volume: Meta (META_NEG do cliente), Real (SÓ o faturado do mês, VOLUME_CLIENTE), Online (volume online de
+   hoje do cliente; "—" no fechamento), Dif. Abs ((Real + Online) − Meta) e % ((Real + Online) ÷ Meta), estes dois de
+   blocoVolCliente (como antes), do mais negativo para o mais positivo; sem tendência; sem quem não tem meta.
    Barra de dias das coberturas (noDia), padrão "Todos" (a lista inteira, como antes). */
 function listaVolume(k, rotas){
-  const LIM = CONFIG.LIMITE_LISTA, lin = [];
+  const LIM = CONFIG.LIMITE_LISTA, lin = [], fech = !!P.FECHAMENTO;
   rotas.forEach(r=>{
     const i = volDaRota(r).indexOf(k);
     if(i<0) return;
     (CLIENT_ROSTER[r]||[]).forEach(c=>{
       const bl = blocoVolCliente(r, c[0], i, k);
-      if(bl) lin.push({r, c, meta:bl[0], real:bl[1], dif:bl[1]-bl[0], pct:bl[2]});
+      if(bl) lin.push({r, c, meta:bl[0], fat:P.VOLUME_CLIENTE[r][c[0]][i][1], onl:fech ? null : volCliOnline(r, c[0], k),
+                       dif:bl[1]-bl[0], pct:bl[2]});
     });
   });
   lin.sort((a,b)=>a.dif-b.dif);
   const fmt1 = n => n.toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1});
-  const cab = `<div class="cCab"><span>Cliente</span><span>Meta</span><span>Real</span>
-      <span>Dif. Abs</span><span>%</span></div>`;
-  const cli = x => `<div class="cCli" data-dif="${x.dif}"><div><div class="nm">${esc(x.c[1])}</div>
+  const cab = `<div class="cCab v3"><span class="cCabN">Cliente</span><span>Meta</span><span>Real</span><span>Online</span>
+      <span title="(Real + Online) − Meta">Dif. Abs</span><span title="(Real + Online) ÷ Meta">%</span></div>`;
+  const cli = x => `<div class="cCli v3" data-dif="${x.dif}" data-meta="${x.meta}" data-real="${x.fat}" data-onl="${x.onl==null?'':x.onl}">
+      <div class="cCliN"><div class="nm">${esc(x.c[1])}</div>
       <div class="sb">${esc(SEGS[x.c[2]]||'—')} · rota ${esc(x.r)}</div></div>
-      <span>${fmt1(x.meta)}</span><span>${fmt1(x.real)}</span>
+      <span>${fmt1(x.meta)}</span><span>${fmt1(x.fat)}</span>
+      <span class="${x.onl>0?'onl':'onl0'}">${x.onl==null ? '—' : fmt1(x.onl)}</span>
       <span class="${x.dif>=0?'pos':'neg'}">${x.dif>0?'+':''}${fmt1(x.dif)}</span><span>${x.pct}%</span></div>`;
   let chip = 'Todos';
   const pinta = () => {
@@ -1536,8 +1630,9 @@ function cardIncItem(k, rotas){
 // cascata do item: a do ICS GC (primeiro nível pelo filtro), só com as rotas com meta dele
 function abreIncentivo(k){
   if(!rotasInc(k, rotasAtuais()).length) return;
-  CASC = {k, inc:true, pilha:[ctxInicial()]};
+  CASC = {k, inc:true, pilha:[ctxInicial()], ord:{col:'', dir:-1}};
   abre('', '', '');
+  $('drw').dataset.casc = '';
   pintaCascata();
 }
 
@@ -2015,10 +2110,12 @@ function tileVolume(k, bloco){
 const volDaRota = r => [...GROUPS.VOLUME, ...volExtras().filter(k=>((nodo(sel.gc,r)||{}).indicators||{})[k])];
 /* Real da barra por cliente = Vol Real do payload + volume online de hoje do cliente (online.json volumeCliente),
    fora do fechamento do mês. % e status recalculados com a mesma regra (modelo.bloco_cliente_com_online). */
+// volume online de hoje do cliente (online.json volumeCliente; 0 sem ele)
+const volCliOnline = (r, pv, k) => (((((ONLINE && ONLINE.volumeCliente)||{})[r]||{})[pv])||{})[k]||0;
 function blocoVolCliente(r, pv, i, k){
   const porCliente = ((P.VOLUME_CLIENTE||{})[r]||{})[pv];
   const bloco = porCliente ? porCliente[i] : null;
-  const onl = (((((ONLINE && ONLINE.volumeCliente)||{})[r]||{})[pv])||{})[k]||0;
+  const onl = volCliOnline(r, pv, k);
   if(!bloco || P.FECHAMENTO || !onl) return bloco;
   const meta = bloco[0], real = bloco[1] + onl;
   const pct = meta ? Math.round(real/meta*100) : 0;

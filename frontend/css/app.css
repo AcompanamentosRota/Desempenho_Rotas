@@ -566,7 +566,7 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
    do status (o padding esquerdo desconta a faixa; card .off sem faixa). O vermelho fica só no % abaixo, na Diferença
    negativa e no "faltam"; Meta, Real e os textos de apoio em cor neutra; o verde do ritmo não muda.
    Escala própria dos cards (~12% menor), por variáveis no escopo .ind, igual no PC e no celular. */
-.ind{--fs-card:15px; --fs-valor:11.5px; --fs-ind:25px; --fs-legenda:11px;
+.ind{--fs-card:15px; --fs-valor:11.5px; --fs-valor-ro:10.5px; --fs-ind:25px; --fs-legenda:11px;
   --fs-card-sub:11px; --fw-card-sub:400; /* 2ª linha do título (só o card de volume Novos Negócios: "Dest+Art+Cnd") */
   --fs-acao:12.5px;      /* "no ritmo" / "faltam X hoje" / "abaixo da tendência" */
   --fs-online:19px;      /* número da caixa Online */
@@ -592,6 +592,9 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .ind .cl{font-size:var(--fs-valor);font-weight:var(--fw-valor);color:var(--txt);line-height:1.5;white-space:nowrap}
 .ind .cl .dif{font-weight:700;margin-top:1px}
 .ind .cl .dif.pos{color:var(--verde)} .ind .cl .dif.neg{color:var(--vermelho2)}
+/* 4ª linha (Etapa 3 do pacote v3): "Real + online ±X", peso 600 e um pouco menor que a Diferença (--fs-valor-ro) */
+.ind .cl .ro{font-size:var(--fs-valor-ro);font-weight:600;margin-top:1px}
+.ind .cl .ro.pos{color:var(--verde)} .ind .cl .ro.neg{color:var(--vermelho2)}
 /* o centro (%) fica entre duas divisórias suaves de 1px; o espaço vem do gap */
 .ind .cm{padding:0 12px;text-align:center;min-width:0;border-left:1px solid var(--linha-suave);
   border-right:1px solid var(--linha-suave)}
@@ -698,6 +701,65 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .cLin{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 58px;row-gap:4px}
   .cLin .cNome{grid-column:1/-1}
   .cCab,.cCli{grid-template-columns:minmax(0,1fr) 54px 54px 60px 38px;font-size:11.5px}
+}
+/* Etapa 3 do pacote v3 (cascata com Real + Online; mudança de aparência autorizada pela Karen só aqui): linha nova da
+   cascata (.cLin.v3: Nome | Meta · Real | % | Dif (Real + Online) | Online · meta do dia), cabeçalho de ordenação (.cOrd, só
+   no PC) ou chips "Ordenar:" (.cOrdCh, só no celular), selo "✓ META BATIDA" (.cLin.v3.bat) e lista de clientes de volume
+   com a coluna Online (.cCab.v3/.cCli.v3). Só classes novas: as regras da cascata acima (Venda Zero, linhas sem dados,
+   gavetas Base e Sem compra) não mudam. No celular a linha tem duas faixas (nome e selo em cima; os quatro números embaixo). */
+.drw{--bat-bg:#eef8f2;--bat-borda:#cfe9db;--casc-gap:14px;
+  --casc-cols:minmax(120px,260px) minmax(110px,140px) minmax(64px,92px) minmax(120px,170px) minmax(110px,140px)}
+.cLin.v3{grid-template-columns:minmax(0,1.25fr) minmax(52px,.7fr) minmax(0,1fr) minmax(78px,1fr);
+  grid-template-areas:"n n n n" "e p d o";column-gap:8px;row-gap:5px;align-items:start}
+.cLin.v3>.cNome{grid-area:n;min-width:0}
+.cLin.v3>.cEsq{grid-area:e;min-width:0}
+.cLin.v3>.cPct{grid-area:p;min-width:0;text-align:center}
+.cLin.v3>.cDif{grid-area:d;min-width:0;text-align:center}
+.cLin.v3>.cMeio{grid-area:o;min-width:0}
+.cNomeL{display:flex;align-items:center;gap:6px;min-width:0}
+.cNomeL b{min-width:0}
+.cSelo{flex:none;font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;line-height:1.35;white-space:nowrap;
+  color:#fff;background:var(--verde);border-radius:999px;padding:1px 7px}
+.cLin.v3.bat{background:var(--bat-bg);border-color:var(--bat-borda);border-left-color:var(--verde)}
+.cPct b{display:block;font-size:17px;font-weight:700;line-height:1.2}
+.cLin.v3.ok .cPct b{color:var(--verdeE)} .cLin.v3.no .cPct b{color:var(--ruim)}
+.cDif b{display:block;font-size:14px;font-weight:800;line-height:1.3;white-space:nowrap}
+.cDif.pos b{color:var(--verde)} .cDif.neg b{color:var(--vermelho2)} .cDif.nd b{color:var(--cinza)}
+@media (max-width:400px){.cLin.v3{column-gap:6px} .cLin.v3 .cEsq{font-size:11px} .cLin.v3 .cPct b{font-size:16px}}
+.cOrd{display:none}
+.cOrd>*{font:inherit;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--txt-apoio);
+  text-align:left;line-height:1.3}
+.cOrdB{background:none;border:0;padding:3px 0;cursor:pointer;border-radius:4px}
+.cOrdB:hover{color:var(--preto)}
+.cOrdB.on,.cOrdB.on:hover{color:var(--vermelho2)}
+.cOrdCh{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 0 9px;padding-bottom:2px}
+.cOrdCh::-webkit-scrollbar{display:none}
+.cOrdL{flex:none;font-size:11.5px;font-weight:600;color:var(--txt-apoio)}
+.cOrdCh .fchip.on .cSeta{color:inherit}
+.cSeta{color:var(--vermelho2)}
+/* clientes de volume com Online: no celular, nome e "segmento · rota" em cima (largura toda) e Meta | Real | Online | Dif.
+   Abs | % embaixo, alinhados ao cabeçalho (sem o rótulo "Cliente") */
+.cCab.v3,.cCli.v3{grid-template-columns:repeat(5,minmax(0,1fr));column-gap:4px}
+.cCli.v3{row-gap:3px}
+.cCab.v3{padding:0 11px 5px}     /* a borda de 1 px da linha: números alinhados ao título */
+.cCli.v3>.cCliN{grid-column:1/-1;min-width:0}
+.cCab.v3>.cCabN{display:none}
+.cCli.v3 .onl{color:var(--verdeE);font-weight:600} .cCli.v3 .onl0{color:var(--txt-apoio)}
+@media (min-width:1000px){
+  /* gaveta da cascata no PC: mais larga (centralizada à direita do painel lateral), menos padding e colunas fixas */
+  .drw[data-casc]{max-width:860px}
+  .drw[data-casc] .drwCab{padding:10px 14px}
+  .drw[data-casc] .corpo{padding:10px 14px 16px}
+  .cLin.v3{grid-template-columns:var(--casc-cols);grid-template-areas:"n e p d o";column-gap:var(--casc-gap);
+    justify-content:start;align-items:center;padding:6px 10px;margin-bottom:5px}
+  .cLin.v3>.cPct,.cLin.v3>.cDif{text-align:left}
+  .cLin.v3 .cPct small{display:none}
+  .cOrd{display:grid;grid-template-columns:var(--casc-cols);column-gap:var(--casc-gap);justify-content:start;align-items:end;
+    padding:0 11px 5px 14px}
+  .cOrdCh{display:none}
+  .cCab.v3,.cCli.v3{grid-template-columns:minmax(0,1fr) 96px 96px 84px 104px 56px;column-gap:6px}
+  .cCli.v3>.cCliN{grid-column:auto}
+  .cCab.v3>.cCabN{display:block}
 }
 /* gaveta "Categoria por unidade" (medidor da aba Executiva): conteúdo NOVO dentro da .drw, só com classes novas (nenhuma
    regra da cascata acima muda). Cartão de total (fundo --papel) e um por unidade: faixa lateral de 6 px na cor do status,
