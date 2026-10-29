@@ -758,7 +758,12 @@ const REF_PRE_TAB = '9f82f15';
 const FRONT_PRE_TAB = (() => {
   try {
     const arq = f => execSync(`git show ${REF_PRE_TAB}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
-    return Object.fromEntries(['index.html', 'css/app.css', 'js/resumo.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+    // o app.js servido é o atual (com a linha "Real + online" dos cards, Etapa 3 do pacote v3): o CSS de lá ganha só as regras
+    // dessa linha, copiadas do atual, para o encaixa() medir os cards igual
+    const ro = fs.readFileSync(path.join(FRONT, 'css', 'app.css'), 'utf-8').split('\n').filter(l => /^\.ind \.cl \.ro/.test(l)).join('\n');
+    const shim = `\n.ind{--fs-valor-ro:10.5px}\n${ro}\n`;
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/resumo.js'].map(f => { const t = arq(f) + (f === 'css/app.css' ? shim : '');
+      return ['/' + f, () => t]; }));
   } catch(e) { return null; }
 })();
 describe('Resumo: bloco Todos a Bordo com dado real: antes x depois', {skip: pular || (!FRONT_PRE_TAB && `sem o commit ${REF_PRE_TAB}`)}, () => {
@@ -780,11 +785,11 @@ describe('Resumo: bloco Todos a Bordo com dado real: antes x depois', {skip: pul
         assert.equal(ta, tb, `${onde} ${ab}`);
         if(!ta) continue;
         const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
-        assert.deepEqual(CASC_INV.desfazCasc(a), b, `${onde} ${ab}: cabeçalho e cards`);
+        assert.deepEqual(a, b, `${onde} ${ab}: cabeçalho e cards`);
         const k = await novo.page.evaluate(() => (document.querySelector('#lista .ind[data-k]') || {dataset: {}}).dataset.k);
         if(k){
           for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
-          assert.equal(CASC_INV.desfazCasc(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab}: cascata`);
+          assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab}: cascata`);
           for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
         }
         comp.push(`${ab} (${a.n} cards)`);
