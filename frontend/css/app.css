@@ -377,7 +377,9 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .dv h4{margin:0 0 6px;font-size:var(--fs-ex-gtit);font-weight:800;letter-spacing:.04em;text-transform:uppercase;text-align:center;
   color:var(--preto)}
 .dRow,.hRow{display:grid;align-items:center;outline:none;cursor:default;transition:background .12s}
-.dRow{grid-template-columns:66px minmax(0,1fr) 50px;gap:6px;padding:2px 4px;border-radius:5px}
+/* coluna do valor: 50 px, ou a largura do texto quando ele não cabe (ex.: meta de 0,1 cx na fonte, "+28.715.800,0%");
+   a barra cede o espaço, sem rolagem lateral */
+.dRow{grid-template-columns:66px minmax(0,1fr) minmax(50px,max-content);gap:6px;padding:2px 4px;border-radius:5px}
 .hRow{grid-template-columns:70px minmax(0,1fr) 86px;gap:8px;padding:5px 6px;border-radius:6px}
 .dRow.tot,.hRow.tot{font-weight:800;background:var(--papel)}
 .dRow:hover,.dRow.emFoco,.dRow:focus-visible,.hRow:hover,.hRow.emFoco,.hRow:focus-visible{background:#ececef}
@@ -489,7 +491,7 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .divs{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:18px}
   .divs .dv{border-left:1px solid var(--linha);padding-left:14px}
   .divs .dv:first-child{border-left:0;padding-left:0}
-  .divs .dRow{grid-template-columns:62px minmax(0,1fr) 46px}
+  .divs .dRow{grid-template-columns:62px minmax(0,1fr) minmax(46px,max-content)}
   .dupla{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
   .dupla.so1{grid-template-columns:minmax(0,1fr)}
 }
