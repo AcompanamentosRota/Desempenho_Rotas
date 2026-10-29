@@ -8066,3 +8066,212 @@ describe('Parte AE — zebra das coberturas, Evolução hachurada, rótulo da bu
     }
   });
 });
+
+/* ---------- Parte AF — Resumo de vendas: bloco "Todos a Bordo 3.0" (opcional, desmarcado) ---------- */
+/* Botão "Todos a Bordo" (data-rsb="tab") nos dois grupos .rsChips, depois de "Novos Neg.", só com a aba Todos a Bordo
+   (incentivoAtivo()). Bloco: uma linha por item de GROUPS.INCENTIVO (ordem e rótulo da aba), as colunas do bloco ICS GC e a
+   célula do ICS (celInd: Faltam / Meta dia, Online, % do mês = (Real ∪ Online, clientes distintos) / Meta), cada célula só
+   com as rotas da coluna com meta do item (rotasInc, as mesmas do card); sem nenhuma: "—". Cenário 'inc' (montaIncentivo):
+   Heineken e Heineken - 600ml só nas FULL e na G211; Eisenbahn - 600ml sem meta na G3; IT11 com Heineken Real [a] e online
+   [a, b] (o % do Resumo conta b; o do card, não). */
+const {confereResumoTab} = require('./resumo_tab_invariantes.js');
+// tabela do bloco (todas as faixas): códigos das colunas e, por linha, nome + células (texto, Online e %)
+const blocoTab = page => page.evaluate(LE_BLOCO_TAB);
+const LE_BLOCO_TAB = require('./resumo_tab_invariantes.js').LE_BLOCO;
+const chipsRs = page => page.$$eval('.rsChips', gs => gs.map(g => [...g.querySelectorAll('button')]
+  .map(b => [b.dataset.rsb, b.textContent, b.hidden || getComputedStyle(b).display === 'none', b.getAttribute('aria-pressed')])));
+
+describe('Parte AF — Resumo: bloco Todos a Bordo 3.0', {skip: pular}, () => {
+  test('botão nos dois grupos depois de "Novos Neg.", desmarcado; ausente sem a aba (payload sem INCENTIVO ou INCENTIVO_ATIVO = false)', async () => {
+    let {page, ctx, erros} = await abre('inc', {entrar: 'dir'});
+    const esperado = [['vol', 'Volume', false, 'true'], ['ics', 'ICS GC', false, 'true'], ['nov', 'Novos Neg.', false, 'false'],
+                      ['tab', 'Todos a Bordo', false, 'false']];
+    assert.deepEqual(await chipsRs(page), [esperado, esperado]);
+    await page.click('#btnResumo');
+    assert.equal(await blocoTab(page), null, 'padrão: sem o bloco');
+    assert.equal(await page.$$eval('#rsFolha .rs-bloco', b => b.length), 2);
+    await page.click('#rsOverlay [data-rsb="tab"]');
+    assert.deepEqual((await chipsRs(page)).map(g => g[3][3]), ['true', 'true'], 'os dois grupos marcados');
+    assert.equal(await page.$$eval('#rsFolha .rs-bloco', b => b.length), 3);
+    // o bloco é o último; desmarcar tira o bloco e devolve a folha de antes (HTML igual)
+    assert.equal(await page.$eval('#rsFolha', f => f.lastElementChild.dataset.bloco), 'tab');
+    await page.click('#rsOverlay [data-rsb="tab"]');
+    const sem = await page.innerHTML('#rsFolha');
+    await page.click('#rsVoltar'); await page.click('#btnResumo');
+    assert.equal(await page.innerHTML('#rsFolha'), sem);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    for(const [nome, troca] of [['seminc', {}], ['inc', {'/js/config.js': t => t.replace('INCENTIVO_ATIVO: true', 'INCENTIVO_ATIVO: false')}]]){
+      ({page, ctx, erros} = await abre(nome, {entrar: 'dir', troca}));
+      const g = await chipsRs(page);
+      assert.deepEqual(g.map(x => x.map(b => b[2])), [[false, false, false, true], [false, false, false, true]], nome);
+      await page.click('#btnResumo');
+      assert.equal(await blocoTab(page), null, nome);
+      // link com "tab" num payload sem a aba: o bloco não é desenhado e o link gerado não leva "tab"
+      await ctx.close();
+      ({page, ctx, erros} = await abre(nome, {entrar: null, troca, busca: '?resumo=vol,tab&gc=G2'}));
+      assert.equal(await blocoTab(page), null, `${nome}: link com tab`);
+      assert.equal(await page.$$eval('#rsFolha .rs-bloco', b => b.length), 1, `${nome}: só o Volume`);
+      const link = await page.evaluate(() => new Promise(ok => { navigator.share = async d => ok(d.url); document.getElementById('rsLink').click(); }));
+      assert.match(link, /\?resumo=vol&gc=G2$/, nome);
+      // só "tab" no link: sem o bloco, o ICS GC fica ligado (um bloco sempre ligado)
+      await ctx.close();
+      ({page, ctx, erros} = await abre(nome, {entrar: null, troca, busca: '?resumo=tab&gc=G2'}));
+      assert.equal(await page.$$eval('#rsFolha .rs-bloco h3', b => b.map(x => x.firstChild.textContent.trim())).then(x => x.join('|')),
+                   'Coberturas — ICS GC', nome);
+      assert.deepEqual(erros, [], nome);
+      await ctx.close();
+    }
+  });
+
+  test('marcado: os 5 itens (ordem e rótulo da aba), colunas do ICS GC, "No ritmo"; cada célula = regra do ICS só nas rotas com meta; total = cards; "—" sem meta', async () => {
+    const {page, ctx, erros} = await abre('inc', {entrar: 'dir'});
+    const res = [];
+    for(const [onde, entrar] of [['BAND', 'dir'], ['GC.G2', {perfil: 'gc', gc: 'G2'}], ['GC.G3', {perfil: 'gc', gc: 'G3'}],
+                                 ['Total IT+MO', {perfil: 'gc', gc: 'IT+MO'}], ['SV.IT.1', {perfil: 'sv', gc: 'IT+MO', sv: 'SV.IT.1'}]]){
+      await vaiPara(page, entrar);
+      res.push([onde, await confereResumoTab(page, onde)]);
+    }
+    const r = Object.fromEntries(res);
+    // Diretoria: Heineken e Heineken - 600ml com "—" nas gerências sem meta (as BARRACUDA do cenário) e valor nas FULL e na G2
+    await vaiPara(page, 'dir');
+    await page.click('#btnResumo');
+    const t = await blocoTab(page);
+    assert.deepEqual(t.faixas[0].linhas.map(l => l[0]), [...TITULOS_INC, 'No ritmo']);
+    const col = {}; t.faixas.forEach(f => f.th.forEach((h, j) => { if(j && h) col[h] = f.linhas.map(l => l[j]); }));
+    for(const g of ['GC.AP', 'GC.G1', 'GC.G3']) assert.deepEqual([col[g][1].txt, col[g][3].txt], ['—', '—'], g);
+    for(const g of ['GC.G2', 'GC.IT', 'GC.RV']) assert.ok(col[g][1].pct != null && col[g][3].pct != null, g);
+    assert.equal(col['GC.G3'][2].txt, '—', 'Eisenbahn - 600ml sem meta na G3');
+    // G3: a coluna da supervisão da G311 (sem nenhum item) continua (é coluna do ICS) e o "No ritmo" conta só os itens com meta
+    assert.ok(r['GC.G3'].tracos > 0 && r['BAND'].tracos > 0);
+    // IT11 (online traz cliente novo em Heineken): o % do Resumo (Real ∪ Online) passa o do card
+    assert.ok(r['SV.IT.1'].difCard > 0 && r['Total IT+MO'].difCard > 0, JSON.stringify(r));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('células iguais às do ICS GC nos itens dele (escopo com meta em todas as rotas), também no fechamento', async () => {
+    for(const nome of ['inc', 'incfech']){
+      const {page, ctx, erros} = await abre(nome, {entrar: {perfil: 'gc', gc: 'IT+MO'}});
+      await page.selectOption('#fgc', 'IT');
+      await page.click('#btnResumo');
+      await page.click('#rsOverlay [data-rsb="tab"]');
+      const linhas = await page.evaluate(() => [...document.querySelectorAll('#rsFolha .rs-bloco')].map(b =>
+        Object.fromEntries([...b.querySelectorAll('.rs-tab tbody tr')].map(tr => [tr.firstChild.textContent, [...tr.children].slice(1).map(td => td.innerHTML)]))));
+      const ics = linhas[1], tab = linhas[2];
+      assert.deepEqual(tab['Cervejas'], ics['Cervejas'], nome);
+      assert.deepEqual(tab['Cervejas 600ml Retornável'], ics['Cerv. 600ml Ret.'], nome);
+      if(nome === 'incfech') assert.match(await page.textContent('#rsFolha h3'), /fechamento/);
+      assert.deepEqual(erros, [], nome);
+      await ctx.close();
+    }
+  });
+
+  test('link ?resumo= com e sem "tab"; o link gerado leva "tab" só com o bloco marcado', async () => {
+    let {page, ctx, erros} = await abre('inc', {entrar: null, busca: '?resumo=vol,ics,tab&gc=G2'});
+    assert.ok(await blocoTab(page), 'link com tab: bloco');
+    assert.deepEqual((await chipsRs(page)).map(g => g[3][3]), ['true', 'true']);
+    let link = await page.evaluate(() => new Promise(ok => { navigator.share = async d => ok(d.url); document.getElementById('rsLink').click(); }));
+    assert.match(link, /\?resumo=vol,ics,tab&gc=G2$/);
+    await ctx.close();
+    ({page, ctx, erros} = await abre('inc', {entrar: null, busca: '?resumo=vol,ics&gc=G2'}));
+    assert.equal(await blocoTab(page), null, 'link antigo sem tab: sem o bloco');
+    link = await page.evaluate(() => new Promise(ok => { navigator.share = async d => ok(d.url); document.getElementById('rsLink').click(); }));
+    assert.match(link, /\?resumo=vol,ics&gc=G2$/);
+    ({page, ctx, erros} = await abre('inc', {entrar: null, busca: '?resumo=tab&modo=dir'}));
+    assert.deepEqual(await page.$$eval('#rsFolha .rs-bloco', b => b.map(x => x.dataset.bloco || '')), ['tab']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('PDF (simulado): o bloco é um átomo; cabeçalho só na 1ª página, nenhuma página sem bloco; sem assinatura', async () => {
+    for(const largura of [1280, 390]){
+      const {page, ctx, erros} = await abre('inc', {entrar: 'dir', largura, altura: 900});
+      for(const entrar of ['dir', {perfil: 'gc', gc: 'IT+MO'}]){
+        await vaiPara(page, entrar);
+        await page.click('#btnResumo');
+        if(await page.getAttribute('#rsOverlay [data-rsb="tab"]', 'aria-pressed') !== 'true') await page.click('#rsOverlay [data-rsb="tab"]');
+        const pdf = await pdfSimulado(page);
+        const cont = await page.evaluate(CONTEUDO_PAGINAS, pdf.imgs);
+        const onde = `${largura} ${JSON.stringify(entrar)}: ${JSON.stringify(cont)}`;
+        assert.ok(pdf.pdf && !pdf.rod, onde);
+        cont.forEach((c, i) => assert.ok(c.bloco > 0.2, `página ${i + 1} sem bloco: ${onde}`));
+        // (com o 3º bloco a 1ª página fica mais alta: o cabeçalho ocupa uma fração menor dela)
+        assert.ok(cont[0].cab > 0.01, onde);
+        cont.slice(1).forEach((c, i) => assert.ok(c.cab < 0.01, `cabeçalho repetido na página ${i + 2}: ${onde}`));
+        for(const [w, h] of pdf.paginas) assert.ok(h >= Math.round(w * 9 / 16), onde);
+        // o bloco inteiro numa página (nunca cortado entre duas)
+        const at = await page.evaluate(() => { const f = document.getElementById('rsFolha'), t0 = f.getBoundingClientRect().top;
+          return [...f.querySelectorAll('.rs-bloco')].map(b => { const r = b.getBoundingClientRect(); return [r.top - t0, r.bottom - t0]; }); });
+        assert.equal(at.length, 3, onde);
+        await page.click('#rsVoltar');
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  test('PDF real (html2canvas + jsPDF): com o bloco, uma página a mais que sem ele; nenhuma página em branco nem célula cortada',
+       {skip: !LIBS_PDF && 'html2canvas/jspdf não instalados (npm)'}, async () => {
+    const {page, ctx, erros} = await abre('inc', {entrar: 'dir', largura: 1280, altura: 900});
+    await page.route(/cdnjs\.cloudflare\.com/, r => {
+      const arq = /html2canvas/.test(r.request().url()) ? LIBS_PDF.html2canvas : LIBS_PDF.jspdf;
+      r.fulfill({status: 200, contentType: 'text/javascript', body: fs.readFileSync(arq), headers: {'access-control-allow-origin': '*'}});
+    });
+    await page.evaluate(INSTALA_CELULAS);
+    await page.evaluate(async () => {
+      for(const lib of [CONFIG.CDN.html2canvas, CONFIG.CDN.jspdf]) await new Promise((ok, erro) => {
+        const s = document.createElement('script'); s.src = lib.src; s.integrity = lib.integrity; s.crossOrigin = 'anonymous';
+        s.onload = ok; s.onerror = erro; document.head.appendChild(s);
+      });
+      const h2c = window.html2canvas;
+      window.html2canvas = (el, op) => h2c(el, {...op, onclone: d => { op.onclone(d); window.__real.cel = window.__celulas(d.getElementById('rsFolha')); }});
+      const add = window.jspdf.jsPDF.API.addImage;
+      window.jspdf.jsPDF.API.addImage = function(img, ...r){ window.__real.imgs.push(img); return add.call(this, img, ...r); };
+    });
+    await page.click('#btnResumo');
+    const pags = [];
+    for(const tab of [false, true]){
+      if(tab) await page.click('#rsOverlay [data-rsb="tab"]');
+      await page.evaluate(() => { window.__real = {imgs: [], cel: null}; });
+      const [baixado] = await Promise.all([page.waitForEvent('download'), page.click('#rsImg')]);
+      const bytes = fs.readFileSync(await baixado.path()).toString('latin1');
+      const n = (bytes.match(/\/Type\s*\/Page\b(?!s)/g) || []).length, real = await page.evaluate(() => window.__real);
+      assert.equal(n, real.imgs.length);
+      const tinta = await page.evaluate(imgs => Promise.all(imgs.map(src => new Promise(ok => {
+        const im = new Image();
+        im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+          const cx = c.getContext('2d'); cx.drawImage(im, 0, 0);
+          const d = cx.getImageData(0, 0, im.width, im.height).data; let k = 0;
+          for(let i = 0; i < d.length; i += 16) if(d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200) k++;
+          ok(k / (d.length / 16)); };
+        im.src = src;
+      }))), real.imgs);
+      tinta.forEach((t, i) => assert.ok(t > 0.02, `tab=${tab}: página ${i + 1} quase em branco (${t})`));
+      assert.deepEqual(real.cel.prob.slice(0, 5), [], `tab=${tab}`);
+      pags.push(n);
+    }
+    // Diretoria: Volume + ICS GC = 2 páginas; o bloco Todos a Bordo (um átomo) vai para uma página própria
+    assert.deepEqual(pags, [2, 3]);
+    assert.deepEqual(erros.filter(e => !/net::ERR_FAILED|cdnjs/.test(e)), []);
+    await ctx.close();
+  });
+
+  test('360, 390, 1000 e 1440 px: os 4 botões sem texto cortado nem rolagem lateral (painel e barra do Resumo)', async () => {
+    for(const largura of [360, 390, 1000, 1440]){
+      const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'IT+MO'}, largura, altura: 900});
+      const corte = sel => page.$$eval(sel, bs => bs.filter(b => b.offsetWidth && (b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1))
+        .map(b => `${b.dataset.rsb} ${b.scrollWidth}>${b.clientWidth}`));
+      assert.deepEqual(await corte('.rsBox .rsChips button'), [], `${largura} painel`);
+      const larg = await page.$$eval('.rsBox .rsChips button', bs => bs.map(b => Math.round(b.getBoundingClientRect().width)));
+      // no celular, uma linha de botões iguais; no PC, cada um com a largura do texto (pelo menos)
+      if(largura < 1000) assert.equal(new Set(larg).size, 1, `${largura}: botões da mesma largura ${larg}`);
+      await page.click('#btnResumo');
+      await page.click('#rsOverlay [data-rsb="tab"]');
+      assert.deepEqual(await corte('#rsOverlay .rsChips button'), [], `${largura} barra`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${largura}`);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+});

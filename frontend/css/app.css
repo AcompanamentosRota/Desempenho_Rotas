@@ -748,7 +748,9 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .rsBox{background:var(--carvao);border-radius:13px;padding:12px;margin:6px 0 4px;display:flex;flex-direction:column;gap:9px}
 .rsBox[hidden]{display:none}
 .rsBox .rsLbl{font-size:11px;letter-spacing:.09em;color:var(--topo-txt);text-transform:uppercase}
-.rsChips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+/* uma coluna por botão (3, ou 4 com "Todos a Bordo"; oculto sem a aba Todos a Bordo) */
+.rsChips{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:7px}
+.rsChips button[hidden]{display:none}
 .rsChips button{font:inherit;font-size:var(--fs-legenda);font-weight:600;border:1px solid var(--escuro-borda2);border-radius:10px;padding:10px 4px;
   background:var(--escuro-2);color:var(--escuro-txt);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
 .rsChips button::before{content:"";width:11px;height:11px;border-radius:3px;border:2px solid var(--cinza-txt);flex:none}
@@ -806,6 +808,8 @@ body.rs-travado{overflow:hidden}
 /* colunas e caixas alinhadas em todos os resumos (tela, celular, PDF; Gerência e Diretoria) */
 #rsFolha table{table-layout:fixed}
 #rsFolha th.rs-nome,#rsFolha td.rs-nome{width:150px}
+/* bloco Todos a Bordo: o rótulo da aba ("Cervejas 600ml Retornável") quebra linha na coluna do nome */
+#rsFolha .rs-bloco[data-bloco="tab"] td.rs-nome{white-space:normal}
 .rs-par{grid-template-columns:repeat(2,minmax(0,1fr))}
 .rs-k{min-width:0}
 .rs-faixa+.rs-faixa{margin-top:10px}
@@ -964,9 +968,15 @@ body.rs-travado{overflow:hidden}
   .lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-top:4px}
   .lista .ind{margin-bottom:0}
   .lista .vazio{grid-column:1/-1}
-  .rsBox{flex-direction:row;align-items:center;gap:14px;margin-top:16px}
+  /* os botões dos blocos nunca ficam mais estreitos que o texto; sem espaço para uma linha (conteúdo da .rsBox até 1060 px), o rótulo
+     e os botões dos blocos ficam na 1ª linha e "Gerar resumo" e "Painel de ritmo" descem juntos para a 2ª */
+  .rsBox{flex-direction:row;flex-wrap:wrap;align-items:center;gap:14px;margin-top:16px;container-type:inline-size}
   .rsBox .rsLbl{flex:none}
-  .rsBox .rsChips{flex:1;max-width:520px}
+  .rsBox .rsChips{flex:1 1 440px;max-width:560px;grid-auto-columns:minmax(max-content,1fr)}
+  @container (max-width:1060px){
+    .rsBox .rsLbl{flex:0 1 130px}
+    .rsBox .rsChips{flex-basis:calc(100% - 144px);max-width:none}
+  }
   #btnResumo{margin-left:auto;padding:12px 22px}
   #btnRitmo{flex:none;padding:11px 20px}
   .drw{bottom:auto;top:50%;border-radius:16px;max-height:82vh;transform:translateY(calc(-50% + 40px));opacity:0;
