@@ -87,5 +87,22 @@ const TEXTOS_TELA_PAGINA = () => {
 const semNaN = o => JSON.parse(JSON.stringify(o, (k, v) => Number.isNaN(v) ? 'NaN' : v));
 const comNomeNovo = o => JSON.parse(JSON.stringify(semNaN(o)).replace(/Dest\+Art\+Cnd/g, NOVOS));
 
-module.exports = {SUB, NOVOS, K_NOVOS, NOME_EXEC, RASTRO_PAGINA, CARDS_VOLUME_PAGINA, NOTAS_PAGINA, ABA_EXEC_PAGINA,
+/* Antes x depois contra fronts anteriores aos ajustes visuais da Executiva (Parte AE de front.test.js): desfaz no front atual
+   o que a etapa acrescenta de propósito, em HTML ou texto (strings dentro de objetos e listas também): a linha do medidor
+   (.gFalta, "faltam X para a meta" / "meta batida · +X"), os data-meta/data-real do .gCard e o rótulo visível e o placeholder
+   da busca (antes, o rótulo só para leitor de tela). O resto continua comparado byte a byte. */
+const desfazAE = x => {
+  if(Array.isArray(x)) return x.map(desfazAE);
+  if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazAE(v)]));
+  if(typeof x !== 'string') return x;
+  return x.replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '')
+    .replace(/( data-desvio="[^"]*") data-meta="[^"]*" data-real="[^"]*">/g, '$1>')
+    .replace(/<label class="buscaRot" for="q">Busca por cliente<\/label>(\s*)<div class="buscaWrap">(\s*)<input/g,
+             '<div class="buscaWrap">$2<label class="sr-only" for="q">Buscar cliente ou rede</label>$2<input')
+    .replace('placeholder="Digite nome, código ou rede"', 'placeholder="Buscar cliente por nome, código ou rede"')
+    .replace(/faltam [\d.]+ para a meta|meta batida · \+[\d.]+/g, '')
+    .replace(/Busca por cliente/g, 'Buscar cliente ou rede');
+};
+
+module.exports = {desfazAE, SUB, NOVOS, K_NOVOS, NOME_EXEC, RASTRO_PAGINA, CARDS_VOLUME_PAGINA, NOTAS_PAGINA, ABA_EXEC_PAGINA,
   TEXTOS_TELA_PAGINA, semNaN, comNomeNovo};

@@ -178,6 +178,15 @@ senha, calcule o hash dela da mesma forma e troque a linha (ex.: no console do n
 visão Diretoria; os dados continuam públicos em `frontend/data/*.json`. Os testes usam senhas fictícias
 (`frontend/tests/senha_teste.js`), servindo o `config.js` com os hashes delas.
 
+**Nome de quem entra na Diretoria** (desde 29/10/2026): `CONFIG.DIRETORIA_NOMES` liga cada hash de
+`DIRETORIA_SENHAS_HASH` a um nome (mapa hash → nome; a senha nunca aparece em texto). `confereSenha` usa o hash que já
+calculou para achar o nome e o cabeçalho mostra **"Diretoria · Nome"** no `#sub` (painel lateral do PC e topo do celular;
+no celular, sem a gerência escolhida no seletor, que continua logo abaixo). Hash sem nome no mapa: só "Diretoria", como
+antes (no celular o escopo some, como antes). O acesso guardado (`drotas_sessao`) leva só o nome (`quem`), nunca a senha
+nem o hash; um nome guardado que não está no mapa não aparece. Recarregar no mesmo dia mantém o nome; a casa e a virada
+das 05:00 apagam. Para trocar a senha de alguém, troque o hash nas duas chaves. Os testes servem um `DIRETORIA_NOMES` com
+nomes fictícios para os hashes das senhas de teste (`trocaNomes`/`NOMES_TESTE` em `senha_teste.js`; padrão: nenhum nome).
+
 **Logos** (desde 21/10/2026, Etapa 7): acima de "Desempenho de Rotas", a logo Coca-Cola Bandeirantes e o elmo com
 "COMERCIAL / BANDEIRANTES" embaixo, lado a lado, separados por uma linha vermelha fina. No fundo preto (padrão) vão a
 logo com "BANDEIRANTES" em branco, o elmo branco e o texto branco; no fundo branco, a logo original, o elmo preto e o
@@ -545,7 +554,9 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   dia batida ou online >= meta do dia, a regra da caixa Online). Sem meta do dia: "sem meta do dia do SAP neste escopo".
 - **Categorias**: um medidor (meia-lua) por categoria de volume (Refrigerantes, Cervejas, Still, Água Mineral,
   Novos Negócios; Del Valle Frut fica fora), preenchido com Real ÷ Meta (até 100%) na cor da categoria; no centro o % real;
-  Meta | Real; Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
+  "faltam X para a meta" (X = Meta − Real do próprio medidor, em vermelho e negrito; com Real ≥ Meta, "meta batida · +X",
+  X = Real − Meta, em verde; no fechamento, com o Real do mês fechado; sem a linha no medidor sem meta); Meta | Real;
+  Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
   valor exato, como o SAC: −0,03% é vermelho mesmo com o card do Volume verde em 100%); "meta do dia N · online N" (ou
   "meta do dia batida" / "meta do dia —"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os
   dois quadros acima, e abre a gaveta da categoria por unidade (abaixo). Sem meta no escopo: "sem meta neste escopo" (o
@@ -594,6 +605,9 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
 - **Coberturas por unidade**: tabela com o % real do mês de cada item (o mesmo % dos cards): **ICS GC** (os 9 itens),
   **Novos Negócios** (5) e **Todos a Bordo 3.0** (Status "x/n" itens em 100% e os 5 itens, só nas rotas com meta do item,
   como na aba). Vermelho e negrito abaixo do ritmo (o % do dia útil de ontem), verde a partir de 100%, "—" sem meta.
+  Linhas zebradas (branco e `--zebra` #f6f6f8, também na 1ª coluna presa); a linha de total (BAND ou a unidade do filtro)
+  com fundo `--zebra-tot` #e4e4e8 e negrito; passar o mouse escurece a linha um tom acima (o painel só tem fundo claro: os
+  dois fundos, preto e branco, são só da entrada).
   Colunas iguais, a 1ª (70 px) presa; com menos de ~1520 px de tela (painel lateral aberto) a tabela rola de lado dentro
   do bloco. O nome inteiro de cada item fica no `title` do cabeçalho.
 - **Fechamento do mês**: medidores e barras pelo **realizado** (Real ÷ Meta − 1, "Realizado x Meta"); sem os quadros/blocos
@@ -615,14 +629,15 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
     pares `[Real até o corte, Meta]` das rotas (`NUCLEO.mesAnterior`; item null = a rota fica fora); % anterior = Real ÷ Meta;
     % atual = o % real do medidor (Real até ontem ÷ Meta do mês, sem arredondar); **Δ p.p.** = % atual − % anterior;
     **Δ Real** = Real atual ÷ Real anterior − 1 (só na caixa de comentário).
-  - Cada linha tem **duas barras** empilhadas sobre trilhas de 0 a 100% da meta: **em cima, sólida** (vermelho escuro), o mês
-    de referência; **embaixo, hachurada em cinza**, o mês anterior no mesmo dia útil. Uma marca preta no fim da trilha
+  - Cada linha tem **duas barras hachuradas** empilhadas sobre trilhas de 0 a 100% da meta: **em cima, em vermelho escuro**
+    (`--ruim`; até 29/10/2026 era sólida), o mês de referência; **embaixo, em cinza**, o mês anterior no mesmo dia útil. Nas
+    linhas por unidade (barra fina) a hachura é um pouco mais densa (passo de 3 px em vez de 4). Uma marca preta no fim da trilha
     indica 100% da meta; acima de 100% a barra enche até o fim e o número mostra o valor (ex.: 112,0%).
   - À direita, alinhados com as barras: o % do mês de referência (1 casa, negrito, Source Serif 4) e, embaixo, o do mês
     anterior (cinza; "—" sem meta anterior); ao lado, numa coluna estreita, o **Δ** em p.p. com 1 casa: **▲ verde** quando
     subiu, **▼ vermelho** quando caiu, **cinza sem seta** com 0,0 exato e "—" cinza sem dado (o sinal vem do valor exato, não
     do texto arredondado). Abaixo de 700 px o nome da categoria fica numa linha própria e o Δ desce para baixo dos valores.
-  - Legenda: quadrado sólido = o mês de referência ("Outubro/26 até 21/10"), hachurado = o mês anterior no mesmo dia útil
+  - Legenda: quadrado hachurado em vermelho escuro = o mês de referência ("Outubro/26 até 21/10"), hachurado = o mês anterior no mesmo dia útil
     ("Setembro/26 no mesmo dia útil (até 21/09)"), a marca de 100% e a regra do Δ.
   - **Detalhe por clique**: clicar numa categoria (ou Enter/Espaço com o foco nela; a seta gira e `aria-expanded` muda) abre
     logo abaixo, na própria página (não na gaveta), as unidades do escopo no mesmo desenho, menor: Diretoria → as
@@ -659,7 +674,8 @@ Desde a Etapa 4 (21/10/2026), o alto de cada aba é organizado assim (os número
   Negócios, "Ritmo de coberturas"; no Todos a Bordo, "Itens em 100%" com a linha "Status". Ao lado, o **"puxa a média"**
   (a mesma escolha de antes) num quadro de destaque: ícone "!", "Gerência / Supervisão / Rota que mais puxa a média para
   baixo", o nome em vermelho e "x de n indicadores no ritmo" (antes, "na meta"); sem ele no Todos a Bordo e na Rota. Por
-  último, a **busca de clientes** (a mesma). No PC a linha é 260 px | 1fr | 1,1fr; no celular, a busca fica na linha de
+  último, a **busca de clientes** (a mesma), com o rótulo "Busca por cliente" (pequeno, caixa alta, cinza de apoio) acima
+  do campo e o placeholder "Digite nome, código ou rede". No PC a linha é 260 px | 1fr | 1,1fr; no celular, a busca fica na linha de
   baixo. A ficha do cliente abre logo abaixo da linha.
 - **Base total de clientes** ("visitas hoje N") e **Sem compra X%** ("sem compra hoje N"), no mesmo formato, só com uma
   supervisão (ou "Neutraliza") ou uma rota no filtro (perfis Supervisão e Rota, ou a Gerência com uma supervisão/rota

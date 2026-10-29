@@ -35,7 +35,7 @@ const {confereExecutiva} = require('./executiva_invariantes.js');
 const {confereGavetas, leChips} = require('./gavetas_invariantes.js');
 const {confereEvolucao, ABRE_TODAS} = require('./evolucao_invariantes.js');
 const ROT = require('./rotulos_invariantes.js');
-const {trocaHash, trocaLiberadas, digitaSenha} = require('./senha_teste.js');
+const {trocaHash, trocaLiberadas, digitaSenha, trocaNomes} = require('./senha_teste.js');
 
 const FRONT = path.resolve(__dirname, '..');
 const PAYLOAD = process.env.PAYLOAD_REAL, ONLINE = process.env.ONLINE_REAL;
@@ -71,7 +71,7 @@ async function abre(largura = 1440, tema, troca = {}){
     if(!troca[url.pathname] && !fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
     let body = troca[url.pathname] ? troca[url.pathname]() : fs.readFileSync(arq);
     // senha da Diretoria: hashes de teste; e todas as gerências liberadas na entrada (senha_teste.js)
-    if(url.pathname === '/js/config.js') body = trocaLiberadas(trocaHash(body));
+    if(url.pathname === '/js/config.js') body = trocaNomes(trocaLiberadas(trocaHash(body)));
     rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream', body});
   });
   await page.route(/cdnjs\.cloudflare\.com/, r => r.abort());
@@ -368,7 +368,7 @@ describe('Ajuste de rótulos com dado real (Novos Negócios, aba por perfil, not
         assert.equal(ta, tb, `${onde} ${ab}`);
         if(!ta) continue;
         const [a, b] = [await novo.page.evaluate(ROT.TEXTOS_TELA_PAGINA), await velho.page.evaluate(ROT.TEXTOS_TELA_PAGINA)];
-        assert.deepEqual(a, ROT.comNomeNovo(b), `${onde} ${ab}`);
+        assert.deepEqual(ROT.desfazAE(a), ROT.comNomeNovo(b), `${onde} ${ab}`);
         comp.push(`${ab} (${a.lista.length || 'visão executiva'})`);
         // gavetas: o macro de volume e o 1º card de cada aba de coberturas
         const k = ab === 'VOLUME' ? ROT.K_NOVOS : ab === 'EXEC' ? null : await novo.page.$eval('#lista .ind[data-k]', x => x.dataset.k).catch(() => null);
@@ -429,7 +429,7 @@ describe('Antes x depois do redesenho da Evolução com dado real', {skip: pular
       const comp = [];
       if(e.perfil !== 'rota'){
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
-        assert.equal(await novo.page.evaluate(SEM_EVO), await velho.page.evaluate(SEM_EVO), `${onde}: Executiva sem o bloco`);
+        assert.equal(ROT.desfazAE(await novo.page.evaluate(SEM_EVO)), await velho.page.evaluate(SEM_EVO), `${onde}: Executiva sem o bloco`);
         comp.push('Executiva sem o bloco');
       }
       for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
@@ -437,7 +437,7 @@ describe('Antes x depois do redesenho da Evolução com dado real', {skip: pular
         assert.equal(ta, tb, `${onde} ${ab}`);
         if(!ta) continue;
         const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
-        assert.deepEqual(a, b, `${onde} ${ab}: cabeçalho e cards`);
+        assert.deepEqual(ROT.desfazAE(a), b, `${onde} ${ab}: cabeçalho e cards`);
         let niveis = 0;
         const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
         for(const k of ks){
@@ -554,7 +554,7 @@ describe('Gaveta "Categoria por unidade" com dado real', {skip: pular}, () => {
       const comp = [];
       if(e.perfil !== 'rota'){
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
-        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        assert.equal(ROT.desfazAE(await novo.page.innerHTML('#exec')), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
         for(const id of ['exBase', 'exSem', 'exVis'])
           assert.equal(await gaveta(novo.page, clica(id)), await gaveta(velho.page, clica(id)), `${onde}: gaveta do KPI ${id}`);
         comp.push('Executiva (HTML) e as gavetas dos KPIs');
@@ -564,7 +564,7 @@ describe('Gaveta "Categoria por unidade" com dado real', {skip: pular}, () => {
         assert.equal(ta, tb, `${onde} ${ab}`);
         if(!ta) continue;
         const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
-        assert.deepEqual(a, b, `${onde} ${ab}: cabeçalho e cards`);
+        assert.deepEqual(ROT.desfazAE(a), b, `${onde} ${ab}: cabeçalho e cards`);
         let niveis = 0;
         const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
         for(const k of ks){
@@ -595,5 +595,98 @@ describe('Gaveta "Categoria por unidade" com dado real', {skip: pular}, () => {
     console.log('# | Perfil | Comparado (igual) |');
     console.log('# |---|---|');
     for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+  });
+});
+
+/* Ajustes visuais da Executiva e nome na Diretoria (Parte AE de front.test.js), com dado real: antes x depois contra a main
+   antes da etapa (REF_PRE_AE), com o mesmo payload, em 1440 e 390 px: a Executiva inteira (KPIs, medidores, Tendência x
+   Meta, Sem compra, Agenda, Coberturas e Evolução) igual em HTML, tirando só o que a etapa acrescenta (ROT.desfazAE: a
+   linha "faltam" do medidor, os data-meta/data-real dele, o rótulo e o placeholder da busca; zebra e hachura são só CSS);
+   cabeçalho e cards das 4 abas, cascata e Resumo iguais. A invariante "Meta − Real = faltam" está em confereExecutiva. */
+const REF_PRE_AE = '783ba5d';
+const FRONT_PRE_AE = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_AE}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+describe('Ajustes visuais da Executiva com dado real: antes x depois', {skip: pular || (!FRONT_PRE_AE && `sem o commit ${REF_PRE_AE}`)}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px: Diretoria, G1, IT+MO, a 1ª supervisão e a 1ª rota da G2: Executiva, abas, cascata e Resumo iguais aos da main`, async () => {
+    const [novo, velho] = [await abre(largura), await abre(largura, undefined, FRONT_PRE_AE)];
+    const linhas = [];
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      const comp = [];
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+        // todas as categorias da Evolução abertas nos dois
+        for(const {page} of [novo, velho])
+          await page.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat[aria-expanded="false"]').forEach(el => el.click()));
+        const [a, b] = [await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec')];
+        assert.equal(ROT.desfazAE(a), b, `${onde}: Executiva`);
+        const nf = (a.match(/class="gFalta/g) || []).length;
+        comp.push(`Executiva (HTML; ${nf} linhas "faltam")`);
+      }
+      for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${onde} ${ab}`);
+        if(!ta) continue;
+        const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
+        assert.deepEqual(ROT.desfazAE(a), b, `${onde} ${ab}: cabeçalho e cards`);
+        let niveis = 0;
+        const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
+        for(const k of ks){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          for(let nivel = 0; nivel < 5; nivel++){
+            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            niveis++;
+            if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+          }
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        comp.push(`${ab} (${a.n} cards, ${niveis} telas de cascata)`);
+      }
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+        comp.push('Resumo');
+      }
+      linhas.push([onde, comp.join(', ')]);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_AE} x branch), ${largura} px, mesmo payload real: tudo igual fora a linha "faltam" e o rótulo da busca`);
+    console.log('# | Perfil | Comparado (igual) |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+  });
+
+  for(const largura of [360, 390, 1000, 1440])
+  test(`${largura} px, fundos preto e branco: Executiva e abas sem rolagem lateral nem erro, zebra e hachura aplicadas`, async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre(largura, tema);
+      for(const e of [{perfil: 'dir'}, {perfil: 'gc', gc: 'IT+MO'}]){
+        await entra(page, e);
+        for(const ab of ['EXEC', 'VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          if(!(await vaiAba(page, ab))) continue;
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+            `${largura} ${tema} ${e.perfil} ${ab}: rolagem lateral`);
+        }
+        await vaiAba(page, 'EXEC');
+        const r = await page.evaluate(() => ({
+          tot: getComputedStyle(document.querySelector('#exCob tbody tr.tot td')).backgroundColor,
+          par: getComputedStyle(document.querySelector('#exCob tbody tr:nth-child(2) td')).backgroundColor,
+          atu: (document.querySelector('#exEvo:not([hidden]) .evTr .atu') ? getComputedStyle(document.querySelector('#exEvo .evTr .atu')).backgroundImage : 'sem Evolução')}));
+        assert.equal(r.tot, 'rgb(228, 228, 232)');
+        assert.equal(r.par, 'rgb(246, 246, 248)');
+        assert.ok(/repeating-linear-gradient|sem Evolução/.test(r.atu), r.atu);
+      }
+      assert.deepEqual(erros, [], `${largura} ${tema}`);
+      await ctx.close();
+    }
   });
 });

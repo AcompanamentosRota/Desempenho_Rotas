@@ -13,7 +13,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, execSync} = require('node:child_process');
-const {SENHAS_TESTE, hashTeste, HASHES_TESTE, trocaHash, trocaLiberadas, digitaSenha} = require('./senha_teste.js');
+const {SENHAS_TESTE, hashTeste, HASHES_TESTE, trocaHash, trocaLiberadas, digitaSenha, NOMES_TESTE, trocaNomes} =
+  require('./senha_teste.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const FRONT = path.join(RAIZ, 'frontend');
@@ -214,9 +215,10 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
    aba depois de entrar (padrão ICS GC, a aba inicial de antes da Executiva; null = fica na aba inicial do perfil);
-   `liberadas` = CONFIG.GC_LIBERADAS servido (padrão null = todas; 'config' = a do config.js; ver trocaLiberadas). */
+   `liberadas` = CONFIG.GC_LIBERADAS servido (padrão null = todas; 'config' = a do config.js; ver trocaLiberadas);
+   `nomes` = CONFIG.DIRETORIA_NOMES servido (padrão {} = só "Diretoria"; NOMES_TESTE = os nomes fictícios das senhas de teste). */
 async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entrar = 'gc', busca = '', fuso, antes,
-                           troca = {}, toque = false, aba = 'ICS_GC', liberadas = null} = {}){
+                           troca = {}, toque = false, aba = 'ICS_GC', liberadas = null, nomes = {}} = {}){
   // toque = tela de toque (page.tap; os ponteiros chegam como pointerType 'touch')
   const ctx = await browser.newContext({viewport: {width: largura, height: altura}, ...(fuso ? {timezoneId: fuso} : {}),
                                         ...(toque ? {hasTouch: true} : {})});
@@ -234,7 +236,7 @@ async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entra
     let corpo = troca[url.pathname] ? troca[url.pathname](fs.readFileSync(arq, 'utf-8')) : fs.readFileSync(arq);
     // senha da Diretoria: o config.js servido leva os hashes das senhas de teste (senha_teste.js), nunca as reais; e as
     // gerências liberadas na entrada de `liberadas`
-    if(url.pathname === '/js/config.js') corpo = trocaLiberadas(trocaHash(corpo), liberadas);
+    if(url.pathname === '/js/config.js') corpo = trocaNomes(trocaLiberadas(trocaHash(corpo), liberadas), nomes);
     rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream', body: corpo});
   });
   // bibliotecas do PDF (CDN) não são usadas nos testes
@@ -5588,11 +5590,13 @@ const VOL_EXEC = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MI
 
 /* Ajuste de rótulos (Parte AA): onde o front antigo mostra "Dest+Art+Cnd" o atual mostra "Novos Negócios" (no card de Volume,
    com a 2ª linha .tsub "Dest+Art+Cnd"). As comparações com fronts antigos tiram a 2ª linha do atual e trocam o nome no antigo;
-   o resto continua igual, byte a byte. */
+   o resto continua igual, byte a byte. Desde os ajustes visuais da Executiva (Parte AE) o atual também perde a linha
+   "faltam X para a meta" / "meta batida · +X" do medidor (.gFalta) e os data-meta/data-real do .gCard. */
+const igualSemFalta = (novo, velho) => [require('./rotulos_invariantes.js').desfazAE(novo), velho];
 const igualRotulo = (novo, velho) => {
   const tiraSub = t => t.replace(/<div class=\\?"tsub\\?">[^<]*<\/div>/g, '').replace(/Novos Negócios(\s|\\n)+Dest\+Art\+Cnd/g, 'Novos Negócios');
   const j = (o, f) => typeof o === 'string' ? f(o) : JSON.parse(f(JSON.stringify(o)));
-  return [j(novo, tiraSub), j(velho, t => t.replace(/Dest\+Art\+Cnd/g, 'Novos Negócios'))];
+  return [j(require('./rotulos_invariantes.js').desfazAE(novo), tiraSub), j(velho, t => t.replace(/Dest\+Art\+Cnd/g, 'Novos Negócios'))];
 };
 describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
   test('aba inicial: Executiva na Diretoria, na Gerência (e no grupo) e na Supervisão; a Rota não tem e abre no Volume; rota no filtro tira a aba', async () => {
@@ -6528,7 +6532,7 @@ describe('Parte Z — Evolução contra o mês anterior em barras pareadas', {sk
     await ctx.close();
   });
 
-  test('uma linha por categoria (ordem fixa, rótulo central "Novos Negócios"), duas barras (sólida e hachurada), a marca de 100% e a legenda', async () => {
+  test('uma linha por categoria (ordem fixa, rótulo central "Novos Negócios"), duas barras hachuradas (a atual em --ruim), a marca de 100% e a legenda', async () => {
     const {page, ctx, erros} = await abre('vol5', {entrar: 'dir', aba: null, largura: 1440});
     const r = await page.evaluate(() => {
       const cor = v => { const e = document.createElement('i'); e.style.background = v; document.body.append(e); const c = getComputedStyle(e).backgroundColor; e.remove(); return c; };
@@ -6537,7 +6541,9 @@ describe('Parte Z — Evolução contra o mês anterior em barras pareadas', {sk
         const rb = ba.getBoundingClientRect(), rt = trs.map(t => t.getBoundingClientRect());
         return {k: l.dataset.k, nome: l.querySelector('.evTxt').textContent, sub: !!l.querySelector('.tsub'),
           trilhas: trs.length, barras: trs.map(t => t.querySelector('i').className),
-          solida: getComputedStyle(trs[0].querySelector('i')).backgroundColor, hachura: getComputedStyle(trs[1].querySelector('i')).backgroundImage,
+          // desde os ajustes visuais (Parte AE) a barra de cima também é hachurada, em --ruim
+          solida: getComputedStyle(trs[0].querySelector('i')).backgroundColor, hachuraAtu: getComputedStyle(trs[0].querySelector('i')).backgroundImage,
+          hachura: getComputedStyle(trs[1].querySelector('i')).backgroundImage,
           marca: {conteudo: mk.content, w: mk.width, cor: mk.backgroundColor, direita: rb.right - parseFloat(mk.right) - parseFloat(mk.width),
                   fimTrilhas: rt.map(t => t.right), topo: rb.top + parseFloat(mk.top), base: rb.bottom - parseFloat(mk.bottom),
                   trilhasY: [rt[0].top, rt[1].bottom]},
@@ -6554,7 +6560,8 @@ describe('Parte Z — Evolução contra o mês anterior em barras pareadas', {sk
     assert.ok(!r.txt.includes('Dest+Art+Cnd'), 'sem a 2ª linha do card');
     for(const l of r.linhas){
       assert.deepEqual([l.trilhas, l.barras, l.sub, l.seta], [2, ['atu', 'ant'], false, true], l.k);
-      assert.equal(l.solida, r.ruim, `${l.k}: barra de cima sólida`);
+      assert.equal(l.solida, 'rgba(0, 0, 0, 0)', `${l.k}: barra de cima sem fundo sólido`);
+      assert.ok(l.hachuraAtu.startsWith(`repeating-linear-gradient(135deg, ${r.ruim} 0px`), `${l.k}: barra de cima hachurada em --ruim`);
       assert.match(l.hachura, /repeating-linear-gradient/, `${l.k}: barra de baixo hachurada`);
       // marca preta de 100% no fim das duas trilhas, cobrindo as duas
       assert.deepEqual([l.marca.conteudo, l.marca.w, l.marca.cor], ['""', '2px', r.preto], l.k);
@@ -6563,7 +6570,7 @@ describe('Parte Z — Evolução contra o mês anterior em barras pareadas', {sk
       assert.ok(l.val.every(v => /^\d[\d.]*,\d%$/.test(v)), `${l.k}: ${l.val}`);
     }
     assert.deepEqual(r.lg.map(x => x[0]), ['lg evAtu', 'lg evAnt', 'lg evCem']);
-    assert.equal(r.lg[0][1], r.ruim);
+    assert.ok(r.lg[0][2].startsWith(`repeating-linear-gradient(135deg, ${r.ruim} 0px`), 'legenda do mês atual hachurada');
     assert.match(r.lg[1][2], /repeating-linear-gradient/);
     assert.equal(r.lg[2][1], r.preto);
     assert.deepEqual(erros, []);
@@ -6837,7 +6844,7 @@ describe('Parte Z — Evolução contra o mês anterior em barras pareadas', {sk
       for(const {page} of [novo, velho]) await variedade(page);
       if(entrar.perfil !== 'rota'){
         for(const {page} of [novo, velho]){ await vaiAba(page, 'VOLUME'); await vaiAba(page, 'EXEC'); }
-        assert.equal(await novo.page.evaluate(semEvo), await velho.page.evaluate(semEvo), `${onde}: Executiva sem o bloco`);
+        assert.equal(...igualSemFalta(await novo.page.evaluate(semEvo), await velho.page.evaluate(semEvo)), `${onde}: Executiva sem o bloco`);
         vistos.push(`${onde} EXEC`);
       }
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
@@ -6891,6 +6898,8 @@ const PERFIS_AA = [
   {nome: 'Rota', entrar: {perfil: 'rota', gc: 'G2', rota: 'G211'}, perfil: 'rota'},
 ];
 const {TEXTOS_TELA_PAGINA: TEXTOS_TELA} = ROT;
+// o que os ajustes visuais da Executiva (Parte AE) acrescentam de propósito (ROT.desfazAE)
+const semAjustesAE = ROT.desfazAE;
 // os macros de volume sem dado no sintético ganham o bloco de Refrigerantes da rota em escala (os % ficam iguais)
 function montaVolume5(p){
   const fat = {'VOL CERVEJAS': .6, 'VOL STILL': .3, 'VOL AGUA MINERAL': .4, 'VOL DEST+ART+CND': .15};
@@ -7033,7 +7042,7 @@ describe('Parte AA — rótulo "Novos Negócios" do volume, aba por perfil e not
         for(const {page} of [novo, velho]) await filtra(page, {aba});
         const onde = `${c.nome} ${aba}`;
         const [a, b] = [await novo.page.evaluate(TEXTOS_TELA), await velho.page.evaluate(TEXTOS_TELA)];
-        assert.deepEqual(a, comNomeNovo(b), onde);
+        assert.deepEqual(semAjustesAE(a), comNomeNovo(b), onde);
         assert.ok(a.lista.length || a.exec, onde);
         vistos.push(onde);
         // gavetas: o macro de volume e o 1º card de coberturas da aba (Novos Negócios: Campari...)
@@ -7754,7 +7763,8 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
         const onde = `${dados} ${c.nome}`;
         if(c.perfil !== 'rota'){
           for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
-          assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+          // a linha "faltam" do medidor e os data-meta/data-real dele (Parte AE) fora da comparação
+          assert.equal(...igualSemFalta(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec')), `${onde}: Executiva`);
           for(const id of ['exBase', 'exSem', 'exVis']){
             const gav = async p => { await p.evaluate(id => document.getElementById(id).click(), id); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
             assert.equal(await gav(novo.page), await gav(velho.page), `${onde}: gaveta do KPI ${id}`);
@@ -7763,7 +7773,7 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
         for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
           for(const {page} of [novo, velho]) await vaiAba(page, ab);
           const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').innerHTML, lista: document.getElementById('lista').innerHTML}));
-          assert.deepEqual(await tela(novo.page), await tela(velho.page), `${onde} ${ab}: cabeçalho e cards`);
+          assert.deepEqual(...igualSemFalta(await tela(novo.page), await tela(velho.page)), `${onde} ${ab}: cabeçalho e cards`);
           const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
           for(const k of ks){
             for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
@@ -7876,5 +7886,183 @@ describe('Parte AD — gerências liberadas na entrada', {skip: pular}, () => {
     assert.deepEqual(c.gcs.filter(o => !o[2]).map(o => o[0]), ['AP', 'G1', 'G2', 'IT+MO']);
     assert.deepEqual(erros, []);
     await ctx.close();
+  });
+});
+
+/* ---------- Parte AE: ajustes visuais da Executiva e nome na Diretoria (Etapa 1 do pacote v3) ---------- */
+describe('Parte AE — zebra das coberturas, Evolução hachurada, rótulo da busca, nome na Diretoria e "faltam" no medidor', {skip: pular}, () => {
+  const fundo = (page, s) => page.$eval(s, el => getComputedStyle(el).backgroundColor);
+  const espera = page => page.waitForTimeout(250);      // transição de .12s do fundo das linhas
+
+  test('coberturas por unidade: linhas alternadas (inclusive a coluna fixa), total mais escuro e em negrito, hover um tom acima', async () => {
+    const {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null, largura: 1440});
+    const n = await page.$$eval('#exCob tbody tr', trs => trs.length);
+    assert.ok(n >= 4, `${n} linhas`);
+    const tr = i => `#exCob tbody tr:nth-child(${i})`;
+    assert.ok(await page.$eval(tr(1), el => el.classList.contains('tot')), 'total na 1ª linha');
+    await page.mouse.move(0, 0);
+    for(const [s, peso] of [[`${tr(1)} th.un`, '700'], [`${tr(1)} td`, '800']]){
+      assert.equal(await fundo(page, s), 'rgb(228, 228, 232)', `total ${s}`);
+      assert.equal(await page.$eval(s, el => getComputedStyle(el).fontWeight), peso, `negrito ${s}`);
+    }
+    for(let i = 2; i <= n; i++){
+      const par = i % 2 === 0;
+      assert.equal(await fundo(page, `${tr(i)} td`), par ? 'rgb(246, 246, 248)' : 'rgba(0, 0, 0, 0)', `linha ${i} td`);
+      assert.equal(await fundo(page, `${tr(i)} th.un`), par ? 'rgb(246, 246, 248)' : 'rgb(255, 255, 255)', `linha ${i} nome`);
+    }
+    for(const [i, cor] of [[2, 'rgb(236, 236, 239)'], [3, 'rgb(236, 236, 239)'], [1, 'rgb(217, 217, 222)']]){
+      await page.hover(`${tr(i)} td`);
+      await espera(page);
+      assert.equal(await fundo(page, `${tr(i)} td`), cor, `hover linha ${i}`);
+      assert.equal(await fundo(page, `${tr(i)} th.un`), cor, `hover linha ${i} (nome)`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Evolução: barra do mês atual hachurada em --ruim (mais densa nas unidades), legenda igual; larguras e números como antes', async () => {
+    const {page, ctx, erros} = await abre('evo', {entrar: 'dir', aba: null, largura: 1440});
+    await page.click('#exEvLinhas .evLin.cat');
+    const r = await page.evaluate(() => {
+      const st = s => { const el = document.querySelector(s), c = getComputedStyle(el);
+        return {img: c.backgroundImage, cor: c.backgroundColor, w: el.style.width}; };
+      return {cat: st('.evLin.cat .evTr .atu'), catAnt: st('.evLin.cat .evTr .ant'), un: st('.evDet:not([hidden]) .evLin.un .evTr .atu'),
+              unAnt: st('.evDet:not([hidden]) .evLin.un .evTr .ant'), leg: st('#exEvLeg .lg.evAtu'),
+              legTxt: [...document.querySelectorAll('#exEvLeg span')].map(s => s.textContent)};
+    });
+    for(const [k, v] of Object.entries({cat: r.cat, un: r.un, leg: r.leg})){
+      assert.match(v.img, /repeating-linear-gradient\(135deg, rgb\(156, 28, 28\) 0px, rgb\(156, 28, 28\) 1\.5px, rgba\(0, 0, 0, 0\) 1\.5px/, k);
+      assert.equal(v.cor, 'rgba(0, 0, 0, 0)', `${k}: sem fundo sólido`);
+    }
+    assert.match(r.cat.img, /4px\)$/, 'categoria: passo de 4 px');
+    assert.match(r.un.img, /3px\)$/, 'unidade: passo de 3 px (mais densa)');
+    assert.match(r.catAnt.img, /4px\)$/);
+    assert.match(r.unAnt.img, /3px\)$/);
+    assert.match(r.cat.w, /^\d+(\.\d+)?%$/);
+    assert.equal(r.legTxt.length, 5);
+    assert.match(r.legTxt[2], /^100% da meta$/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('card de busca das quatro abas: rótulo "Busca por cliente" (caixa alta, cor de apoio) e o novo placeholder; a busca funciona', async () => {
+    const {page, ctx, erros} = await abre('inc', {entrar: 'gc', aba: null, largura: 1440});
+    for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+      await vaiAba(page, aba);
+      const r = await page.evaluate(() => {
+        const l = document.querySelector('.busca .buscaRot'), c = getComputedStyle(l);
+        return {txt: l.textContent, para: l.htmlFor, vis: l.getClientRects().length > 0, tt: c.textTransform, cor: c.color,
+                ph: document.getElementById('q').placeholder};
+      });
+      assert.deepEqual(r, {txt: 'Busca por cliente', para: 'q', vis: true, tt: 'uppercase', cor: 'rgb(94, 94, 101)',
+                           ph: 'Digite nome, código ou rede'}, aba);
+    }
+    const cod = await page.evaluate(() => { for(const r of rotasDe(sel.gc, '')){ const c = CLIENT_ROSTER[r];
+      if(c && c.length) return String(c[0][0]); } return ''; });
+    assert.ok(cod, 'um cliente da base');
+    await page.fill('#q', cod);
+    await page.waitForFunction(() => document.getElementById('cli').innerHTML !== '');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Diretoria: o nome da senha no cabeçalho (PC e celular); recarregar mantém; casa limpa; sem nome no mapa, só "Diretoria"', async () => {
+    const subTxt = page => page.evaluate(() => document.getElementById('sub').innerText.replace(/\s+/g, ' ').trim());
+    const guardado = page => page.evaluate(() => localStorage.getItem('drotas_sessao'));
+    for(const [i, largura] of [[0, 1440], [1, 390]]){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, nomes: NOMES_TESTE, largura, altura: 844});
+      await page.click('#entrada [data-perfil="dir"]');
+      await digitaSenha(page, SENHAS_TESTE[i]);
+      const nome = NOMES_TESTE[HASHES_TESTE[i]];
+      assert.match(await subTxt(page), new RegExp(`Diretoria · ${nome}$`), `${largura}: #sub`);
+      const s = await guardado(page);
+      assert.equal(JSON.parse(s).quem, nome);
+      for(const proibido of [SENHAS_TESTE[0], SENHAS_TESTE[1], HASHES_TESTE[0], HASHES_TESTE[1]])
+        assert.ok(!s.toUpperCase().includes(proibido.toUpperCase()), 'acesso guardado sem senha nem hash');
+      if(largura === 390){
+        // Parte M: o cabeçalho continua até 221 px; com uma gerência no seletor, só "Diretoria · nome" (sem a gerência)
+        assert.ok(await page.evaluate(() => document.querySelector('.barra').getBoundingClientRect().bottom) <= LIMITE_CABECALHO_390);
+        await page.evaluate(() => { sel = {...sel, dgc: P.GC_ATIVAS[0]}; render(); });
+        assert.match(await subTxt(page), new RegExp(`Diretoria · ${nome}$`), '390: sem a gerência do seletor');
+        assert.ok(await page.evaluate(() => document.querySelector('.barra').getBoundingClientRect().bottom) <= LIMITE_CABECALHO_390);
+      } else {
+        await page.evaluate(() => { sel = {...sel, dgc: P.GC_ATIVAS[0]}; render(); });
+        assert.match(await subTxt(page), new RegExp(`Diretoria · ${nome} · GC\\.`), '1440: com a gerência do seletor');
+      }
+      await page.reload();
+      await esperaCarga(page);
+      assert.equal(await page.isVisible('#entrada'), false);
+      assert.match(await subTxt(page), new RegExp(`Diretoria · ${nome}`), 'recarregar mantém o nome');
+      await page.click('#btnCasa');
+      assert.equal(await guardado(page), null, 'casa apaga o acesso');
+      assert.ok(!(await page.evaluate(() => document.getElementById('sub').textContent)).includes(nome) ||
+                await page.isVisible('#entrada'));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+    // hash sem nome no mapa: só "Diretoria" (PC e celular, como antes: no celular o escopo some)
+    for(const largura of [1440, 390]){
+      const {page, ctx, erros} = await abre('normal', {entrar: null, nomes: {[HASHES_TESTE[0]]: NOMES_TESTE[HASHES_TESTE[0]]}, largura});
+      await page.click('#entrada [data-perfil="dir"]');
+      await digitaSenha(page, SENHAS_TESTE[1]);
+      const t = await subTxt(page);
+      if(largura === 1440) assert.match(t, /Diretoria$/);
+      else assert.ok(!/Diretoria/.test(t), t);
+      assert.equal(JSON.parse(await guardado(page)).quem, undefined);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+    // nome guardado que não é do mapa (alterado à mão): não aparece
+    const {page, ctx, erros} = await abre('normal', {entrar: null, nomes: NOMES_TESTE, antes: fixo(), largura: 1440,
+      armazenado: {drotas_sessao: sessao({perfil: 'dir', quem: '<b>Outro</b>'})}});
+    assert.equal(await page.isVisible('#entrada'), false);
+    assert.match(await subTxt(page), /Diretoria$/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('medidor: "faltam X para a meta" = Meta - Real; "meta batida · +X" com Real >= Meta; sem meta, sem a linha; fechamento', async () => {
+    const f0 = v => Math.round(v).toLocaleString('pt-BR');
+    const le = page => page.$$eval('#exGauges .gCard', gs => gs.map(g => { const f = g.querySelector('.gFalta');
+      return {k: g.dataset.k, off: g.classList.contains('off'), meta: Number(g.dataset.meta), real: Number(g.dataset.real),
+        txt: f && f.textContent, ok: !!(f && f.classList.contains('ok')), cor: f && getComputedStyle(f).color,
+        peso: f && getComputedStyle(f).fontWeight, fs: f && getComputedStyle(f).fontSize,
+        ordem: f ? [...g.children].map(c => c.className.baseVal != null ? 'svg' : c.className) : []}; }));
+    for(const nome of ['evo', 'evofech']){
+      const {page, ctx, erros} = await abre(nome, {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+      let gs = await le(page);
+      assert.ok(gs.some(g => g.off) && gs.some(g => !g.off), `${nome}: medidores com e sem meta`);
+      for(const g of gs){
+        if(g.off){ assert.equal(g.txt, null, `${nome} ${g.k}: sem meta, sem linha`); continue; }
+        assert.ok(g.real < g.meta, `${nome} ${g.k}: o sintético fica abaixo da meta`);
+        assert.equal(g.txt, `faltam ${f0(g.meta - g.real)} para a meta`);
+        assert.deepEqual([g.ok, g.cor, g.peso, g.fs], [false, 'rgb(198, 40, 40)', '700', '10.5px']);
+        assert.deepEqual(g.ordem.slice(0, 5), ['gTit', 'svg', 'gPct', 'gFalta', 'gMR'], 'entre o % e Meta | Real');
+      }
+      await ritmo(page, 'G1', await page.evaluate(() => rotasDe('G1', '')), 1.25);
+      await page.evaluate(() => render());
+      gs = await le(page);
+      for(const g of gs.filter(x => !x.off)){
+        assert.equal(g.txt, `meta batida · +${f0(g.real - g.meta)}`, `${nome} ${g.k}`);
+        assert.deepEqual([g.ok, g.cor], [true, 'rgb(20, 107, 79)']);
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+
+  test('360, 390, 1000 e 1440 px: Executiva e abas sem rolagem lateral nem erro, com o nome da Diretoria', async () => {
+    for(const largura of [360, 390, 1000, 1440]){
+      const {page, ctx, erros} = await abre('evo', {entrar: null, nomes: NOMES_TESTE, largura, altura: 900});
+      await page.click('#entrada [data-perfil="dir"]');
+      await digitaSenha(page, SENHAS_TESTE[0]);
+      for(const aba of ['EXEC', 'VOLUME', 'ICS_GC']){
+        await vaiAba(page, aba);
+        const r = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+        assert.ok(r[0] <= r[1], `${largura} ${aba}: rolagem lateral ${r}`);
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
   });
 });

@@ -53,6 +53,12 @@ const CONFIG = Object.freeze({
     'b9d9818e4672b1f0d17c953a7dce40e58b06e06168e3aa2bda2bb7ca254d3d66',
     '912ab610b482ee34ffca833bfbb38dc64b9cd7fc04fe142dbcaaca9b038db34c',
   ],
+  // nome de quem entra na Diretoria, pelo hash da senha (os mesmos de DIRETORIA_SENHAS_HASH; nunca a senha): aparece no
+  // cabeçalho ("Diretoria · nome") e fica no acesso guardado; hash sem nome aqui = só "Diretoria"
+  DIRETORIA_NOMES: {
+    'b9d9818e4672b1f0d17c953a7dce40e58b06e06168e3aa2bda2bb7ca254d3d66': 'Ana Paula Naves',
+    '912ab610b482ee34ffca833bfbb38dc64b9cd7fc04fe142dbcaaca9b038db34c': 'Alberto Batista',
+  },
   // Gerências agrupadas: os pares que o Datasphere junta numa gerência só (Pa_Di, Gu_Po, It_Mo, Ur_Ri; ver
   // GC_ORIGEM e GC_SIGLAS_ORIGEM em backend/gerador/mapeamento.py). Na entrada viram uma opção "GC.IT + GC.MO"
   // que abre o total das duas, com o seletor Total / uma delas no cabeçalho.
