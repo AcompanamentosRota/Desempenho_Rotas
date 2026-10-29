@@ -6,7 +6,8 @@
      tendência" = card do Volume; "Coberturas no ritmo" = cards do ICS GC + Novos Negócios;
    - Tendência x Meta: desvio da linha de total = Tendência / Meta - 1 (no fechamento, Real / Meta - 1) do agrega() das rotas
      do filtro (o do card de Volume); o % e a Meta do card batem; ordem decrescente; o medidor mostra a meta do dia e o
-     online da caixa Online do card;
+     online da caixa Online do card; a linha "faltam X para a meta" do medidor = Meta - Real (com Real >= Meta, "meta batida ·
+     +X", X = Real - Meta) do agrega() das rotas do filtro, sem a linha no medidor sem meta;
    - coberturas: % da linha de total = % dos cards do ICS GC, Novos Negócios e Todos a Bordo ("—" = card sem meta); Status =
      "x / n itens em 100%" da aba Todos a Bordo;
    - Sem compra: soma das unidades = total = KPI; % = sem compra / base;
@@ -23,7 +24,11 @@ const LE_EXEC = () => {
     k: catAtual(), fech: !!P.FECHAMENTO,
     kpi: {base: t('exNBase'), sem: t('exNSem'), vis: t('exNVis'), cat: t('exNCat'), cob: t('exXCat')},
     gauges: [...document.querySelectorAll('#exGauges .gCard')].map(g => ({k: g.dataset.k,
-      dia: (g.querySelector('.gDia') || {}).textContent || ''})),
+      dia: (g.querySelector('.gDia') || {}).textContent || '', falta: (g.querySelector('.gFalta') || {}).textContent || null,
+      faltaOk: !!g.querySelector('.gFalta.ok'), meta: Number(g.dataset.meta), real: Number(g.dataset.real)})),
+    // Meta e Real do agrega() das rotas do filtro (o do card de Volume), para a linha "faltam" do medidor
+    mrP: Object.fromEntries(GROUPS.VOLUME.map(c => { const b = agrega(rotasAtuais()).ind[c];
+      return [c, b && !b.unavailable && b.meta > 0 ? {meta: b.meta, real: b.real} : null]; })),
     totDesvio: [...document.querySelectorAll('#exDivs .dv')].map(dv => {
       const r = dv.querySelector('.dRow.tot');
       return {k: dv.dataset.k, d: r ? Number(r.dataset.desvio) : null, txt: r ? r.querySelector('.dVal').textContent : null,
@@ -104,6 +109,18 @@ async function confereExecutiva(page, onde){
     if(/online/.test(g.dia)) assert.equal(g.dia, `${card.onRot} · online ${card.on}`, `${onde} ${k}: medidor x caixa Online`);
     if(/batida/.test(g.dia)) assert.equal(card.onRot, 'Meta batida!', `${onde} ${k}: meta do dia batida`);
   }
+  // medidor: "faltam X para a meta" = Meta - Real; "meta batida · +X" = Real - Meta; sem meta, sem a linha
+  const f0 = v => Math.round(v).toLocaleString('pt-BR');
+  for(const g of ex.gauges){
+    const p = ex.mrP[g.k];
+    if(!p){ assert.equal(g.falta, null, `${onde} ${g.k}: medidor sem meta, sem "faltam"`); continue; }
+    assert.equal(g.meta, p.meta, `${onde} ${g.k}: Meta do medidor`);
+    assert.equal(g.real, p.real, `${onde} ${g.k}: Real do medidor`);
+    const bat = p.real >= p.meta;
+    assert.equal(g.falta, bat ? `meta batida · +${f0(p.real - p.meta)}` : `faltam ${f0(p.meta - p.real)} para a meta`,
+      `${onde} ${g.k}: linha "faltam" do medidor`);
+    assert.equal(g.faltaOk, bat, `${onde} ${g.k}: cor da linha "faltam"`);
+  }
   // coberturas: linha de total = % dos cards
   const conf = (k, card, cel, aba) => {
     if(!card || card.off) assert.equal(cel, '—', `${onde} ${aba} ${k}: card sem meta = "—"`);
@@ -134,8 +151,9 @@ async function confereExecutiva(page, onde){
     assert.equal(aTot.ped, gav.riscados, `${onde}: pediram online x riscados da gaveta`);
   }
   const k0 = ex.totDesvio.find(x => x.k === ex.k) || {};
+  const g0 = ex.gauges.find(x => x.k === ex.k) || {};
   return {onde, base: ex.kpi.base, sem: ex.kpi.sem, vis: ex.kpi.vis, cat: ex.kpi.cat.replace(/\s/g, ''),
-    cob: ex.kpi.cob.replace(/^.*: /, ''), desvio: k0.txt || '—', status: ex.cob['INCENTIVO|STATUS'] || '—',
+    cob: ex.kpi.cob.replace(/^.*: /, ''), desvio: k0.txt || '—', falta: g0.falta || '—', status: ex.cob['INCENTIVO|STATUS'] || '—',
     ag: aTot ? aTot.ag : '—', semHoje: aTot ? aTot.sem : '—', ped: aTot ? aTot.ped : '—', restam: aTot ? aTot.restam : '—',
     gaveta: gav.itens};
 }

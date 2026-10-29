@@ -314,13 +314,18 @@ function render(){
 
   // contexto: perfil (Diretoria, Gerência, Supervisão ou Rota) + gerência + supervisão + rota
   const perfil = ACESSO ? ACESSO.perfil : '';
-  const onde = sel.modo==='dir' ? `Diretoria${sel.dgc ? ' · '+esc(rotuloGc(sel.dgc)) : ''}`
+  // Diretoria: o nome de quem entrou (CONFIG.DIRETORIA_NOMES pela senha; sem nome, só "Diretoria")
+  const quem = sel.modo==='dir' && ACESSO && ACESSO.quem ? ACESSO.quem : '';
+  const onde = sel.modo==='dir' ? `Diretoria${quem ? ' · '+esc(quem) : ''}`+
+      `${sel.dgc ? `<span class="subDgc"> · ${esc(rotuloGc(sel.dgc))}</span>` : ''}`
     : `${PERFIS[perfil==='sv' || perfil==='rota' ? perfil : 'gc']} · ${esc(rotuloGc(sel.gc))}`;
-  // escopo numa linha própria no painel lateral; no topo do celular some só na Diretoria (o seletor logo abaixo mostra)
+  // escopo numa linha própria no painel lateral; no topo do celular some só na Diretoria (o seletor logo abaixo mostra),
+  // exceto "Diretoria · nome" (sem a gerência do seletor)
   $('sub').innerHTML = `${esc(P.MES_LABEL)}${tagAtualizado()}<span class="subEsc"><span class="subSep"> · </span>${onde}` +
     (sel.sv?` · ${esc(rotuloSv(sel.sv))}`:'') +
     (sel.rota?` · Rota ${esc(sel.rota)} — ${esc(titulo(nodo(sel.gc,sel.rota).consultor))}`:'') + '</span>';
   $('sub').classList.toggle('dir', sel.modo==='dir');
+  $('sub').classList.toggle('comQuem', !!quem);
   // cabeçalho da aba: o nome da aba na barra (na visão executiva, o do perfil) e a etiqueta do dia, sem subtítulo
   $('abTit').textContent = (document.querySelector(`.tab[data-g="${aba}"]`) || {}).title || '';
   pintaEtiquetaDia($('pilDia'));
@@ -703,7 +708,8 @@ function escolheCat(k, caixa){
   if(el) el.focus({preventScroll:true});
 }
 
-/* Medidores: meia-lua com Real / Meta (até 100%); no centro o % real; Meta | Real; Tendência e o desvio com 2 casas
+/* Medidores: meia-lua com Real / Meta (até 100%); no centro o % real; "faltam X para a meta" (X = Meta - Real) ou, com
+   Real >= Meta, "meta batida · +X" (X = Real - Meta); Meta | Real; Tendência e o desvio com 2 casas
    (↓ rosa abaixo de 0, ↑ verde a partir de 0, pelo valor exato); a linha da meta do dia do card. */
 function pintaMedidores(rotas, ind, k){
   const fech = !!P.FECHAMENTO;
@@ -717,12 +723,15 @@ function pintaMedidores(rotas, ind, k){
     const dia = fech ? '' : `<div class="gDia">${b.metaDia==null ? 'meta do dia —' : metaBatida(b.metaDia) ? 'meta do dia batida'
       : `meta do dia ${fmt0(b.metaDia)} · online ${fmt0(onlineVol(rotas, c))}`}</div>`;
     const dif = b.real - b.meta;
-    return `<div class="gCard${on ? ' sel' : ''}" role="button" tabindex="0" aria-pressed="${on}" data-k="${esc(c)}" data-desvio="${d}">`+
+    return `<div class="gCard${on ? ' sel' : ''}" role="button" tabindex="0" aria-pressed="${on}" data-k="${esc(c)}" data-desvio="${d}"`+
+      ` data-meta="${b.meta}" data-real="${b.real}">`+
       `<div class="gTit">${nome}</div>`+
       `<svg class="gSvg" viewBox="0 0 120 66" aria-hidden="true"><path class="tr" d="M10 60 A50 50 0 0 1 110 60"/>`+
       `<path class="vl" d="M10 60 A50 50 0 0 1 110 60" style="stroke:${COR_CAT[c] || 'var(--cinza-escuro)'}" pathLength="100"`+
       ` stroke-dasharray="${v.toFixed(2)} 100"/></svg>`+
       `<div class="gPct">${b.pctReal}%<small>real</small></div>`+
+      (b.real >= b.meta ? `<div class="gFalta ok">meta batida · +${fmt0(b.real - b.meta)}</div>`
+                        : `<div class="gFalta">faltam ${fmt0(b.meta - b.real)} para a meta</div>`)+
       `<div class="gMR"><div><small>Meta</small><b data-fit="" data-fit-min="9">${fmt0(b.meta)}</b></div>`+
       `<div><small>Real</small><b data-fit="" data-fit-min="9">${fmt0(b.real)}</b></div></div>`+
       `<div class="gTend"><small>${fech ? 'Realizado x Meta' : 'Tendência'}</small>`+
@@ -931,7 +940,7 @@ function pintaCoberturasExec(us, tot, niv){
    (ordem fixa de GROUPS.VOLUME) no total do escopo (o mesmo total dos outros blocos: BAND, total do grupo, da supervisão).
    Mês de referência = Real / Meta de agrega() (o % real do medidor, sem arredondar); mês anterior = Real até o corte / Meta
    do mês anterior inteiro = soma dos pares de MES_ANTERIOR.ROTAS das rotas (NUCLEO.mesAnterior; item null = rota fora).
-   Duas trilhas de 0 a 100% da meta: em cima, sólida, o mês de referência; embaixo, hachurada, o anterior; acima de 100% a
+   Duas trilhas de 0 a 100% da meta, as duas hachuradas: em cima, em --ruim, o mês de referência; embaixo, cinza, o anterior; acima de 100% a
    barra enche e o número mostra o valor. Δ p.p. = % atual - % anterior (1 casa; seta e cor pelo sinal exato, 0 e sem dado
    em cinza); Δ Real = Real atual / Real anterior - 1 (só na caixa de comentário). Sem meta anterior (ou sem meta no mês de
    referência): "—". Clicar numa categoria (ou Enter/Espaço) abre logo abaixo, na página, as unidades do escopo (as da
@@ -976,7 +985,7 @@ function pintaEvolucao(us, tot, niv){
   const rotAtu = fech ? `${P.MES_LABEL} (fechado)` : P.MES_LABEL;
   const pctTxt = v => `${pctBR(v, 1)}%`;
   const larg = p => `${p==null ? 0 : Math.max(0, Math.min(100, p)).toFixed(2)}%`;
-  // uma linha: nome | trilhas (sólida em cima, hachurada embaixo; marca de 100% no fim) | % atual sobre % anterior | Δ
+  // uma linha: nome | trilhas (mês de referência em cima, anterior embaixo; marca de 100% no fim) | % atual sobre % anterior | Δ
   const linhaEvo = (x, nome, cat, i) => {
     const {u, b, a, temA, temB, pt, pa, ok, d, dr} = x;
     const lA = temA ? `Real <b>${fmt0(a.real)}</b> (${pctTxt(pa)} da meta ${fmt0(a.meta)})` : 'sem meta no mês anterior';
@@ -1622,8 +1631,9 @@ function leSessao(){
   try { const v = JSON.parse(s); return (v && typeof v==='object') ? v : {}; } catch(e) { return {}; }
 }
 function gravaSessao(a){
+  // quem (Diretoria) = só o nome de CONFIG.DIRETORIA_NOMES; nunca a senha nem o hash
   try { localStorage.setItem(SESSAO, JSON.stringify({perfil:a.perfil, gc:a.gc, sv:a.sv, rota:a.rota, dia:a.dia,
-                                                      v:SESSAO_VERSAO})); }
+                                                      ...(a.quem ? {quem:a.quem} : {}), v:SESSAO_VERSAO})); }
   catch(e) { /* sem armazenamento: o acesso vale só nesta visita */ }
 }
 function apagaSessao(){ try { localStorage.removeItem(SESSAO); } catch(e) { /* sem armazenamento */ } }
@@ -1663,9 +1673,11 @@ const gcValida = u => typeof u==='string' && (ehGrupo(u) || todasGcs().includes(
 /* Confere um acesso com as regras da entrada: o escolhido na caixa ou o guardado (ao reabrir e a cada payload novo).
    Gerência ou grupo liberado e com dados; supervisão ou rota que aparece no painel da gerência (no grupo, de uma das duas).
    Devolve o acesso com os códigos do painel (na Supervisão e na Rota, a gerência delas) ou null. */
+// nome de quem entrou na Diretoria: um dos nomes de CONFIG.DIRETORIA_NOMES (outro valor guardado não vale); '' = sem nome
+const nomeDiretoria = q => typeof q==='string' && Object.values(CONFIG.DIRETORIA_NOMES || {}).includes(q) ? q : '';
 function validaAcesso(a){
   const perfil = a && a.perfil;
-  if(perfil==='dir') return {perfil, gc:'', sv:'', rota:''};
+  if(perfil==='dir') return {perfil, gc:'', sv:'', rota:'', quem:nomeDiretoria(a.quem)};
   if(perfil==='gc') return opcaoValida(a.gc) ? {perfil, gc:a.gc, sv:'', rota:''} : null;
   if(!['sv', 'rota'].includes(perfil) || !gcValida(a.gc)) return null;
   const gcs = membrosGc(a.gc).filter(g => DATA[g]);
@@ -1820,13 +1832,18 @@ async function confereSenha(){
   msg.textContent = '';
   const falha = texto => { campo.value = ''; msg.textContent = texto; campo.focus({preventScroll:true}); };
   if(!temCripto()) return falha(MSG_SENHA.seguro);
-  let ok = false;
+  let ok = false, quem = '';
   _conferindo = true;
-  try { ok = !!normalizaSenha(valor) && (CONFIG.DIRETORIA_SENHAS_HASH || []).includes(await hashSenha(valor)); }
+  try {
+    const h = normalizaSenha(valor) ? await hashSenha(valor) : '';
+    ok = !!h && (CONFIG.DIRETORIA_SENHAS_HASH || []).includes(h);
+    // o nome ligado a esta senha (pelo mesmo hash); sem nome no mapa, só "Diretoria"
+    if(ok) quem = (CONFIG.DIRETORIA_NOMES || {})[h] || '';
+  }
   catch(e) { ok = false; }
   finally { _conferindo = false; }
   if(!CAIXA || CAIXA.perfil!=='dir' || $('entSenha')!==campo) return;      // a caixa fechou enquanto conferia
-  if(ok) return entraCom({perfil:'dir'});
+  if(ok) return entraCom({perfil:'dir', quem});
   falha(MSG_SENHA.incorreta);
 }
 $('entOpcoes').onclick = e => {

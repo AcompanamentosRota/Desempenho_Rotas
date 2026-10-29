@@ -322,6 +322,11 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Supervisão e Rota antigas valem. Recarregar no mesmo dia não pede a senha; casa e virada das 05:00 pedem. Testes:
   senhas FICTÍCIAS em `frontend/tests/senha_teste.js` (`trocaHash` troca os hashes no config.js servido, em `abre()` dos
   dois arquivos de teste; `digitaSenha` no `entra()`; front antigo sem senha passa direto); Parte AB.
+  **Nome na Diretoria (29/10/2026)**: `CONFIG.DIRETORIA_NOMES` = mapa hash → nome (os mesmos hashes; nunca a senha).
+  `confereSenha` acha o nome pelo hash já calculado → `entraCom({perfil:'dir', quem})`; `validaAcesso` devolve `quem` só se
+  for um nome do mapa (`nomeDiretoria`); `gravaSessao` guarda `quem` (só o nome). `#sub`: "Diretoria · nome" (a gerência do
+  seletor em `.subDgc`); `#sub.comQuem`: no celular o escopo aparece ("Diretoria · nome", sem `.subDgc`); sem nome, como
+  antes. Testes: `trocaNomes`/`NOMES_TESTE` (nomes fictícios; `abre(nome, {nomes})`, padrão {} = nenhum nome); Parte AE.
   **Logos da entrada (Etapa 7, 21/10/2026; no lugar da linha `.entMarca`)**: `.entLogos` acima do `#entTit` = logo
   Coca-Cola Bandeirantes (`.entCoca`, 62 px; 52 px em <= 380 px; `alt="Coca-Cola Bandeirantes"`) | `.entSep` (1,5 x 64 px,
   `--vermelho`, `aria-hidden`) | `.entElmo` (`role="img"` + `aria-label="Comercial Bandeirantes"`: elmo 40/34 px com
@@ -489,7 +494,14 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (QUALQUER); total = gaveta Sem compra (riscados = pediram). Tabela: `agrega().ind[k].pct` (ICS/NN), Todos a Bordo por
   `rotasInc` + `itensEm100`; células com `data-g` (o mesmo item está em dois grupos: ARTD KO; CERVEJAS e CERVEJAS 600ML
   RETORNAVEL no INCENTIVO só com as rotas com meta). Fechamento: "Realizado x Meta", `#exDia` e `#exAg` hidden
-  (`.dupla.so1`). Evolução: ver abaixo (Etapa 8c). Dica = `ativaDica` em todo `[data-dica]` do `#exec` (linhas
+  (`.dupla.so1`). Evolução: ver abaixo (Etapa 8c).
+  Ajustes visuais (29/10/2026; Parte AE): `#exCob` zebrado (`tbody tr:nth-child(even)` = `--zebra` #f6f6f8, também o `th.un`
+  sticky; `tr.tot` = `--zebra-tot` #e4e4e8 e negrito; hover #ececef / total #d9d9de; o painel não tem tema escuro: os dois
+  fundos são só da entrada); medidor com `.gFalta` entre `.gPct` e `.gMR` ("faltam X para a meta", X = `fmt0(meta − real)`,
+  `--vermelho2`; Real >= Meta: `.gFalta.ok` "meta batida · +X", `--verdeE`; `--fs-ex-mini`, 700; sem a linha no `.off`) e
+  `data-meta`/`data-real` exatos no `.gCard`; rótulo `label.buscaRot` "Busca por cliente" (`--fs-busca-rot`, caixa alta,
+  `--txt-apoio`) acima do `#q`, placeholder "Digite nome, código ou rede". Os "antes x depois" contra fronts antigos
+  desfazem isso no atual com `desfazAE` (rotulos_invariantes.js; `igualRotulo`, `igualSemFalta`). Dica = `ativaDica` em todo `[data-dica]` do `#exec` (linhas
   `.dRow`/`.hRow` com `tabindex=0`; fecha a aberta ao redesenhar). Celular: as 5 abas rolam de lado (`.tabs`
   overflow-x, `mostraAbaAtiva`); só a coluna `.dv.sel` com os chips. Medidores 5 colunas >= 1200 px, 3 >= 700, 2;
   tabela `min-width` 1140 px (rola dentro do bloco, 1ª coluna sticky). Escala `--fs-ex-*`. Testes: Parte W.
@@ -502,8 +514,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   atual / Real anterior − 1 (só na dica). `#exEvLinhas`: uma `.evLin.cat` por categoria (`GROUPS.VOLUME`, `rotuloInd`;
   `role=button`, `aria-expanded`/`aria-controls`, `clicavel` → `abreEvo`, que só troca `hidden`) e logo depois a
   `.evDet#exEvDet<i>` (`hidden` fechada) com uma `.evLin.un` por unidade (Δ decrescente, "—" no fim). Linha = `.evNome`
-  (`svg.evSeta` só na categoria, gira aberta) | `.evBarras` (duas `.evTr`: `i.atu` sólida `--ruim`, `i.ant` hachurada
-  `--cinza-claro`; largura = mín(100, %); `::after` = marca preta de 100%) | `.evVal` (`b.evPA` % atual em `--serif`,
+  (`svg.evSeta` só na categoria, gira aberta) | `.evBarras` (duas `.evTr`: `i.atu` hachurada `--ruim` (sólida até
+  29/10/2026; a legenda `.lg.evAtu` também), `i.ant` hachurada `--cinza-claro`; nas `.evLin.un` passo de 3 px em vez de 4; largura = mín(100, %); `::after` = marca preta de 100%) | `.evVal` (`b.evPA` % atual em `--serif`,
   `.evPB` % anterior em `--txt-apoio`; 1 casa; "—") | `.evD` (`.evDN` "▲ +x,x" / "▼ −x,x" / "0,0" / "—" e `small` "p.p.";
   `pos` `--verdeE`, `neg` `--vermelho2`, `zero`/`nd` `--txt-apoio`; sinal exato, `fmtDpp`; na dica `fmtPP`). Atributos
   `data-k/u/dpp/pct/pct-ant/real/meta/real-ant/meta-ant` e `data-dica` (`ativaDica`). Estado `evoAberto` {chave, ks}:

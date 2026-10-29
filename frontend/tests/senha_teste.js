@@ -17,6 +17,13 @@ const trocaHash = (texto, hashes = HASHES_TESTE) =>
 const RE_LIBERADAS = /GC_LIBERADAS:\s*(null|\[[^\]]*\])/;
 const trocaLiberadas = (texto, lista = null) =>
   lista === 'config' ? String(texto) : String(texto).replace(RE_LIBERADAS, `GC_LIBERADAS: ${JSON.stringify(lista)}`);
+/* Também no config.js servido: CONFIG.DIRETORIA_NOMES (nome de quem entra na Diretoria, pelo hash) = `nomes` (padrão
+   {} = nenhum nome, só "Diretoria"), nunca o mapa real; NOMES_TESTE liga os hashes das senhas de teste a nomes FICTÍCIOS.
+   config.js sem a chave (front antigo) fica igual. */
+const NOMES_TESTE = {[HASHES_TESTE[0]]: 'Pessoa Teste Um', [HASHES_TESTE[1]]: 'Fulana de Teste'};
+const RE_NOMES = /DIRETORIA_NOMES:\s*\{[^}]*\}/;
+const trocaNomes = (texto, nomes = {}) =>
+  String(texto).replace(RE_NOMES, `DIRETORIA_NOMES: ${JSON.stringify(nomes)}`);
 /* Na caixa de senha aberta (botão DIRETORIA já clicado): digita a senha, Enter e espera sair da entrada. Front antigo
    (Diretoria sem senha, já entrou): não faz nada. */
 async function digitaSenha(page, senha = SENHAS_TESTE[0]){
@@ -26,4 +33,5 @@ async function digitaSenha(page, senha = SENHAS_TESTE[0]){
   await page.waitForFunction(() => document.getElementById('entrada').hidden);
 }
 
-module.exports = {SENHAS_TESTE, hashTeste, HASHES_TESTE, RE_HASHES, trocaHash, RE_LIBERADAS, trocaLiberadas, digitaSenha};
+module.exports = {SENHAS_TESTE, hashTeste, HASHES_TESTE, RE_HASHES, trocaHash, RE_LIBERADAS, trocaLiberadas, digitaSenha,
+  NOMES_TESTE, RE_NOMES, trocaNomes};
