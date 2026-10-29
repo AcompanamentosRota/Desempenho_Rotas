@@ -3,6 +3,8 @@
    Modelo 2 aprovado: "Faltam X"/"Meta dia X" e Online em destaque,
    seta com % em segundo plano. Blocos independentes: Volume, ICS GC,
    Novos Negócios. Colunas seguem o filtro (GC -> SVs, SV -> rotas, rota).
+   Bloco opcional "Todos a Bordo 3.0" (blocos.tab, desmarcado; só com incentivoAtivo()): os itens de GROUPS.INCENTIVO
+   com a conta do ICS GC, cada item só nas rotas da coluna com meta dele (rotasInc); coluna sem rota com meta: "—".
    Mesmas regras da Parcial: % = (Real ∪ Online)/Meta; ritmo = PACE_ONTEM;
    faltam = ceil(Meta*DIA_HOJE/TOTAL) - Real (sem descontar Online);
    Volume verde por % Tendência >= 100 sobre a meta da rota (tendência do SAC: só o faturado + Neg Restante; o online de hoje
@@ -17,24 +19,31 @@ const RS = (()=>{
   const VOL_ORD = ['VOL REFRIGERANTES','VOL CERVEJAS','VOL STILL','VOL AGUA MINERAL','VOL DEST+ART+CND'];
   const ICS_ORD = ['CCTM 2L PET','KS TT','REFRI SABORES ZERO','POWERADE','KAPO','CERVEJAS','CERVEJAS 600ML RETORNAVEL','EISENBAHN','ARTD KO'];
   const CURTO_X = {'REFRI SABORES ZERO':'Refri Sab. Zero','CERVEJAS 600ML RETORNAVEL':'Cerv. 600ml Ret.'};
-  const blocos = {vol:true, ics:true, nov:false};
+  const blocos = {vol:true, ics:true, nov:false, tab:false};
   let aberto = false, COMPACTO = false, LARG_MIN = 380;
   const n = v => { const r = Math.round(v); return (r===0?0:r).toLocaleString('pt-BR'); };
   const nome = k => rotuloFront(k, CURTO_X[k] || (P.LABELS_CURTO||{})[k] || LABELS[k]);
+  // bloco Todos a Bordo: só com a aba (payload com GROUPS.INCENTIVO e CONFIG.INCENTIVO_ATIVO); linhas com o rótulo da aba
+  const temTab = () => incentivoAtivo();
+  const ligado = k => blocos[k] && (k!=='tab' || temTab());
+
+  // cobertura de uma rota num item (Real ∪ Online, clientes distintos): acumula em t
+  function somaCob(t, r, k, b){
+    const OC = (ONLINE && ONLINE.clientes) || {};
+    const idsR = new Set(((COBERTOS[r]||{})[k])||[]), idsO = ((OC[r]||{})[k])||[];
+    t.meta += b.meta||0; t.real += b.real||0; t.onl += idsO.length;
+    idsO.forEach(i=>idsR.add(i)); t.tot += idsR.size;
+  }
 
   /* ---- soma de um conjunto de rotas (mesma conta da Parcial) ---- */
   function soma(gc, rotas){
-    const s = {c:{}, v:{}, vz:{meta:0,real:0,rev:0,op:0,n:0}};
-    const OC = (ONLINE && ONLINE.clientes) || {}, OV = (ONLINE && ONLINE.volume) || {};
-    const ids = {};
+    const s = {c:{}, v:{}, t:{}, vz:{meta:0,real:0,rev:0,op:0,n:0}};
+    const OV = (ONLINE && ONLINE.volume) || {};
     rotas.forEach(r=>{
       const d = nodo(gc, r); if(!d) return;
       [...new Set([...ICS_ORD, ...GROUPS.NOVOS_NEG])].forEach(k=>{   // ARTD KO esta nos dois grupos: Set evita somar em dobro
         const b = d.indicators[k]; if(!b || b.unavailable) return;
-        const t = s.c[k] || (s.c[k] = {meta:0, real:0, onl:0, tot:0});
-        const idsR = new Set(((COBERTOS[r]||{})[k])||[]), idsO = ((OC[r]||{})[k])||[];
-        t.meta += b.meta||0; t.real += b.real||0; t.onl += idsO.length;
-        idsO.forEach(i=>idsR.add(i)); t.tot += idsR.size;
+        somaCob(s.c[k] || (s.c[k] = {meta:0, real:0, onl:0, tot:0}), r, k, b);
       });
       VOL_ORD.forEach(k=>{
         const b = d.indicators[k]; if(!b || b.unavailable) return;
@@ -48,6 +57,12 @@ const RS = (()=>{
       if(!z.unavailable){ s.vz.meta += z.meta||0; s.vz.real += z.real||0; s.vz.n++; }
     });
     if(rotas.length===1) for(const k in s.v) if(s.v[k].sem) s.v[k].indisp = true;
+    // Todos a Bordo: cada item só nas rotas da coluna com meta dele (e, junto delas, a oculta das EV* com cliente coberto),
+    // as mesmas do card da aba (rotasInc); sem nenhuma, o item fica sem soma ("—")
+    if(ligado('tab')) itensInc().forEach(k=>rotasInc(k, rotas).forEach(r=>{
+      const b = (nodo(gc, r)||{indicators:{}}).indicators[k]; if(!b || b.unavailable) return;
+      somaCob(s.t[k] || (s.t[k] = {meta:0, real:0, onl:0, tot:0}), r, k, b);
+    }));
     return s;
   }
 
@@ -115,19 +130,21 @@ const RS = (()=>{
     const nm = c.nome!=null ? c.nome : /^GC\./.test(c[0]) ? nomesGc()[c[0].slice(3)] : nomeSv(c[0]);
     return esc(c[0]) + (nm ? `<small class="rs-svnome">${esc(nm)}</small>` : ''); };
   // coluna em branco: completa as faixas da Diretoria para as colunas ficarem alinhadas entre as faixas
-  const colVazia = () => Object.assign(['', [], {c:{}, v:{}, vz:{n:0}}], {vazio:true});
+  const colVazia = () => Object.assign(['', [], {c:{}, v:{}, t:{}, vz:{n:0}}], {vazio:true});
   // foco0: a 1ª coluna é o total (destacada); nas faixas seguintes da Diretoria não é
   const thead = (rot, cols, foco0=true) => `<thead><tr><th class="rs-nome">${rot}</th>${cols.map((c,i)=>`<th class="${i===0&&foco0?'rs-foco':''}">${cab(c)}</th>`).join('')}</tr></thead>`;
-  function tabela(linhas, todas, comVz, foco0=true){
-    const cols = todas.filter((c,i)=> (i===0 && foco0) || c.vazio || linhas.some(k=>c[2].c[k] && c[2].c[k].meta));
+  // op (bloco Todos a Bordo): dado = chave da soma ('t'), rot = rótulo da linha, cols = as colunas de outro bloco (ICS GC)
+  function tabela(linhas, todas, comVz, foco0=true, op={}){
+    const dado = op.dado || 'c', rot = op.rot || nome;
+    const cols = op.cols || todas.filter((c,i)=> (i===0 && foco0) || c.vazio || linhas.some(k=>c[2].c[k] && c[2].c[k].meta));
     const cont = cols.map(()=>[0,0]);
     const td = (i,r)=>{ if(cols[i].vazio) return '<td></td>'; if(r.ok!==null){cont[i][1]++; if(r.ok) cont[i][0]++;} return `<td>${r.h}</td>`; };
-    let body = linhas.map(k=>`<tr><td class="rs-nome">${nome(k)}</td>${cols.map((c,i)=>td(i, celInd(c[2].c[k]))).join('')}</tr>`).join('');
+    let body = linhas.map(k=>`<tr><td class="rs-nome">${rot(k)}</td>${cols.map((c,i)=>td(i, celInd(c[2][dado][k]))).join('')}</tr>`).join('');
     if(comVz) body += `<tr><td class="rs-nome">Venda Zero</td>${cols.map((c,i)=>td(i, celVz(c[2].vz))).join('')}</tr>`;
     body += `<tr class="rs-tot"><td class="rs-nome">No ritmo</td>${cont.map((v,i)=>`<td>${cols[i].vazio?'':(v[1]?v[0]+'/'+v[1]:'—')}</td>`).join('')}</tr>`;
     const cards = cols.map((c,i)=>{
       if(c.vazio) return '';
-      const lin = linhas.map(k=>{ const r = celInd(c[2].c[k]); return r.ok===null ? '' : `<div class="rs-lin"><span class="rs-nome">${nome(k)}</span>${r.h}</div>`; }).join('')
+      const lin = linhas.map(k=>{ const r = celInd(c[2][dado][k]); return r.ok===null ? '' : `<div class="rs-lin"><span class="rs-nome">${rot(k)}</span>${r.h}</div>`; }).join('')
         + (comVz ? (()=>{ const r = celVz(c[2].vz); return r.ok===null ? '' : `<div class="rs-lin"><span class="rs-nome">Venda Zero</span>${r.h}</div>`; })() : '');
       const ct = cont[i][1] ? `<small>${cont[i][0]}/${cont[i][1]} no ritmo</small>` : '';
       return `<div class="rs-card ${i===0&&foco0?'rs-foco':''}"><div class="rs-cardh"><span>${cab(c)}</span>${ct}</div>${lin}</div>`;
@@ -162,7 +179,15 @@ const RS = (()=>{
     return `<div class="rs-atencao">ATENÇÃO: ${cand.map(([c,ct])=>`${esc(rotuloSv(c))} (${ct[0]}/${ct[1]} no ritmo)`).join(' · ')}</div>`;
   }
   /* ---- monta a folha ---- */
+  // botão "Todos a Bordo" (nos dois grupos) só com a aba; payload sem ela: bloco desligado (e um bloco sempre ligado)
+  function botoes(){
+    const t = !!P && temTab();
+    document.querySelectorAll('[data-rsb="tab"]').forEach(b=>b.hidden = !t);
+    if(P && !t && blocos.tab){ blocos.tab = false; if(!Object.values(blocos).some(Boolean)) blocos.ics = true; }
+    document.querySelectorAll('[data-rsb]').forEach(b=>b.setAttribute('aria-pressed', blocos[b.dataset.rsb]));
+  }
   function pinta(){
+    botoes();
     if(!aberto || !P) return;
     const {titulo:tit, sub, cols} = colunas();
     cols.forEach(c=>c[2] = soma(sel.gc, c[1]));
@@ -178,6 +203,8 @@ const RS = (()=>{
       return `<div class="rs-faixa"><div class="rs-tab">${volTab}</div><div class="rs-cards">${volCards}</div></div>`;
     }).join('');
     const ics = fx.map((fc,fi)=>tabela(ICS_ORD, fc, true, fi===0)), nov = fx.map((fc,fi)=>tabela(GROUPS.NOVOS_NEG, fc, false, fi===0));
+    // Todos a Bordo: as colunas do bloco ICS GC; itens na ordem da aba, com o rótulo dela
+    const tab = ligado('tab') ? fx.map((fc,fi)=>tabela(itensInc(), fc, false, fi===0, {dado:'t', rot:rotuloInd, cols:ics[fi].cols})) : [];
     const html = ts => ts.map(t=>`<div class="rs-faixa">${t.html}</div>`).join('');
     const up = (ONLINE && ONLINE.updatedAt) || '';
     const placa = placaAtencao(ics);
@@ -194,14 +221,14 @@ const RS = (()=>{
       ${placa}
       ${blocos.vol?`<div class="rs-bloco"><h3>Volume — ${P.FECHAMENTO?'realizado do mês (fechamento)':'tendência do mês'} <small>${P.FECHAMENTO?'Online de hoje, sem meta do dia':'Online verde ao bater a Meta dia'}</small></h3>${volT}</div>`:''}
       ${blocos.ics?`<div class="rs-bloco"><h3>Coberturas — ICS GC <small>Online verde ao bater o faltam</small></h3>${html(ics)}</div>`:''}
-      ${blocos.nov?`<div class="rs-bloco"><h3>Novos Negócios <small>Online verde ao bater o faltam</small></h3>${html(nov)}</div>`:''}`;
-    document.querySelectorAll('[data-rsb]').forEach(b=>b.setAttribute('aria-pressed', blocos[b.dataset.rsb]));
+      ${blocos.nov?`<div class="rs-bloco"><h3>Novos Negócios <small>Online verde ao bater o faltam</small></h3>${html(nov)}</div>`:''}${ligado('tab')?`
+      <div class="rs-bloco" data-bloco="tab"><h3>Todos a Bordo 3.0 <small>Online verde ao bater o faltam · só as rotas com meta de cada item</small></h3>${html(tab)}</div>`:''}`;
   }
 
   /* ---- link com filtro + blocos ---- */
   function linkAtual(){
     const q = new URLSearchParams();
-    q.set('resumo', Object.keys(blocos).filter(k=>blocos[k]).join(','));
+    q.set('resumo', Object.keys(blocos).filter(ligado).join(','));
     if(sel.modo==='dir'){ q.set('modo', 'dir'); if(sel.dgc) q.set('gc', sel.dgc); }
     else { const f = filtroRs(); q.set('gc', sel.gc); if(f.sv) q.set('sv', f.sv); if(f.rota) q.set('rota', f.rota); }
     return location.origin + location.pathname + '?' + q.toString().replace(/%2C/g, ',');
@@ -340,7 +367,7 @@ const RS = (()=>{
     if(location.search.includes('resumo=')){ history.replaceState(null, '', location.pathname); entradaOuAcesso(); }
   }
   function alterna(k){
-    const lig = Object.values(blocos).filter(Boolean).length;
+    const lig = Object.keys(blocos).filter(ligado).length;
     if(blocos[k] && lig===1){ aviso('Deixe pelo menos um bloco ligado.'); return; }
     blocos[k] = !blocos[k];
     document.querySelectorAll('[data-rsb]').forEach(b=>b.setAttribute('aria-pressed', blocos[b.dataset.rsb]));
@@ -380,5 +407,6 @@ const RS = (()=>{
     document.addEventListener('keydown', e=>{ if(e.key==='Escape' && aberto) fecha(); });
     let t; addEventListener('resize', ()=>{ clearTimeout(t); t = setTimeout(pinta, 150); });
   }
-  return {pinta, doLink, liga, fecha, paginas, carregaScript, salvaPdf};
+  // colunas(): só leitura (testes conferem as rotas de cada coluna)
+  return {pinta, doLink, liga, fecha, paginas, carregaScript, salvaPdf, colunas};
 })();

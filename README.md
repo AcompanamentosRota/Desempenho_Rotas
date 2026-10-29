@@ -344,6 +344,22 @@ Rota, que não tem a Executiva, abre no **Volume**.
   gerências lado a lado; no perfil Supervisão, o da supervisão (e
   das rotas dela); no perfil Rota, sem o botão. A placa ATENÇÃO existe, mas está desligada
   (`CONFIG.LIMIAR_ATENCAO = null`). A folha do Resumo (tela e PDF) **não tem assinatura**: acaba no último bloco.
+  Blocos escolhidos nos botões "Volume", "ICS GC", "Novos Neg." e "Todos a Bordo" (os mesmos na barra do painel e no
+  Resumo aberto; pelo menos um ligado).
+- **Bloco "Todos a Bordo 3.0" do Resumo** (29/10/2026; opcional, **desmarcado por padrão**): botão "Todos a Bordo"
+  (`data-rsb="tab"`) depois de "Novos Neg.", só quando a aba Todos a Bordo existe (payload com `GROUPS.INCENTIVO` e
+  `CONFIG.INCENTIVO_ATIVO`; sem ela, o botão some e o bloco nunca é desenhado, nem por link). Uma linha por item de
+  `GROUPS.INCENTIVO`, na ordem e com o rótulo da aba (Cervejas, Heineken, Eisenbahn - 600ml, Heineken - 600ml, Cervejas
+  600ml Retornável), as **mesmas colunas do bloco ICS GC** e a mesma célula (Faltam ou Meta dia, Online e "% do mês"), com a
+  linha "No ritmo" no fim. **Decisão da Karen (29/10/2026): a conta é a do ICS GC no Resumo**: % do mês = clientes
+  distintos no Real ou no online de hoje (`COBERTOS` ∪ online, sem contar em dobro) / Meta, cada item **só nas rotas da
+  coluna com meta dele** (as do card da aba, `rotasInc`: com meta > 0 e, junto delas, a rota oculta das EV* com cliente
+  coberto). Por isso o % do bloco pode passar o do card da aba (o card é Real / Meta, sem o online), como já acontece no
+  ICS GC; Meta, Real e o Online do total são os do card. Coluna sem nenhuma rota com meta do item: "—" (nunca 0%); com o
+  dado real de 29/10, Heineken e Heineken - 600ml ficam "—" em AP, AT, G3, PA, DI e GU, e AN, G1 e G2 mostram só as rotas
+  com meta (A37, 111, 211-214), como o card. Fechamento: a mesma regra das coberturas do ICS no fechamento. No PDF o
+  bloco é um átomo (Diretoria com Volume + ICS GC + Todos a Bordo = 3 páginas) e no link `?resumo=` entra como `tab`
+  (`?resumo=vol,ics,tab&gc=G2`); link antigo sem `tab` abre como antes. Sem o bloco marcado, o Resumo é o mesmo de antes.
 - **Painel de Ritmo em PDF** (botão "Painel de ritmo", ao lado de "Gerar resumo de vendas"; relatório MATINAL): exporta
   direto um PDF com páginas 16:9 (1280x720) **só com dados reais** do `payload.json` (Real fechado até o último dia
   útil + metas); nada do online de hoje nem dos revertidos/oportunidades de hoje. **Escopo pelo filtro**: Diretoria em
@@ -499,6 +515,16 @@ sem meta + rotas fora = total; (c) ordem e só as unidades com meta; (d) cor rec
 barras; (f) "Neutraliza" por último), usadas também pela conferência com dado real (bloco "Gaveta Categoria por unidade":
 Diretoria, cada gerência, cada grupo no Total e uma supervisão, nas 5 categorias; 360, 390, 1000 e 1440 px nos dois fundos; e
 o antes x depois com o mesmo payload real).
+A **Parte AF** confere o bloco "Todos a Bordo 3.0" do Resumo (cenários `inc`, `incfech` e `seminc`): botão nos dois grupos
+depois de "Novos Neg.", desmarcado, ausente sem a aba (`seminc` e `INCENTIVO_ATIVO = false`, também com `tab` no link); o
+bloco com os 5 itens, as colunas do ICS GC e "No ritmo"; cada célula pela regra (rotas com meta do item, Real ∪ Online
+distintos) e o total contra os cards da aba (Diretoria, G2, G3, IT+MO no Total e SV.IT.1); "—" nas gerências sem meta de
+Heineken; as células de Cervejas e Cervejas 600ml Retornável iguais às do ICS GC num escopo com meta em todas as rotas
+(também no fechamento); link `?resumo=` com e sem `tab`; PDF simulado (o bloco é um átomo) e, com as bibliotecas npm, o PDF
+real (2 → 3 páginas na Diretoria); os 4 botões sem corte em 360, 390, 1000 e 1440 px. As invariantes ficam em
+`frontend/tests/resumo_tab_invariantes.js`, usadas também pela conferência com dado real (bloco "Resumo de vendas: bloco
+Todos a Bordo 3.0": Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px; e o antes x depois
+contra a main antes do bloco, `9f82f15`: Resumo sem o bloco, Executiva, cards e cascata iguais).
 
 ```bash
 git show origin/main:frontend/data/payload.json > /tmp/real/payload.json

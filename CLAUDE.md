@@ -122,6 +122,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (`frontend/tests/categoria_invariantes.js`, as mesmas da Parte AC; tabela por escopo e categoria); 360/390/1000/1440 px nos
   dois fundos sem corte nem rolagem lateral; e o antes x depois contra o front do `ec60a88` com o mesmo payload (Executiva,
   abas, cascata, Base, Sem compra e Resumo iguais).
+  Resumo, bloco Todos a Bordo: Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px
+  (`frontend/tests/resumo_tab_invariantes.js`, as mesmas da Parte AF; tabela por escopo com bloco / card / online de cada item);
+  e o antes x depois contra o front do `9f82f15` com o mesmo payload (Resumo sem o bloco, Executiva, cards e cascata iguais).
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -382,6 +385,21 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Total: total + as duas; sem seletor próprio); placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada). Del Valle Frut continua fora
   da Diretoria, mesmo com uma gerência. Rodapé do painel: "Karen Oliveira - Inteligência de Mercado" (`CONFIG.CREDITOS`);
   a folha do Resumo NÃO tem assinatura (sem `.rs-rod`, na tela e no PDF; desde 21/10/2026).
+  **Bloco "Todos a Bordo 3.0" do Resumo (29/10/2026; README, "Bloco Todos a Bordo 3.0 do Resumo")**: `blocos.tab` (padrão
+  false), botão `[data-rsb="tab"]` nos dois `.rsChips` depois de "Novos Neg." (`hidden` no HTML; `botoes()` no início de
+  `RS.pinta` mostra só com `incentivoAtivo()` e desliga o bloco sem a aba; `ligado(k)` = marcado e, no `tab`, com a aba: conta
+  no "pelo menos um bloco" e no link). `soma()` ganhou `s.t[k]` = a conta do ICS (`somaCob`: Meta, Real, Online, |COBERTOS ∪
+  online|) só em `rotasInc(k, rotas)` da coluna; `tabela(linhas, todas, comVz, foco0, {dado:'t', rot:rotuloInd, cols})` com as
+  colunas do bloco ICS (`ics[fi].cols`); célula = `celInd` (sem rota com meta: "—"). DECISÃO DA KAREN (29/10/2026): o % é o do
+  ICS no Resumo, (Real ∪ Online) / Meta, NÃO o do card da aba (Real / Meta): a invariante é Meta/Real/Online do total = card e
+  % = card só quando o online não traz cliente novo. `.rs-bloco[data-bloco="tab"]` (último bloco; nome com quebra de linha:
+  `td.rs-nome{white-space:normal}`, senão "Cervejas 600ml Retornável" estoura os 150 px e o `encaixaPdf` alarga o PDF);
+  `RS.colunas` exposto (só leitura, testes). `.rsChips` = uma coluna por botão (`grid-auto-flow:column`; `button[hidden]`
+  some); no PC (>= 1000 px) os botões têm pelo menos a largura do texto (antes, a 1000 px, ficavam com ~12 px) e, com a
+  `.rsBox` (container) até 1060 px de conteúdo (ex.: 1000 e 1280 px), rótulo + botões na 1ª linha e "Gerar resumo" + "Painel de
+  ritmo" juntos na 2ª (a Parte R exige os dois lado a lado); a 1440 px, uma linha como antes.
+  Link `?resumo=...,tab`. Testes: Parte AF (`resumo_tab_invariantes.js`, também em `conferencia_real.test.js`, com o antes x
+  depois contra o `9f82f15`, `FRONT_PRE_TAB`).
   **Painel de Ritmo em PDF** (`ritmo.js`; botão `#btnRitmo` na barra do Resumo, ao lado do "Gerar resumo de vendas"):
   SÓ DADOS REAIS (payload; nunca ONLINE nem REVERTIDO_HOJE/OPORTUNIDADE_HOJE/SEM_COMPRA_HOJE/revertidoHoje/
   oportunidadeHoje/semDadoHoje). `montaRitmo(P, escopo)` é pura (Parte R a roda em vm com getters que lançam);

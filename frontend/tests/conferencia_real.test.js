@@ -24,7 +24,11 @@
    (REF_PRE_EVO), com o mesmo payload: cards, cabeçalho, cascata, Resumo e a Executiva sem o bloco iguais.
    Gaveta "Categoria por unidade" (tocar num medidor; invariantes (a)-(f) em categoria_invariantes.js, as mesmas da Parte AC):
    a Diretoria, cada gerência, cada grupo no Total e uma supervisão, nas 5 categorias; 360, 390, 1000 e 1440 px nos dois fundos
-   sem rolagem lateral nem texto cortado; antes x depois contra a main antes da etapa (REF_PRE_CAT), com o mesmo payload. */
+   sem rolagem lateral nem texto cortado; antes x depois contra a main antes da etapa (REF_PRE_CAT), com o mesmo payload.
+   Resumo de vendas, bloco "Todos a Bordo 3.0" (invariantes (a)-(d) em resumo_tab_invariantes.js, as mesmas da Parte AF): a
+   Diretoria, cada gerência com dados (filtro da Diretoria), cada grupo no Total e uma supervisão, em 1440 e 390 px; e o antes x
+   depois contra a main antes do bloco (REF_PRE_TAB), com o mesmo payload: Resumo sem o bloco (padrão e com Novos Negócios),
+   Executiva, cards das 4 abas e o 1º nível da cascata iguais (HTML). */
 'use strict';
 const {test, before, after, describe} = require('node:test');
 const assert = require('node:assert/strict');
@@ -35,6 +39,7 @@ const {confereExecutiva} = require('./executiva_invariantes.js');
 const {confereGavetas, leChips} = require('./gavetas_invariantes.js');
 const {confereEvolucao, ABRE_TODAS} = require('./evolucao_invariantes.js');
 const ROT = require('./rotulos_invariantes.js');
+const {confereResumoTab} = require('./resumo_tab_invariantes.js');
 const {trocaHash, trocaLiberadas, digitaSenha, trocaNomes} = require('./senha_teste.js');
 
 const FRONT = path.resolve(__dirname, '..');
@@ -688,5 +693,99 @@ describe('Ajustes visuais da Executiva com dado real: antes x depois', {skip: pu
       assert.deepEqual(erros, [], `${largura} ${tema}`);
       await ctx.close();
     }
+  });
+});
+
+describe('Resumo de vendas: bloco Todos a Bordo 3.0 com dado real', {skip: pular}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px: Diretoria, cada gerência, cada grupo no Total e uma supervisão: células = regra do ICS só nas rotas com meta; total x cards da aba; "—" sem meta`, async () => {
+    const {page, ctx, erros} = await abre(largura);
+    const info = await page.evaluate(() => ({gcs: gcsComDados(), grupos: gruposGc().map(g => g.chave).filter(temDados), ativo: incentivoAtivo(),
+      mes: P.MES_LABEL, dia: `${P.DIA_HOJE}/${P.TOTAL_DIAS_UTEIS}`, fech: !!P.FECHAMENTO}));
+    assert.ok(info.ativo, 'o payload real traz GROUPS.INCENTIVO');
+    const linhas = [];
+    await entra(page, {perfil: 'dir'});
+    linhas.push(await confereResumoTab(page, 'BAND'));
+    // gerências sem nenhuma rota com meta de Heineken (BARRACUDA): "—" na coluna delas na Diretoria
+    const barracuda = await page.evaluate(() => gcsComDados().filter(g => !rotasInc('INC HEINEKEN', rotasDe(g, '')).length).map(g => 'GC.' + g));
+    const hein = (linhas[0].semMeta['Heineken'] || []);
+    assert.deepEqual(hein.filter(c => c.startsWith('GC.')), barracuda, 'Diretoria: Heineken "—" exatamente nas BARRACUDA');
+    for(const g of info.gcs){
+      await page.selectOption('#fgc', g);
+      linhas.push(await confereResumoTab(page, `GC.${g}`));
+    }
+    for(const g of info.grupos){
+      await entra(page, {perfil: 'gc', gc: g});
+      linhas.push(await confereResumoTab(page, `Total ${g}`));
+    }
+    const sv = await page.evaluate(() => { const g = gcsComDados()[0]; return {gc: g, sv: svsDaEntrada(g)[0]}; });
+    await entra(page, {perfil: 'sv', gc: sv.gc, sv: sv.sv});
+    linhas.push(await confereResumoTab(page, sv.sv));
+    const upd = await page.evaluate(() => (ONLINE || {}).updatedAt);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    const nomes = linhas[0].itens.map(x => x[0]);
+    console.log(`# Resumo, bloco Todos a Bordo com dado real (${largura} px): ${info.mes}, dia útil ${info.dia}${info.fech ? ' (fechamento)' : ''}, online ${upd}`);
+    console.log(`# Heineken "—" na Diretoria (BARRACUDA): ${barracuda.join(' ') || 'nenhuma'}`);
+    const cab = ['Escopo', 'Colunas', 'Células', '"—"', ...nomes.map(n => `${n}: bloco / card / online`)];
+    console.log(`# | ${cab.join(' | ')} |`);
+    console.log(`# |${cab.map(() => '---').join('|')}|`);
+    for(const l of linhas) console.log(`# | ${[l.onde, l.colunas, l.celulas, l.tracos, ...l.itens.map(x => `${x[1]} / ${x[2]} / ${x[3]}`)].join(' | ')} |`);
+  });
+});
+
+/* Antes x depois do bloco Todos a Bordo no Resumo: a main antes da etapa (index.html, CSS e resumo.js) com o mesmo payload */
+const REF_PRE_TAB = '9f82f15';
+const FRONT_PRE_TAB = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_TAB}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/resumo.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+describe('Resumo: bloco Todos a Bordo com dado real: antes x depois', {skip: pular || (!FRONT_PRE_TAB && `sem o commit ${REF_PRE_TAB}`)}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px: Diretoria, G1, IT+MO, a 1ª supervisão e a 1ª rota da G2: Resumo sem o bloco, Executiva, cards e cascata iguais aos da main`, async () => {
+    const [novo, velho] = [await abre(largura), await abre(largura, undefined, FRONT_PRE_TAB)];
+    const linhas = [];
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      const comp = [];
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        comp.push('Executiva');
+      }
+      for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${onde} ${ab}`);
+        if(!ta) continue;
+        const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
+        assert.deepEqual(a, b, `${onde} ${ab}: cabeçalho e cards`);
+        const k = await novo.page.evaluate(() => (document.querySelector('#lista .ind[data-k]') || {dataset: {}}).dataset.k);
+        if(k){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab}: cascata`);
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        comp.push(`${ab} (${a.n} cards)`);
+      }
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo (padrão)`);
+        for(const {page} of [novo, velho]) await page.click('#rsOverlay [data-rsb="nov"]');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo com Novos Negócios`);
+        for(const {page} of [novo, velho]) await page.click('#rsOverlay [data-rsb="nov"]');
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+        comp.push('Resumo (padrão e com Novos Negócios)');
+      }
+      linhas.push([onde, comp.join(', ')]);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_TAB} x branch), ${largura} px, mesmo payload real: tudo igual sem o bloco marcado`);
+    console.log('# | Perfil | Comparado (igual) |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
   });
 });
