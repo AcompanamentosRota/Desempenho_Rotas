@@ -2964,6 +2964,9 @@ const INSTALA_MEDIDAS = () => {
     .map(el => [s, el.textContent.trim().slice(0, 30), Math.round(contraste(el) * 100) / 100]));
   window.__vis = {estouros, contrastes};
 };
+/* tira o font-size que o encaixa() grava nos [data-fit] (o tamanho de partida é o da escala): nos "antes x depois" no PC contra
+   fronts de antes da Etapa 7 do pacote v3 (PC ~90%), só o tamanho muda de propósito; texto e estrutura continuam comparados */
+const semTam = h => String(h).replace(/ style="font-size: [\d.]+px;"/g, '');
 const medidas = page => page.evaluate(INSTALA_MEDIDAS);
 const semRolagemLateral = page => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
@@ -3225,6 +3228,13 @@ const ESTILO_CARDS = () => [...document.querySelectorAll('#lista .ind')].map(el 
 const COR = {rosa: 'rgb(251, 238, 238)', menta: 'rgb(233, 244, 239)', off: 'rgb(240, 240, 242)', ruim: 'rgb(156, 28, 28)',
              verde: 'rgb(29, 158, 117)'};
 
+/* escala dos cards .ind: celular (e 640-999 px) como na Etapa 2; PC (>= 1000 px, altura > 820 px) ~90% desde a Etapa 7 do
+   pacote v3 (antes: título 15, Meta/Real 11,5, % 25, ação 12,5, oportunidades 11, Online 19, rótulos 9,5, padding 15) */
+const ESCALA_IND = {
+  cel: {pad: 12, tit: 15, cl: 11.5, big: 25, acao: 12.5, opo: 11, rot: 9.5, on: 19, sub: 11},
+  pc: {pad: 13.5, tit: 13.5, cl: 10.5, big: 22.5, acao: 11.5, opo: 10, rot: 8.5, on: 17, sub: 10},
+};
+
 describe('Parte T — fonte dos números e cards (Etapa 2)', {skip: pular}, () => {
   test('Source Serif 4 local (sem CDN), com a licença, e só nos números grandes da tela principal', async () => {
     const pedidos = [];
@@ -3331,6 +3341,7 @@ describe('Parte T — fonte dos números e cards (Etapa 2)', {skip: pular}, () =
   for(const largura of [1440, 390]){
     test(`${largura} px: fundo dos cards como antes, faixa lateral na cor do status, escala dos cards`, async () => {
       const {page, ctx, erros} = await abre('normal', {largura, altura: 900});
+      const esc = ESCALA_IND[largura >= 1000 ? 'pc' : 'cel'];
       const gc = await page.evaluate(() => sel.gc);
       const rotas = await page.evaluate(() => rotasDe(sel.gc, ''));
       const vistos = new Set();
@@ -3344,24 +3355,24 @@ describe('Parte T — fonte dos números e cards (Etapa 2)', {skip: pular}, () =
               vistos.add('off');
               assert.equal(c.bg, COR.off, onde);
               assert.equal(c.faixa[0], '0px', `${onde}: card indisponível sem faixa`);
-              assert.equal(c.padL, largura >= 640 ? 15 : 12, onde);
+              assert.equal(c.padL, esc.pad, onde);
               continue;
             }
             vistos.add(c.ok ? 'ok' : 'no');
             assert.equal(c.bg, c.ok ? COR.menta : COR.rosa, `${onde}: fundo`);
             assert.deepEqual(c.faixa, ['5px', 'solid', c.ok ? COR.verde : COR.ruim], `${onde}: faixa`);
             // o padding esquerdo desconta a faixa: o conteúdo começa onde começava
-            assert.equal(c.padL + 5, largura >= 640 ? 15 : 12, `${onde}: padding esquerdo`);
+            assert.equal(c.padL + 5, esc.pad, `${onde}: padding esquerdo`);
             // escala dos cards (referência: título 15, Meta/Real/Diferença 11,5, % até 25, "no ritmo/faltam" 12,5,
-            // oportunidades 11, Online até 19 e rótulos do Online 9,5)
-            assert.equal(c.tit.px, 15, onde);
-            assert.equal(c.cl.px, 11.5, onde);
-            assert.ok(c.big.px <= 25 && c.big.px >= 18, `${onde}: % ${c.big.px}`);
-            assert.equal(c.acao.px, 12.5, onde);
-            if(c.opo) assert.equal(c.opo.px, 11, onde);
-            assert.equal(c.olab.px, 9.5, onde);
-            assert.ok(c.on.px <= 19 && c.on.px >= 10, `${onde}: Online ${c.on.px}`);
-            assert.equal(c.onRot.px, 9.5, onde);
+            // oportunidades 11, Online até 19 e rótulos do Online 9,5; no PC, ~90% desde a Etapa 7 do pacote v3: ESCALA_IND)
+            assert.equal(c.tit.px, esc.tit, onde);
+            assert.equal(c.cl.px, esc.cl, onde);
+            assert.ok(c.big.px <= esc.big && c.big.px >= 18, `${onde}: % ${c.big.px}`);
+            assert.equal(c.acao.px, esc.acao, onde);
+            if(c.opo) assert.equal(c.opo.px, esc.opo, onde);
+            assert.equal(c.olab.px, esc.rot, onde);
+            assert.ok(c.on.px <= esc.on && c.on.px >= 10, `${onde}: Online ${c.on.px}`);
+            assert.equal(c.onRot.px, esc.rot, onde);
           }
         }
       }
@@ -4318,10 +4329,11 @@ describe('Parte Q — aviso de versão nova', {skip: pular}, () => {
 });
 
 /* ---------- Parte U — layout (Etapa 3): painel lateral no PC (>= 1000 px) e topo compacto no celular ----------
-   No PC o <aside class="lado"> é a coluna fixa à esquerda (272 px; recolhida 76 px, só ícones) com o cabeçalho e a
+   No PC o <aside class="lado"> é a coluna fixa à esquerda (245 px; recolhida 68 px, só ícones; eram 272 e 76 até a Etapa 7) com o cabeçalho e a
    barra dentro (.topo, .barra e os .hd sem caixa; ordem por `order`); abaixo de 1000 px o aside não tem caixa e o topo
    é o compacto. Nada do conteúdo muda. */
-const LADO_ABERTO = 272, LADO_RECOLHIDO = 76;
+// desde a Etapa 7 do pacote v3 o PC é ~90% (era 272 / 76; em telas até 820 px de altura, 231 / 64: Parte AK)
+const LADO_ABERTO = 245, LADO_RECOLHIDO = 68;
 // cenários de perfil: selects visíveis e o escopo (texto do .subEsc, sem o " · " inicial)
 const PERFIS_LAYOUT = [
   {nome: 'Diretoria', dados: 'normal', entrar: 'dir', sels: ['fgc'], esc: /^Diretoria$/},
@@ -4689,7 +4701,10 @@ const variedade = page => page.evaluate(() => Object.keys(ROTA_IDX).sort().forEa
 const geometria = page => page.evaluate(() => {
   const b = s => { const e = document.querySelector(s); return e && e.getClientRects().length ? e.getBoundingClientRect().toJSON() : null; };
   return {base: b('#cBase'), sem: b('#cSem'), rit: b('#cRitmo'), puxa: b('#puxa'), busca: b('#abaTopo .busca'), cli: b('#cli'),
-          chips: b('#abFil'), lista: b('#lista'), sec: b('#abaTopo'), st: b('#stRitmo'), tit: document.getElementById('abTit').textContent,
+          chips: b('#abFil'), lista: b('#lista'),
+          // no PC a section#abaTopo fica sem caixa desde a Etapa 7 do pacote v3 (display:contents, cabeçalho travado): a largura
+          // dela é a da linha de resumo (#abRes), que ocupa a largura toda
+          sec: b('#abaTopo') || b('#abRes'), st: b('#stRitmo'), tit: document.getElementById('abTit').textContent,
           aba: document.querySelector(`.tab[data-g="${aba}"]`).title, rotulo: document.getElementById('lRitmo').textContent};
 });
 const perto = (a, b, tol = 1) => Math.abs(a - b) <= tol;
@@ -4775,8 +4790,8 @@ describe('Parte V — cabeçalho das abas (Etapa 4)', {skip: pular}, () => {
             if(c.base) assert.ok(g.base.bottom <= g.rit.top && perto(g.base.top, g.sem.top), `${onde}: Base e Sem compra acima da linha`);
             if(temPuxa) assert.ok(perto(g.puxa.top, g.rit.top) && g.puxa.left >= g.rit.right, `${onde}: ritmo | puxa`);
             if(pc){
-              // 260 px | 1fr | 1.1fr
-              assert.ok(perto(g.rit.width, 260), `${onde}: card de ritmo ${g.rit.width}`);
+              // 234 px | 1fr | 1.1fr (era 260 px até a Etapa 7 do pacote v3: o PC ficou ~90%)
+              assert.ok(perto(g.rit.width, 234), `${onde}: card de ritmo ${g.rit.width}`);
               assert.ok(perto(g.busca.top, g.rit.top) && g.busca.left >= (temPuxa ? g.puxa : g.rit).right, `${onde}: busca na linha`);
               if(temPuxa) assert.ok(g.busca.width > g.puxa.width, `${onde}: 1fr | 1.1fr`);
             } else {
@@ -7012,7 +7027,9 @@ describe('Parte AA — rótulo "Novos Negócios" do volume, aba por perfil e not
           for(const k of VOL_AA) assert.ok(vol.some(x => x.k === k), `${onde}: card ${k}`);
           assert.ok(nn, `${onde}: card ${ROT.NOVOS}`);
           assert.deepEqual([nn.tit, nn.sub, nn.sVisivel, nn.sDepois], [ROT.NOVOS, ROT.SUB, true, true], onde);
-          assert.ok(nn.sFs < nn.tFs && nn.sFs >= 10.5 && nn.sFs <= 11.5, `${onde}: tamanho ${nn.sFs} x ${nn.tFs}`);
+          // 11 px (no PC, ~90% desde a Etapa 7 do pacote v3: 10 px; ESCALA_IND)
+          const sub = ESCALA_IND[largura >= 1000 ? 'pc' : 'cel'].sub;
+          assert.ok(nn.sFs < nn.tFs && Math.abs(nn.sFs - sub) <= .5, `${onde}: tamanho ${nn.sFs} x ${nn.tFs}`);
           assert.equal(nn.sPeso, '400', onde);
           assert.ok(nn.sLum > nn.tLum, `${onde}: 2ª linha mais clara`);
           assert.ok(nn.sContraste >= 4.5, `${onde}: contraste ${nn.sContraste.toFixed(2)}`);
@@ -8130,7 +8147,9 @@ describe('Parte AE — zebra das coberturas, Evolução hachurada, rótulo da bu
         if(g.off){ assert.equal(g.txt, null, `${nome} ${g.k}: sem meta, sem linha`); continue; }
         assert.ok(g.real < g.meta, `${nome} ${g.k}: o sintético fica abaixo da meta`);
         assert.equal(g.txt, `faltam ${f0(g.meta - g.real)} para a meta`);
-        assert.deepEqual([g.ok, g.cor, g.peso, g.fs], [false, 'rgb(198, 40, 40)', '700', '10.5px']);
+        // --fs-ex-mini: 10,5 px (no PC, ~90% desde a Etapa 7 do pacote v3: 9,5 px)
+        const mini = (await page.evaluate(() => innerWidth)) >= 1000 ? '9.5px' : '10.5px';
+        assert.deepEqual([g.ok, g.cor, g.peso, g.fs], [false, 'rgb(198, 40, 40)', '700', mini]);
         assert.deepEqual(g.ordem.slice(0, 5), ['gTit', 'svg', 'gPct', 'gFalta', 'gMR'], 'entre o % e Meta | Real');
       }
       await ritmo(page, 'G1', await page.evaluate(() => rotasDe('G1', '')), 1.25);
@@ -8668,11 +8687,11 @@ describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Diferen
       const [novo, velho] = [await abre(dados, {entrar, aba: null, largura: 1280}),
                              await abre(dados, {entrar, aba: null, largura: 1280, troca: FRONT_PRE_CASC})];
       const quem = `${dados} ${JSON.stringify(entrar)}`;
-      const lerExec = p => p.evaluate(() => document.getElementById('exec').innerHTML);
+      const lerExec = p => p.evaluate(() => document.getElementById('exec').innerHTML).then(semTam);
       assert.equal(await lerExec(novo.page), await lerExec(velho.page), `${quem}: Executiva`);
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         for(const {page} of [novo, velho]) await filtra(page, {aba});
-        const cards = p => p.innerHTML('#lista');
+        const cards = p => p.innerHTML('#lista').then(semTam);
         assert.equal(CASC_INV.desfazCasc(await cards(novo.page)), await cards(velho.page), `${quem} ${aba}: cards (sem a linha nova)`);
         // cascata: desfeito só o que a etapa trocou (desfazCasc), o HTML de cada nível = o de antes; a Venda Zero inteira igual.
         // Na Diretoria só o 1º nível (lá a gerência abre direto a lista de clientes)
@@ -8733,7 +8752,9 @@ describe('Parte AH — botão "Clientes" por agrupador, com busca', {skip: pular
         const x = getComputedStyle(d).color; d.remove(); return x; };
       return {borda: cs.borderTopColor, linha: rgb(v('--linha')), fundo: cs.backgroundColor, raio: parseFloat(cs.borderTopLeftRadius),
               traco: getComputedStyle(svg.querySelector('path')).stroke, cor: cs.color, preto: rgb(v('--preto')),
-              ariaSvg: svg.getAttribute('aria-hidden'), fam: cs.fontFamily, tam: cs.fontSize, leg: v('--fs-legenda')};
+              ariaSvg: svg.getAttribute('aria-hidden'), fam: cs.fontFamily, tam: cs.fontSize,
+              // no escopo do botão: no PC a escala fica no .wrap desde a Etapa 7 do pacote v3
+              leg: cs.getPropertyValue('--fs-legenda').trim()};
     });
     assert.equal(est.borda, est.linha, 'borda --linha');
     assert.equal(est.fundo, 'rgb(255, 255, 255)', 'fundo branco');
@@ -9167,7 +9188,7 @@ describe('Parte AI — Executiva: cabeçalho fixo, "Abrir por" e busca', {skip: 
         for(const {page} of [novo, velho]) await vaiPara(page, e, null);
         const onde = `${largura} ${JSON.stringify(e)}`;
         const exec = async p => { await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click()));
-          const h = await p.innerHTML('#exec'); await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click())); return h; };
+          const h = semTam(await p.innerHTML('#exec')); await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click())); return h; };
         assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva`);
         assert.equal(await novo.page.textContent('#abTit'), await velho.page.textContent('#abTit'), `${onde}: título`);
         // passa pelos modos e volta: igual de novo
@@ -9183,7 +9204,8 @@ describe('Parte AI — Executiva: cabeçalho fixo, "Abrir por" e busca', {skip: 
         assert.deepEqual(await gav(novo.page), await gav(velho.page), `${onde}: gaveta da categoria (números)`);
         for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
           for(const {page} of [novo, velho]) await vaiAba(page, ab);
-          const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').outerHTML, lista: document.getElementById('lista').innerHTML}));
+          const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').outerHTML, lista: document.getElementById('lista').innerHTML}))
+            .then(x => ({topo: semTam(x.topo), lista: semTam(x.lista)}));
           assert.deepEqual(await tela(novo.page), await tela(velho.page), `${onde} ${ab}: cabeçalho e cards`);
         }
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
@@ -9520,4 +9542,215 @@ describe('Parte AJ — Executiva: tabela da categoria e escopo do nível acima',
       await ctx.close();
     }
   });
+});
+
+/* ---------- Parte AK — PC mais compacto e cabeçalho das abas travado (Etapa 7 do pacote v3) ----------
+   A partir de 1000 px a tela fica ~90% (variáveis no escopo .lado/.wrap e alturas/largura do painel em :root) e, até 820 px
+   de altura, ~85%; nunca zoom nem transform. O painel lateral não rola em 1920x1080, 1440x900, 1366x768 e 1280x720, com todos
+   os itens à vista. Nas abas de indicadores (PC) a .abCab (título, "Clientes", etiqueta do dia) fica presa no alto ao rolar;
+   a section#abaTopo fica sem caixa (display:contents) e continua o landmark "região" com o nome da aba. Abaixo de 1000 px,
+   a gaveta, o Resumo e a entrada: nada muda (estilos computados iguais aos do front de antes, REF_PRE_PC). */
+const REF_PRE_PC = 'b83a341';
+const CSS_PRE_PC = (() => {
+  try { return execSync(`git show ${REF_PRE_PC}:frontend/css/app.css`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString(); }
+  catch(e){ return null; }
+})();
+// variáveis de :root e do escopo .wrap / .wrap .ind em cada faixa (antes -> 90% -> 85%)
+const ESCALA_PC = {
+  cheia: {'--lado-aberto': 245, '--lado-recolhido': 68, '--h-card-vol': 122, '--h-kpi': 112, '--ritmo-w': 76,
+          wrap: {'--fs-legenda': 11.5, '--fs-valor': 13.5, '--fs-card': 17, '--fs-ind': 27, '--fs-ex-bloco': 14.5, '--fs-lado-aba': 12.5},
+          ind: {'--fs-card': 13.5, '--fs-valor': 10.5, '--fs-ind': 22.5, '--fs-online': 17}},
+  baixa: {'--lado-aberto': 231, '--lado-recolhido': 64, '--h-card-vol': 116, '--h-kpi': 105, '--ritmo-w': 71,
+          wrap: {'--fs-legenda': 10.5, '--fs-valor': 13, '--fs-card': 16, '--fs-ind': 25.5, '--fs-ex-bloco': 13.5, '--fs-lado-aba': 12},
+          ind: {'--fs-card': 13, '--fs-valor': 10, '--fs-ind': 21, '--fs-online': 16}},
+};
+const ITENS_LADO = ['#ladoMenu', '.lado h1', '#sub', '.sFil', '.lado .filtros', '.sTab', '.lado .tabs', '#ritmo', '#btnRecarga', '#btnCasa', '#ladoCred'];
+const LE_LADO = itens => {
+  const l = document.querySelector('aside.lado');
+  const vis = s => { const e = document.querySelector(s); return !!e && e.getClientRects().length > 0; };
+  const fora = itens.filter(vis).filter(s => { const r = document.querySelector(s).getBoundingClientRect();
+    return r.top < -.5 || r.bottom > innerHeight + .5 || r.right > l.getBoundingClientRect().right + .5; });
+  return {sh: l.scrollHeight, ch: l.clientHeight, visiveis: itens.filter(vis), fora, w: l.getBoundingClientRect().width};
+};
+// estilos computados de tudo o que está à vista na página (fora a entrada), para comparar dois fronts
+const PROPS_PC = ['display', 'position', 'top', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'padding-top', 'padding-right',
+  'padding-bottom', 'padding-left', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'width', 'height', 'min-height', 'gap',
+  'grid-template-columns', 'border-radius', 'color', 'background-color', 'box-shadow', 'z-index'];
+const ESTILOS_PAGINA = props => [...document.querySelectorAll('body *')].filter(el => !el.closest('#entrada, #carga, script, style'))
+  .filter(el => el.getClientRects().length).map(el => { const cs = getComputedStyle(el);
+    return [el.id || el.className && String(el.className) || el.tagName, props.map(p => cs.getPropertyValue(p)).join('|')]; });
+
+describe('Parte AK — PC mais compacto e cabeçalho das abas travado (Etapa 7 do pacote v3)', {skip: pular}, () => {
+  test('painel lateral sem rolagem em 1920x1080, 1440x900, 1366x768 e 1280x720 (aberto e recolhido), todos os itens à vista', async () => {
+    for(const [largura, altura] of [[1920, 1080], [1440, 900], [1366, 768], [1280, 720]]){
+      for(const [dados, entrar] of [['inc', 'dir'], ['grupo', {perfil: 'gc', gc: 'IT+MO'}], ['inc', {perfil: 'sv', gc: 'G2', sv: '1'}],
+                                    ['inc', {perfil: 'rota', gc: 'G2', rota: 'G211'}]]){
+        const {page, ctx, erros} = await abre(dados, {largura, altura, entrar, aba: null});
+        await page.evaluate(() => document.fonts.ready);
+        const onde = `${largura}x${altura} ${JSON.stringify(entrar)}`;
+        const esc = ESCALA_PC[altura <= 820 ? 'baixa' : 'cheia'];
+        let r = await page.evaluate(LE_LADO, ITENS_LADO);
+        assert.equal(r.sh, r.ch, `${onde}: painel rola (${r.sh} > ${r.ch})`);
+        assert.deepEqual(r.fora, [], `${onde}: itens fora da tela`);
+        for(const s of ['#ladoMenu', '.lado h1', '#sub', '.lado .tabs', '#ritmo', '#btnRecarga', '#btnCasa', '#ladoCred'])
+          assert.ok(r.visiveis.includes(s), `${onde}: ${s} à vista`);
+        if(entrar !== 'dir' && entrar.perfil !== 'rota') assert.ok(r.visiveis.includes('.lado .filtros'), `${onde}: Filtro`);
+        assert.equal(r.w, esc['--lado-aberto'], `${onde}: largura do painel`);
+        await page.click('#ladoMenu');
+        r = await page.evaluate(LE_LADO, ['#ladoMenu', '.lado .tabs', '#btnRecarga', '#btnCasa']);
+        assert.equal(r.sh, r.ch, `${onde} recolhido: painel rola`);
+        assert.deepEqual(r.fora, [], `${onde} recolhido: itens fora`);
+        assert.equal(r.w, esc['--lado-recolhido'], `${onde}: largura recolhida`);
+        assert.ok(await semRolagemLateral(page), onde);
+        assert.deepEqual(erros, [], onde);
+        await ctx.close();
+      }
+    }
+  });
+
+  test('escala do PC por variáveis (~90%; até 820 px de altura ~85%), sem zoom nem transform; a gaveta, a entrada e o celular não herdam', async () => {
+    for(const [largura, altura, faixa] of [[1440, 900, 'cheia'], [1920, 1080, 'cheia'], [1366, 768, 'baixa'], [1280, 720, 'baixa'],
+                                          [1000, 800, 'baixa'], [999, 900, null], [390, 844, null]]){
+      const {page, ctx, erros} = await abre('inc', {largura, altura, aba: 'VOLUME'});
+      const r = await page.evaluate(() => {
+        const v = (el, n) => parseFloat(getComputedStyle(el).getPropertyValue(n));
+        const raiz = document.documentElement, wrap = document.querySelector('.wrap'), ind = document.querySelector('#lista .ind');
+        const nomes = ['--lado-aberto', '--lado-recolhido', '--h-card-vol', '--h-kpi', '--ritmo-w'];
+        const zoom = [...document.querySelectorAll('html, body, .lado, .wrap, .wrap *')].filter(el => { const cs = getComputedStyle(el);
+          return (cs.zoom && cs.zoom !== '1' && cs.zoom !== 'normal') || cs.transform !== 'none' && !el.closest('.drw, .dica'); })
+          .map(el => el.id || el.className).filter(c => !/sugestoes|evSeta|recarga/.test(String(c)));
+        return {raiz: Object.fromEntries(nomes.map(n => [n, v(raiz, n)])),
+                wrap: Object.fromEntries(['--fs-legenda', '--fs-valor', '--fs-card', '--fs-ind', '--fs-ex-bloco', '--fs-lado-aba'].map(n => [n, v(wrap, n)])),
+                ind: Object.fromEntries(['--fs-card', '--fs-valor', '--fs-ind', '--fs-online'].map(n => [n, v(ind, n)])),
+                drw: ['--fs-legenda', '--fs-valor', '--fs-card'].map(n => v(document.getElementById('drw'), n)),
+                ent: ['--fs-legenda', '--fs-valor', '--fs-card', '--fs-titulo'].map(n => v(document.getElementById('entrada'), n)),
+                zoom};
+      });
+      const onde = `${largura}x${altura}`;
+      // a gaveta e a entrada ficam com a escala de antes (a do celular até 640 px)
+      const antes = largura <= 640 ? {legenda: 12, valor: 14, card: 18, titulo: 24} : {legenda: 12.5, valor: 15, card: 19, titulo: 30};
+      assert.deepEqual(r.drw, [antes.legenda, antes.valor, antes.card], `${onde}: gaveta`);
+      assert.deepEqual(r.ent, [antes.legenda, antes.valor, antes.card, antes.titulo], `${onde}: entrada`);
+      assert.deepEqual(r.zoom, [], `${onde}: zoom/transform`);
+      if(!faixa){
+        assert.deepEqual([r.raiz['--lado-aberto'], r.raiz['--lado-recolhido'], r.wrap['--fs-legenda'], r.ind['--fs-card']],
+          [272, 76, antes.legenda, 15], `${onde}: abaixo de 1000 px nada muda`);
+      } else {
+        const e = ESCALA_PC[faixa];
+        for(const n of ['--lado-aberto', '--lado-recolhido', '--h-card-vol', '--h-kpi', '--ritmo-w']) assert.equal(r.raiz[n], e[n], `${onde} ${n}`);
+        assert.deepEqual(r.wrap, e.wrap, `${onde}: .wrap`);
+        assert.deepEqual(r.ind, e.ind, `${onde}: .ind`);
+      }
+      assert.deepEqual(erros, [], onde);
+      await ctx.close();
+    }
+  });
+
+  for(const [largura, altura] of [[1440, 900], [1366, 768], [1280, 720], [1000, 800]]){
+    test(`${largura}x${altura}: cabeçalho da aba (título, Clientes, etiqueta do dia) preso no alto ao rolar nas 4 abas de indicadores; o resto rola; landmark mantido`, async () => {
+      const {page, ctx, erros} = await abre('inc', {largura, altura, entrar: 'dir'});
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        await filtra(page, {aba});
+        const onde = `${largura} ${aba}`;
+        // o sintético cabe quase todo na tela: um espaço no fim da página (só no teste) deixa rolar 600 px
+        await page.evaluate(() => { document.getElementById('rodape').style.marginBottom = '1600px'; scrollTo(0, 600); });
+        await page.waitForTimeout(60);
+        const r = await page.evaluate(() => {
+          const cab = document.querySelector('#abaTopo .abCab'), c = cab.getBoundingClientRect(), cs = getComputedStyle(cab);
+          const ref = document.createElement('span'); ref.style.color = 'var(--papel)'; document.body.appendChild(ref);
+          const papel = getComputedStyle(ref).color; ref.remove();
+          const no = (el, x) => { const e = document.elementFromPoint(x, c.top + c.height / 2); return !!e && !!e.closest(el); };
+          const b = s => document.querySelector(s).getBoundingClientRect();
+          return {y: scrollY, top: c.top, h: c.height, pos: cs.position, fundo: cs.backgroundColor, papel, sombra: cs.boxShadow,
+                  sec: getComputedStyle(document.getElementById('abaTopo')).display,
+                  tit: no('#abTit', b('#abTit').left + 4), dia: no('#pilDia', b('#pilDia').left + 8),
+                  cli: document.getElementById('btnClientes').hidden || no('#btnClientes', b('#btnClientes').left + 8),
+                  meio: no('.abCab', c.left + c.width / 2), res: b('#abRes').bottom, wrap: b('.wrap'), lado: b('.lado').right,
+                  rot: [document.getElementById('abaTopo').getAttribute('aria-labelledby'), document.getElementById('abTit').textContent]};
+        });
+        assert.ok(r.y > 100, `${onde}: a página rola (${r.y})`);
+        assert.ok(Math.abs(r.top) < 1, `${onde}: cabeçalho no alto (${r.top})`);
+        assert.equal(r.pos, 'sticky', onde);
+        assert.equal(r.sec, 'contents', onde);
+        assert.equal(r.fundo, r.papel, `${onde}: fundo --papel`);
+        assert.notEqual(r.sombra, 'none', `${onde}: sombra`);
+        assert.ok(r.tit && r.dia && r.cli && r.meio, `${onde}: título, Clientes e etiqueta à vista, sem conteúdo por cima ${JSON.stringify(r)}`);
+        assert.ok(r.res < r.top + r.h, `${onde}: a linha de resumo rolou`);
+        assert.ok(r.h < 60, `${onde}: só a linha do cabeçalho (${r.h})`);
+        assert.equal(r.rot[0], 'abTit');
+        assert.ok(await semRolagemLateral(page), onde);
+        await page.evaluate(() => scrollTo(0, 0));
+      }
+      // landmark: a section continua uma região com o nome da aba (display:contents não tira do leitor de tela)
+      const ax = await (await ctx.newCDPSession(page)).send('Accessibility.getFullAXTree');
+      const reg = ax.nodes.filter(n => n.role && n.role.value === 'region').map(n => n.name && n.name.value);
+      assert.ok(reg.includes(await page.textContent('#abTit')), `região: ${reg}`);
+      // na Executiva o cabeçalho continua o de antes (a section inteira sticky, com caixa)
+      await filtra(page, {aba: 'EXEC'});
+      const ex = await page.evaluate(() => [getComputedStyle(document.getElementById('abaTopo')).display,
+        getComputedStyle(document.getElementById('abaTopo')).position]);
+      assert.ok(ex[0] !== 'contents' && ex[1] === 'sticky', `Executiva: ${ex}`);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test('390 px: o cabeçalho das abas não trava (rola com a página, como antes)', async () => {
+    const {page, ctx, erros} = await abre('inc', {largura: 390, altura: 844, entrar: 'dir', aba: 'ICS_GC'});
+    await page.evaluate(() => scrollTo(0, 600));
+    const r = await page.evaluate(() => [getComputedStyle(document.getElementById('abaTopo')).display,
+      getComputedStyle(document.querySelector('.abCab')).position, document.querySelector('.abCab').getBoundingClientRect().bottom < 0]);
+    assert.deepEqual(r, ['block', 'static', true]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const [largura, altura] of [[1366, 768], [1280, 720], [1680, 1050], [1920, 1080]]){
+    test(`${largura}x${altura}: cards com alturas iguais por tipo, nenhum texto cortado, sem rolagem lateral, nas 4 abas e na Executiva`, async () => {
+      for(const [dados, entrar] of [['inc', {perfil: 'gc', gc: 'IT+MO'}], ['grande', 'dir'], ['inc', {perfil: 'sv', gc: 'G2', sv: '1'}]]){
+        const {page, ctx, erros} = await abre(dados, {largura, altura, entrar});
+        await medidas(page);
+        await page.evaluate(() => document.fonts.ready);
+        for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          if(!(await page.$(`.tab[data-g="${aba}"]:not([hidden])`))) continue;
+          await filtra(page, {aba});
+          const onde = `${largura} ${dados} ${aba}`;
+          assert.deepEqual(await page.evaluate(() => __vis.estouros('#abaTopo, #lista .ind, #puxa, .rsBox, .lado')), [], onde);
+          const alt = await page.evaluate(() => [...document.querySelectorAll('#lista .ind')].filter(el => !el.classList.contains('off'))
+            .map(el => ({top: Math.round(el.getBoundingClientRect().top), h: el.getBoundingClientRect().height, vol: el.classList.contains('vol')})));
+          const porLinha = {};
+          for(const c of alt) (porLinha[`${c.top}|${c.vol}`] = porLinha[`${c.top}|${c.vol}`] || []).push(c.h);
+          for(const [k, hs] of Object.entries(porLinha)) assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `${onde} ${k}: ${hs}`);
+          // a largura do conteúdo de cada card não passa da caixa
+          assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#lista .ind *')]
+            .filter(el => el.getClientRects().length && el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflow !== 'visible')
+            .map(el => el.className)), [], `${onde}: largura`);
+          assert.ok(await semRolagemLateral(page), onde);
+        }
+        await filtra(page, {aba: 'EXEC'});
+        assert.deepEqual(await page.evaluate(() => __vis.estouros('#exGauges, .exKpis, .exFocos')), [], `${largura} ${dados} EXEC`);
+        assert.ok(await semRolagemLateral(page), `${largura} ${dados} EXEC`);
+        assert.deepEqual(erros, []);
+        await ctx.close();
+      }
+    });
+  }
+
+  for(const [largura, altura] of [[390, 844], [360, 800], [999, 900]]){
+    test(`${largura} px: estilos computados iguais aos do front de antes da etapa (só o PC muda)`, {skip: !CSS_PRE_PC && `sem o commit ${REF_PRE_PC}`}, async () => {
+      for(const tema of ['preta', 'branca']){
+        const [novo, velho] = [await abre('inc', {largura, altura, entrar: 'dir', aba: null, armazenado: {drotas_entrada: tema}}),
+          await abre('inc', {largura, altura, entrar: 'dir', aba: null, armazenado: {drotas_entrada: tema}, troca: {'/css/app.css': () => CSS_PRE_PC}})];
+        for(const aba of ['EXEC', 'VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          for(const {page} of [novo, velho]) await filtra(page, {aba});
+          const [a, b] = [await novo.page.evaluate(ESTILOS_PAGINA, PROPS_PC), await velho.page.evaluate(ESTILOS_PAGINA, PROPS_PC)];
+          assert.equal(a.length, b.length, `${largura} ${tema} ${aba}: elementos`);
+          const dif = a.map((x, i) => x[1] === b[i][1] ? null : [x[0], x[1], b[i][1]]).filter(Boolean);
+          assert.deepEqual(dif, [], `${largura} ${tema} ${aba}`);
+        }
+        assert.deepEqual(novo.erros, []);
+        await novo.ctx.close(); await velho.ctx.close();
+      }
+    });
+  }
 });

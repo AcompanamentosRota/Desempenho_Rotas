@@ -630,11 +630,15 @@ PAYLOAD_REAL=/tmp/real/payload.json ONLINE_REAL=/tmp/real/online.json node --tes
 ### Layout (painel lateral no PC, topo compacto no celular)
 
 - **PC (a partir de 1000 px)**: o cabeçalho e a barra de filtros/abas viram um **painel lateral fixo à esquerda**
-  (272 px), preto: botão ☰ (recolher), marca, "Desempenho de Rotas", mês + etiqueta de atualização + escopo (o perfil e
+  (245 px; 231 px em telas até 820 px de altura; era 272 px até a Etapa 7 do pacote v3), preto: botão ☰ (recolher), marca, "Desempenho de Rotas", mês + etiqueta de atualização + escopo (o perfil e
   o filtro, numa linha própria), **Filtro** (seletores empilhados), **Painéis** (abas na vertical com ícone; a ativa em
   vermelho), a caixa do ritmo de hoje, no rodapé **↻ Atualizar** e **Entrada** (casa) e os créditos. O conteúdo ocupa
   o resto da largura da tela; a cascata (gaveta) abre à direita do painel, com a mesma aparência de sempre.
-- **Recolher**: o ☰ deixa só os ícones (☰, abas, ↻ e casa; o nome aparece ao passar o mouse). O aparelho guarda a
+- **Sem rolagem no painel** (Etapa 7 do pacote v3): em 1920x1080, 1440x900, 1366x768 e 1280x720 todos os itens cabem
+  (menu, título, mês/atualização/escopo, Filtro, abas, caixa de ritmo, Atualizar, Entrada e créditos), aberto ou recolhido,
+  em qualquer perfil (o grupo IT+MO, com três seletores, é o mais alto: sobram ~47 px em 1280x720). Ver "Visual", "PC mais
+  compacto".
+- **Recolher**: o ☰ deixa só os ícones (☰, abas, ↻ e casa; o nome aparece ao passar o mouse; 68 px, 64 px em tela baixa). O aparelho guarda a
   escolha (`drotas_lado`); sem armazenamento, vale só na visita. A faixa de versão nova fica no alto do conteúdo, à
   direita do painel, aberto ou recolhido.
 - **Celular (abaixo de 1000 px)**: topo compacto, com a barra de filtros e abas presa no alto como antes: título com ↻
@@ -853,6 +857,12 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
 
 Desde a Etapa 4 (21/10/2026), o alto de cada aba é organizado assim (os números são os mesmos de antes):
 
+- **Cabeçalho travado no PC** (Etapa 7 do pacote v3): a partir de 1000 px a linha do título (nome da aba, botão "Clientes" e
+  etiqueta do dia) fica presa no alto ao rolar, com o fundo da página e uma sombra discreta, como a da Executiva; o resto
+  (Base, Sem compra, linha de resumo, ficha da busca, filtro rápido) rola normalmente. Para isso a `section#abaTopo` fica sem
+  caixa no PC fora da Executiva (`display: contents`): ela continua o landmark "região" com o nome da aba (`aria-labelledby=
+  "abTit"`; conferido na árvore de acessibilidade do Chromium) e a ordem visual e de leitura não muda. No celular nada muda
+  (o cabeçalho rola com a página).
 - **Título e etiqueta do dia**: o nome da aba e, à direita, a etiqueta "Dia útil 14 de 21 · Semana 3" (no celular,
   "Quarta-feira · Sem. 3") com um "i". Passando o mouse (ou com o foco do teclado, ou tocando no celular), abre uma caixa
   de comentário com o dia da semana e o dia útil, "Real até ontem: dia útil 13/21 (62%)", "Para entrar no ritmo hoje:
@@ -865,7 +875,8 @@ Desde a Etapa 4 (21/10/2026), o alto de cada aba é organizado assim (os número
   baixo", o nome em vermelho e "x de n indicadores no ritmo" (antes, "na meta"); sem ele no Todos a Bordo e na Rota. Por
   último, a **busca de clientes** (a mesma), com o rótulo "Busca por cliente" (pequeno, caixa alta, cinza de apoio) acima
   do campo e o placeholder "Digite nome, código ou rede". No PC a linha é 260 px | 1fr | 1,1fr; no celular, a busca fica na linha de
-  baixo. A ficha do cliente abre logo abaixo da linha.
+  baixo. A ficha do cliente abre logo abaixo da linha. (No PC, desde a Etapa 7 do pacote v3: 234 px | 1fr | 1,1fr; 221 px
+  em telas até 820 px de altura.)
 - **Base total de clientes** ("visitas hoje N") e **Sem compra X%** ("sem compra hoje N"), no mesmo formato, só com uma
   supervisão (ou "Neutraliza") ou uma rota no filtro (perfis Supervisão e Rota, ou a Gerência com uma supervisão/rota
   escolhida): ficam acima da linha de resumo. Na Diretoria e na Gerência eles saem das abas (a aba Executiva traz esses
@@ -974,7 +985,9 @@ quem chama nos demais (usada pelo `rotuloInd` do app.js, pelo resumo.js e pelo r
   `font-variant-numeric: lining-nums tabular-nums` (algarismos alinhados e de largura fixa); a gaveta, o Resumo e o
   Painel de Ritmo ficam como estavam. Os números dos cards do topo também encaixam (`data-fit`, mínimo 16 px; se nem
   assim couber, quebram como antes).
-- **Escala tipográfica** (variáveis em `:root` do `app.css`; o celular, até 640 px, redefine):
+- **Escala tipográfica** (variáveis em `:root` do `app.css`; o celular, até 640 px, redefine; a partir de 1000 px o painel
+  lateral e o conteúdo usam ~90%/~85% destes valores desde a Etapa 7 do pacote v3: ver "PC mais compacto" abaixo; a coluna
+  "PC" é a de antes, que continua valendo na gaveta, no Resumo, na entrada e em 641-999 px):
 
   | Nível | PC | Celular | Peso | Onde |
   |---|---|---|---|---|
@@ -1004,6 +1017,40 @@ quem chama nos demais (usada pelo `rotuloInd` do app.js, pelo resumo.js e pelo r
   px, título dos medidores 13 px, % do medidor 20 px, Meta/Real 13,5 px (encaixa até 9 px), tendência 15 px, desvio 12 px,
   linhas das barras 11,5 px, células da tabela 12 px, rótulos pequenos 10,5 px (as legendas abaixo dos blocos, 9,5 px:
   `--fs-nota-mini`) e cabeçalho da tabela 10 px.
+- **PC mais compacto** (Etapa 7 do pacote v3, 30/10/2026): a partir de 1000 px a tela fica ~90% do tamanho de antes e, em
+  telas baixas (até 820 px de altura, ex.: 1366x768 e 1280x720), ~85%, para o painel lateral não rolar e caber mais
+  informação. Só por variáveis de tamanho (nunca `zoom` nem `transform: scale`), em dois blocos `@media` no fim das regras de
+  tela do `app.css` (`(min-width:1000px)` e `(min-width:1000px) and (max-height:820px)`). As letras e os espaçamentos ficam no
+  escopo `.lado` (painel lateral) e `.wrap` (conteúdo: cabeçalho das abas, cards do topo, linha de resumo, busca, cards de
+  indicador, filtro rápido, KPIs e blocos da Executiva, barra do Resumo de vendas e rodapé); alturas mínimas, caixa Online e
+  largura do painel em `:root`. A gaveta (`.drw`), a tela do Resumo e o PDF, o Painel de Ritmo, a entrada, a faixa de versão
+  nova e a caixa de comentário ficam fora dessas caixas e não mudam; abaixo de 1000 px nada muda. Os números, textos, cores e
+  a ordem são os mesmos; os `data-fit` continuam encaixando o % e o Online. Valores (antes → 90% → 85%):
+
+  | Variável | Antes | PC | PC baixo |
+  |---|---|---|---|
+  | `--fs-titulo` / `--fs-card` / `--fs-ind` | 30 / 19 / 30 | 27 / 17 / 27 | 25,5 / 16 / 25,5 |
+  | `--fs-valor` / `--fs-legenda` | 15 / 12,5 | 13,5 / 11,5 | 13 / 10,5 |
+  | `--fs-nota` / `--fs-nota-mini` | 11,5 / 9,5 | 10,5 / 8,5 | 10 / 8 |
+  | `--fs-lado-tit` / `--fs-lado-aba` / `--fs-lado-sec` | 22 / 14 / 10,5 | 20 / 12,5 / 9,5 | 18,5 / 12 / 9 |
+  | `--fs-busca-rot` / campo da busca | 10,5 / 16 | 9,5 / 14,5 | 9 / 13,5 |
+  | `--fs-ex-bloco` / `-gtit` / `-gpct` / `-valor` / `-tend` | 16 / 13 / 20 / 13,5 / 15 | 14,5 / 11,5 / 18 / 12 / 13,5 | 13,5 / 11 / 17 / 11,5 / 13 |
+  | `--fs-ex-pill` / `-rot` / `-cel` / `-mini` / `-th` / `-busca` | 12 / 11,5 / 12 / 10,5 / 10 / 13 | 11 / 10,5 / 11 / 9,5 / 9 / 12 | 10 / 10 / 10 / 9 / 8,5 / 11 |
+  | cards `.ind`: `--fs-card` / `--fs-valor` / `--fs-ind` / `--fs-legenda` | 15 / 11,5 / 25 / 11 | 13,5 / 10,5 / 22,5 / 10 | 13 / 10 / 21 / 9,5 |
+  | cards `.ind`: `--fs-acao` / `--fs-online` / `--fs-online-rot` / `--fs-card-sub` / `--pad-esq` | 12,5 / 19 / 9,5 / 11 / 15 | 11,5 / 17 / 8,5 / 10 / 13,5 | 10,5 / 16 / 8 / 9,5 / 13 |
+  | `--h-card-vol` = `--h-card-cob` / `--h-kpi` | 136 / 124 | 122 / 112 | 116 / 105 |
+  | linha "Status" do card do topo (`.card .st`, `--fs-st`) | 10 | 9 | 8,5 |
+  | `--ritmo-h` / `--ritmo-w` / `--ritmo-raio` | 62 / 84 / 10 | 56 / 76 / 9 | 53 / 71 / 8,5 |
+  | `--lado-aberto` / `--lado-recolhido` | 272 / 76 | 245 / 68 | 231 / 64 |
+  | coluna do card de ritmo (`--abres-col`) / mínimo da grade (`--lista-min`) | 260 / 340 | 234 / 340 | 221 / 310 |
+
+  Espaçamentos novos (só no PC, mesma proporção): `--lado-pad`, `--lado-gap`, `--lado-menu`, `--lado-tab-pad`, `--lado-ico`,
+  `--lado-btn-h` e afins no painel; `--aba-mt`, `--abcab-*`, `--cards-gap`, `--card-pad`, `--ki`, `--foco-pad`, `--busca-pad`,
+  `--chip-pad`, `--lista-gap`, `--ind-*`, `--obox-pad` no conteúdo; `--exfoco-pad`, `--bloco-pad`, `--gauges-gap`, `--gcard-pad`,
+  `--gsvg`, `--gpct-mt`, `--divs-gap`, `--exab-*` na Executiva. O mínimo da grade dos cards fica em 340 px no PC comum: com
+  menos (306-330 px), em 1680-1920 px a grade ganhava uma coluna e o % de números de 7 dígitos cortava (conferido com o payload
+  real e o sintético "grande"); em tela baixa (letra ~85%), 310 px cabem e 1280x720 passa a ter 3 colunas (eram 2).
+  Testes: Parte AK do `front.test.js`.
 - **Cascata (gaveta que abre no card)**: mantém a aparência de antes do ajuste visual (commit `0a59eb4`), fora o que a Karen
   autorizou na Etapa 3 do pacote v3 (só classes novas, abaixo), em todos os
   níveis (gerências, supervisões, rotas, clientes, Visitas de hoje, Sem compra, Venda Zero): tamanhos, pesos,
@@ -1023,8 +1070,9 @@ quem chama nos demais (usada pelo `rotuloInd` do app.js, pelo resumo.js e pelo r
   1000 px, quando a gaveta tem 728 px). A caixa do Online (`.cOn`), as linhas sem dados (`.cLin.off`), a nota das
   virtuais, o botão de voltar, a barra de dias, as listas de cobertura e de Venda Zero e as gavetas Base, Sem compra e
   "Categoria por unidade" não mudam.
-- **Cards de indicador**: grade `repeat(auto-fill, minmax(340px, 1fr))` a partir de 1000 px (3 colunas em 1280-1440
-  px, 2 em 1000 px); no celular, uma coluna. Faixa lateral de 5 px (`border-left`) na cor do status: `--ruim` abaixo,
+- **Cards de indicador**: grade `repeat(auto-fill, minmax(var(--lista-min), 1fr))` a partir de 1000 px (340 px; 310 px em
+  tela baixa: 3 colunas em 1366-1536 px e em 1280x720, 4 em 1920 px, 2 em 1000-1280 px com mais de 820 px de altura); no
+  celular, uma coluna. Faixa lateral de 5 px (`border-left`) na cor do status: `--ruim` abaixo,
   `--verde` no ritmo; o padding esquerdo desconta a faixa (o conteúdo começa onde começava) e o card indisponível
   (`.off`) não tem faixa.
 - **Cores**: o fundo rosa (abaixo do ritmo/tendência) e o verde claro (no ritmo) dos cards são premissa (não mudaram
