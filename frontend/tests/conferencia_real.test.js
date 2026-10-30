@@ -1193,8 +1193,13 @@ describe('"Abrir por" e busca da Executiva com dado real', {skip: pular}, () => 
         for(const ab of ['canal', 'cli', 'ka', 'nivel']) await DIMI.clicaAbrir(novo.page, ab);
         assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva depois dos modos`);
         const k = await novo.page.$eval('#exGauges .gCard[role="button"]', g => g.dataset.k);
-        const gav = async p => { await p.click(`#exGauges .gCard[data-k="${k}"]`); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
-        assert.equal(await gav(novo.page), await gav(velho.page), `${onde}: gaveta da categoria`);
+        // a gaveta virou tabela na Etapa 6 do pacote v3 (de propósito): os números de cada unidade (cartão de lá, linha daqui), o
+        // título e o subtítulo (sem a ordem) iguais
+        const gav = async p => { await p.click(`#exGauges .gCard[data-k="${k}"]`);
+          const h = await p.evaluate(() => ({tit: dTit.textContent, sub: dSub.textContent.replace(/ · ordenado por .*$/, ''),
+            un: [...document.querySelectorAll('#dCorpo .cuCard, #dCorpo .ctLin')].map(c => ['u', 'st', 'meta', 'real', 'tend', 'pct', 'pctTend'].map(x => c.dataset[x]))}));
+          await p.keyboard.press('Escape'); return h; };
+        assert.deepEqual(await gav(novo.page), await gav(velho.page), `${onde}: gaveta da categoria (números)`);
         for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
           for(const {page} of [novo, velho]) await page.evaluate(ab => document.querySelector(`.tab[data-g="${ab}"]`).click(), ab);
           const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').outerHTML, lista: document.getElementById('lista').innerHTML}));
@@ -1239,5 +1244,146 @@ describe('"Abrir por" e busca da Executiva com dado real', {skip: pular}, () => 
     }
     assert.deepEqual(erros, []);
     await ctx.close();
+  });
+});
+
+/* Tabela da categoria e escopo do nível acima na Executiva com dado real (Etapa 6 do pacote v3): as invariantes da tabela
+   (categoria_invariantes.js, (a)-(g), também no escopo de cima: Gerência em BAND e Supervisão em GC); (e) Gerência em BAND =
+   Diretoria "Todas" (#exec com o mesmo HTML: KPIs, quadros, medidores e blocos) e Supervisão em GC = Gerência da mesma gerência,
+   para cada gerência com dados e a 1ª supervisão de cada uma; as 4 abas de indicadores continuam no acesso com o nível de cima
+   marcado; e o antes x depois contra a main antes da etapa (REF_PRE_ESC), com o mesmo payload: Executiva no escopo do acesso,
+   cabeçalho e cards das 4 abas, cascata e Resumo iguais (só a gaveta da categoria muda). Imprime só totais e códigos. */
+const REF_PRE_ESC = '7e88b8a';
+const FRONT_PRE_ESC = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_ESC}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+const clicaEsc = (page, i) => page.evaluate(i => document.querySelector(`#exEsc .fchip[data-esc="${i}"]`).click(), i);
+const execHtml = page => page.innerHTML('#exec');
+// cabeçalho e cards de uma aba com os atributos em ordem (a ordem do DOM depende do histórico de hidden/data-*)
+const TELA_CANON = () => { const canon = n => n.nodeType === 3 ? n.data : n.nodeType !== 1 ? '' :
+  `<${n.localName}${[...n.attributes].map(a => ` ${a.name}="${a.value}"`).sort().join('')}>${[...n.childNodes].map(canon).join('')}</${n.localName}>`;
+  return {topo: canon(document.getElementById('abaTopo')), lista: canon(document.getElementById('lista'))}; };
+
+describe('Tabela da categoria e escopo do nível acima com dado real', {skip: pular}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px: Gerência em BAND = Diretoria "Todas" e Supervisão em GC = Gerência (cada gerência); invariantes da tabela no escopo de cima; abas no acesso`, async () => {
+    const {page, ctx, erros} = await abre(largura);
+    const info = await page.evaluate(() => ({gcs: gcsComDados(), grupos: gruposGc().filter(g => temDados(g.chave)).map(g => g.chave)}));
+    await entra(page, {perfil: 'dir'});
+    const dir = await execHtml(page);
+    const linhas = [], resumo = [];
+    // Gerência (cada opção da entrada: gerência ou grupo) em BAND
+    const opcoes = [...info.gcs.filter(g => !info.grupos.some(x => x.split('+').includes(g))), ...info.grupos];
+    for(const gc of opcoes){
+      await entra(page, {perfil: 'gc', gc});
+      const bts = await page.$$eval('#exEsc .fchip', bs => bs.map(b => b.textContent));
+      assert.deepEqual(bts, [gc.split('+').map(g => 'GC.' + g).join(' + '), 'BAND'], `${gc}: botões`);
+      const antes = {exec: await execHtml(page), vol: (await vaiAba(page, 'VOLUME')) && await page.evaluate(TELA_CANON)};
+      await vaiAba(page, 'EXEC');
+      await clicaEsc(page, 1);
+      assert.equal(await execHtml(page), dir, `${gc} em BAND = Diretoria "Todas"`);
+      if(gc === opcoes[0]) linhas.push(await CAT.confereCategoria(page, `GC.${gc} em BAND`, {ordena: largura === 1440}));
+      await vaiAba(page, 'VOLUME');
+      assert.deepEqual(await page.evaluate(TELA_CANON), antes.vol, `${gc}: Volume continua no acesso com BAND marcado`);
+      await vaiAba(page, 'EXEC');
+      await clicaEsc(page, 0);
+      await page.evaluate(() => { catExec = ''; render(); });
+      assert.equal(await execHtml(page), antes.exec, `${gc}: de volta ao acesso`);
+      resumo.push(`${gc} → BAND`);
+    }
+    // Supervisão (a 1ª de cada gerência com dados) em GC = Gerência da gerência dela
+    for(const g of info.gcs){
+      const sv = await page.evaluate(g => svsDaEntrada(g)[0], g);
+      if(!sv) continue;
+      const grupo = info.grupos.find(x => x.split('+').includes(g));
+      await entra(page, {perfil: 'gc', gc: grupo || g});
+      if(grupo) await page.selectOption('#fgc', g);
+      const gcHtml = await execHtml(page);
+      await entra(page, {perfil: 'sv', gc: grupo || g, sv});
+      assert.deepEqual(await page.$$eval('#exEsc .fchip', bs => bs.map(b => b.textContent)), [sv, 'GC.' + g], `${sv}: botões`);
+      const antes = (await vaiAba(page, 'VOLUME')) && await page.evaluate(TELA_CANON);
+      await vaiAba(page, 'EXEC');
+      await clicaEsc(page, 1);
+      assert.equal(await execHtml(page), gcHtml, `${sv} em GC = Gerência ${g}`);
+      if(g === info.gcs[0]) linhas.push(await CAT.confereCategoria(page, `${sv} em GC.${g}`, {ordena: largura === 1440}));
+      await vaiAba(page, 'VOLUME');
+      assert.deepEqual(await page.evaluate(TELA_CANON), antes, `${sv}: Volume continua na supervisão`);
+      await vaiAba(page, 'EXEC');
+      resumo.push(`${sv} → GC.${g}`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    const cel = c => c === 'sem meta' ? 'sem meta' : `${c.n} (${c.bat}/${c.am}/${c.abx}) selo ${c.selo} · ${c.pct}%` + (c.tend == null ? '' : ` / ${c.tend}%`) +
+      ` · online ${c.onl == null ? '—' : c.onl.toLocaleString('pt-BR')}`;
+    console.log(`# Escopo do nível acima (${largura} px): ${resumo.length} conferidos (${resumo.join('; ')})`);
+    console.log('# Tabela no escopo de cima — cada célula: linhas (verde/âmbar/vermelho) · selos · % real / % tendência do total · online do total');
+    console.log(`# | Escopo | ${KS_VOL.map(k => CURTO_VOL[k]).join(' | ')} |`);
+    console.log(`# |---|${KS_VOL.map(() => '---').join('|')}|`);
+    for(const l of linhas) console.log(`# | ${l.onde} | ${KS_VOL.map(k => cel(l.cats[k])).join(' | ')} |`);
+  });
+
+  for(const largura of [360, 390, 1000, 1440])
+  test(`${largura} px, fundos preto e branco: botão de escopo e a tabela em BAND/GC sem rolagem lateral nem texto cortado, sem erro no console`, async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre(largura, tema);
+      const sv = await page.evaluate(() => svsDaEntrada('G2')[0]);
+      for(const e of [{perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G2', sv}]){
+        await entra(page, e);
+        for(const i of [0, 1]){
+          await clicaEsc(page, i);
+          const onde = `${largura} ${tema} ${JSON.stringify(e)} ${i ? 'acima' : 'acesso'}`;
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde}: rolagem lateral`);
+          for(const k of KS_VOL){
+            if(await page.$eval(`#exGauges .gCard[data-k="${k}"]`, g => g.classList.contains('off'))) continue;
+            await page.click(`#exGauges .gCard[data-k="${k}"]`);
+            await page.waitForTimeout(200);
+            assert.deepEqual(await page.evaluate(CAT.CORTES_CAT), [], `${onde} ${k}: texto cortado`);
+            assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde} ${k}: rolagem lateral`);
+            await page.keyboard.press('Escape');
+          }
+        }
+      }
+      assert.deepEqual(erros, [], `${largura} ${tema}`);
+      await ctx.close();
+    }
+  });
+
+  test('antes x depois (main antes da etapa, mesmo payload real): Executiva no escopo do acesso, cabeçalho e cards das 4 abas, cascata e Resumo iguais', {skip: !FRONT_PRE_ESC && `sem o commit ${REF_PRE_ESC}`}, async () => {
+    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_ESC)];
+    const comp = [];
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+        assert.equal(await execHtml(novo.page), await execHtml(velho.page), `${onde}: Executiva`);
+        // o cabeçalho fixo: o de antes mais o botão de escopo (Gerência e Supervisão)
+        const cab = p => p.evaluate(() => { const c = document.querySelector('#abaTopo .abCab').cloneNode(true);
+          c.querySelectorAll('#exEsc, .exTraco').forEach(x => x.remove()); return c.innerHTML; });
+        assert.equal(await cab(novo.page), await cab(velho.page), `${onde}: cabeçalho fixo (sem o botão de escopo)`);
+      }
+      for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${onde} ${ab}`);
+        if(!ta) continue;
+        assert.deepEqual(await novo.page.evaluate(TELA_CANON), await velho.page.evaluate(TELA_CANON), `${onde} ${ab}: cabeçalho e cards`);
+        const k = await novo.page.$eval('#lista .ind[data-k]', x => x.dataset.k);
+        for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
+        for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+      }
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+      }
+      comp.push(onde);
+    }
+    console.log(`# Antes x depois contra ${REF_PRE_ESC} (escopo do acesso): ${comp.join('; ')} — Executiva, cabeçalho fixo, cards das 4 abas, 1º nível da cascata e Resumo iguais`);
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
   });
 });

@@ -122,6 +122,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (`frontend/tests/categoria_invariantes.js`, as mesmas da Parte AC; tabela por escopo e categoria); 360/390/1000/1440 px nos
   dois fundos sem corte nem rolagem lateral; e o antes x depois contra o front do `ec60a88` com o mesmo payload (Executiva,
   abas, cascata, Base, Sem compra e Resumo iguais).
+  Tabela da categoria e escopo do nível acima (Etapa 6 do pacote v3): Gerência em BAND = Diretoria "Todas" (cada opção da
+  entrada) e Supervisão em GC = Gerência (a 1ª supervisão de cada gerência), `#exec` com o mesmo HTML; a tabela (invariantes
+  da Parte AC, `categoria_invariantes.js`) no escopo de cima; Volume no acesso; 360/390/1000/1440 px nos dois fundos; antes x
+  depois contra `7e88b8a` (`REF_PRE_ESC`: Executiva no escopo do acesso, cabeçalho fixo sem o `#exEsc`, cards, cascata e Resumo).
   Cascata com Dif (Real + Online) (Etapa 3 do pacote v3): Diretoria, uma gerência (filtro), IT+MO e uma supervisão em 1440 e
   390 px, invariantes (a)-(e) e (g) em `frontend/tests/cascata_invariantes.js` (as mesmas da Parte AG), ordenação, (f) card da
   Gerência G1 = Dif da linha GC.G1 da Diretoria; 360/390/1000/1440 px nos dois fundos; antes x depois contra `515b1e9`.
@@ -325,6 +329,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   no `visibilitychange` (`confereDia`); payload novo revalida (`confereAcesso`; no grupo, a escolha do seletor fica
   enquanto tiver dados). A casa apaga o acesso. Link `?resumo=` (também `gc=IT%2BMO`) não lê nem grava o acesso.
   Sol/lua só no fundo da entrada (`'drotas_entrada'`, à parte).
+  Dentro da aba Executiva, Gerência e Supervisão têm o botão de escopo do nível acima (BAND / GC; Etapa 6 do pacote v3, ver
+  "Escopo do nível acima" abaixo): nunca muda a entrada, o `sel`, a sessão guardada nem a validação.
   **Senha da Diretoria (22/10/2026; README, "Senha da Diretoria")**: AS SENHAS NUNCA FICAM EM TEXTO NO REPOSITÓRIO
   (código, testes, documentos, commits, PR). `CONFIG.DIRETORIA_SENHAS_HASH` = só os 2 hashes: SHA-256 hex minúsculo de
   "drotas:" + senha com trim e `toUpperCase()`, UTF-8 (`normalizaSenha`/`hashSenha`, `crypto.subtle` + `TextEncoder`).
@@ -587,23 +593,45 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `7674ca2`, `FRONT_PRE_EVO`) e `conferencia_real.test.js` (invariantes (a)-(f) em `frontend/tests/evolucao_invariantes.js`,
   com as categorias abertas, e o mesmo antes x depois com o payload real). `TEXTOS_TELA_PAGINA` (antes x depois da Parte AA)
   deixa o `#exEvo` fora.
-  **Gaveta "Categoria por unidade" (22/10/2026; README, "Aba Executiva"; só front, versão "Destaque")**: clique/Enter/Espaço
-  no medidor (`pintaMedidores`) = `escolheCat(k)` (como antes) + `abreCategoria(k)`; os chips do celular só escolhem; sem
-  `comMeta` no escopo o medidor é `.off` (sem role/tabindex/clique) e a função também sai cedo; fechar não mexe em `catExec`.
-  Unidades = `unidadesExec(ctxInicial())` (ganhou `filho`), total = `agrega(rotasAtuais())` (`totalExec`); unidade sem meta
-  fora; ordem Real/Meta exato decrescente (empate: a da cascata), "Neutraliza" por último. Status `statusCat` (decisões de
-  22/10): 'bat' Real >= Meta; 'tend' `pctTendencia` (o do card, ARREDONDADO: 99,6% = âmbar) >= 100, fora do fechamento; 'abx'
-  o resto (`ST_CAT` → `.cuBat/.cuTend/.cuAbx`). `cartaoCat` = `.cuCard` (`tabindex=0`, `data-u/st/meta/real/tend/pct/pct-tend`
-  com os valores exatos, `data-dica` + `ativaDica`; `.cuTot` = total, fundo `--papel`; `.cuFech` = sem `.cuB2`); nome do total
-  `nomeTotalCat` ("BAND · Diretoria", `rotuloGc`, grupo "GC.IT + GC.MO", `rotuloSv`, "Neutraliza · G1"); `infoCat` ("N
-  supervisões" visíveis / "N rotas" / "N clientes"); título `${rotuloInd(k)} por ${nível}`; subtítulo "Real até ontem ÷ Meta ·
-  cor pela tendência do SAC · N <nível>" (N = cartões de unidade, com a "Neutraliza"; fechamento "Realizado ÷ Meta · cor pelo
-  realizado · N <nível>"). "faltam" = `fmt0(meta − real)`; "+X% s/ meta" = round((real/meta − 1)·100). Espaços entre os filhos
-  dos flex/grid (texto para leitor de tela). Rolar `#dCorpo` com a dica aberta pelo toque a fecha. CSS: bloco `.cu*` logo
-  depois do drawer; escala e cores no `.cuGav` (`--cu-fs-*`, `--cu-val-w` 80 px, `--cu-cor/esc/clr` por status, âmbar escuro
-  `#7d5a00`); 3 colunas (50 px | barra | valor) com as barras em `subgrid` (alinhadas; fallback sem subgrid); grade 1 / 2 (>=
-  700 px) / `auto-fill minmax(300px, 1fr)` (>= 1000 px). Nenhuma regra existente da gaveta muda. Testes: Parte AC
-  (`categoria_invariantes.js`, também na conferência com dado real; antes x depois contra o `ec60a88`, `FRONT_PRE_CAT`).
+  **Gaveta "Categoria por unidade" (22/10/2026; README, "Aba Executiva"; só front; em TABELA desde a Etapa 6 do pacote v3,
+  30/10/2026)**: clique/Enter/Espaço no medidor (`pintaMedidores`) = `escolheCat(k)` + `abreCategoria(k)`; os chips do celular só
+  escolhem; sem `comMeta` no escopo o medidor é `.off` (sem role/tabindex/clique) e a função também sai cedo; fechar não mexe em
+  `catExec`. Unidades = `unidadesExec(ctxInicial())` (com `filho`), total = `agrega(rotasAtuais())`; unidade sem meta fora.
+  Tabela `.ctTab` (classes novas `.ct*` dentro do `.cuGav`; `CT` = estado {k, tit, sub, nivel, linhas, tot, fech, dim, col, dir};
+  `linhaCt`, `ordenaCt`, `linhaCtHtml`, `pintaTabCat`, `abreTabCat`): # | unidade | Meta | Real | % Real | Online | Faltam |
+  Tendência (fechamento: sem a Tendência, "Online hoje", 7 colunas); sem barras nem Desvio. Unidade = só o código (`u.cod`;
+  canal/cliente/KA com o nome) + `.ctInfo` ("N supervisões" de `infoCat`), `title` com o nome inteiro. Online = `onlineVol(rotas,
+  k)` (unidade) ou Σ `volCliOnline` dos clientes (`dimDados` ganhou `onl` nas linhas e no total; `cliNeg` guarda `o`); cor
+  `.ctOnl.ok/.no` só com meta do dia (`metaBatida` ou online >= metaDia), nunca em canal/cliente/KA. Faltam = Meta − (Real +
+  Online) (`roCt`, `data-ro`; a Diferença dos cards, pedido da Karen de 30/10/2026; fechamento/sem ONLINE: Meta − Real) `fmt0`
+  (`.ctFalt.no`) ou "+X" (`.ok`); a ordem por Faltam usa o mesmo valor. Tendência = `pctTendencia` em `--cu-esc` ("—" sem). Status `statusCat` (decisões de
+  22/10: 'bat' Real >= Meta; 'tend' `pctTendencia` ARREDONDADO >= 100, fora do fechamento; 'abx') → classe `ST_CAT` na `tr`
+  (faixa `inset` de `--ct-faixa` 4 px na 1ª célula visível, `.ctN` no PC, `.ctU` < 700 px; % Real em `--cu-cor`). Selo
+  `.cSelo.ctSelo` ("✓" + `.ctSeloT` " Meta batida", só o "✓" < 700 px) e `tr.ctBat` (`--bat-bg`) com `linhaBatida(x, Real +
+  Online)` (fechamento ou sem ONLINE: Real >= Meta); o status continua pelo Real. Total = 1ª linha do `tbody` (`.ctTot`,
+  `--ct-tot` #e3e3e8, `--ct-fs-tot` 11 px, 700; código `totalExec(...).cod`, grupo "GC.IT + GC.MO"), fixa ao reordenar. Ordem
+  padrão % Real (Real/Meta exato) decrescente; `.ctOrd[data-col]` pct/onl/falt/tend (1º clique −1, 2º inverte; seta ↓/↑;
+  `.on` em `--vermelho2`; `aria-sort`); sem valor no fim; "Neutraliza" sempre por último; numeração `.ctN` segue a ordem.
+  Subtítulo "… · N <nível> · ordenado por <% da meta|online|faltam|tendência>" (`CT_ORD`). Rodapé `.cuLeg` + `.ctRod`
+  ("Clique em % Real, Online, Faltam ou Tendência para reordenar."). Zebra `--ct-zebra` #f7f7f9 (nth-child(even) do tbody),
+  hover/`emFoco` `--ct-hover` #ececef. Dica (`ativaDica` em cada `tr`): Meta / Real até ontem (X%) / Online (· meta do dia) /
+  Tendência (Y%). < 700 px: sem `.ctN`, `.ctMeta`, `.ctReal`, `.ctInfo`, `.ctSeloT`; células do corpo com
+  `overflow-wrap:anywhere` (o % da meta de 0,1 cx da rota 151 quebra em vez de rolar). Canal/cliente/KA (`abreCategoriaDim`): a
+  mesma tabela com "Meta NEG", tendência "—", Online sem cor, a `.cuNota`. `cartaoCat` (cartões `.cu*`) continua SÓ na ficha
+  da busca (Etapa 5). Testes: Parte AC (`categoria_invariantes.js`: (a)-(g), também na conferência com dado real; antes x
+  depois contra o `ec60a88`, `FRONT_PRE_CAT`) e Parte AJ.
+  **Escopo do nível acima na Executiva (Etapa 6 do pacote v3, 30/10/2026; README, "Entrada com perfis" e "Aba Executiva"; só
+  front)**: a entrada NÃO muda. `escopoAcima` (false; `aplicaAcesso` zera: cada entrada e reabrir começam no acesso),
+  `temEscopoAcima()` (perfil Gerência ou Supervisão), `acimaAtivo()` (+ `aba===EXEC`). Lido SÓ por `rotasAtuais` (Gerência →
+  `gcsComDados()` inteiras; Supervisão → `rotasDe(ACESSO.gc,'')`) e `ctxInicial` (Gerência → {nivel:'gc', nome:'Diretoria'};
+  Supervisão → `ctxGerencia(ACESSO.gc)`, a gerência dela, não o grupo); `chaveEvo` ganha 'acima'. Resumo e Painel de Ritmo
+  leem `sel` (não mudam); sessão guardada e `validaAcesso` também não. `pintaEscopo` (em `cabExec(true)`): `#exEsc.exEsc`
+  (role=group, dois `.fchip[data-esc="0|1"]` colados, `aria-pressed`, `title` com o nome inteiro) + `span.exTraco` antes do
+  `#exAbrir`; Gerência "GC.G1 | BAND" (grupo "GC.IT + GC.MO | BAND"), Supervisão "SV.G2.1 | GC.G2"; Diretoria/Rota: `hidden`.
+  Celular: `#abaTopo.comEsc` põe o `#exEsc` numa linha própria (grid "tit lupa dia" / "esc" / "abr"; sem o traço); `cabExec(false)`
+  tira o `comEsc` (o cabeçalho das outras abas fica byte a byte). Com o nível de cima, o "Abrir por" segue o nível ("Gerência"),
+  sem a Marca (só `sel.modo==='dir'`); o filtro lateral não altera a Executiva. O nome da aba continua o do perfil. Testes:
+  Parte AJ (BAND = Diretoria "Todas" e GC = Gerência pelo HTML do `#exec` e da gaveta; abas, Resumo, Ritmo e sessão no acesso).
   **Botão "Clientes" por agrupador, com busca (Etapa 4 do pacote v3, 30/10/2026; README, "Botão Clientes"; só front)**:
   `button#btnClientes.abCli` no `.abCab`, antes do `#pilDia` (ícone de pessoas, `--fs-legenda`, borda `--linha`, hover
   `--preto`; `.abCli[hidden]` = none); `render()` esconde na Executiva e sem agrupador (`agrupadoresCli()`). `abreClientes` →

@@ -22,7 +22,12 @@ const TOP = 15;
 // o esperado do modo `ab` na categoria k, recontado do payload no filtro atual
 const ESPERADO_DIM = ([ab, k]) => {
   const i = GROUPS.VOLUME.indexOf(k);
-  const dir = sel.modo === 'dir', gc = dir ? sel.dgc : sel.gc, sv = dir ? '' : sel.sv;
+  // escopo da Executiva: o do filtro ou, com o nível acima marcado (Etapa 6 do pacote v3), BAND (Gerência) ou a GC (Supervisão)
+  const acima = typeof acimaAtivo === 'function' && acimaAtivo();
+  const dir = acima ? ACESSO.perfil === 'gc' : sel.modo === 'dir';
+  const gc = acima ? (ACESSO.perfil === 'gc' ? '' : ACESSO.gc) : dir ? sel.dgc : sel.gc, sv = acima || dir ? '' : sel.sv;
+  // online de hoje do cliente na categoria (ONLINE.volumeCliente)
+  const on = (r, pv) => ONLINE ? (((((ONLINE.volumeCliente || {})[r]) || {})[pv]) || {})[k] || 0 : 0;
   const virt = r => (P.VIRTUAIS_ROTAS || []).includes(r) || (P.EVENTUAIS_ROTAS || []).includes(r);
   const gcs = dir && !gc ? Object.keys(P.DATA) : (gc.includes('+') ? gc.split('+') : [gc]);
   const svDe = r => { for(const g of gcs) for(const s in P.DATA[g] || {}) if(r in P.DATA[g][s]) return s; return ''; };
@@ -34,27 +39,28 @@ const ESPERADO_DIM = ([ab, k]) => {
   const oculta = r => { const s = svDe(r); return !(P.GC_SEM_OCULTAS || ['AT']).includes(s.split('.')[1]) && (P.OCULTAS || []).includes(s); };
   const lis = vis.filter(r => !oculta(r));
   const bl = (r, pv) => ((((P.VOLUME_CLIENTE || {})[r] || {})[pv]) || [])[i] || null;
-  const clis = rs => rs.flatMap(r => (P.CLIENT_ROSTER[r] || []).map(c => ({r, c, b: bl(r, c[0])})).filter(x => x.b));
+  const clis = rs => rs.flatMap(r => (P.CLIENT_ROSTER[r] || []).map(c => ({r, c, b: bl(r, c[0]), o: on(r, c[0])})).filter(x => x.b));
   const todos = clis(vis);
-  const tot = {meta: todos.reduce((s, x) => s + x.b[0], 0), real: todos.reduce((s, x) => s + x.b[1], 0), n: todos.length};
+  const tot = {meta: todos.reduce((s, x) => s + x.b[0], 0), real: todos.reduce((s, x) => s + x.b[1], 0), onl: todos.reduce((s, x) => s + x.o, 0), n: todos.length};
   const top = ls => ls.filter(l => l.meta > 0).sort((p, q) => q.real - p.real || q.meta - p.meta || String(p.nome).localeCompare(String(q.nome))).slice(0, 15);
-  let linhas, semMeta = {meta: 0, real: 0}, dup = 0;
+  let linhas, semMeta = {meta: 0, real: 0, onl: 0}, dup = 0;
   if(ab === 'canal'){
     const m = {};
-    todos.forEach(x => { const s = P.SEGS[x.c[2]] || 'Sem segmento'; (m[s] = m[s] || {nome: s, meta: 0, real: 0}); m[s].meta += x.b[0]; m[s].real += x.b[1]; });
+    todos.forEach(x => { const s = P.SEGS[x.c[2]] || 'Sem segmento'; (m[s] = m[s] || {nome: s, meta: 0, real: 0, onl: 0}); m[s].meta += x.b[0];
+      m[s].real += x.b[1]; m[s].onl += x.o; });
     linhas = Object.values(m).filter(l => l.meta > 0);
-    Object.values(m).filter(l => !(l.meta > 0)).forEach(l => { semMeta.meta += l.meta; semMeta.real += l.real; });
+    Object.values(m).filter(l => !(l.meta > 0)).forEach(l => { semMeta.meta += l.meta; semMeta.real += l.real; semMeta.onl += l.onl; });
   } else if(ab === 'cli'){
-    linhas = top(clis(lis).map(x => ({nome: x.c[1], meta: x.b[0], real: x.b[1]})));
+    linhas = top(clis(lis).map(x => ({nome: x.c[1], meta: x.b[0], real: x.b[1], onl: x.o})));
   } else {
     const kas = {}, visto = new Set();
     lis.forEach(r => { const gs = (P.REDES_CLIENTE || {})[r] || {};
-      for(const key in gs){ (kas[key] = kas[key] || {nome: gs[key].nome, meta: 0, real: 0, lojas: 0});
+      for(const key in gs){ (kas[key] = kas[key] || {nome: gs[key].nome, meta: 0, real: 0, onl: 0, lojas: 0});
         gs[key].clientes.forEach(pv => { const id = r + '|' + pv; if(visto.has(id)) dup++; visto.add(id);
-          kas[key].lojas++; const b = bl(r, pv); if(b){ kas[key].meta += b[0]; kas[key].real += b[1]; } }); } });
+          kas[key].lojas++; const b = bl(r, pv); if(b){ kas[key].meta += b[0]; kas[key].real += b[1]; kas[key].onl += on(r, pv); } }); } });
     linhas = top(Object.values(kas));
   }
-  return {k, nome: rotuloInd(k), oficial, tot, linhas, semMeta, dup, nCli: todos.length};
+  return {k, nome: rotuloInd(k), oficial, tot, linhas, semMeta, dup, nCli: todos.length, temOnline: !!ONLINE, fech: !!P.FECHAMENTO};
 };
 // o que a tela mostra no modo atual: a Tendência x Meta (uma coluna por categoria) e os blocos que não mudam
 const LE_DIVS = () => ({tit: document.getElementById('exTDiv').textContent, sub: document.getElementById('exSDiv').textContent,
@@ -70,9 +76,13 @@ const FIXOS = () => Object.fromEntries(['exSemc', 'exAgenda', 'exCob', 'exNBase'
   'exDiaTxt', 'exGauges'].map(id => [id, document.getElementById(id).innerHTML]));
 const LE_GAV = () => ({aberta: document.getElementById('drw').classList.contains('on'), tit: document.getElementById('dTit').textContent,
   sub: document.getElementById('dSub').textContent, aviso: !!document.querySelector('#dCorpo .exAviso'),
-  nota: (document.querySelector('#dCorpo .cuNota') || {}).textContent || '', b2: document.querySelectorAll('#dCorpo .cuB2').length,
-  cards: [...document.querySelectorAll('#dCorpo .cuCard')].map(c => ({u: c.dataset.u, tot: c.classList.contains('cuTot'), meta: Number(c.dataset.meta),
-    real: Number(c.dataset.real), tend: c.dataset.tend, st: c.dataset.st, vals: c.querySelector('.cuVals').textContent.replace(/\s+/g, ' ').trim()}))});
+  nota: (document.querySelector('#dCorpo .cuNota') || {}).textContent || '', b2: document.querySelectorAll('#dCorpo .cuB2, #dCorpo .cuTr').length,
+  // desde a Etapa 6 do pacote v3, a tabela (.ctLin; o total é a 1ª linha); onl = Σ do online de hoje dos clientes
+  cab: [...document.querySelectorAll('#dCorpo .ctTab thead th')].map(th => th.textContent.replace(/[↓↑]/g, '')),
+  cards: [...document.querySelectorAll('#dCorpo .ctLin')].map(c => ({u: c.dataset.u, tot: c.classList.contains('ctTot'), meta: Number(c.dataset.meta),
+    real: Number(c.dataset.real), onl: c.dataset.onl === '' ? null : Number(c.dataset.onl), tend: c.dataset.tend, st: c.dataset.st,
+    tendTxt: (c.querySelector('.ctTend') || {}).textContent, onlCls: c.querySelector('.ctOnl').className,
+    vals: `Meta NEG ${c.querySelector('.ctMeta').textContent} Real ${c.querySelector('.ctReal').textContent}`}))});
 const LE_EVO = k => { const d = document.querySelector(`#exEvLinhas .evDet[data-k="${k}"]`);
   return d ? {nota: (d.querySelector('.evNota') || {}).textContent || '', aviso: !!d.querySelector('.exAviso'),
     linhas: [...d.querySelectorAll('.evLin.un')].map(l => ({u: l.dataset.u, pct: l.dataset.pct, ant: l.dataset.pctAnt, dpp: l.dataset.dpp,
@@ -147,8 +157,18 @@ async function confereDimensoes(page, onde, {gaveta = true, evolucao = true} = {
         assert.ok(g.aberta, `${oc}: gaveta`);
         assert.equal(g.tit, `${e.nome} por ${DIM[ab]}`, `${oc}: título da gaveta`);
         assert.equal(g.b2, 0, `${oc}: gaveta sem a barra da Tendência`);
-        assert.ok(g.cards.every(c => c.tend === '' && c.st !== 'tend'), `${oc}: gaveta sem tendência`);
         const [gt, ...gu] = g.cards;
+        assert.ok(g.cards.every(c => c.tend === '' && c.st !== 'tend' && (c.tendTxt == null || c.tendTxt === '—')), `${oc}: gaveta sem tendência`);
+        // tabela (Etapa 6 do pacote v3): as colunas da unidade, com "Meta NEG"; Online sem cor (não há meta do dia por cliente)
+        assert.deepEqual(g.cab, ['#', DIM[ab][0].toUpperCase() + DIM[ab].slice(1), 'Meta NEG', 'Real', '% Real',
+          ...(e.fech ? ['Online hoje', 'Faltam'] : ['Online', 'Faltam', 'Tendência'])], `${oc}: colunas da gaveta`);
+        assert.ok(g.cards.every(c => c.onlCls === 'ctOnl'), `${oc}: Online sem cor`);
+        // Online: Σ do online de hoje dos clientes de cada linha; Σ das linhas = total no Canal (todos os clientes)
+        if(e.temOnline){
+          quase(gt.onl, e.tot.onl, `${oc}: gaveta Online do total`);
+          for(const c of gu){ const l = e.linhas.find(x => chave(x) === chave(c)); if(l) quase(c.onl, l.onl, `${oc}: Online de ${c.u}`); }
+          if(ab === 'canal') quase(gu.reduce((a, c) => a + c.onl, 0) + e.semMeta.onl, gt.onl, `${oc}: Σ Online dos canais = total`);
+        }
         assert.ok(gt.tot, `${oc}: total primeiro`);
         quase(gt.meta, e.tot.meta, `${oc}: gaveta Meta NEG do total`); quase(gt.real, e.tot.real, `${oc}: gaveta Real do total`);
         assert.deepEqual(gu.map(chave).sort(), e.linhas.map(chave).sort(), `${oc}: gaveta = as linhas`);

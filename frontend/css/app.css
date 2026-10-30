@@ -525,6 +525,16 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .abaTopo.exec .abCab{margin-bottom:0}
 .exFer{display:flex;align-items:center;gap:10px;min-width:0}
 .exAbrir{display:flex;align-items:center;gap:6px;margin:0;min-width:0;overflow-x:auto;scrollbar-width:none;padding-bottom:0}
+/* botão de escopo da Executiva (Gerência "GC.<dela> | BAND", Supervisão "SV.<dela> | GC.<dela>"; Etapa 6 do pacote v3):
+   dois .fchip colados (segmentado) antes do "Abrir por", separados dele por um traço vertical (.exTraco; some no celular, onde
+   o escopo fica numa linha própria) */
+.exEsc{display:flex;flex:none;align-items:center}
+.exEsc[hidden],.exTraco[hidden]{display:none}
+.exEsc .fchip{border-radius:0;margin:0}
+.exEsc .fchip+.fchip{margin-left:-1px}
+.exEsc .fchip:first-child{border-radius:999px 0 0 999px}
+.exEsc .fchip:last-child{border-radius:0 999px 999px 0}
+.exTraco{flex:none;width:1px;height:22px;background:var(--linha-forte)}
 .exAbRot{flex:none;font-size:var(--fs-ex-mini);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-apoio);margin-right:2px}
 .exBusca{position:relative;min-width:0}
 .exLupa{display:none;flex:none;width:34px;height:34px;padding:0;place-items:center;border:1px solid var(--linha);border-radius:999px;
@@ -542,6 +552,10 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .abaTopo.exec .abCab{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"tit lupa dia" "abr abr abr";
     gap:8px;align-items:center}
   .abaTopo.exec.buscaAberta .abCab{grid-template-areas:"tit lupa dia" "campo campo campo" "abr abr abr"}
+  .abaTopo.exec.comEsc .abCab{grid-template-areas:"tit lupa dia" "esc esc esc" "abr abr abr"}
+  .abaTopo.exec.comEsc.buscaAberta .abCab{grid-template-areas:"tit lupa dia" "campo campo campo" "esc esc esc" "abr abr abr"}
+  .exEsc{grid-area:esc;justify-self:start}
+  .exTraco{display:none}
   .abaTopo.exec #abTit{grid-area:tit;min-width:0}
   .abaTopo.exec .pilDia{grid-area:dia}
   .exFer,.exBusca{display:contents}
@@ -882,6 +896,55 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .cuLeg{display:flex;flex-wrap:wrap;gap:6px 14px;padding:10px 2px 0;font-size:var(--cu-fs-sub);color:var(--txt-apoio)}
 .cuLeg span{display:inline-flex;align-items:center;gap:5px}
 .cuLg{display:inline-block;flex:none;width:12px;height:10px;border-radius:3px;background:var(--cu-cor)}
+/* Tabela da gaveta "Categoria por unidade" (Etapa 6 do pacote v3; classes novas .ct*, dentro do .cuGav, sem barras):
+   # | unidade | Meta | Real | % Real | Online | Faltam | Tendência. Linha de total no topo (fundo --ct-tot, negrito, fonte
+   --ct-fs-tot), linhas zebradas leves (hover um tom acima), faixa de --ct-faixa na lateral esquerda na cor do status (--cu-cor
+   de .cuBat/.cuTend/.cuAbx), % Real na cor do status e Tendência no tom escuro dele (--cu-esc); selo .cSelo da cascata e fundo
+   --bat-bg com Real + Online >= Meta. Títulos % Real, Online, Faltam e Tendência reordenam (.ctOrd; ativo em --vermelho2).
+   Abaixo de 700 px: sem #, Meta e Real, nome sem o "N supervisões" e o selo só com o "✓". */
+.cuGav{--ct-fs:12px;--ct-fs-tot:11px;--ct-fs-cab:10px;--ct-fs-info:10px;--ct-tot:#e3e3e8;--ct-zebra:#f7f7f9;--ct-hover:#ececef;--ct-faixa:4px}
+.ctTab{width:100%;border-collapse:separate;border-spacing:0;font-size:var(--ct-fs);line-height:1.3;color:var(--txt)}
+.ctTab th,.ctTab td{padding:7px 6px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--linha);font-weight:400}
+.ctTab thead th{font-size:var(--ct-fs-cab);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--txt-apoio);
+  vertical-align:bottom;border-bottom:1px solid var(--linha-forte);background:#fff}
+.ctTab .ctN{width:1%;color:var(--txt-apoio);text-align:center;box-shadow:inset var(--ct-faixa) 0 0 var(--cu-cor)}
+.ctTab thead .ctN{box-shadow:none}
+.ctTab .ctU{text-align:left;width:40%;white-space:normal}
+.ctCod{font-weight:700;color:var(--txt);white-space:nowrap}
+.ctInfo{font-size:var(--ct-fs-info);color:var(--txt-apoio)}
+/* canal, cliente e Key Account: o nome (não um código) quebra na célula */
+.cuGav[data-ab] .ctCod{white-space:normal;overflow-wrap:anywhere}
+.ctSelo{vertical-align:1px}
+.ctOrd{font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;background:none;border:0;padding:2px 0;cursor:pointer;border-radius:4px;white-space:nowrap}
+.ctOrd:hover{color:var(--preto)}
+.ctOrd.on{color:var(--vermelho2)}
+.ctSeta{display:inline-block;min-width:.7em;margin-left:2px}
+.ctLin{outline:none}
+.ctLin>*{background:#fff}
+.ctTab tbody tr.ctLin:nth-child(even)>*{background:var(--ct-zebra)}
+.ctTab tbody tr.ctLin:hover>*,.ctTab tbody tr.ctLin.emFoco>*{background:var(--ct-hover)}
+.ctTab tbody tr.ctLin.ctBat>*{background:var(--bat-bg)}
+.ctTab tbody tr.ctLin.ctBat:hover>*,.ctTab tbody tr.ctLin.ctBat.emFoco>*{background:var(--bat-borda)}
+.ctTab tbody tr.ctLin.ctTot>*{background:var(--ct-tot);font-size:var(--ct-fs-tot);font-weight:700}
+.ctTab tbody tr.ctLin.ctTot .ctCod,.ctTab tbody tr.ctLin.ctTot .ctInfo{font-size:var(--ct-fs-tot)}
+.ctLin:focus-visible>*{box-shadow:inset 0 2px 0 var(--cu-esc),inset 0 -2px 0 var(--cu-esc)}
+.ctLin:focus-visible>.ctN{box-shadow:inset var(--ct-faixa) 0 0 var(--cu-cor),inset 0 2px 0 var(--cu-esc),inset 0 -2px 0 var(--cu-esc)}
+.ctPct{font-weight:700;color:var(--cu-cor)}
+.ctTab tbody tr.ctLin .ctPct{font-weight:700}
+.ctTend{color:var(--cu-esc)}
+.ctOnl.ok{color:var(--verdeE)} .ctOnl.no{color:var(--vermelho2)}
+.ctFalt.no{color:var(--vermelho2)} .ctFalt.ok{color:var(--verdeE)}
+.ctRod{margin:4px 2px 0;font-size:var(--cu-fs-sub);color:var(--txt-apoio)}
+@media (max-width:699px){
+  .ctTab .ctN,.ctTab .ctMeta,.ctTab .ctReal,.ctInfo,.ctSeloT{display:none}
+  .ctTab th,.ctTab td{padding:7px 3px}
+  .ctTab thead th{letter-spacing:0}
+  /* um valor fora do comum (ex.: % de uma meta de 0,1 cx) quebra dentro da célula em vez de abrir rolagem lateral */
+  .ctTab tbody td{white-space:normal;overflow-wrap:anywhere}
+  .ctTab .ctU{box-shadow:inset var(--ct-faixa) 0 0 var(--cu-cor);padding-left:9px}
+  .ctTab thead .ctU{box-shadow:none}
+  .ctLin:focus-visible>.ctU{box-shadow:inset var(--ct-faixa) 0 0 var(--cu-cor),inset 0 2px 0 var(--cu-esc),inset 0 -2px 0 var(--cu-esc)}
+}
 .rodape{text-align:center;font-size:var(--fs-nota);color:var(--txt-apoio);padding:20px 10px 0;line-height:1.6}
 .rodape .fonte{color:var(--cinza-fraco)}
 .creditos{margin-top:12px;padding-top:10px;border-top:1px solid var(--linha-suave);font-size:var(--fs-nota);color:var(--cinza-fraco);line-height:1.6}
