@@ -138,6 +138,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Resumo, bloco Todos a Bordo: Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px
   (`frontend/tests/resumo_tab_invariantes.js`, as mesmas da Parte AF; tabela por escopo com bloco / card / online de cada item);
   e o antes x depois contra o front do `9f82f15` com o mesmo payload (Resumo sem o bloco, Executiva, cards e cascata iguais).
+  "Faltam" do medidor com o online (30/10/2026): a conta, o online (= `.gDia` = caixa Online do card) e o Faltam do total da
+  gaveta em `confereExecutiva` (Diretoria, cada gerência, cada grupo, uma supervisão; tabela Meta | Real | Online | faltam
+  antigo | novo); antes x depois contra `1af3c6d` (`REF_PRE_FALTA`: só a `.gFalta` muda; gavetas da categoria, abas, cascata e
+  Resumo iguais); 360/390/1000/1440 px nos dois fundos sem rolagem lateral nem `.gFalta` cortada.
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -593,9 +597,16 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (`.dupla.so1`). Evolução: ver abaixo (Etapa 8c).
   Ajustes visuais (29/10/2026; Parte AE): `#exCob` zebrado (`tbody tr:nth-child(even)` = `--zebra` #f6f6f8, também o `th.un`
   sticky; `tr.tot` = `--zebra-tot` #e4e4e8 e negrito; hover #ececef / total #d9d9de; o painel não tem tema escuro: os dois
-  fundos são só da entrada); medidor com `.gFalta` entre `.gPct` e `.gMR` ("faltam X para a meta", X = `fmt0(meta − real)`,
-  `--vermelho2`; Real >= Meta: `.gFalta.ok` "meta batida · +X", `--verdeE`; `--fs-ex-mini`, 700; sem a linha no `.off`) e
-  `data-meta`/`data-real` exatos no `.gCard`; rótulo `label.buscaRot` "Busca por cliente" (`--fs-busca-rot`, caixa alta,
+  fundos são só da entrada); medidor com `.gFalta` entre `.gPct` e `.gMR` ("faltam X para a meta", X = `fmt0(meta − base)`,
+  `--vermelho2`; base >= Meta: `.gFalta.ok` "meta batida · +X", `--verdeE`; `--fs-ex-mini`, 700; sem a linha no `.off`) e
+  `data-meta`/`data-real` exatos no `.gCard`. **Correção de 30/10/2026 (decisão da Karen)**: base = Real + online de hoje (X =
+  Meta − (Real + online)), como a Diferença dos cards e o Faltam da gaveta da categoria (`pintaMedidores`: `onl` = `onlineVol(rotas, c)` uma vez
+  por cartão, null no fechamento e sem ONLINE, reaproveitado na `.gDia`; `realOnline(c, rotas, b, onl)`; null = Meta − Real);
+  `data-online` no `.gCard` (vazio sem online); o `.gPct` e o arco continuam Real ÷ Meta, sem o online. Testes: Parte AE
+  ("medidor: ... Meta - (Real + online)"), `executiva_invariantes.js` (recontagem pelo online.json, = `.gDia`, = caixa Online do
+  card de Volume, = Faltam da linha de total da gaveta) e, com dado real, o antes x depois contra `1af3c6d` (`REF_PRE_FALTA`); os
+  antes x depois que comparam o `#exec` inteiro com fronts antigos normalizam só a `.gFalta` e o `data-online` (`desfazFalta`,
+  executiva_invariantes.js; o `desfazAE` também tira o `data-online`); rótulo `label.buscaRot` "Busca por cliente" (`--fs-busca-rot`, caixa alta,
   `--txt-apoio`) acima do `#q`, placeholder "Digite nome, código ou rede". Os "antes x depois" contra fronts antigos
   desfazem isso no atual com `desfazAE` (rotulos_invariantes.js; `igualRotulo`, `igualSemFalta`; em texto, só o "faltam X para
   a meta" do medidor: o "; faltam X para a meta." do quadro Foco já existia e fica). Na conferência com dado real, os antes x
