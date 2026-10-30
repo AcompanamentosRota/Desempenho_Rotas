@@ -1097,6 +1097,7 @@ Por rota × macro de volume (Refrigerantes, Cervejas, Still, Água Mineral, Novo
 | % Tendência | Tendência ÷ Meta; verde a partir de 100% |
 | Dif | Vol Real − Meta |
 | Meta do dia | `META_RECUPERAVEL_ROTA` pela rota da meta (`CD_ROTA_Chave_Meta_SAP`, como o SAC) com `DATA_MOVIMENTO` = hoje (sem a medida, fica "—") |
+| Neg de hoje (`negHoje`, só informada) | a parte da Neg Restante planejada para hoje, na mesma escala (ver "Neg de hoje") |
 
 A rota da meta é a mesma que o SAC usa: pela rota atual do cliente, quem foi transferido levaria a curva
 para outra rota. Se a consulta pela rota da meta não funcionar, o gerador volta à curva pela rota do cliente
@@ -1370,6 +1371,50 @@ passo "E9 e E11"; local: `python scripts/conferir_tendencia.py --saida DIR --e11
 Só totais, contagens e códigos de rota e gerência: nunca nomes nem códigos de clientes.
 
 Depois do merge: rodar **"Atualizar dados"** uma vez para o payload publicado trazer a chave.
+
+### Neg de hoje (`negHoje`; seção E12)
+
+Campo novo (30/10/2026), **opcional**, no indicador de volume de cada rota (5 macros e Del Valle Frut onde existir), no
+fim do bloco: a parte da Neg Restante planejada para **hoje**. É a base da futura "tendência com online" da cascata
+(decisão C da Karen: Real até ontem + Online de hoje + (Neg Restante − Neg de hoje)); **nenhuma tela usa ainda** e
+nenhum outro número do payload muda (Neg Restante, tendência, %, meta, meta do dia, Real, EV*, fechamento, coberturas,
+`MES_ANTERIOR`, Venda Zero).
+
+Consulta: `META_NEG` com `DATA_MOVIMENTO eq <hoje>` (só no `$filter`, literal pelo `$metadata`, `fontes.filtro_hoje`) por
+rota × agrupador, junto das consultas do mês (`fontes.carregar_neg_hoje`). Mesma base da curva da Neg Restante: pela rota
+da meta (`CD_ROTA_Chave_Meta_SAP`); se a curva cair na rota do cliente (`CD_ROTA_Clien`, aviso de sempre), a Neg de hoje é
+consultada de novo por ela. HTTP 500 da consulta inteira: repete por gerência. Falhou ou veio sem nenhuma linha de hoje
+com valor: `negHoje = null` em todas as rotas + aviso no log; nunca outra conta. Só em dia útil (`Calendario.hoje_util`)
+fora do fechamento; rota sem linha de hoje = 0.
+
+Na mesma escala da `negRestante` de cada caso (`modelo.neg_hoje`):
+
+| Caso (`modelo.meta_e_restante`) | negRestante | negHoje |
+|---|---|---|
+| DIRETO | restante bruto da rota da meta | Neg de hoje bruta |
+| CURVA (escalonado) | Meta × restante ÷ META_NEG do mês | Meta × Neg hoje bruta ÷ META_NEG do mês |
+| SEM_CURVA (Meta sem META_NEG) | Meta × dias úteis restantes (com hoje) ÷ dias do mês | Meta ÷ dias úteis do mês |
+| SEM_META_ROTA (sem META_VOLUME) | restante bruto | Neg de hoje bruta |
+| SEM_META (Real sem meta) e rotas EV* | 0 | 0 |
+| dia não útil, sem linha de hoje, falha, fechamento | (a de sempre; null no fechamento) | null |
+
+Regra de consistência: 0 ≤ negHoje ≤ negRestante (tolerância de 0,1 cx, o arredondamento de 1 casa); fora disso,
+`validacao.py` avisa por rota × macro, sem reprovar. Payload sem o campo (antigo) continua válido.
+Agregação: `modelo.agrega_volume` soma `negHoje` das rotas que têm o campo (null se nenhuma tiver; null no
+fechamento) e o espelho `NUCLEO.agrega` (`frontend/js/nucleo.js`, `volAgg.nh`) soma igual e expõe `negHoje` no indicador
+agregado (teste `backend/tests/test_neg_hoje.py`, `TestEspelhoNucleo`, roda o nucleo.js no node). Peso estimado no
+payload real de 30/10/2026 (1.139 rotas × macro): +18 KB (6,66 → 6,68 MB).
+
+**E12** do `conferir_tendencia.py`, em duas partes (só totais, contagens e códigos de rota e gerência):
+- com rede (no relatório, depois da E10): a consulta nova pela rota da curva, com o tempo, e por gerência e BAND nos 5
+  macros: Σ negHoje, Σ negRestante, %, rotas × macro por caso (DIRETO, CURVA, SEM_CURVA, SEM_META_ROTA, SEM_META, EV*,
+  null) e violações; grava `e12_neg_hoje.json` ao lado do relatório;
+- do payload gravado (`conferir_tendencia.py --saida DIR --e12 DIR/payload.json [--e12-tempo S] [--e9-duracao S]`, sem
+  rede; roda também sozinha junto da `--e11`, então o workflow "Conferir tendência" já a traz): as mesmas somas do
+  payload (com negHoje / null), violações, diferença contra o `e12_neg_hoje.json` e o tamanho com × sem o campo. O
+  `gerar.py` grava o tempo da consulta em `neg_hoje_s` (log e `GITHUB_OUTPUT`; o workflow ainda não o repassa).
+
+Depois do merge: rodar **"Atualizar dados"** (opção tudo) para o payload publicado trazer o campo.
 
 Diferenças em relação ao arquivo que era montado à mão:
 - **Visitas de hoje**: vêm do campo `VISITA_HOJE` do SAP e incluem clientes com mais de um dia de

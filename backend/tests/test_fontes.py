@@ -283,8 +283,10 @@ class TestFontes(unittest.TestCase):
         self.assertTrue(vr and all(CM.DATA not in c[1] and "Cctm" not in c[2] for c in vr))
         self.assertFalse([c for c in meta if CM.DATA in c[1]])          # data só no $filter, nunca no groupby
         neg = [c for c in meta if c[1] == (CM.ROTA, CM.AGRUPADOR, CM.META_NEG)]
-        self.assertEqual(sorted(CM.DATA in c[2] for c in neg), [False, True])
+        # mês, restante e (negHoje) o dia de hoje; aqui sem a rota da meta, pela rota do cliente
+        self.assertEqual(sorted(CM.DATA in c[2] for c in neg), [False, True, True])
         self.assertTrue(any("DATA_MOVIMENTO ge 2026-10-13 and DATA_MOVIMENTO le 2026-10-31" in c[2] for c in neg))
+        self.assertTrue(any("DATA_MOVIMENTO eq 2026-10-13" in c[2] for c in neg))
         dia = [c for c in meta if CM.META_RECUPERAVEL in c[1]]
         self.assertEqual(len(dia), 1)                                   # pela rota da meta, como o SAC
         self.assertEqual(dia[0][1], (CM.META_ROTA, CM.AGRUPADOR, CM.META_RECUPERAVEL))

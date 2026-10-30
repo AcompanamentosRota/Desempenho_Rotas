@@ -31,6 +31,11 @@ class Calendario:
         return round(self.dia_ontem / self.total_dias_uteis * 100) if self.total_dias_uteis else 0
 
     @property
+    def hoje_util(self) -> bool:
+        """Hoje é dia útil do mês de referência (fora do fechamento): em dia não útil DIA_HOJE = DIA_ONTEM."""
+        return not self.fechamento and self.dia_hoje > self.dia_ontem
+
+    @property
     def anomes(self) -> str:
         """ANOMES_REF do mês de referência (o anterior durante o fechamento)."""
         return (self.ref or self.hoje).strftime("%Y%m")
@@ -62,6 +67,7 @@ class VolumeRota:
     neg_restante: float | None = None      # meta x fração restante da curva META_NEG; None no fechamento
     meta_dia_hoje: float | None = None     # META_RECUPERAVEL_ROTA de hoje; None = medida não veio
     meta_neg_clientes: float | None = None  # soma de META_NEG do mês: só conferência (não entra em conta)
+    neg_hoje: float | None = None          # parte da Neg Restante planejada para hoje (modelo.neg_hoje); None = sem dado
 
 
 @dataclass

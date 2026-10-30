@@ -71,6 +71,27 @@ def _incentivo(p: dict) -> list[str]:
                        for b in ((d.get("indicators") or {}).get(k) or {"unavailable": True} for d in rotas.values()))]
 
 
+TOL_NEG_HOJE = 0.1   # caixas: negHoje e negRestante saem com 1 casa cada
+
+
+def _neg_hoje(p: dict) -> list[str]:
+    """negHoje (Neg de hoje, chave opcional do volume): aviso por rota x macro fora de 0 <= negHoje <= negRestante
+    (com a tolerância do arredondamento de 1 casa); nunca reprova. Sem o campo (payload antigo) ou null: nada a conferir."""
+    fora = []
+    for r, d in _rotas(p).items():
+        for k in M.INDICADORES_VOLUME_TODOS:
+            b = (d.get("indicators") or {}).get(k) or {}
+            nh, rest = b.get("negHoje"), b.get("negRestante")
+            if b.get("unavailable") or nh is None:
+                continue
+            if nh < -TOL_NEG_HOJE or (rest is not None and nh > rest + TOL_NEG_HOJE):
+                fora.append(f"{r}/{M.LABELS.get(k) or M.VOLUME_EXTRA[k]['label']} ({nh:,.1f} x {rest if rest is None else f'{rest:,.1f}'})")
+    if not fora:
+        return []
+    return [f"negHoje fora de 0..negRestante em {len(fora)} rota(s) x macro (negHoje x negRestante): "
+            + ", ".join(fora[:20]) + (" …" if len(fora) > 20 else "")]
+
+
 def _sem_compra_mes(p: dict) -> list[str]:
     """SEM_COMPRA_MES (chave opcional): aviso, nunca erro, se o tamanho da lista da rota for diferente de semCompra ou
     se o SEM_COMPRA_HOJE da rota não estiver contido nela. Payload sem a chave: nada."""
@@ -216,6 +237,7 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
     avisos += _gerencias(novo)
     avisos += _incentivo(novo)
     avisos += _sem_compra_mes(novo)
+    avisos += _neg_hoje(novo)
     e_ma, a_ma = _mes_anterior(novo)
     erros += e_ma
     avisos += a_ma

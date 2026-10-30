@@ -158,7 +158,7 @@ class TestNegRestantePelaRotaDaMeta(unittest.TestCase):
                         f.avisos)
         # as do mês de referência (a META_NEG de setembro, da chave MES_ANTERIOR, tem o mesmo $select)
         neg = [c for c in cons.chamadas if c[1] == (CM.META_ROTA, CM.AGRUPADOR, CM.META_NEG) and "'202610'" in c[2]]
-        self.assertEqual(sorted(CM.DATA in c[2] for c in neg), [False, True])
+        self.assertEqual(sorted(CM.DATA in c[2] for c in neg), [False, True, True])   # mês, restante e hoje (negHoje)
 
     def test_sem_rota_da_meta_mantem_o_escalonado_pela_rota_do_cliente(self):
         cons = ConsultaFalsa(_dados_rota_meta(), falha=lambda sel, f: tuple(sel) == (CM.META_ROTA, CM.AGRUPADOR, CM.META_NEG))

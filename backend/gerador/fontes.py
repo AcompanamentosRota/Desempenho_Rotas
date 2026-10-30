@@ -20,6 +20,9 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
                                                 (DATA_MOVIMENTO de hoje ao fim do mês só no $filter)
   meta_dia    AM_FAT_BND_ANALISE_META           rota da meta x macro: META_RECUPERAVEL_ROTA com DATA_MOVIMENTO =
                                                 hoje no $filter (se der erro, repete por gerência)
+  neg_hoje    AM_FAT_BND_ANALISE_META           rota da meta x macro: META_NEG com DATA_MOVIMENTO = hoje no $filter
+                                                (negHoje; pela rota do cliente se a curva cair nela; só dia útil
+                                                fora do fechamento; falhou = negHoje null em todas as rotas)
   metas       AM_FAT_BND_ANALISE_META           rota x agrupador da meta: meta de cobertura e META_VOLUME
                                                 (a meta de volume da rota, denominador do volume)
   metas_gc    AM_FAT_BND_ANALISE_META           META_VOLUME e META_COBERTURA do mês por rota -> gerência
@@ -37,7 +40,7 @@ Fechamento do mês (calendario.em_fechamento): o payload inteiro passa a ser do 
 Venda Zero fica indisponível e o online continua sendo o de hoje (pedidos do mês atual).
 
 Falha no comodato não derruba a execução (Venda Zero fica indisponível); falha na meta do dia
-deixa metaDia = null (registrado no log). Falha nas demais interrompe sem gravar nada.
+deixa metaDia = null e na META_NEG de hoje, negHoje = null (registrado no log). Falha nas demais interrompe sem gravar nada.
 """
 from __future__ import annotations
 
@@ -501,6 +504,27 @@ def carregar_curva_neg(cons: Consulta, anomes: str, gcs_originais: list[str], ro
         return mes, rest, ROTA_CLIENTE
 
 
+def carregar_neg_hoje(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None, hoje: date,
+                      col_rota: str = CM.META_ROTA) -> tuple[dict | None, float]:
+    """META_NEG com DATA_MOVIMENTO = hoje no $filter (nunca no groupby), por rota x macro, pela coluna de rota da curva
+    (CD_ROTA_Chave_Meta_SAP ou, no plano B da curva, CD_ROTA_Clien): a Neg de hoje bruta (modelo.neg_hoje).
+
+    HTTP 500 da consulta inteira: repete por gerência (_por_rota). Devolve ({rota: {VOL: valor}} ou None, segundos):
+    None se falhar ou vier sem nenhuma linha de hoje com valor (dia não útil); rota sem linha = 0 (fontes.carregar).
+    """
+    inicio = time.monotonic()
+    try:
+        dia = _por_rota(cons, CM.META_NEG, anomes, gcs_originais, rota, filtro_hoje(cons, hoje), col_rota)
+    except Exception as erro:   # noqa: BLE001
+        log.warning("META_NEG de hoje por %s falhou (%s): negHoje fica null.", col_rota, erro)
+        return None, time.monotonic() - inicio
+    if not any(v for ks in dia.values() for v in ks.values()):
+        log.warning("META_NEG de hoje por %s sem linha com valor (dia não útil?): negHoje fica null.", col_rota)
+        return None, time.monotonic() - inicio
+    log.info("META_NEG de hoje por %s: %d rotas", col_rota, len(dia))
+    return dia, time.monotonic() - inicio
+
+
 def carregar_meta_dia(cons: Consulta, anomes: str, gcs_originais: list[str], rota: str | None, hoje: date) -> dict | None:
     """META_RECUPERAVEL_ROTA com DATA_MOVIMENTO = hoje no $filter, por rota da META x macro (sem linha = 0).
 
@@ -799,19 +823,27 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
             return None, {}, {}, {}
 
     # todas as consultas do mês rodam ao mesmo tempo (vendas e Vol Real ainda se dividem por gerência)
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    # Neg de hoje (negHoje): só em dia útil fora do fechamento; pela rota da meta junto com as demais e, se a curva
+    # ficar na rota do cliente, de novo por ela (a mesma base da Neg Restante)
+    com_neg_hoje = cal.hoje_util
+    with ThreadPoolExecutor(max_workers=7) as ex:
         f_vendas = ex.submit(vendas)
         f_vm = ex.submit(carregar_volume_real, cons, anomes, gcs, rota)
         f_metas = ex.submit(carregar_metas, cons, anomes, rota)
         f_neg = ex.submit(carregar_curva_neg, cons, anomes, gcs, rota, hoje, not cal.fechamento)
         f_dia = None if cal.fechamento else ex.submit(carregar_meta_dia, cons, anomes, gcs, rota, hoje)
         f_com = ex.submit(comodato)
+        f_hoje = ex.submit(carregar_neg_hoje, cons, anomes, gcs, rota, hoje) if com_neg_hoje else None
         cobertos, compraram, meta_cli, segmento = f_vendas.result()
         vm = f_vm.result()
         metas, metas_vol = f_metas.result()
         neg_mes, neg_rest, fonte_neg = f_neg.result()
         meta_dia = f_dia.result() if f_dia else None
         vendazero, ativos, vz_meta, por_cli_comodato = f_com.result()
+        neg_hoje, neg_hoje_s = f_hoje.result() if f_hoje else (None, None)
+    if com_neg_hoje and fonte_neg == ROTA_CLIENTE:
+        neg_hoje, s_cli = carregar_neg_hoje(cons, anomes, gcs, rota, hoje, CM.ROTA)
+        neg_hoje_s += s_cli
 
     # Meta = META_VOLUME da rota; Neg Restante = META_NEG restante pela rota da meta (direto se o mês bate com a
     # META_VOLUME em 1%; senão, escalonado) ou, sem a rota da meta, a curva pela rota do cliente escalonada
@@ -823,7 +855,8 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
             if not M.volume_extra_da_gc(k, gc_da_rota.get(r, "")):
                 continue
             nm, real = neg_mes.get(r, {}).get(k), vm.real.get(r, {}).get(k)
-            meta, rest, caso = modelo.meta_e_restante(metas_vol.get(r, {}).get(k), nm,
+            mv = metas_vol.get(r, {}).get(k)
+            meta, rest, caso = modelo.meta_e_restante(mv, nm,
                                                       (neg_rest or {}).get(r, {}).get(k, 0.0),
                                                       dias_restantes, cal.total_dias_uteis,
                                                       direto=fonte_neg == ROTA_META)
@@ -840,7 +873,9 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
             volume[r][k] = VolumeRota(
                 meta=meta, real=real or 0.0, meta_neg_clientes=nm,
                 neg_restante=None if cal.fechamento else rest,
-                meta_dia_hoje=None if meta_dia is None else meta_dia.get(r, {}).get(k, 0.0))
+                meta_dia_hoje=None if meta_dia is None else meta_dia.get(r, {}).get(k, 0.0),
+                neg_hoje=None if neg_hoje is None else modelo.neg_hoje(caso, meta, nm, neg_hoje.get(r, {}).get(k, 0.0),
+                                                                      cal.total_dias_uteis))
     # clientes em rotas EV*: uma rota oculta por gerência com o Real deles (meta 0: só soma no total da gerência);
     # a cobertura deles já veio na rota oculta (carregar_vendas): só nas gerências com rotas no painel
     ev = volume_eventuais(vm, gc_da_rota)
@@ -858,12 +893,17 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     for r, (_, ks) in ev.items():
         for k, real in ks.items():
             volume[r][k] = VolumeRota(meta=0.0, real=real, neg_restante=None if cal.fechamento else 0.0,
-                                      meta_dia_hoje=None if meta_dia is None else 0.0)
+                                      meta_dia_hoje=None if meta_dia is None else 0.0,
+                                      neg_hoje=None if neg_hoje is None else 0.0)
     avisos = []
     espera = time.monotonic()
     dados_ant, aviso_ant = carga_ant.resultado() if carga_ant else (None, None)
     tempos = {} if carga_ant is None else {"mes_anterior_s": round(carga_ant.segundos, 1),
                                            "mes_anterior_espera_s": round(time.monotonic() - espera, 1)}
+    if neg_hoje_s is not None:
+        tempos["neg_hoje_s"] = round(neg_hoje_s, 1)
+    if com_neg_hoje and neg_hoje is None:
+        avisos.append("META_NEG de hoje indisponível (consulta falhou ou sem linha de hoje): negHoje null em todas as rotas")
     if carga_ant:
         log.info("Mês anterior (%s): consultas em %.1f s; espera depois das do mês %.1f s.",
                  M.CHAVE_MES_ANTERIOR, tempos["mes_anterior_s"], tempos["mes_anterior_espera_s"])

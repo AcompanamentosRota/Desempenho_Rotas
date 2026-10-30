@@ -39,10 +39,15 @@ nomes ou códigos de clientes) com:
   E11. MES_ANTERIOR do payload que o gerar.py gravou (workflow: `--e11 PAYLOAD`, sem rede, acrescentada ao relatório):
      Real da chave x consulta direta da E10 x curva diária, Refrigerantes por gerência x E10d, tamanho, tempo, rotas e
      o caso do calendário. Só contagens e códigos de rota.
+  E12. Neg de hoje (negHoje): com rede, a META_NEG de hoje pela rota da curva e a regra do gerador por caso
+     (modelo.neg_hoje) por gerência e macro, com o caso de cada rota x macro, as violações e o tempo (grava
+     e12_neg_hoje.json); do payload gravado (`--e12 PAYLOAD`, ou junto da `--e11`; sem rede): Σ negHoje x Σ negRestante,
+     nulls, violações, diferença contra a parte com rede e o tamanho antes x depois. Só totais e códigos de rota.
 """
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import sys
@@ -1471,6 +1476,182 @@ def secao_mes_anterior_payload(rel: Relatorio, payload: dict | None, ref: dict |
     rel.p(f"**{caso}**." + (f" E10: {ref.get('CASO')}." if ref else ""))
 
 
+
+# ------------------------------------------------------------------ E12: Neg de hoje (negHoje)
+# Parte com rede (no relatório, depois da comparação): a consulta nova (META_NEG com DATA_MOVIMENTO = hoje, pela rota da
+# curva) e a regra do gerador por caso (modelo.neg_hoje), com o caso exato de cada rota x macro; grava ARQ_E12.
+# Parte do payload (--e12 PAYLOAD, também junto da --e11, sem rede): o campo negHoje que o gerar.py gravou, o tamanho
+# antes x depois e a diferença contra o ARQ_E12. Só totais, contagens e códigos de rota e gerência: nunca clientes.
+ARQ_E12 = "e12_neg_hoje.json"
+E12_CASOS = [modelo.DIRETO, modelo.CURVA, modelo.SEM_CURVA, modelo.SEM_META_ROTA, modelo.SEM_META, "ev", "null"]
+E12_ROTULO = {modelo.DIRETO: "DIRETO", modelo.CURVA: "CURVA", modelo.SEM_CURVA: "SEM_CURVA",
+              modelo.SEM_META_ROTA: "SEM_META_ROTA", modelo.SEM_META: "SEM_META", "ev": "EV*", "null": "null"}
+E12_MAX_ROTAS = 40
+TOL_E12 = 0.1               # caixas: arredondamento de 1 casa (como validacao.TOL_NEG_HOJE)
+
+
+def violacao_neg_hoje(nh: float | None, nr: float | None) -> bool:
+    """negHoje < 0 ou > negRestante (com a tolerância do arredondamento); null não viola."""
+    return nh is not None and (nh < -TOL_E12 or (nr is not None and nh > nr + TOL_E12))
+
+
+def soma_neg_hoje(itens: list[tuple], ordem: list[str]) -> dict:
+    """itens = (gerência, macro, rota, caso, negHoje, negRestante); caso None = desconhecido (payload); negHoje None
+    conta como "null".
+    Devolve {(gc|'BAND', macro): {nh, nr, n_nh, casos: {caso: n}, viola: [rotas]}} na ordem das gerências."""
+    out: dict = {}
+    for gc, k, r, caso, nh, nr in itens:
+        for g in (gc, "BAND"):
+            a = out.setdefault((g, k), {"nh": 0.0, "nr": 0.0, "n_nh": 0, "casos": defaultdict(int), "viola": []})
+            a["casos"][caso if nh is not None else "null"] += 1
+            a["nr"] += nr or 0.0
+            if nh is not None:
+                a["nh"] += nh
+                a["n_nh"] += 1
+            if violacao_neg_hoje(nh, nr):
+                a["viola"].append(r)
+    gcs = [g for g in ordem if any((g, k) in out for k in VOL)] + ["BAND"]
+    return {(g, k): out[(g, k)] for g in gcs for k in VOL if (g, k) in out}
+
+
+def _tabela_e12(rel: Relatorio, somas: dict, com_casos: bool) -> list[str]:
+    cab = ["gerência", "macro", "Σ negHoje", "Σ negRestante", "% (negHoje / negRestante)"]
+    cab += [E12_ROTULO[c] for c in E12_CASOS] if com_casos else ["com negHoje", "null"]
+    cab += ["violações"]
+    linhas, viola = [], []
+    for (g, k), a in somas.items():
+        lin = [f"**{g}**" if g == "BAND" else g, M.LABELS[k], _n(a["nh"]) if a["n_nh"] else None, _n(a["nr"]),
+               _pct2(a["nh"], a["nr"]) if a["n_nh"] else None]
+        lin += [a["casos"].get(c, 0) for c in E12_CASOS] if com_casos else [a["n_nh"], a["casos"].get("null", 0)]
+        lin.append(len(a["viola"]))
+        linhas.append(lin)
+        if g != "BAND":
+            viola += [f"{r}/{M.LABELS[k]}" for r in a["viola"]]
+    rel.tabela(cab, linhas)
+    if viola:
+        rel.p(f"\n**Violações** (negHoje < 0 ou > negRestante, tolerância {TOL_E12} cx) em {len(viola)} rota(s) x macro: "
+              + ", ".join(viola[:E12_MAX_ROTAS]) + (" …" if len(viola) > E12_MAX_ROTAS else ""))
+    else:
+        rel.p("\nSem violações: 0 <= negHoje <= negRestante em todas as rotas x macro com o campo.")
+    return viola
+
+
+def neg_hoje_conferencia(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, hoje: date) -> None:
+    """E12 com rede: a Neg de hoje pela regra do gerador, com o caso exato (calc da comparação) e o tempo da consulta."""
+    cal = estado["cal_ref"]
+    if cal.fechamento or not cal.hoje_util:
+        rel.p("Fechamento do mês ou dia não útil: o gerador nem consulta a META_NEG de hoje; negHoje = null em todas as "
+              "rotas.")
+        return
+    if "calc" not in estado:
+        rel.p("Sem a comparação (seção 3): E12 sem os casos.")
+        return
+    col = CM.META_ROTA if estado["fonte_neg"] == fontes.ROTA_META else CM.ROTA
+    bruto, seg = fontes.carregar_neg_hoje(cons, anomes, estado["gcs"], None, hoje, col)
+    curva_mes = estado["curva"][0]
+    vm, eventuais, gc_da_rota = estado["vm"], estado.get("eventuais") or {}, estado["gc_da_rota"]
+    itens = []
+    for r in estado["rotas"]:
+        for k in VOL:
+            meta, rest, caso = estado["calc"][(r, k)]
+            real = vm.real.get(r, {}).get(k)
+            if r in eventuais:
+                if real is None:
+                    continue
+                caso, meta, rest = "ev", 0.0, 0.0
+            elif meta is None:
+                if not modelo._r1(real or 0.0):
+                    continue                                    # indisponível (fora do payload)
+                meta, rest, caso = 0.0, 0.0, modelo.SEM_META
+            if bruto is None:
+                nh = None
+            elif caso == "ev":
+                nh = 0.0
+            else:
+                nh = modelo.neg_hoje(caso, meta, curva_mes.get(r, {}).get(k), bruto.get(r, {}).get(k, 0.0),
+                                     cal.total_dias_uteis)
+            itens.append((gc_da_rota[r], k, r, caso, None if nh is None else modelo._r1(nh), modelo._r1(rest)))
+    rel.p(f"Consulta nova: `{CM.META_NEG}` com `{CM.DATA} eq {hoje.isoformat()}` (só no $filter) por `{col}` x agrupador "
+          f"(a mesma rota da curva da Neg Restante: {'rota da meta' if col == CM.META_ROTA else 'rota do cliente'}); "
+          f"{seg:.1f} s; " + ("**falhou ou veio sem linha de hoje: negHoje = null em todas as rotas**." if bruto is None
+                              else f"{len(bruto)} rotas com linha de hoje (todas as rotas da fonte, também fora do painel)."))
+    rel.p("Por gerência (rotas do painel + a oculta das EV*), cada rota x macro com 1 casa como no payload. Casos de "
+          "modelo.meta_e_restante: DIRETO = bruto; CURVA = Meta x bruto / META_NEG do mês; SEM_CURVA = Meta / dias úteis "
+          "do mês; SEM_META_ROTA = bruto; SEM_META e EV* = 0; null = sem o dado de hoje.")
+    somas = soma_neg_hoje(itens, list(M.GC_NOMES))
+    _tabela_e12(rel, somas, True)
+    rel.anexos[ARQ_E12] = {"DATA": hoje.isoformat(), "TEMPO_S": round(seg, 1), "COLUNA": col,
+                           "GC": {f"{g}|{k}": [round(a["nh"], 1) if a["n_nh"] else None, round(a["nr"], 1)]
+                                  for (g, k), a in somas.items()}}
+
+
+def itens_payload(payload: dict) -> list[tuple]:
+    """(gerência, macro, rota, caso, negHoje, negRestante) de cada rota x macro disponível do payload; caso = 'ev' nas
+    rotas ocultas das EV*, senão None (o payload não guarda o caso: a contagem por caso é a da parte com rede)."""
+    ev = set(payload.get("EVENTUAIS_ROTAS") or [])
+    out = []
+    for gc, svs in (payload.get("DATA") or {}).items():
+        for rotas in svs.values():
+            for r, d in rotas.items():
+                for k in VOL:
+                    b = (d.get("indicators") or {}).get(k) or {}
+                    if b and not b.get("unavailable"):
+                        out.append((gc, k, r, "ev" if r in ev else None, b.get("negHoje"), b.get("negRestante")))
+    return out
+
+
+def peso_neg_hoje(payload: dict) -> tuple[int, int]:
+    """(bytes do payload, bytes sem o campo negHoje) serializados como o gerar.py grava."""
+    from gerador.saida import serializar
+    sem = copy.deepcopy(payload)
+    for svs in (sem.get("DATA") or {}).values():
+        for rotas in svs.values():
+            for d in rotas.values():
+                for b in (d.get("indicators") or {}).values():
+                    b.pop("negHoje", None)
+    return len(serializar(payload)), len(serializar(sem))
+
+
+def secao_neg_hoje_payload(rel: Relatorio, payload: dict | None, ref: dict | None = None, tempo: float | None = None,
+                           duracao_gerar: float | None = None) -> None:
+    """Seção E12 (payload): o campo negHoje do payload que o gerar.py gravou, contra a parte com rede (`ref`, ARQ_E12)."""
+    if payload is None:
+        rel.p("payload.json não gerado (o gerar.py falhou ou reprovou na validação): E12 sem dados.")
+        return
+    itens = itens_payload(payload)
+    if payload.get("FECHAMENTO"):
+        rel.p(f"Fechamento do mês ({payload.get('MES_LABEL')}): negHoje = null em todas as rotas, como a Neg Restante.")
+    if not any(i[4] is not None for i in itens):
+        rel.p("Nenhuma rota com negHoje (payload de uma versão anterior do gerador, dia não útil, fechamento ou a consulta "
+              "de hoje falhou: ver o aviso no log do gerar.py).")
+    somas = soma_neg_hoje(itens, list(payload.get("GC_ATIVAS") or []))
+    rel.p("Do payload (todas as rotas do DATA, Neutraliza, virtuais e as ocultas das EV* inclusive; o payload não guarda "
+          "o caso, que está na parte com rede):")
+    _tabela_e12(rel, somas, False)
+    if ref and ref.get("GC"):
+        difs = []
+        for (g, k), a in somas.items():
+            nh_ref, nr_ref = ref["GC"].get(f"{g}|{k}", [None, None])
+            nh = round(a["nh"], 1) if a["n_nh"] else None
+            if (nh is None) != (nh_ref is None) or (nh is not None and abs(nh - nh_ref) > TOL_E12 * max(1, a["n_nh"])) \
+                    or (nr_ref is not None and abs(a["nr"] - nr_ref) > TOL_E12 * max(1, a["n_nh"])):
+                difs.append(f"{g}/{M.LABELS[k]} (payload {nh} x {nh_ref}; negRestante {_n(a['nr'])} x {_n(nr_ref)})")
+        rel.p(f"\nContra a parte com rede ({ref.get('DATA')}, `{ARQ_E12}`): "
+              + ("iguais em todas as gerências x macro." if not difs else
+                 f"**{len(difs)} diferença(s)**: " + "; ".join(difs[:E12_MAX_ROTAS])
+                 + " (o gerar.py e o relatório rodaram em horários diferentes?)"))
+    com_b, sem_b = peso_neg_hoje(payload)
+    rel.p(f"\nTamanho: payload {com_b / 1e6:.2f} MB; sem negHoje {sem_b / 1e6:.2f} MB; o campo acrescenta "
+          f"{(com_b - sem_b) / 1e3:.1f} KB ({(com_b - sem_b) / max(1, sem_b) * 100:.2f}%)"
+          + (f". **Acima do limite de atenção de {LIMITE_PAYLOAD_MB:.0f} MB.**" if com_b / 1e6 > LIMITE_PAYLOAD_MB
+             else f" (limite de atenção: {LIMITE_PAYLOAD_MB:.0f} MB)."))
+    tempo = tempo if tempo is not None else (ref or {}).get("TEMPO_S")
+    rel.p("Tempo: consulta da META_NEG de hoje " + (f"{tempo:.1f} s" if tempo is not None else "não informado")
+          + " (em paralelo com as do mês); gerar.py completo: "
+          + (f"{duracao_gerar:.0f} s (meta: abaixo de {LIMITE_GERAR_S} s" + ("; **acima**" if duracao_gerar >= LIMITE_GERAR_S
+                                                                            else "") + ")"
+             if duracao_gerar else "ver a seção 10") + ".")
+
 # ------------------------------------------------------------------ E10: mês anterior no mesmo dia útil
 # Descoberta da Etapa 8 da visão executiva (bloco "Evolução contra o mês anterior"): dá para comparar onde estamos com
 # onde estávamos no MESMO dia útil do mês anterior (calendário de vendas)? Quanto custa? Só relata: nada muda no gerador
@@ -2779,6 +2960,10 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
     rel.h("E10. Mês anterior no mesmo dia útil")
     etapa("E10 mês anterior", lambda: mes_anterior(rel, cons, estado, anomes, hoje, payload_base))
 
+    # E12. Neg de hoje (negHoje) pela regra do gerador, com o caso de cada rota x macro ---------------------------------
+    rel.h("E12. Neg de hoje (negHoje) por gerência e macro")
+    etapa("E12 Neg de hoje", lambda: neg_hoje_conferencia(rel, cons, estado, anomes, hoje))
+
     # 9. tempos --------------------------------------------------------------------------
     total = time.monotonic() - inicio
     rel.h("9. Tempo das consultas")
@@ -2818,13 +3003,19 @@ def main() -> int:
                          f"{ARQ_E10} da pasta do relatório")
     ap.add_argument("--e11-tempo", type=float, help="segundos das consultas do mês anterior no gerar.py (mes_anterior_s)")
     ap.add_argument("--e11-espera", type=float, help="espera pelo mês anterior no gerar.py (mes_anterior_espera_s)")
+    ap.add_argument("--e12", type=Path, metavar="PAYLOAD",
+                    help="a seção E12 (negHoje) deste payload.json, acrescentada ao relatório (sem rede); usa o "
+                         f"{ARQ_E12} da pasta do relatório. Com --e11 e sem --e12, roda sobre o mesmo payload")
+    ap.add_argument("--e12-tempo", type=float, help="segundos da consulta da META_NEG de hoje no gerar.py (neg_hoje_s)")
     args = ap.parse_args()
-    if args.e9 or args.e11:
+    if args.e9 or args.e11 or args.e12:
         if args.e9:
             main_e9(args.e9, args.saida, args.e9_duracao)
         if args.e11:
             main_e11(args.e11, args.saida, {"mes_anterior_s": args.e11_tempo, "mes_anterior_espera_s": args.e11_espera},
                      args.e9_duracao)
+        if args.e12 or args.e11:
+            main_e12(args.e12 or args.e11, args.saida, args.e12_tempo, args.e9_duracao)
         return 0
     configurar_log("conferir")
     cfg = carregar_config()
@@ -2863,6 +3054,20 @@ def main_e11(caminho: Path, pasta: Path, tempos: dict, duracao: float | None) ->
     rel = Relatorio()
     rel.h(f"E11. {M.CHAVE_MES_ANTERIOR} do payload gerado (mês anterior no mesmo dia útil, só Volume)")
     secao_mes_anterior_payload(rel, payload, ref, {k: v for k, v in tempos.items() if v is not None}, duracao)
+    pasta.mkdir(parents=True, exist_ok=True)
+    with (pasta / "relatorio_tendencia.md").open("a", encoding="utf-8") as f:
+        f.write("\n".join(rel.linhas) + "\n")
+    return 0
+
+
+def main_e12(caminho: Path, pasta: Path, tempo: float | None, duracao: float | None) -> int:
+    """Acrescenta a seção E12 (payload) ao relatório da pasta (depois do gerar.py)."""
+    payload = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else None
+    arq = pasta / ARQ_E12
+    ref = json.loads(arq.read_text(encoding="utf-8")) if arq.exists() else None
+    rel = Relatorio()
+    rel.h("E12 (payload). negHoje do payload gerado")
+    secao_neg_hoje_payload(rel, payload, ref, tempo, duracao)
     pasta.mkdir(parents=True, exist_ok=True)
     with (pasta / "relatorio_tendencia.md").open("a", encoding="utf-8") as f:
         f.write("\n".join(rel.linhas) + "\n")
