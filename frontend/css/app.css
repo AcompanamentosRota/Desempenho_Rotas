@@ -264,6 +264,13 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   color:var(--txt-apoio);background:var(--branco);border:1px solid var(--linha);border-radius:999px;padding:5px 7px 5px 12px;
   white-space:nowrap;cursor:help;transition:border-color .12s}
 .pilDia.emFoco,.pilDia:focus-visible{border-color:var(--preto)}
+/* botão "Clientes" (gaveta de clientes por agrupador, com busca): antes da etiqueta do dia, fora da Executiva */
+.abCli{flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:var(--fs-legenda);
+  font-weight:700;line-height:1.3;color:var(--preto);background:var(--branco);border:1px solid var(--linha);border-radius:999px;
+  padding:5px 12px 5px 10px;white-space:nowrap;cursor:pointer;transition:border-color .12s}
+.abCli[hidden]{display:none}
+.abCli:hover,.abCli:focus-visible{border-color:var(--preto)}
+.abCli svg{width:1.25em;height:1.25em;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .pdC{display:none}
 .pdI{display:inline-grid;place-items:center;width:1.3em;height:1.3em;border-radius:50%;background:var(--fundo-k);
   color:var(--cinza-escuro);font-size:.85em;font-weight:800;font-style:italic;flex:none}
@@ -758,6 +765,17 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .cCli.v3>.cCliN{grid-column:auto}
   .cCab.v3>.cCabN{display:block}
 }
+/* gaveta "Clientes" (botão do cabeçalho das abas): conteúdo NOVO dentro da .drw, só com classe nova (nenhuma regra da
+   gaveta acima muda; os botões de agrupador e as listas são os .chips/.dchip e as listas da cascata). Campo de busca
+   arredondado com a lupa; escala no próprio escopo (--cb-fs; 16 px no celular, para o iPhone não ampliar a tela). */
+.cliBusca{--cb-fs:13px;position:relative;margin:0 0 10px}
+.cliBusca input{display:block;width:100%;box-sizing:border-box;font:inherit;font-size:var(--cb-fs);line-height:1.3;color:var(--preto);
+  background:#fff;border:1px solid var(--linha);border-radius:999px;padding:8px 14px 8px 34px;outline:none;transition:border-color .12s}
+.cliBusca input:focus{border-color:var(--preto)}
+.cliBusca input::placeholder{color:var(--cinza)}
+.cliBusca svg{position:absolute;left:12px;top:50%;width:15px;height:15px;transform:translateY(-50%);pointer-events:none;
+  fill:none;stroke:var(--cinza-escuro);stroke-width:1.8;stroke-linecap:round}
+@media(max-width:640px){.cliBusca{--cb-fs:16px}}
 /* gaveta "Categoria por unidade" (medidor da aba Executiva): conteúdo NOVO dentro da .drw, só com classes novas (nenhuma
    regra da cascata acima muda). Cartão de total (fundo --papel) e um por unidade: faixa lateral de 6 px na cor do status,
    % real, Meta e Real, barra do Real (trilho no tom claro do status) e barra da Tendência (trilho cinza; não existe no

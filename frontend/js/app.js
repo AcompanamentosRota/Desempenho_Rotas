@@ -386,15 +386,11 @@ function render(){
 
     $('puxa').innerHTML = piorSv();
 
-    // Imperdoáveis ainda não tem fonte: o card "indisponível" fica oculto até o dado existir;
-    // a Venda Zero não vale para a Neutraliza: sem card quando o filtro só tem rotas Neutraliza
-    const soNeutra = rotas.length>0 && rotas.every(ehNeutraliza);
-    const oculta = k => (k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable)) || (k==='VENDAZERO' && soNeutra);
-    // volume extra (Del Valle Frut): card só na aba Volume e só quando as rotas do filtro trazem o dado
-    const extras = (aba==='VOLUME' && sel.modo!=='dir') ? volExtras().filter(k=>ind[k] && !ind[k].unavailable) : [];
-    $('lista').innerHTML = [...GROUPS[aba].filter(k=>!oculta(k)), ...extras].map(k=>linha(k, ind[k], rotas)).join('');
+    $('lista').innerHTML = cardsDaAba(rotas, ind).map(k=>linha(k, ind[k], rotas)).join('');
     document.querySelectorAll('.ind[data-k]').forEach(el=>clicavel(el, ()=>abreIndicador(el.dataset.k)));
   }
+  // botão "Clientes" do cabeçalho da aba: fora da Executiva e só com algum agrupador que abre a lista
+  $('btnClientes').hidden = exec || !agrupadoresCli(ind).length;
   if(!exec){
     linhaResumo();
     filtraCards();
@@ -411,6 +407,16 @@ function render(){
   document.querySelector('.rsBox').hidden = perfil==='rota';     // perfil Rota: sem Resumo de vendas nem Painel de Ritmo
   RS.pinta();
   RT.estado();                     // botão "Painel de ritmo": desabilitado no fechamento do mês
+}
+
+// cards da aba (fora da Executiva e do Todos a Bordo), na ordem da aba. Imperdoáveis ainda não tem fonte: o card
+// "indisponível" fica oculto até o dado existir; a Venda Zero não vale para a Neutraliza: sem card quando o filtro só tem
+// rotas Neutraliza; volume extra (Del Valle Frut): card só na aba Volume e só quando as rotas do filtro trazem o dado
+function cardsDaAba(rotas, ind){
+  const soNeutra = rotas.length>0 && rotas.every(ehNeutraliza);
+  const oculta = k => (k==='IMPERDOAVEIS' && (!ind[k] || ind[k].unavailable)) || (k==='VENDAZERO' && soNeutra);
+  const extras = (aba==='VOLUME' && sel.modo!=='dir') ? volExtras().filter(k=>ind[k] && !ind[k].unavailable) : [];
+  return [...GROUPS[aba].filter(k=>!oculta(k)), ...extras];
 }
 
 /* "Puxa a média" no formato de quadro de destaque (ícone "!", o nível que mais puxa a média para baixo, o nome em vermelho e
@@ -1520,8 +1526,10 @@ function pintaCascata(){
 /* Clientes de volume: Meta (META_NEG do cliente), Real (SÓ o faturado do mês, VOLUME_CLIENTE), Online (volume online de
    hoje do cliente; "—" no fechamento), Dif. Abs ((Real + Online) − Meta) e % ((Real + Online) ÷ Meta), estes dois de
    blocoVolCliente (como antes), do mais negativo para o mais positivo; sem tendência; sem quem não tem meta.
-   Barra de dias das coberturas (noDia), padrão "Todos" (a lista inteira, como antes). */
-function listaVolume(k, rotas){
+   Barra de dias das coberturas (noDia), padrão "Todos" (a lista inteira, como antes).
+   op (só a gaveta "Clientes"; a cascata não passa): {chip, q, aoDia} = o dia de partida, a busca (buscaCasa, antes do
+   limite) e quem guarda o dia escolhido. Vale também para listaVendaZero e listaCobertura. */
+function listaVolume(k, rotas, op){
   const LIM = CONFIG.LIMITE_LISTA, lin = [], fech = !!P.FECHAMENTO;
   rotas.forEach(r=>{
     const i = volDaRota(r).indexOf(k);
@@ -1542,24 +1550,26 @@ function listaVolume(k, rotas){
       <span>${fmt1(x.meta)}</span><span>${fmt1(x.fat)}</span>
       <span class="${x.onl>0?'onl':'onl0'}">${x.onl==null ? '—' : fmt1(x.onl)}</span>
       <span class="${x.dif>=0?'pos':'neg'}">${x.dif>0?'+':''}${fmt1(x.dif)}</span><span>${x.pct}%</span></div>`;
-  let chip = 'Todos';
+  let chip = (op && op.chip) || 'Todos';
+  const casa = buscaCasa(op && op.q);
   const pinta = () => {
-    const vis = lin.filter(x=>noDia(x.c, chip));
+    const vis = lin.filter(x=>noDia(x.c, chip) && casa(x.c[0], x.c[1]));
     $('dLista').innerHTML = chipsHtml(chip) + (vis.length ? cab + vis.slice(0, LIM).map(cli).join('') +
       (vis.length>LIM ? `<div class="vazio">+ ${vis.length-LIM} clientes — filtre por rota para ver todos.</div>` : '')
       : `<div class="vazio">${lin.length ? 'Ninguém neste filtro.' : 'Nenhum cliente com meta neste agrupador.'}</div>`);
-    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
+    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;aoDia(op, chip);pinta();});
   };
   pinta();
 }
 
-function listaVendaZero(rotas){
+function listaVendaZero(rotas, op){
   const LIM = CONFIG.LIMITE_LISTA, equip = [];
   rotas.forEach(r=>(VENDAZERO_CLIENTES[r]||[]).forEach(e=>equip.push([r,e])));
-  let chip='Todos';
+  let chip=(op && op.chip) || 'Todos';
+  const casa = buscaCasa(op && op.q);
   const pinta=()=>{
-    const vis = equip.filter(([r,e])=> chip==='Todos' ||
-      (chip==='Hoje' ? e.hoje===1 : (e.dia||'').startsWith(chip)))
+    const vis = equip.filter(([r,e])=> (chip==='Todos' ||
+      (chip==='Hoje' ? e.hoje===1 : (e.dia||'').startsWith(chip))) && casa(e.pv, e.nome))
       .sort((a,b)=>b[1].vdz-a[1].vdz);
     $('dLista').innerHTML = chipsHtml(chip) +
       (vis.length? vis.slice(0,LIM).map(([r,e])=>`<div class="item ${e.revertido?'riscado':''}"><div>
@@ -1568,13 +1578,13 @@ function listaVendaZero(rotas){
           <div class="bd">${e.vdz} geladeira${e.vdz>1?'s':''}</div></div>`).join('')
                : `<div class="vazio">Ninguém neste filtro.</div>`) +
       (vis.length>LIM? `<div class="vazio">+ ${vis.length-LIM} equipamentos — filtre por rota para ver todos.</div>`:'');
-    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
+    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;aoDia(op, chip);pinta();});
   };
   pinta();
 }
 
 // cobertura: quem ainda falta comprar o indicador (KS TT só nos segmentos elegíveis)
-function listaCobertura(k, rotas){
+function listaCobertura(k, rotas, op){
   const LIM = CONFIG.LIMITE_LISTA, todos = [];
   rotas.forEach(r => {
     const ja = new Set(((COBERTOS[r]||{})[k])||[]);
@@ -1584,17 +1594,26 @@ function listaCobertura(k, rotas){
       todos.push([r,c]);
     });
   });
-  let chip = 'Hoje';
+  let chip = (op && op.chip) || 'Hoje';
+  const casa = buscaCasa(op && op.q);
   const pinta = () => {
-    const vis = porNome(todos.filter(([r,c]) => noDia(c, chip)));    // "Hoje" respeita a paridade da semana
+    const vis = porNome(todos.filter(([r,c]) => noDia(c, chip) && casa(c[0], c[1])));    // "Hoje" respeita a paridade da semana
     $('dLista').innerHTML = chipsHtml(chip) +
       (vis.length? vis.slice(0,LIM).map(([r,c])=>itemHtml(r,c,null,onlineIds(r,k).includes(c[0]))).join('')
                  : `<div class="vazio">Ninguém neste filtro.</div>`) +
       (vis.length>LIM? `<div class="vazio">+ ${vis.length-LIM} clientes — filtre por rota para ver todos.</div>`:'');
-    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;pinta();});
+    $('dLista').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{chip=el.dataset.d;aoDia(op, chip);pinta();});
   };
   pinta();
 }
+// busca da gaveta "Clientes": sem acento e sem diferença de maiúsculas, o nome ou o PV contém o texto; sem texto (e na
+// cascata, sem op), todos
+const semAcento = v => String(v==null?'':v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function buscaCasa(q){
+  const t = semAcento(q).trim();
+  return t ? (pv, nome) => semAcento(nome).includes(t) || String(pv).includes(t) : () => true;
+}
+const aoDia = (op, chip) => { if(op && op.aoDia) op.aoDia(chip); };
 
 /* ---------- aba Todos a Bordo (chave INCENTIVO): campanha "Todos a Bordo 3.0" (cobertura de cervejas) ----------
    Itens = GROUPS.INCENTIVO do payload, na ordem da aba (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS; INC
@@ -1636,6 +1655,62 @@ function abreIncentivo(k){
   $('drw').dataset.casc = '';
   pintaCascata();
 }
+
+/* ---------- botão "Clientes" (abas Volume, ICS GC, Novos Negócios e Todos a Bordo) ----------
+   Gaveta com a lista de clientes por agrupador para o filtro atual: a MESMA do último nível da cascata (listaVolume,
+   listaCobertura, listaVendaZero; mesmas rotas, ordem e textos), com uma linha de botões (um por agrupador, no estilo
+   .dchip) e a busca por cliente (nome ou PV, sem acento; aplicada antes do limite da lista). Agrupadores = os cards da
+   aba que abrem a cascata (cardsDaAba sem os indisponíveis; Todos a Bordo: os itens com rota com meta no escopo).
+   Rotas = rotasListas() (sem virtuais/EV* e sem ocultas) e só as com o agrupador disponível nelas (temItemCli; decisão da
+   Karen de 30/10/2026: como a cascata da Gerência e da Supervisão, que não entra na rota "indisponível"; na Diretoria a
+   cascata abre a gerência direto nos clientes e mostra também os dessas rotas); no Todos a Bordo, só as com meta do item
+   (temMetaInc).
+   A busca e o dia escolhido continuam ao trocar de agrupador; reabrir a gaveta começa do zero. */
+let CLI = null;      // {k, q, chip}: agrupador, busca e dia escolhido (null = o padrão da lista)
+function agrupadoresCli(indAtual){       // indAtual = agrega(rotasAtuais()).ind, se já calculado
+  if(aba===EXEC || !P) return [];
+  const rotas = rotasAtuais();
+  if(aba==='INCENTIVO') return incentivoAtivo() ? itensInc().filter(k=>rotasInc(k, rotas).length) : [];
+  const ind = indAtual || agrega(rotas).ind;
+  return cardsDaAba(rotas, ind).filter(k=>ind[k] && !ind[k].unavailable);
+}
+// rota com o agrupador disponível (o indicador da rota existe e não é "indisponível"); no Todos a Bordo, com meta do item
+function temItemCli(k, r){
+  if(aba==='INCENTIVO') return temMetaInc(k, r);
+  const b = ((nodo(sel.gc, r) || {}).indicators || {})[k];
+  return !!b && !b.unavailable;
+}
+const LUPA = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4.5 4.5"/></svg>`;
+function abreClientes(){
+  const ks = agrupadoresCli();
+  if(!ks.length) return;
+  CLI = {k: ks[0], q: '', chip: null};
+  abre('', '', `<div class="cliBusca">${LUPA}<input type="search" id="cliQ" placeholder="Buscar cliente (nome ou PV)"`+
+    ` aria-label="Buscar cliente por nome ou PV" autocomplete="off" spellcheck="false"></div>`+
+    `<div class="chips" id="cliKs" role="group" aria-label="Agrupador"></div><div id="dLista"></div>`);
+  $('cliQ').oninput = () => { CLI.q = $('cliQ').value; pintaClientes(); };
+  pintaClientes();
+}
+function pintaClientes(){
+  const ks = agrupadoresCli(), {k} = CLI, inc = aba==='INCENTIVO';
+  $('cliKs').innerHTML = ks.map(x=>`<button class="dchip ${x===k?'on':''}" data-k="${esc(x)}" aria-pressed="${x===k}">`+
+    `${esc(rotuloInd(x))}</button>`).join('');
+  $('cliKs').querySelectorAll('.dchip').forEach(el=>el.onclick=()=>{
+    CLI.k = el.dataset.k; pintaClientes();
+    const de = $('cliKs').querySelector(`.dchip[data-k="${CSS.escape(CLI.k)}"]`);
+    if(de) de.focus({preventScroll:true});
+  });
+  const rs = inc ? rotasInc(k, rotasAtuais()) : rotasAtuais();
+  $('dTit').textContent = `Clientes · ${rotuloInd(k)}`;
+  $('dSub').textContent = `${(document.querySelector(`.tab[data-g="${aba}"]`) || {}).title || ''} · `+
+    resumoInd(k, agrega(rs).ind[k]);
+  const rotas = rotasListas().filter(r=>temItemCli(k, r));
+  const op = {chip: CLI.chip, q: CLI.q, aoDia: chip => { CLI.chip = chip; }};
+  if(ehVolume(k)) listaVolume(k, rotas, op);
+  else if(k==='VENDAZERO') listaVendaZero(rotas, op);
+  else listaCobertura(k, rotas, op);
+}
+$('btnClientes').onclick = abreClientes;
 
 /* Linha "Status" do card do topo (abas Todos a Bordo e Novos Negócios): "-" até todos os itens com meta no escopo
    estarem em 100%, então "✓" verde. Item em 100%: Real >= Meta (clientes distintos do mês, como o % do ICS); com

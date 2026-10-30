@@ -84,6 +84,8 @@ const TEXTOS_TELA_PAGINA = () => {
     return c.textContent.replace(/\s+/g, ' ').trim(); };
   const topo = document.getElementById('abaTopo').cloneNode(true);
   topo.querySelector('#abTit').remove();
+  // o botão "Clientes" (Etapa 4 do pacote v3) não existe nos fronts de antes
+  const cli = topo.querySelector('#btnClientes'); if(cli) cli.remove();
   const ex = document.getElementById('exec');
   return {lista: [...document.querySelectorAll('#lista .ind')].map(limpa), topo: limpa(topo), exec: ex.hidden ? '' : limpa(ex)};
 };
