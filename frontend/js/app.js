@@ -809,8 +809,9 @@ function cartaoCat(nome, x, info, tot, op){
    Tendência (sem a Tendência no fechamento, com "Online hoje"). Os números são os de sempre (agrega(), statusCat); Online = o
    volume online de hoje (unidade: onlineVol, o do card; canal/cliente/Key Account: Σ ONLINE.volumeCliente dos clientes). Linha
    de total no topo, fixa ao reordenar; "Neutraliza" sempre no fim. Faixa de 4 px e % Real na cor do status (ST_CAT); selo
-   "✓ Meta batida" com Real + Online >= Meta (fechamento: Real >= Meta, linhaBatida). Ordem: padrão % Real decrescente; os
-   títulos % Real, Online, Faltam e Tendência reordenam (2º clique inverte). */
+   "✓ Meta batida" com Real + Online >= Meta (fechamento: Real >= Meta, linhaBatida). Faltam = Meta − (Real + Online), como a
+   Diferença dos cards (Etapa 3; pedido da Karen, 30/10/2026); sem online (fechamento, sem ONLINE), Meta − Real. Ordem: padrão
+   % Real decrescente; os títulos % Real, Online, Faltam e Tendência reordenam (2º clique inverte). */
 const CT_ORD = {pct:'% da meta', onl:'online', falt:'faltam', tend:'tendência'};
 let CT = null;       // {k, tit, sub (sem a ordem), nivel:[singular, plural, cabeçalho], linhas, tot, fech, dim, col, dir}
 // uma linha da tabela a partir do bloco do indicador (b: meta, real, pctReal, tendencia, pctTendencia, metaDia)
@@ -819,7 +820,9 @@ function linhaCt(cod, nome, info, b, onl, op){
   return {cod, nome, info, meta:b.meta, real:b.real, pct:b.pctReal, tend:semT ? null : b.tendencia, pctTend:semT ? null : b.pctTendencia,
     md:op.dim || op.fech ? null : b.metaDia, onl:ONLINE ? onl : null, st:statusCat(b), neutra:cod===SV_NEUTRA};
 }
-const valCt = (x, col) => col==='pct' ? x.real / x.meta : col==='onl' ? x.onl : col==='falt' ? x.meta - x.real
+// Real + Online da linha (a conta do selo e do Faltam); null no fechamento e sem online: fica o Real
+const roCt = x => CT.fech || x.onl==null ? null : x.real + x.onl;
+const valCt = (x, col) => col==='pct' ? x.real / x.meta : col==='onl' ? x.onl : col==='falt' ? x.meta - (roCt(x) ?? x.real)
   : x.tend==null ? null : x.tend / x.meta;
 // ordem: pelo valor da coluna (sem valor no fim), empate na ordem padrão; "Neutraliza" por último
 function ordenaCt(ls, col, dir){
@@ -829,7 +832,7 @@ function ordenaCt(ls, col, dir){
   return [...ord.filter(x=>!x.neutra), ...ord.filter(x=>x.neutra)];
 }
 function linhaCtHtml(x, n, tot){
-  const fech = CT.fech, bat = linhaBatida(x, fech || x.onl==null ? null : x.real + x.onl), ok = x.real >= x.meta;
+  const fech = CT.fech, ro = roCt(x), bat = linhaBatida(x, ro), base = ro ?? x.real, ok = base >= x.meta;
   const corO = x.md==null || x.onl==null ? '' : metaBatida(x.md) || x.onl >= x.md ? ' ok' : ' no';
   const rotM = CT.dim ? 'Meta NEG' : 'Meta', t = x.nome + (x.info ? ` · ${x.info}` : '');
   const dica = `<div class="t">${esc(rotuloInd(CT.k))} · ${esc(x.cod)}</div>${rotM} <b>${fmt0(x.meta)}</b><br>`+
@@ -838,14 +841,14 @@ function linhaCtHtml(x, n, tot){
     (fech ? '' : x.tend==null ? 'Tendência —' : `Tendência <b>${fmt0(x.tend)}</b> (${x.pctTend}%)`);
   return `<tr class="ctLin ${ST_CAT[x.st]}${tot ? ' ctTot' : ''}${bat ? ' ctBat' : ''}" tabindex="0" data-u="${esc(x.cod)}" data-st="${x.st}"`+
     ` data-meta="${x.meta}" data-real="${x.real}" data-onl="${x.onl==null ? '' : x.onl}" data-tend="${x.tend==null ? '' : x.tend}"`+
-    ` data-pct="${x.pct}" data-pct-tend="${x.pctTend==null ? '' : x.pctTend}" data-bat="${bat}" title="${esc(t)}" data-dica="${esc(dica)}">`+
+    ` data-pct="${x.pct}" data-pct-tend="${x.pctTend==null ? '' : x.pctTend}" data-ro="${ro==null ? '' : ro}" data-bat="${bat}" title="${esc(t)}" data-dica="${esc(dica)}">`+
     `<td class="ctN">${tot ? '' : n}</td>`+
     `<th scope="row" class="ctU"><span class="ctCod">${esc(tot ? x.rot || x.cod : x.cod)}</span>`+
     `${bat ? ' <span class="cSelo ctSelo">✓<span class="ctSeloT"> Meta batida</span></span>' : ''}`+
     `${x.info ? ` <span class="ctInfo">${esc(x.info)}</span>` : ''}</th>`+
     `<td class="ctMeta">${fmt0(x.meta)}</td><td class="ctReal">${fmt0(x.real)}</td><td class="ctPct">${x.pct}%</td>`+
     `<td class="ctOnl${corO}">${x.onl==null ? '—' : fmt0(x.onl)}</td>`+
-    `<td class="ctFalt ${ok ? 'ok' : 'no'}">${ok ? `+${fmt0(x.real - x.meta)}` : fmt0(x.meta - x.real)}</td>`+
+    `<td class="ctFalt ${ok ? 'ok' : 'no'}">${ok ? `+${fmt0(base - x.meta)}` : fmt0(x.meta - base)}</td>`+
     (fech ? '' : `<td class="ctTend">${x.pctTend==null ? '—' : `${x.pctTend}%`}</td>`) + '</tr>';
 }
 // cabeçalho, linhas e subtítulo na ordem escolhida (abrir e cada clique num título)

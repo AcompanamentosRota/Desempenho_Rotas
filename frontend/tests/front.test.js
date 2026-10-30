@@ -7600,7 +7600,7 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
     await ctx.close();
   });
 
-  test('Faltam "N" e "+X"; Real = Meta verde ("+0"); tendência de 99,6% = 100% âmbar (o pctTendencia do card); dica com os números', async () => {
+  test('Faltam = Meta − (Real + Online): "N" e "+X"; Real = Meta verde ("+" o online); tendência de 99,6% = 100% âmbar (o pctTendencia do card); dica com os números', async () => {
     const {page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
     const k = 'VOL REFRIGERANTES';
     const rs = await page.evaluate(() => ({s1: rotasNormais('G1', 'SV.G1.1'), s2: rotasNormais('G1', 'SV.G1.2')}));
@@ -7610,10 +7610,14 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
     await abreCat(page, k);
     const g = await page.evaluate(CAT.LE_GAVETA), c = u => g.linhas.find(x => x.u === u);
     const m1 = c('SV.G1.1'), mn = c('Neutraliza');
-    assert.deepEqual([m1.st, m1.faltTxt, m1.faltCls], ['bat', '+0', 'ctFalt ok']);
-    assert.deepEqual([mn.st, mn.faltTxt, mn.pctTxt], ['bat', `+${Math.round(mn.real - mn.meta).toLocaleString('pt-BR')}`, '123%']);
+    // Faltam pela Diferença dos cards (Etapa 3): Real + Online − Meta (pedido da Karen de 30/10/2026)
+    const f0 = v => Math.round(v).toLocaleString('pt-BR');
+    assert.ok(m1.onl > 0 && mn.onl != null, 'o cenário tem online');
+    assert.deepEqual([m1.st, m1.faltTxt, m1.faltCls], ['bat', `+${f0(m1.real + m1.onl - m1.meta)}`, 'ctFalt ok']);
+    assert.deepEqual([mn.st, mn.faltTxt, mn.pctTxt], ['bat', `+${f0(mn.real + mn.onl - mn.meta)}`, '123%']);
     const s2 = c('SV.G1.2');
-    assert.deepEqual([s2.st, s2.pctTend, s2.tendTxt, s2.faltTxt, s2.faltCls], ['tend', 100, '100%', Math.round(s2.meta - s2.real).toLocaleString('pt-BR'), 'ctFalt no']);
+    assert.ok(s2.real + s2.onl < s2.meta, 'SV.G1.2 abaixo da meta mesmo com o online');
+    assert.deepEqual([s2.st, s2.pctTend, s2.tendTxt, s2.faltTxt, s2.faltCls], ['tend', 100, '100%', f0(s2.meta - s2.real - s2.onl), 'ctFalt no']);
     // como o card de Volume (verde em 100%), mesmo com o desvio exato da Tendência x Meta abaixo de 0
     assert.ok(s2.tend < s2.meta);
     // caixa de comentário: Meta / Real até ontem (X%) / Online (· meta do dia) / Tendência (Y%)
@@ -9467,6 +9471,10 @@ describe('Parte AJ — Executiva: tabela da categoria e escopo do nível acima',
     assert.ok(s1.real < s1.meta && s1.real + s1.onl >= s1.meta, 'caso forçado');
     assert.deepEqual([s1.bat, s1.selo, s1.st, /\bctBat\b/.test(s1.cls), s1.bg], [true, '✓ Meta batida', 'tend', true, cores.batBg], 'selo com Real + Online');
     assert.deepEqual([s1.onlCls, s1.corOnl], ['ctOnl ok', cores.verdeE], 'online acima da meta do dia: verde');
+    // Faltam = Meta − (Real + Online): com o online a SV.G1.1 passa da meta ("+X" verde); a SV.G1.2 ainda falta
+    const f0 = v => Math.round(v).toLocaleString('pt-BR');
+    assert.deepEqual([s1.faltTxt, s1.faltCls], [`+${f0(s1.real + s1.onl - s1.meta)}`, 'ctFalt ok'], 'Faltam com o online');
+    assert.deepEqual([s2.faltTxt, s2.faltCls], [f0(s2.meta - s2.real - s2.onl), 'ctFalt no']);
     assert.deepEqual([s2.bat, s2.selo, s2.st, s2.onlCls, s2.corOnl], [false, null, 'abx', 'ctOnl no', cores.vermelho2], 'sem selo; online abaixo: vermelho');
     // a ordem por Online (decrescente) e por Faltam; o total fica no topo; "Neutraliza" no fim
     let r = await CAT.clicaOrd(page, 'onl');

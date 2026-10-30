@@ -602,8 +602,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Tendência (fechamento: sem a Tendência, "Online hoje", 7 colunas); sem barras nem Desvio. Unidade = só o código (`u.cod`;
   canal/cliente/KA com o nome) + `.ctInfo` ("N supervisões" de `infoCat`), `title` com o nome inteiro. Online = `onlineVol(rotas,
   k)` (unidade) ou Σ `volCliOnline` dos clientes (`dimDados` ganhou `onl` nas linhas e no total; `cliNeg` guarda `o`); cor
-  `.ctOnl.ok/.no` só com meta do dia (`metaBatida` ou online >= metaDia), nunca em canal/cliente/KA. Faltam = Meta − Real
-  `fmt0` (`.ctFalt.no`) ou "+X" (`.ok`). Tendência = `pctTendencia` em `--cu-esc` ("—" sem). Status `statusCat` (decisões de
+  `.ctOnl.ok/.no` só com meta do dia (`metaBatida` ou online >= metaDia), nunca em canal/cliente/KA. Faltam = Meta − (Real +
+  Online) (`roCt`, `data-ro`; a Diferença dos cards, pedido da Karen de 30/10/2026; fechamento/sem ONLINE: Meta − Real) `fmt0`
+  (`.ctFalt.no`) ou "+X" (`.ok`); a ordem por Faltam usa o mesmo valor. Tendência = `pctTendencia` em `--cu-esc` ("—" sem). Status `statusCat` (decisões de
   22/10: 'bat' Real >= Meta; 'tend' `pctTendencia` ARREDONDADO >= 100, fora do fechamento; 'abx') → classe `ST_CAT` na `tr`
   (faixa `inset` de `--ct-faixa` 4 px na 1ª célula visível, `.ctN` no PC, `.ctU` < 700 px; % Real em `--cu-cor`). Selo
   `.cSelo.ctSelo` ("✓" + `.ctSeloT` " Meta batida", só o "✓" < 700 px) e `tr.ctBat` (`--bat-bg`) com `linhaBatida(x, Real +

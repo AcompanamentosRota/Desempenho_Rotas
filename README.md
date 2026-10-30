@@ -750,8 +750,9 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
     rotas / clientes"; o `title` da linha traz o nome inteiro. % Real = o `pctReal` do card, na cor do status. **Online** =
     volume online de hoje (unidade: o mesmo da caixa Online do card, `onlineVol`; canal/cliente/KA: Σ de
     `ONLINE.volumeCliente` dos clientes): verde com a meta do dia batida ou online ≥ meta do dia, vermelho abaixo, sem cor
-    sem meta do dia (e em canal/cliente/KA). **Faltam** = Meta − Real em vermelho; com Real ≥ Meta, "+X" (Real − Meta) em
-    verde. **Tendência** = o % de tendência do card (`pctTendencia`), no tom escuro do status; "—" sem tendência
+    sem meta do dia (e em canal/cliente/KA). **Faltam** = Meta − (Real + Online) em vermelho, a mesma conta da Diferença dos cards
+    (pedido da Karen, 30/10/2026); com Real + Online ≥ Meta, "+X" (Real + Online − Meta) em verde; no fechamento e sem online,
+    pelo Real (Meta − Real). **Tendência** = o % de tendência do card (`pctTendencia`), no tom escuro do status; "—" sem tendência
     (canal/cliente/KA).
   - **Linha de total no topo**, logo abaixo do cabeçalho e fixa ao reordenar: o código (BAND, GC.G2, GC.IT + GC.MO, SV.G2.1,
     Neutraliza), fundo cinza mais escuro (`--ct-tot` #e3e3e8), negrito e fonte um pouco menor (11 px, `--ct-fs-tot`).

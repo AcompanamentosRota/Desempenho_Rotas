@@ -15,7 +15,8 @@
    (d) status (data-st, faixa de 4 px, cor do % Real e da Tendência) pela regra: Real >= Meta verde;
        Math.round(Tendência / Meta * 100) >= 100 âmbar (fora do fechamento); o resto vermelho; selo "✓ Meta batida" (e fundo
        verde-claro) <=> Real + Online >= Meta (fechamento: Real >= Meta);
-   (e) Faltam = Meta − Real (arredondado, vermelho) ou "+X" verde com Real >= Meta (X = Real − Meta); Tendência = pctTendencia
+   (e) Faltam = Meta − (Real + Online) (arredondado, vermelho) ou "+X" verde com Real + Online >= Meta (X = Real + Online −
+       Meta; sem online e no fechamento, pelo Real; pedido da Karen de 30/10/2026); Tendência = pctTendencia
        ("Y%"); Online verde com meta do dia batida ou online >= meta do dia, vermelho abaixo, sem cor sem meta do dia; no
        fechamento, sem a coluna Tendência e o título "Online hoje";
    (f) a linha "Neutraliza", quando existir, é a última (também ao reordenar);
@@ -47,7 +48,7 @@ const LE_GAVETA = () => {
       cor: th.querySelector('.ctOrd') ? cs(th.querySelector('.ctOrd')).color : null})),
     linhas: [...document.querySelectorAll('#dCorpo .ctTab tbody tr.ctLin')].map(tr => ({u: tr.dataset.u, st: tr.dataset.st,
       tot: tr.classList.contains('ctTot'), cls: tr.className, meta: n(tr.dataset.meta), real: n(tr.dataset.real), onl: n(tr.dataset.onl),
-      tend: n(tr.dataset.tend), pct: n(tr.dataset.pct), pctTend: n(tr.dataset.pctTend), bat: tr.dataset.bat === 'true', title: tr.title,
+      tend: n(tr.dataset.tend), pct: n(tr.dataset.pct), pctTend: n(tr.dataset.pctTend), ro: n(tr.dataset.ro), bat: tr.dataset.bat === 'true', title: tr.title,
       selo: tr.querySelector('.ctSelo') ? tr.querySelector('.ctSelo').textContent : null, nCel: [...tr.children].filter(vis).length,
       n: txt(tr, 'ctN'), cod: txt(tr, 'ctCod'), info: txt(tr, 'ctInfo'), metaTxt: txt(tr, 'ctMeta'), realTxt: txt(tr, 'ctReal'),
       pctTxt: txt(tr, 'ctPct'), onlTxt: txt(tr, 'ctOnl'), faltTxt: txt(tr, 'ctFalt'), tendTxt: txt(tr, 'ctTend'),
@@ -105,7 +106,7 @@ const NIVEIS = {'gerência': 'gerências', 'supervisão': 'supervisões', rota: 
 const vaiAba = (page, aba) => page.evaluate(aba => document.querySelector(`.tab[data-g="${aba}"]`).click(), aba);
 
 const ORD = {pct: '% da meta', onl: 'online', falt: 'faltam', tend: 'tendência'};
-const valOrd = (x, col) => col === 'pct' ? x.real / x.meta : col === 'onl' ? x.onl : col === 'falt' ? x.meta - x.real : x.tend == null ? null : x.tend / x.meta;
+const valOrd = (x, col) => col === 'pct' ? x.real / x.meta : col === 'onl' ? x.onl : col === 'falt' ? x.meta - (x.ro == null ? x.real : x.ro) : x.tend == null ? null : x.tend / x.meta;
 // (g) a ordem das linhas de unidade numa coluna (dir -1 = decrescente): valores em ordem, sem valor no fim, "Neutraliza" por último
 function confereOrdem(us, col, dir, o){
   const normais = us.filter(x => x.u !== 'Neutraliza');
@@ -201,8 +202,11 @@ async function confereCategoria(page, onde, {ordena = true} = {}){
       assert.equal(c.corPct, cores[c.st], `${oc}: cor do % Real`);
       assert.match(c.cls, {bat: /\bcuBat\b/, tend: /\bcuTend\b/, abx: /\bcuAbx\b/}[c.st], oc);
       assert.equal(c.pctTxt, `${Math.round(c.real / c.meta * 100)}%`, `${oc}: % real`);
-      assert.equal(c.faltTxt, c.real >= c.meta ? `+${f0(c.real - c.meta)}` : f0(c.meta - c.real), `${oc}: Faltam`);
-      assert.equal(c.corFalt, c.real >= c.meta ? cores.verdeE : cores.vermelho2, `${oc}: cor do Faltam`);
+      // Faltam = Meta − (Real + Online); sem online e no fechamento, Meta − Real
+      const ro = esp.fech || c.onl == null ? null : c.real + c.onl, base = ro == null ? c.real : ro;
+      if(ro == null) assert.equal(c.ro, null, `${oc}: sem Real + Online`); else quase(c.ro, ro, `${oc}: Real + Online`);
+      assert.equal(c.faltTxt, base >= c.meta ? `+${f0(base - c.meta)}` : f0(c.meta - base), `${oc}: Faltam`);
+      assert.equal(c.corFalt, base >= c.meta ? cores.verdeE : cores.vermelho2, `${oc}: cor do Faltam`);
       assert.equal(c.onlTxt, c.onl == null ? '—' : f0(c.onl), `${oc}: Online`);
       // Online: verde com a meta do dia batida ou online >= meta do dia; vermelho abaixo; sem cor sem meta do dia
       const md = esp.fech || !e.mdN ? null : e.md;
