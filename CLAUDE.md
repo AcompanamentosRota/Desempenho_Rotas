@@ -387,10 +387,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   **Cascata com Dif (Real + Online) e cards com Real + online (Etapa 3 do pacote v3, 29/10/2026; README, "Cascata" e
   "Cards"; só front)**: `realOnline(k, rotas, b, onl)` é a conta ÚNICA (cards, cascata, selo): volume = `b.real` + online de
   hoje (`onl` já somado ou `onlineVol`); coberturas = `realMaisOnline` (clientes distintos no Real ou no online); null no
-  fechamento, sem ONLINE, na Venda Zero e indisponível. Card (`linha()`): 4ª linha `.ro` "Real + online ±X" (`linhaRealOnline`,
-  `difMostrada`/`sinal`: volume inteiro, coberturas 1 casa; `--fs-valor-ro` 10,5 px, 600, line-height 1.2; `contain:
-  inline-size` = não alarga a coluna (o % do centro e o `encaixa` dele ficam como antes), `data-fit` mínimo 9,5 px e
-  `data-fit-quebra`; sem ela na VZ, no fechamento e sem online). Cascata (`linhaGrupo` → `linhaCascata` fora da VZ; a VZ fica com a linha de antes; `meioLinha` = a caixa do
+  fechamento, sem ONLINE, na Venda Zero e indisponível. Card (`linha()` → `linhaDif`): a
+  "Diferença" é (Real + online de hoje) − Meta (pedido da Karen, 29/10/2026; antes havia uma 4ª linha "Real + online ±X", que
+  saiu); com online o div leva `data-meta/real/ro` exatos (+ `data-vol` no volume); sem online (fechamento, sem ONLINE) = Real −
+  Meta com o HTML de antes; a Venda Zero tem a linha própria de sempre. `difMostrada`/`sinal` só na Dif da cascata. Cascata (`linhaGrupo` → `linhaCascata` fora da VZ; a VZ fica com a linha de antes; `meioLinha` = a caixa do
   Online de sempre): Nome (+ `.cSelo` "✓ Meta batida", maiúsculas pelo CSS) | Meta · Real | % (`.cPct`: o `dir` de sempre,
   cor pelo `onPace`; "tendência"/"realizado"/"real da meta" só no celular) | Dif (`.cDif`: Real + online − Meta, "x% da meta
   com online"; "—" "sem online" / "sem online no fechamento") | Online · meta do dia; `data-onl/ro/dif/bat` exatos. Selo
@@ -402,7 +402,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   supervisões). Lista de clientes de volume: Cliente | Meta | Real (`VOLUME_CLIENTE[r][pv][i][1]`, só o faturado) | Online
   (`volCliOnline`, "—" no fechamento) | Dif. Abs | % (de `blocoVolCliente`, como antes). Testes: Parte AG
   (`cascata_invariantes.js`, também na conferência com dado real; antes x depois contra `515b1e9`, `REF_PRE_CASC`); os
-  antes x depois antigos desfazem o que a etapa trocou com `desfazCasc` (cards sem `.ro`, cascata/lista de antes) e, na
+  antes x depois antigos desfazem o que a etapa trocou com `desfazCasc` (Diferença do card de volta a Real − Meta pelos `data-*`, cascata/lista de
+  antes; nos textos, `CABECALHO` e `TEXTOS_TELA_PAGINA` fazem o mesmo) e, na
   Diretoria, conferem só o 1º nível da cascata; testes que abriam as supervisões pela linha da gerência na Diretoria usam
   o filtro de gerência (`supervisoesNaDiretoria`).
   Resumo segue o filtro (Diretoria "Todas": as 16 em faixas de 8; uma gerência: gerência + supervisões; grupo no

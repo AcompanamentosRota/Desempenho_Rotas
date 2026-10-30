@@ -758,12 +758,7 @@ const REF_PRE_TAB = '9f82f15';
 const FRONT_PRE_TAB = (() => {
   try {
     const arq = f => execSync(`git show ${REF_PRE_TAB}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
-    // o app.js servido é o atual (com a linha "Real + online" dos cards, Etapa 3 do pacote v3): o CSS de lá ganha só as regras
-    // dessa linha, copiadas do atual, para o encaixa() medir os cards igual
-    const ro = fs.readFileSync(path.join(FRONT, 'css', 'app.css'), 'utf-8').split('\n').filter(l => /^\.ind \.cl \.ro/.test(l)).join('\n');
-    const shim = `\n.ind{--fs-valor-ro:10.5px}\n${ro}\n`;
-    return Object.fromEntries(['index.html', 'css/app.css', 'js/resumo.js'].map(f => { const t = arq(f) + (f === 'css/app.css' ? shim : '');
-      return ['/' + f, () => t]; }));
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/resumo.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
   } catch(e) { return null; }
 })();
 describe('Resumo: bloco Todos a Bordo com dado real: antes x depois', {skip: pular || (!FRONT_PRE_TAB && `sem o commit ${REF_PRE_TAB}`)}, () => {
@@ -818,10 +813,10 @@ describe('Resumo: bloco Todos a Bordo com dado real: antes x depois', {skip: pul
    cascata_invariantes.js, as mesmas da Parte AG): em cada aba (Volume, ICS GC, Novos Negócios, Todos a Bordo) e cada card, a
    Diretoria (gerências; a 1ª gerência abre direto a lista de clientes), uma gerência pelo filtro da Diretoria (supervisões e as
    rotas da 1ª), o grupo IT+MO no Total e uma supervisão; ordenação por %, Dif e Online (2º clique inverte; volta ao código)
-   na Diretoria e na gerência; (f) a linha "Real + online" de cada card da Gerência G1 = a Dif da linha GC.G1 da cascata da
-   Diretoria; sem rolagem lateral nem erro em 360, 390, 1000 e 1440 px com a cascata e a lista abertas. Antes x depois contra
+   na Diretoria e na gerência; (f) a "Diferença" de cada card da Gerência G1 (= (Real + online) − Meta) = a Dif da linha GC.G1
+   da cascata da Diretoria; sem rolagem lateral nem erro em 360, 390, 1000 e 1440 px com a cascata e a lista abertas. Antes x depois contra
    a main antes da etapa (REF_PRE_CASC), com o mesmo payload: Executiva, Resumo e Venda Zero idênticos; cards e cascata
-   iguais depois de desfeito só o que a etapa trocou (CASC_INV.desfazCasc). Imprime totais e códigos (nada de clientes). */
+   iguais depois de desfeito só o que a etapa trocou (CASC_INV.desfazCasc: a Diferença do card volta a Real − Meta). Imprime totais e códigos (nada de clientes). */
 const REF_PRE_CASC = '515b1e9';
 const FRONT_PRE_CASC = (() => {
   try {
@@ -885,11 +880,13 @@ describe('Cascata com Dif (Real + Online) e cards com Real + online, com dado re
     let nF = 0;
     for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
       if(!await vaiAba(page, ab)) continue;
-      const ro = await page.$$eval('#lista .ind[data-k]', els => els.map(el => [el.dataset.k, (el.querySelector('.cl .ro') || {}).textContent || null]));
+      // a "Diferença" do card (= (Real + online) − Meta desde 29/10/2026; sem online, Real − Meta)
+      const ro = await page.$$eval('#lista .ind[data-k]', els => els.map(el => { const d = el.querySelector('.cl .dif');
+        return [el.dataset.k, d && d.dataset.ro != null ? d.textContent : null]; }));
       for(const [k, t] of ro){
         const d = difDir[`${ab}|${k}`];
         if(d === undefined) continue;
-        assert.equal(t, d == null || d === '—' ? null : `Real + online ${d}`, `(f) ${info.gc} ${ab} ${k}`);
+        assert.equal(t, d == null || d === '—' ? null : `Diferença ${d}`, `(f) ${info.gc} ${ab} ${k}`);
         nF++;
       }
     }
@@ -953,7 +950,7 @@ describe('Cascata com Dif (Real + Online) e cards com Real + online, com dado re
         assert.equal(ta, tb, `${onde} ${ab}`);
         if(!ta) continue;
         const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
-        assert.deepEqual(CASC_INV.desfazCasc(a), b, `${onde} ${ab}: cabeçalho e cards (sem a linha "Real + online")`);
+        assert.deepEqual(CASC_INV.desfazCasc(a), b, `${onde} ${ab}: cabeçalho e cards (com a Diferença de antes)`);
         for(const k of await cardsK(novo.page)){
           for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
           for(let nivel = 0; nivel < 5; nivel++){

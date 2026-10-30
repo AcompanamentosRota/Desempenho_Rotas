@@ -1071,7 +1071,6 @@ function linha(k, b, rotas){
       return `<div class="ind off">${tit}
         <div class="semdado">indisponível — sem venda hoje pra essa rota</div></div>`;
     }
-    const dif = b.real - b.meta;
     // fechamento do mês: % realizado no lugar da tendência (que não existe com o mês fechado)
     const fech = !!P.FECHAMENTO, big = fech ? b.pctReal : b.pctTendencia;
     return `${ini}
@@ -1080,7 +1079,7 @@ function linha(k, b, rotas){
         <div class="cl">
           <div>Meta ${Math.round(b.meta).toLocaleString('pt-BR')}</div>
           <div>Real ${Math.round(b.real).toLocaleString('pt-BR')}</div>
-          <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${Math.round(dif).toLocaleString('pt-BR')}</div>${linhaRealOnline(k, b, realOnline(k, rotas, b))}
+          ${linhaDif(k, b, rotas)}
         </div>
         <div class="cm">
           <div class="big" data-fit="" data-fit-min="18"><span class="seta">${bom?'▲':'▼'}</span>${big==null?'—':big+'%'}</div>
@@ -1090,7 +1089,6 @@ function linha(k, b, rotas){
         <div class="cr"><div class="olab">Online</div>${caixaOnline(k, rotas, b)}</div>
       </div></div>`;
   }
-  const dif = b.real - b.meta;
   const opo = rotas.reduce((a,r)=>a+((OPORTUNIDADES_DIA[r]||{})[k]||0),0);
   return `${ini}
     ${tit}
@@ -1098,7 +1096,7 @@ function linha(k, b, rotas){
       <div class="cl">
         <div>Meta ${b.meta.toLocaleString('pt-BR')}</div>
         <div>Real ${b.real.toLocaleString('pt-BR')}</div>
-        <div class="dif ${dif>=0?'pos':'neg'}">Diferença ${dif>0?'+':''}${dif.toLocaleString('pt-BR')}</div>${linhaRealOnline(k, b, realOnline(k, rotas, b))}
+        ${linhaDif(k, b, rotas)}
       </div>
       <div class="cm">
         <div class="big" data-fit="" data-fit-min="18"><span class="seta">${bom?'▲':'▼'}</span>${b.pct==null?'—':b.pct+'%'}</div>
@@ -1133,12 +1131,14 @@ function realOnline(k, rotas, b, onl){
 // diferença mostrada (Real + online − Meta): volume em caixas inteiras, coberturas com até 1 casa (como fmt0/fmtN)
 const difMostrada = (k, d) => (ehVolume(k) ? Math.round(d) : Math.round(d*10)/10) || 0;
 const sinal = (k, v) => `${v>0?'+':''}${(ehVolume(k) ? fmt0 : fmtN)(v)}`;
-// 4ª linha do bloco da esquerda do card: "Real + online ±X" (sem a linha na Venda Zero, no fechamento e sem online)
-function linhaRealOnline(k, b, ro){
-  if(ro==null) return '';
-  const v = difMostrada(k, ro - b.meta);
-  // (não alarga a coluna: fica na largura das 3 linhas de cima; encaixa() reduz a fonte e, no mínimo, quebra a linha; ver o CSS)
-  return `<div class="ro ${v>=0?'pos':'neg'}" data-ro="${ro}" data-fit="" data-fit-min="9.5" data-fit-quebra="">Real + online ${sinal(k, v)}</div>`;
+/* "Diferença" do card (Volume, coberturas e Todos a Bordo; pedido da Karen, 29/10/2026) = (Real + online de hoje) − Meta,
+   pela realOnline; sem ela (fechamento, sem online.json) = Real − Meta, como antes (o mesmo HTML de antes). Volume em caixas
+   inteiras, coberturas como antes. Com online, o div leva os valores exatos (data-meta/data-real/data-ro; data-vol no volume). */
+function linhaDif(k, b, rotas){
+  const ro = realOnline(k, rotas, b), vol = ehVolume(k);
+  const d = (ro==null ? b.real : ro) - b.meta, v = vol ? Math.round(d) : d;
+  const exato = ro==null ? '' : ` data-meta="${b.meta}" data-real="${b.real}" data-ro="${ro}"${vol ? ' data-vol=""' : ''}`;
+  return `<div class="dif ${d>=0?'pos':'neg'}"${exato}>Diferença ${d>0?'+':''}${v.toLocaleString('pt-BR')}</div>`;
 }
 // selo da linha da cascata (decisão B): Real + online >= Meta, com Meta > 0; no fechamento (e sem online), Real >= Meta
 const linhaBatida = (b, ro) => b.meta > 0 && (ro==null ? b.real : ro) >= b.meta;

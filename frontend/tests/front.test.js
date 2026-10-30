@@ -2329,10 +2329,11 @@ describe('Parte K — "Meta batida!"', {skip: pular}, () => {
     const antes = await page.evaluate(() => JSON.stringify([P, ONLINE]));
     await filtra(page, {});
     const card = await page.evaluate(k => ({b: agrega(rotasAtuais()).ind[k],
-      cl: (c => { c = c.cloneNode(true); c.querySelectorAll('.ro').forEach(x => x.remove()); return c; })(document.querySelector(`.ind[data-k="${k}"] .cl`)).textContent.replace(/\s+/g, ' ').trim(),
+      cl: document.querySelector(`.ind[data-k="${k}"] .cl`).textContent.replace(/\s+/g, ' ').trim(),
       big: document.querySelector(`.ind[data-k="${k}"] .big`).textContent}), k);
     assert.equal(card.b.metaDia, -106);
-    assert.equal(card.cl, `Meta ${fmtPt(card.b.meta)} Real ${fmtPt(card.b.real)} Diferença ${fmtPt(card.b.real - card.b.meta)}`);
+    // (Diferença = (Real + online de hoje) − Meta desde 29/10/2026, pedido da Karen)
+    assert.equal(card.cl, `Meta ${fmtPt(card.b.meta)} Real ${fmtPt(card.b.real)} Diferença ${fmtPt(card.b.real + onl - card.b.meta)}`);
     assert.equal(card.big, `${card.b.onPace ? '▲' : '▼'}${card.b.pctTendencia}%`);
     assert.deepEqual(await caixaCard(page, k), {cls: 'obox ok', num: fmtPt(onl), rot: 'Meta batida!'});
     // Diretoria: só a linha da G1 (meta do dia somada <= 0) muda
@@ -2432,9 +2433,10 @@ describe('Parte K — "Meta batida!"', {skip: pular}, () => {
     c = await caixaCard(page, k);
     assert.deepEqual([c.cls, c.num, c.rot], ['obox ok', String(await onlCob(k, todas)), 'Meta batida!']);
     const card = await page.evaluate(k => ({b: agrega(rotasAtuais()).ind[k],
-      cl: (c => { c = c.cloneNode(true); c.querySelectorAll('.ro').forEach(x => x.remove()); return c; })(document.querySelector(`.ind[data-k="${k}"] .cl`)).textContent.replace(/\s+/g, ' ').trim()}), k);
+      cl: document.querySelector(`.ind[data-k="${k}"] .cl`).textContent.replace(/\s+/g, ' ').trim()}), k);
     assert.deepEqual([card.b.meta, card.b.real, card.b.pct], [14, 16, 114]);
-    assert.equal(card.cl, 'Meta 14 Real 16 Diferença +2');
+    // Diferença = (Real + online de hoje, clientes distintos) − Meta: 16 + 5 clientes novos online − 14
+    assert.equal(card.cl, 'Meta 14 Real 16 Diferença +7');
     // abaixo da meta (KS TT sem cobertura) e meta 0: como antes; Venda Zero: como antes (revertidos)
     const ks = await comoAntes('KS TT', todas);
     c = await caixaCard(page, 'KS TT');
@@ -2566,9 +2568,7 @@ const cardsInc = page => page.$$eval('#lista .ind', els => Object.fromEntries(el
   return [el.dataset.k || el.dataset.incOff || '?', {
     off: el.classList.contains('off'), ok: el.classList.contains('ok'), abre: el.hasAttribute('data-k'),
     meta: n('meta'), real: n('real'), ef: n('ef'), big: txt('.big'), acao: txt('.acao'), opo: txt('.opo'),
-    // cl: as 3 linhas de antes (Meta, Real, Diferença); ro: a 4ª, "Real + online ±X" (Etapa 3 do pacote v3)
-    semdado: txt('.semdado'), cl: (el.querySelector('.cl') ? (c => { c.querySelectorAll('.ro').forEach(x => x.remove());
-      return c.textContent.replace(/\s+/g, ' ').trim(); })(el.querySelector('.cl').cloneNode(true)) : ''), ro: txt('.cl .ro'), html: el.outerHTML,
+    semdado: txt('.semdado'), cl: txt('.cl'), html: el.outerHTML,
     obox: ob ? [ob.className.trim(), ob.querySelector('b').textContent, ob.querySelector('span').textContent.trim()] : null}];
 })));
 // Meta e Real do card (texto da coluna da esquerda)
@@ -2672,7 +2672,8 @@ describe('Parte L — aba Todos a Bordo', {skip: pular}, () => {
     assert.ok(pace <= 50);
     c = await cardsInc(page);
     assert.deepEqual([c['INC HEINEKEN'].cl, c['INC HEINEKEN'].big, c['INC HEINEKEN'].ok, c['INC HEINEKEN'].acao,
-                      c['INC HEINEKEN'].opo], ['Meta 2 Real 1 Diferença -1', '▲50%', true, 'no ritmo', 'oportunidades do dia 2']);
+                      c['INC HEINEKEN'].opo], ['Meta 2 Real 1 Diferença 0', '▲50%', true, 'no ritmo', 'oportunidades do dia 2']);
+    // (Diferença = (Real + online de hoje) − Meta: Real [a] + online [a, b] = 2 clientes distintos; o % continua só o Real)
     assert.deepEqual(c['INC HEINEKEN'].obox, ['obox ok', '2', 'no ritmo']);
     // Real >= Meta: "Meta batida!" na caixa do Online (regra do ICS); 150% pela conta Real / Meta
     assert.deepEqual([c['INC EISENBAHN 600ML'].big, c['INC EISENBAHN 600ML'].obox], ['▲150%', ['obox ok', '0', 'Meta batida!']]);
@@ -4658,10 +4659,14 @@ const CABECALHO = () => {
           status: st.hidden ? null : st.textContent.replace(/\s+/g, ' ').trim(), puxa,
           base: txt('nBase'), lSem: txt('lSem'), sem: txt('nSem'), semCls: $('nSem').className.trim(),
           visitas: ($('xBase').querySelector('b') || {}).textContent, semHoje: semHoje ? semHoje.textContent : txt('xSem'),
-          // (sem a 4ª linha "Real + online" dos cards, da Etapa 3 do pacote v3: escondida só para a leitura)
-          lista: (() => { const ro = [...document.querySelectorAll('#lista .ind .ro')]; ro.forEach(x => { x.hidden = true; });
+          // (com a Diferença de antes, Real − Meta: desde 29/10/2026 o card mostra (Real + online) − Meta; trocada só para a
+          // leitura, pelos valores exatos do div, e devolvida depois)
+          lista: (() => { const ds = [...document.querySelectorAll('#lista .ind .dif[data-ro]')].map(el => {
+              const s = [el.textContent, el.className], d = Number(el.dataset.real) - Number(el.dataset.meta);
+              el.textContent = `Diferença ${d > 0 ? '+' : ''}${(el.hasAttribute('data-vol') ? Math.round(d) : d).toLocaleString('pt-BR')}`;
+              el.className = `dif ${d >= 0 ? 'pos' : 'neg'}`; return [el, s]; });
             const l = [...document.querySelectorAll('#lista .ind')].map(e => e.innerText.replace(/\s+/g, ' ').trim());
-            ro.forEach(x => { x.hidden = false; }); return l; })()};
+            ds.forEach(([el, s]) => { el.textContent = s[0]; el.className = s[1]; }); return l; })()};
 };
 // mesma variedade de ritmo nos dois fronts: as rotas, em ordem, com 0, 50% e 150% da meta (coberturas e tendência)
 const variedade = page => page.evaluate(() => Object.keys(ROTA_IDX).sort().forEach((r, i) => {
@@ -8348,9 +8353,9 @@ describe('Parte AF — Resumo: bloco Todos a Bordo 3.0', {skip: pular}, () => {
   });
 });
 
-/* ---------- Parte AG — cascata com Dif (Real + Online), selo de meta batida e cards com Real + online (Etapa 3 do pacote v3) ----------
-   Cards de Volume e coberturas (também os do Todos a Bordo): 4ª linha "Real + online ±X" (realOnline − Meta); sem ela na
-   Venda Zero, no fechamento e sem online. Cascata (menos a Venda Zero): Nome | Meta · Real | % | Dif (Real + Online) | Online
+/* ---------- Parte AG — cascata com Dif (Real + Online), selo de meta batida e cards com Diferença (Real + online) (Etapa 3 do pacote v3) ----------
+   Cards de Volume e coberturas (também os do Todos a Bordo): "Diferença" = (Real + online de hoje) − Meta (realOnline; pedido
+   da Karen de 29/10/2026, no lugar da 4ª linha "Real + online ±X"); na Venda Zero, no fechamento e sem online, Real − Meta. Cascata (menos a Venda Zero): Nome | Meta · Real | % | Dif (Real + Online) | Online
    · meta do dia; cabeçalho de colunas só no PC (>= 1000 px) e chips "Ordenar:" só no celular; ordem padrão = a do código;
    ordenar por %, Dif ou Online (2º clique inverte), "Neutraliza" e grupos sem dados no fim; selo "✓ META BATIDA" com Real +
    online >= Meta (coberturas: clientes distintos). Diretoria: a gerência abre direto a lista de clientes dela (todas as abas).
@@ -8372,83 +8377,74 @@ const FRONT_PRE_CASC = (() => {
 const CORTES_GAVETA = () => [...document.querySelectorAll('#drw *')].filter(el => el.clientWidth > 0 && el.getClientRects().length
   && !/auto|scroll/.test(getComputedStyle(el).overflowX) && getComputedStyle(el).textOverflow !== 'ellipsis'
   && el.scrollWidth > el.clientWidth + 1).map(el => `${el.className}: ${el.textContent.trim().slice(0, 30)}`);
-const cardRo = page => page.$$eval('#lista .ind', els => Object.fromEntries(els.map(el => [el.dataset.k || el.dataset.incOff || '?',
-  (el.querySelector('.cl .ro') || {}).textContent || null])));
+// "Diferença" de cada card: texto, classe e se é a de Real + online (data-ro, com os valores exatos)
+const cardDif = page => page.$$eval('#lista .ind', els => Object.fromEntries(els.map(el => { const d = el.querySelector('.cl .dif');
+  return [el.dataset.k || el.dataset.incOff || '?', d ? {txt: d.textContent, cls: d.className, ro: d.dataset.ro == null ? null : Number(d.dataset.ro)} : null]; })));
+// Diferença esperada, recontada do payload e do online: volume = Real + Σ online; cobertura = Σ (Real + |online ∖ COBERTOS|)
+// por rota (clientes distintos); sem online (ou na Venda Zero): Real − Meta, como antes
+const DIF_ESPERADA = rotasDe => {
+  const out = {};
+  [...document.querySelectorAll('#lista .ind[data-k]')].forEach(el => {
+    const k = el.dataset.k;
+    if(k === 'VENDAZERO') return;          // a Venda Zero tem a linha de sempre (cor invertida); conferida à parte
+    const rs = rotasDe(k), b = agrega(rs).ind[k], vol = ehVolume(k);
+    const com = !!ONLINE && !P.FECHAMENTO;
+    const ro = !com ? null : vol ? b.real + rs.reduce((s, r) => s + ((ONLINE.volume[r] || {})[k] || 0), 0)
+      : rs.reduce((s, r) => { const x = nodo('', r).indicators[k]; if(!x || x.unavailable) return s;
+          const cob = new Set((COBERTOS[r] || {})[k] || []);
+          return s + x.real + (((ONLINE.clientes[r] || {})[k]) || []).filter(pv => !cob.has(pv)).length; }, 0);
+    const d = (ro == null ? b.real : ro) - b.meta, v = vol ? Math.round(d) : d;
+    out[k] = {txt: `Diferença ${d > 0 ? '+' : ''}${v.toLocaleString('pt-BR')}`, cls: `dif ${d >= 0 ? 'pos' : 'neg'}`, ro};
+  });
+  return out;
+};
 
-describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Real + online', {skip: pular}, () => {
-  test('cards: "Real + online ±X" no Volume e nas coberturas (= realOnline − Meta); sem a linha na Venda Zero', async () => {
+describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Diferença (Real + online)', {skip: pular}, () => {
+  test('cards: "Diferença" = (Real + online de hoje) − Meta no Volume e nas coberturas; Venda Zero como antes', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}, largura: 1440, aba: 'VOLUME'});
+    let comOnline = 0;
     for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG']){
       await filtra(page, {aba});
-      const esp = await page.evaluate(() => {
-        const rs = rotasAtuais(), a = agrega(rs).ind, out = {};
-        [...document.querySelectorAll('#lista .ind[data-k]')].forEach(el => {
-          const k = el.dataset.k, b = a[k];
-          if(k === 'VENDAZERO'){ out[k] = null; return; }
-          // recontado: volume = Real + Σ online; cobertura = Σ (Real + |online ∖ COBERTOS|) por rota
-          const ro = ehVolume(k) ? b.real + rs.reduce((s, r) => s + ((ONLINE.volume[r] || {})[k] || 0), 0)
-            : rs.reduce((s, r) => { const x = nodo('', r).indicators[k]; if(!x || x.unavailable) return s;
-                const cob = new Set((COBERTOS[r] || {})[k] || []);
-                return s + x.real + (((ONLINE.clientes[r] || {})[k]) || []).filter(pv => !cob.has(pv)).length; }, 0);
-          const d = ehVolume(k) ? Math.round(ro - b.meta) || 0 : Math.round((ro - b.meta) * 10) / 10 || 0;
-          out[k] = `Real + online ${d > 0 ? '+' : ''}${d.toLocaleString('pt-BR')}`;
-        });
-        return out;
-      });
-      const got = await cardRo(page);
-      for(const [k, t] of Object.entries(esp)) assert.equal(got[k], t, `${aba} ${k}`);
-      // cor: verde com X >= 0, vermelho com X < 0; peso 600; menor que a Diferença
-      const est = await page.$$eval('#lista .ind .cl .ro', els => els.map(el => {
-        const cs = getComputedStyle(el), dif = getComputedStyle(el.parentNode.querySelector('.dif'));
-        return {neg: el.classList.contains('neg'), txt: el.textContent, cor: cs.color, peso: cs.fontWeight,
-                fs: parseFloat(cs.fontSize), fsDif: parseFloat(dif.fontSize)};
-      }));
-      assert.ok(est.length, `${aba}: linha nova`);
-      for(const e of est){
-        assert.equal(e.neg, /online -/.test(e.txt), e.txt);
-        assert.equal(e.cor, e.neg ? 'rgb(198, 40, 40)' : 'rgb(29, 158, 117)', e.txt);
-        assert.equal(e.peso, '600');
-        assert.ok(e.fs < e.fsDif, `${e.txt}: menor que a Diferença`);
-      }
-      // alturas iguais entre cards do mesmo tipo e nada estourando no bloco da esquerda
+      const esp = await page.evaluate(`(${DIF_ESPERADA})(() => rotasAtuais())`), got = await cardDif(page);
+      for(const [k, e] of Object.entries(esp)) assert.deepEqual(got[k], e, `${aba} ${k}`);
+      comOnline += Object.values(esp).filter(e => e.ro != null).length;
+      // uma linha só (Meta, Real, Diferença), sem a 4ª linha; alturas iguais por tipo e nada estourando
+      assert.deepEqual(await page.$$eval('#lista .ind .cl', els => [...new Set(els.map(el => el.children.length))]), [3], aba);
       const alt = await page.$$eval('#lista .ind:not(.off)', els => els.map(el => [el.classList.contains('vol'), Math.round(el.getBoundingClientRect().height)]));
       for(const tipo of [true, false]){ const hs = alt.filter(x => x[0] === tipo).map(x => x[1]); assert.ok(new Set(hs).size <= 1, `${aba}: alturas ${hs}`); }
       assert.deepEqual(await page.$$eval('#lista .ind .cl', els => els.filter(el => el.scrollWidth > el.clientWidth + 1).map(el => el.textContent)), []);
-      // a linha nova não alarga a coluna da esquerda (largura = a das linhas de cima) e cabe nela (encaixa)
-      assert.deepEqual(await page.$$eval('#lista .ind .cl .ro', els => els.filter(el => el.scrollWidth > el.clientWidth + 1
-        || el.getBoundingClientRect().width > el.parentNode.getBoundingClientRect().width + 0.5).map(el => el.textContent)), []);
     }
+    assert.ok(comOnline > 5, 'cards com online');
+    // Venda Zero: Real − Meta, sem os valores de Real + online
+    await filtra(page, {aba: 'ICS_GC'});
+    const vz = (await cardDif(page)).VENDAZERO, bvz = await page.evaluate(() => agrega(rotasAtuais()).ind.VENDAZERO);
+    const dvz = bvz.real - bvz.meta;
+    assert.deepEqual(vz, {txt: `Diferença ${dvz > 0 ? '+' : ''}${dvz.toLocaleString('pt-BR', {maximumFractionDigits: 1})}`,
+                          cls: `dif ${dvz <= 0 ? 'pos' : 'neg'}`, ro: null}, 'Venda Zero como antes');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
 
-  test('cards: sem a linha no fechamento (incfech) nem sem online.json; Todos a Bordo com as rotas com meta do item', async () => {
+  test('cards: Diferença = Real − Meta (como antes) no fechamento (incfech) e sem online.json; Todos a Bordo com as rotas com meta do item', async () => {
     let {page, ctx, erros} = await abre('incfech', {entrar: {perfil: 'gc', gc: 'IT+MO'}, aba: 'VOLUME'});
     for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
       await filtra(page, {aba});
-      assert.equal(await page.$$eval('#lista .ind .ro', e => e.length), 0, `fechamento ${aba}`);
+      assert.equal(await page.$$eval('#lista .ind .dif[data-ro]', e => e.length), 0, `fechamento ${aba}`);
+      const esp = await page.evaluate(`(${DIF_ESPERADA})(k => aba === 'INCENTIVO' ? rotasInc(k, rotasAtuais()) : rotasAtuais())`), got = await cardDif(page);
+      for(const [k, e] of Object.entries(esp)) assert.deepEqual(got[k], e, `fechamento ${aba} ${k}`);
     }
     assert.deepEqual(erros, []);
     await ctx.close();
     ({page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'IT+MO'}, aba: 'INCENTIVO'}));
-    const esp = await page.evaluate(() => Object.fromEntries(itensInc().map(k => {
-      const rs = rotasInc(k, rotasAtuais());
-      if(!rs.length) return [k, null];
-      const b = agrega(rs).ind[k];
-      const ro = rs.reduce((s, r) => { const x = nodo('', r).indicators[k]; if(!x || x.unavailable) return s;
-        const cob = new Set((COBERTOS[r] || {})[k] || []);
-        return s + x.real + (((ONLINE.clientes[r] || {})[k]) || []).filter(pv => !cob.has(pv)).length; }, 0);
-      const d = ro - b.meta;
-      return [k, `Real + online ${d > 0 ? '+' : ''}${d.toLocaleString('pt-BR')}`];
-    })));
-    const got = await cardRo(page);
-    for(const [k, t] of Object.entries(esp)) assert.equal(got[k], t, k);
-    // IT11 Heineken: Real [a], online [a, b] -> conta b uma vez
-    assert.ok(Object.values(esp).some(Boolean));
-    // sem online.json: sem a linha (e a cascata mostra "—" / "sem online")
+    const esp = await page.evaluate(`(${DIF_ESPERADA})(k => rotasInc(k, rotasAtuais()))`), got = await cardDif(page);
+    for(const [k, e] of Object.entries(esp)) assert.deepEqual(got[k], e, k);
+    assert.ok(Object.values(esp).some(e => e.ro != null));
+    // sem online.json: Real − Meta (e a cascata mostra "—" / "sem online")
     await page.evaluate(() => { ONLINE = null; render(); });
     await filtra(page, {aba: 'VOLUME'});
-    assert.equal(await page.$$eval('#lista .ind .ro', e => e.length), 0, 'sem online');
+    assert.equal(await page.$$eval('#lista .ind .dif[data-ro]', e => e.length), 0, 'sem online');
+    const sem = await page.evaluate(`(${DIF_ESPERADA})(() => rotasAtuais())`), gs = await cardDif(page);
+    for(const [k, e] of Object.entries(sem)) assert.deepEqual(gs[k], e, `sem online ${k}`);
     await page.click('#lista .ind[data-k]');
     await CASC_INV.confereNivel(page, 'sem online');
     assert.deepEqual(erros, []);

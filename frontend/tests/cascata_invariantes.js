@@ -164,7 +164,8 @@ async function confereLista(page, onde){
 
 /* Para os "antes x depois" contra fronts de antes da Etapa 3 do pacote v3: desfaz, em HTML (strings dentro de objetos e
    listas também), só o que a etapa trocou de propósito, e o resto continua comparado byte a byte:
-   - a 4ª linha dos cards ("Real + online ±X", .ro);
+   - a Diferença dos cards, que desde 29/10/2026 é (Real + online de hoje) − Meta: volta a Real − Meta, pelos valores exatos
+     do div (data-meta/data-real; data-vol = volume, arredondado);
    - o cabeçalho de colunas e os chips de ordenação da cascata (.cOrd, .cOrdCh);
    - a linha nova da cascata (.cLin.v3) volta à de antes (Nome | Meta e Real | Online | %; "do mês" nas coberturas), sem o
      selo, a coluna Dif e os data-* novos (os números, a ordem e a caixa do Online ficam como estão);
@@ -185,7 +186,9 @@ const desfazCasc = x => {
   if(Array.isArray(x)) return x.map(desfazCasc);
   if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazCasc(v)]));
   if(typeof x !== 'string') return x;
-  return x.replace(/<div class="ro (?:pos|neg)" data-ro="[^"]*"[^>]*>[^<]*<\/div>/g, '')
+  return x.replace(/<div class="dif (?:pos|neg)" data-meta="([^"]*)" data-real="([^"]*)" data-ro="[^"]*"( data-vol="")?>Diferença [^<]*<\/div>/g,
+      (m, meta, real, vol) => { const d = Number(real) - Number(meta);
+        return `<div class="dif ${d >= 0 ? 'pos' : 'neg'}">Diferença ${d > 0 ? '+' : ''}${(vol ? Math.round(d) : d).toLocaleString('pt-BR')}</div>`; })
     .replace(/<div class="cOrd v3"[^]*?<\/div><div class="cOrdCh v3"[^]*?<\/div>/g, '')
     .replace(LINHA_V3, (m, cor, i, meta, real, dir, nome, info, esq, pct, rot, meio) =>
       `<div class="cLin ${cor}" role="button" tabindex="0" data-i="${i}" data-meta="${meta}" data-real="${real}" data-dir="${dir}">\n` +

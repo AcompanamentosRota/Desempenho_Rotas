@@ -282,12 +282,11 @@ Rota, que não tem a Executiva, abre no **Volume**.
   Online) ÷ Meta, como antes), do mais negativo para o mais positivo, com a barra de dias de visita (abre em "Todos"; ver
   "Gavetas com barra de dias"); no celular, nome e "segmento · rota" em cima e os 5 números embaixo, alinhados ao
   cabeçalho. Listas de cobertura e de Venda Zero como antes.
-- **Cards** (Volume e coberturas, também os do Todos a Bordo, só com as rotas com meta do item): 4ª linha no bloco da
-  esquerda, abaixo de "Diferença": **"Real + online ±X"** (X = Real + online − Meta, a mesma conta da Dif da cascata:
-  `realOnline` em app.js), verde se >= 0 e vermelho se < 0, peso 600, um pouco menor que a Diferença (`--fs-valor-ro`,
-  10,5 px). A linha não alarga a coluna da esquerda (`contain: inline-size`; o % do centro fica do mesmo tamanho): se não
-  couber, `encaixa()` reduz a fonte até 9,5 px e, se ainda faltar, quebra em duas linhas ("Real + online" / "+24", comum nas
-  coberturas com números curtos). Sem a linha na Venda Zero, no fechamento e sem online. A altura dos cards não muda.
+- **Cards** (Volume e coberturas, também os do Todos a Bordo, só com as rotas com meta do item): Meta, Real e
+  **"Diferença" = (Real + online de hoje) − Meta** (pedido da Karen, 29/10/2026; a mesma conta da Dif da cascata, `realOnline`
+  em app.js: volume = faturado até ontem + volume online; coberturas = clientes distintos no Real ou no online), verde se >= 0
+  e vermelho se < 0, com o estilo de sempre. No fechamento e sem online, a Diferença é Real − Meta, como antes; a Venda Zero
+  não muda. O % do card, o "faltam", as oportunidades e a caixa do Online não mudam (o % continua só com o Real).
 - **"Meta batida!"**: no card e nas linhas da cascata (gerência, supervisão, rota e "Neutraliza"), o rótulo da caixa
   do Online vira "Meta batida!" e a caixa fica verde quando, no nível (números já somados):
   - **volume** (os 5 agrupadores e Del Valle Frut): a meta do dia é zero ou negativa;
@@ -558,10 +557,9 @@ real (2 → 3 páginas na Diretoria); os 4 botões sem corte em 360, 390, 1000 e
 `frontend/tests/resumo_tab_invariantes.js`, usadas também pela conferência com dado real (bloco "Resumo de vendas: bloco
 Todos a Bordo 3.0": Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px; e o antes x depois
 contra a main antes do bloco, `9f82f15`: Resumo sem o bloco, Executiva, cards e cascata iguais).
-A **Parte AG** confere a cascata com Dif (Real + Online), o selo e os cards com "Real + online" (Etapa 3 do pacote v3): a
-linha nova nos cards de Volume e coberturas (= `realOnline` − Meta, recontado do payload e do online; cor, peso, tamanho e
-alturas iguais), ausente na Venda Zero, no fechamento (`incfech`) e sem online, e a do Todos a Bordo só com as rotas com
-meta; a cascata com as 5 colunas, o cabeçalho só >= 1000 px e os chips só < 1000 px (1440, 1000, 390 e 360 px, colunas do
+A **Parte AG** confere a cascata com Dif (Real + Online), o selo e a Diferença dos cards (Etapa 3 do pacote v3): a Diferença
+dos cards de Volume e coberturas (= `realOnline` − Meta, recontado do payload e do online; cor; 3 linhas; alturas iguais), Real
+− Meta na Venda Zero, no fechamento (`incfech`) e sem online, e a do Todos a Bordo só com as rotas com meta; a cascata com as 5 colunas, o cabeçalho só >= 1000 px e os chips só < 1000 px (1440, 1000, 390 e 360 px, colunas do
 cabeçalho alinhadas às linhas, sem texto cortado nem rolagem lateral); ordem padrão = código, % / Dif / Online decrescente
 e invertido com "Neutraliza" no fim, o foco de volta no título, a ordem mantida ao descer e voltar e o código ao reabrir;
 o selo num caso forçado (cobertura com Real 1 + 2 clientes novos online = Meta) e sem selo com o cliente coberto comprando
