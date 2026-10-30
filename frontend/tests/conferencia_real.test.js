@@ -40,6 +40,7 @@ const {confereGavetas, leChips} = require('./gavetas_invariantes.js');
 const {confereEvolucao, ABRE_TODAS} = require('./evolucao_invariantes.js');
 const ROT = require('./rotulos_invariantes.js');
 const {confereResumoTab} = require('./resumo_tab_invariantes.js');
+const CASC_INV = require('./cascata_invariantes.js');
 const {trocaHash, trocaLiberadas, digitaSenha, trocaNomes} = require('./senha_teste.js');
 
 const FRONT = path.resolve(__dirname, '..');
@@ -390,10 +391,13 @@ describe('Ajuste de rótulos com dado real (Novos Negócios, aba por perfil, not
         // gavetas: o macro de volume e o 1º card de cada aba de coberturas
         const k = ab === 'VOLUME' ? ROT.K_NOVOS : ab === 'EXEC' ? null : await novo.page.$eval('#lista .ind[data-k]', x => x.dataset.k).catch(() => null);
         if(!k || !(await novo.page.$(`#lista .ind[data-k="${k}"]`))) continue;
-        const gav = async p => { await p.click(`#lista .ind[data-k="${k}"]`);
-          const t = await p.evaluate(() => [document.getElementById('dTit').textContent, document.getElementById('dCorpo').textContent]);
+        // (no front atual, o texto da gaveta com a cascata desfeita do que a Etapa 3 do pacote v3 trocou: CASC_INV.desfazCasc)
+        const gav = async (p, desfaz) => { await p.click(`#lista .ind[data-k="${k}"]`);
+          const html = await p.innerHTML('#dCorpo');
+          const t = await p.evaluate(h => { const d = document.createElement('div'); d.innerHTML = h;
+            return [document.getElementById('dTit').textContent, d.textContent]; }, desfaz ? CASC_INV.desfazCasc(html) : html);
           await p.keyboard.press('Escape'); return t; };
-        assert.deepEqual(await gav(novo.page), ROT.comNomeNovo(await gav(velho.page)), `${onde} ${ab} gaveta ${k}`);
+        assert.deepEqual(await gav(novo.page, true), ROT.comNomeNovo(await gav(velho.page)), `${onde} ${ab} gaveta ${k}`);
         comp.push(`gaveta ${k}`);
       }
       if(e.perfil !== 'rota'){
@@ -454,15 +458,16 @@ describe('Antes x depois do redesenho da Evolução com dado real', {skip: pular
         assert.equal(ta, tb, `${onde} ${ab}`);
         if(!ta) continue;
         const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
-        assert.deepEqual(ROT.desfazAE(a), b, `${onde} ${ab}: cabeçalho e cards`);
+        assert.deepEqual(CASC_INV.desfazCasc(ROT.desfazAE(a)), b, `${onde} ${ab}: cabeçalho e cards`);
         let niveis = 0;
         const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
         for(const k of ks){
           for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
           for(let nivel = 0; nivel < 5; nivel++){
-            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            assert.equal(CASC_INV.desfazCasc(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
             niveis++;
-            if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            // (na Diretoria a gerência abre direto a lista de clientes desde a Etapa 3 do pacote v3: só o 1º nível)
+            if(e.perfil === 'dir' || !(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
             for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
           }
           for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
@@ -581,15 +586,16 @@ describe('Gaveta "Categoria por unidade" com dado real', {skip: pular}, () => {
         assert.equal(ta, tb, `${onde} ${ab}`);
         if(!ta) continue;
         const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
-        assert.deepEqual(ROT.desfazAE(a), b, `${onde} ${ab}: cabeçalho e cards`);
+        assert.deepEqual(CASC_INV.desfazCasc(ROT.desfazAE(a)), b, `${onde} ${ab}: cabeçalho e cards`);
         let niveis = 0;
         const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
         for(const k of ks){
           for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
           for(let nivel = 0; nivel < 5; nivel++){
-            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            assert.equal(CASC_INV.desfazCasc(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
             niveis++;
-            if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            // (na Diretoria a gerência abre direto a lista de clientes desde a Etapa 3 do pacote v3: só o 1º nível)
+            if(e.perfil === 'dir' || !(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
             for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
           }
           for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
@@ -651,15 +657,16 @@ describe('Ajustes visuais da Executiva com dado real: antes x depois', {skip: pu
         assert.equal(ta, tb, `${onde} ${ab}`);
         if(!ta) continue;
         const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
-        assert.deepEqual(ROT.desfazAE(a), b, `${onde} ${ab}: cabeçalho e cards`);
+        assert.deepEqual(CASC_INV.desfazCasc(ROT.desfazAE(a)), b, `${onde} ${ab}: cabeçalho e cards`);
         let niveis = 0;
         const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
         for(const k of ks){
           for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
           for(let nivel = 0; nivel < 5; nivel++){
-            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            assert.equal(CASC_INV.desfazCasc(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
             niveis++;
-            if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            // (na Diretoria a gerência abre direto a lista de clientes desde a Etapa 3 do pacote v3: só o 1º nível)
+            if(e.perfil === 'dir' || !(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
             for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
           }
           for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
@@ -796,6 +803,180 @@ describe('Resumo: bloco Todos a Bordo com dado real: antes x depois', {skip: pul
     assert.deepEqual([...novo.erros, ...velho.erros], []);
     for(const {ctx} of [novo, velho]) await ctx.close();
     console.log(`# Antes x depois (main ${REF_PRE_TAB} x branch), ${largura} px, mesmo payload real: tudo igual sem o bloco marcado`);
+    console.log('# | Perfil | Comparado (igual) |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+  });
+});
+
+/* Cascata com Dif (Real + Online), selo de meta batida e cards com Real + online (Etapa 3 do pacote v3; invariantes (a)-(g) em
+   cascata_invariantes.js, as mesmas da Parte AG): em cada aba (Volume, ICS GC, Novos Negócios, Todos a Bordo) e cada card, a
+   Diretoria (gerências; a 1ª gerência abre direto a lista de clientes), uma gerência pelo filtro da Diretoria (supervisões e as
+   rotas da 1ª), o grupo IT+MO no Total e uma supervisão; ordenação por %, Dif e Online (2º clique inverte; volta ao código)
+   na Diretoria e na gerência; (f) a "Diferença" de cada card da Gerência G1 (= (Real + online) − Meta) = a Dif da linha GC.G1
+   da cascata da Diretoria; sem rolagem lateral nem erro em 360, 390, 1000 e 1440 px com a cascata e a lista abertas. Antes x depois contra
+   a main antes da etapa (REF_PRE_CASC), com o mesmo payload: Executiva, Resumo e Venda Zero idênticos; cards e cascata
+   iguais depois de desfeito só o que a etapa trocou (CASC_INV.desfazCasc: a Diferença do card volta a Real − Meta). Imprime totais e códigos (nada de clientes). */
+const REF_PRE_CASC = '515b1e9';
+const FRONT_PRE_CASC = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_CASC}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+const ABAS_CASC = ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO'];
+const cardsK = page => page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k));
+
+describe('Cascata com Dif (Real + Online) e cards com Real + online, com dado real (Etapa 3 do pacote v3)', {skip: pular}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px: invariantes (a)-(e) e (g) na Diretoria, uma gerência, IT+MO e uma supervisão; ordenação; (f) card x linha`, async () => {
+    const {page, ctx, erros} = await abre(largura);
+    const info = await page.evaluate(() => ({gc: gcsComDados().includes('G1') ? 'G1' : gcsComDados()[0], grupo: gruposGc().map(g => g.chave).find(temDados),
+      mes: P.MES_LABEL, dia: `${P.DIA_HOJE}/${P.TOTAL_DIAS_UTEIS}`, fech: !!P.FECHAMENTO, upd: (ONLINE || {}).updatedAt}));
+    const res = [], listas = [];
+    const percorre = async (onde, {desce = 0, ordem = false, lista = false} = {}) => {
+      for(const ab of ABAS_CASC){
+        if(!await vaiAba(page, ab)) continue;
+        for(const k of await cardsK(page)){
+          await page.click(`#lista .ind[data-k="${k}"]`);
+          res.push(await CASC_INV.confereNivel(page, `${onde} ${ab} ${k}`));
+          if(ordem && k !== 'VENDAZERO' && (ab === 'VOLUME' || ab === 'ICS_GC')) await CASC_INV.confereOrdem(page, `${onde} ${k}`);
+          for(let n = 0; n < desce && await page.$('#dCorpo .cLin[data-i]'); n++){
+            await page.click('#dCorpo .cLin[data-i]');
+            if(await page.$('#dCorpo .cLin')) res.push(await CASC_INV.confereNivel(page, `${onde} ${ab} ${k} nível ${n + 1}`));
+          }
+          if(lista && await page.$('#dCorpo .cLin[data-i]')){
+            await page.click('#dCorpo .cLin[data-i]');
+            assert.equal(await page.evaluate(() => CASC.pilha[CASC.pilha.length - 1].nivel), 'cli', `${onde} ${k}: GC > Clientes`);
+            if(k.startsWith('VOL ')) listas.push(await CASC_INV.confereLista(page, `${onde} ${k} ${await page.textContent('#dTit')}`));
+          }
+          await page.keyboard.press('Escape');
+        }
+      }
+    };
+    await entra(page, {perfil: 'dir'});
+    await percorre('BAND', {ordem: true, lista: true});
+    // (f) Diretoria: Dif de cada linha GC.<gc> por card
+    const difDir = {};
+    for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+      if(!await vaiAba(page, ab)) continue;
+      for(const k of await cardsK(page)){
+        if(k === 'VENDAZERO') continue;
+        await page.click(`#lista .ind[data-k="${k}"]`);
+        difDir[`${ab}|${k}`] = await page.evaluate(gc => { const l = [...document.querySelectorAll('#dCorpo .cLin')].find(x =>
+          ((x.querySelector('.cNomeL b') || x.querySelector('b')).textContent).startsWith(`GC.${gc} ·`));
+          return l ? (l.querySelector('.cDif b') || {}).textContent || null : null; }, info.gc);
+        await page.keyboard.press('Escape');
+      }
+    }
+    await page.selectOption('#fgc', info.gc);
+    await percorre(`GC.${info.gc}`, {desce: 1, ordem: true});
+    if(info.grupo){ await entra(page, {perfil: 'gc', gc: info.grupo}); await percorre(`Total ${info.grupo}`); }
+    const sv = await page.evaluate(gc => svsDaEntrada(gc)[0], info.gc);
+    await entra(page, {perfil: 'sv', gc: info.gc, sv});
+    await percorre(sv, {desce: 1});
+    // (f) Gerência: linha "Real + online" de cada card = Dif da linha da gerência na cascata da Diretoria
+    await entra(page, {perfil: 'gc', gc: info.gc});
+    let nF = 0;
+    for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+      if(!await vaiAba(page, ab)) continue;
+      // a "Diferença" do card (= (Real + online) − Meta desde 29/10/2026; sem online, Real − Meta)
+      const ro = await page.$$eval('#lista .ind[data-k]', els => els.map(el => { const d = el.querySelector('.cl .dif');
+        return [el.dataset.k, d && d.dataset.ro != null ? d.textContent : null]; }));
+      for(const [k, t] of ro){
+        const d = difDir[`${ab}|${k}`];
+        if(d === undefined) continue;
+        assert.equal(t, d == null || d === '—' ? null : `Diferença ${d}`, `(f) ${info.gc} ${ab} ${k}`);
+        nF++;
+      }
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    console.log(`# Cascata com Real + Online, dado real (${largura} px): ${info.mes}, dia útil ${info.dia}${info.fech ? ' (fechamento)' : ''}, online ${info.upd}`);
+    console.log(`# (f) card x linha da cascata da Diretoria: ${nF} cards da Gerência ${info.gc} conferidos`);
+    console.log('# | Escopo · indicador | Nível | Linhas | Com selo | Real + online > Real | Meta / Real do card |');
+    console.log('# |---|---|---|---|---|---|');
+    const f = n => n == null ? '—' : (Math.round(n * 10) / 10).toLocaleString('pt-BR');
+    for(const r of res) console.log(`# | ${r.onde} | ${r.nivel} | ${r.linhas} | ${r.selos} | ${r.comOnline} | ${r.card ? `${f(r.card.meta)} / ${f(r.card.real)}` : '—'} |`);
+    console.log('# | Lista de clientes (GC > Clientes) | Clientes exibidos | Com online |');
+    console.log('# |---|---|---|');
+    for(const l of listas) console.log(`# | ${l.onde} | ${l.clientes} | ${l.comOnline} |`);
+  });
+
+  test('360, 390, 1000 e 1440 px: cascata, cabeçalho/chips e lista de clientes sem rolagem lateral nem texto cortado; sem erro', async () => {
+    const corte = () => [...document.querySelectorAll('#drw *')].filter(el => el.clientWidth > 0 && el.getClientRects().length
+      && !/auto|scroll/.test(getComputedStyle(el).overflowX) && getComputedStyle(el).textOverflow !== 'ellipsis'
+      && el.scrollWidth > el.clientWidth + 1).map(el => `${el.className}: ${el.textContent.trim().slice(0, 30)}`);
+    for(const largura of [360, 390, 1000, 1440]){
+      for(const tema of ['preta', 'branca']){
+        const {page, ctx, erros} = await abre(largura, tema);
+        await entra(page, {perfil: 'dir'});
+        for(const ab of ABAS_CASC){
+          if(!await vaiAba(page, ab)) continue;
+          for(const k of await cardsK(page)){
+            await page.click(`#lista .ind[data-k="${k}"]`);
+            assert.deepEqual(await page.evaluate(corte), [], `${largura} ${tema} ${k}: gerências`);
+            const pc = await page.evaluate(() => ({cab: !!(document.querySelector('#dCorpo .cOrd') || {}).offsetParent,
+              chips: !!(document.querySelector('#dCorpo .cOrdCh') || {}).offsetParent}));
+            if(k !== 'VENDAZERO') assert.deepEqual(pc, {cab: largura >= 1000, chips: largura < 1000}, `${largura} ${k}`);
+            await page.click('#dCorpo .cLin[data-i]');
+            assert.deepEqual(await page.evaluate(corte), [], `${largura} ${tema} ${k}: lista`);
+            assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${largura} ${k}`);
+            await page.keyboard.press('Escape');
+          }
+        }
+        assert.deepEqual(erros, [], `${largura} ${tema}`);
+        await ctx.close();
+      }
+    }
+  });
+
+  test('antes x depois (main antes da etapa, mesmo payload real): Executiva, Resumo e Venda Zero idênticos; cards e cascata iguais fora o que a etapa trocou',
+       {skip: !FRONT_PRE_CASC && `sem o commit ${REF_PRE_CASC}`}, async () => {
+    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_CASC)];
+    const linhas = [];
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      const comp = [];
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        comp.push('Executiva');
+      }
+      let telas = 0, vz = 0;
+      for(const ab of ABAS_CASC){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${onde} ${ab}`);
+        if(!ta) continue;
+        const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
+        assert.deepEqual(CASC_INV.desfazCasc(a), b, `${onde} ${ab}: cabeçalho e cards (com a Diferença de antes)`);
+        for(const k of await cardsK(novo.page)){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          for(let nivel = 0; nivel < 5; nivel++){
+            const [hn, hv] = [await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw')];
+            if(k === 'VENDAZERO'){ assert.equal(hn, hv, `${onde} Venda Zero nível ${nivel}`); vz++; }
+            else assert.equal(CASC_INV.desfazCasc(hn), hv, `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            telas++;
+            if(e.perfil === 'dir' || !(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+          }
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        comp.push(`${ab} (${a.n} cards)`);
+      }
+      comp.push(`${telas} telas de cascata (${vz} da Venda Zero, HTML idêntico)`);
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+        comp.push('Resumo');
+      }
+      linhas.push([onde, comp.join(', ')]);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_CASC} x branch), mesmo payload real: Executiva, Resumo e Venda Zero idênticos; cards e cascata iguais fora a etapa`);
     console.log('# | Perfil | Comparado (igual) |');
     console.log('# |---|---|');
     for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);

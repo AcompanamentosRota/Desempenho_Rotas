@@ -122,6 +122,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (`frontend/tests/categoria_invariantes.js`, as mesmas da Parte AC; tabela por escopo e categoria); 360/390/1000/1440 px nos
   dois fundos sem corte nem rolagem lateral; e o antes x depois contra o front do `ec60a88` com o mesmo payload (Executiva,
   abas, cascata, Base, Sem compra e Resumo iguais).
+  Cascata com Dif (Real + Online) (Etapa 3 do pacote v3): Diretoria, uma gerência (filtro), IT+MO e uma supervisão em 1440 e
+  390 px, invariantes (a)-(e) e (g) em `frontend/tests/cascata_invariantes.js` (as mesmas da Parte AG), ordenação, (f) card da
+  Gerência G1 = Dif da linha GC.G1 da Diretoria; 360/390/1000/1440 px nos dois fundos; antes x depois contra `515b1e9`.
   Resumo, bloco Todos a Bordo: Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px
   (`frontend/tests/resumo_tab_invariantes.js`, as mesmas da Parte AF; tabela por escopo com bloco / card / online de cada item);
   e o antes x depois contra o front do `9f82f15` com o mesmo payload (Resumo sem o bloco, Executiva, cards e cascata iguais).
@@ -381,6 +384,28 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   coberturas ICS GC/Novos Negócios (`coberturaBatida`, pedido da Karen em 20/10/2026) com Real >= Meta do mês do nível
   (Meta > 0; a "meta do dia" da cobertura, gap ou fatia, nunca chega a 0 com meta). O número do online e todos os
   valores seguem iguais; metaDia > 0/null, meta 0, Venda Zero, fechamento e o Resumo de vendas como antes.
+  **Cascata com Dif (Real + Online) e cards com Real + online (Etapa 3 do pacote v3, 29/10/2026; README, "Cascata" e
+  "Cards"; só front)**: `realOnline(k, rotas, b, onl)` é a conta ÚNICA (cards, cascata, selo): volume = `b.real` + online de
+  hoje (`onl` já somado ou `onlineVol`); coberturas = `realMaisOnline` (clientes distintos no Real ou no online); null no
+  fechamento, sem ONLINE, na Venda Zero e indisponível. Card (`linha()` → `linhaDif`): a
+  "Diferença" é (Real + online de hoje) − Meta (pedido da Karen, 29/10/2026; antes havia uma 4ª linha "Real + online ±X", que
+  saiu); com online o div leva `data-meta/real/ro` exatos (+ `data-vol` no volume); sem online (fechamento, sem ONLINE) = Real −
+  Meta com o HTML de antes; a Venda Zero tem a linha própria de sempre. `difMostrada`/`sinal` só na Dif da cascata. Cascata (`linhaGrupo` → `linhaCascata` fora da VZ; a VZ fica com a linha de antes; `meioLinha` = a caixa do
+  Online de sempre): Nome (+ `.cSelo` "✓ Meta batida", maiúsculas pelo CSS) | Meta · Real | % (`.cPct`: o `dir` de sempre,
+  cor pelo `onPace`; "tendência"/"realizado"/"real da meta" só no celular) | Dif (`.cDif`: Real + online − Meta, "x% da meta
+  com online"; "—" "sem online" / "sem online no fechamento") | Online · meta do dia; `data-onl/ro/dif/bat` exatos. Selo
+  (`linhaBatida`, decisão B): Meta > 0 e (realOnline, ou Real sem ele) >= Meta. Ordem: padrão = `gruposDo` (código);
+  `CASC.ord` {col: ''|'pct'|'dif'|'onl', dir}, `ordenaGrupos` (valores, depois sem valor, depois "Neutraliza"/sem dados, na
+  ordem do código), `ordemCascata` (cabeçalho `.cOrd` >= 1000 px; chips `.cOrdCh` < 1000), vale enquanto a gaveta estiver
+  aberta (novo `CASC` ao abrir). Diretoria: `gruposDo(ctx, k, true)` (só `pintaCascata`) dá à gerência o filho `{nivel:'cli',
+  chave:g, gc:g, rotas, nome}` (GC > Clientes, em todas as abas); `unidadesExec` chama sem o 3º parâmetro (Executiva com as
+  supervisões). Lista de clientes de volume: Cliente | Meta | Real (`VOLUME_CLIENTE[r][pv][i][1]`, só o faturado) | Online
+  (`volCliOnline`, "—" no fechamento) | Dif. Abs | % (de `blocoVolCliente`, como antes). Testes: Parte AG
+  (`cascata_invariantes.js`, também na conferência com dado real; antes x depois contra `515b1e9`, `REF_PRE_CASC`); os
+  antes x depois antigos desfazem o que a etapa trocou com `desfazCasc` (Diferença do card de volta a Real − Meta pelos `data-*`, cascata/lista de
+  antes; nos textos, `CABECALHO` e `TEXTOS_TELA_PAGINA` fazem o mesmo) e, na
+  Diretoria, conferem só o 1º nível da cascata; testes que abriam as supervisões pela linha da gerência na Diretoria usam
+  o filtro de gerência (`supervisoesNaDiretoria`).
   Resumo segue o filtro (Diretoria "Todas": as 16 em faixas de 8; uma gerência: gerência + supervisões; grupo no
   Total: total + as duas; sem seletor próprio); placa ATENÇÃO só com `CONFIG.LIMIAR_ATENCAO` (null = desligada). Del Valle Frut continua fora
   da Diretoria, mesmo com uma gerência. Rodapé do painel: "Karen Oliveira - Inteligência de Mercado" (`CONFIG.CREDITOS`);
@@ -591,6 +616,13 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   na gaveta. Não aplicar a escala/cores novas ali; se a Inter apertar uma célula, só `letter-spacing` (até -0.02em).
   Conteúdo NOVO dentro da gaveta (a "Categoria por unidade" da Executiva) só com classes novas (`.cu*`, escala e cores
   próprias); o cromo (moldura, cabeçalho, ×) é o de sempre (a Parte AC compara com o da cascata).
+  EXCEÇÃO AUTORIZADA pela Karen (Etapa 3 do pacote v3, 29/10/2026; só isto): linha da cascata de todas as abas menos a
+  Venda Zero (`.cLin.v3`), cabeçalho de colunas `.cOrd` (PC) / chips `.cOrdCh` (celular), selo `.cSelo` + fundo `.bat`
+  (`--bat-bg`/`--bat-borda` no escopo `.drw`), lista de clientes de volume `.cCab.v3`/`.cCli.v3` e, no PC (>= 1000 px), com
+  `#drw[data-casc]` (posto por `abreIndicador`/`abreIncentivo`, nunca na Venda Zero; `abre()` tira), `max-width: 860px` e
+  menos padding no `.drwCab`/`.corpo`. A Parte N tira da comparação o que está dentro de `.v3` (no front de lá, as `.cLin`
+  não-off, `.cCab` e `.cCli`), compara a caixa `.cMeio > *` da linha nova com a de antes, ignora no PC só esses paddings, a
+  margem automática da `.drw` e o `grid-template-columns` (em px) da `.cLin.off`, e confere na Diretoria só o 1º nível.
   A Parte N dos testes compara a gaveta com o front do 0a59eb4 (`git show`) elemento a elemento. Onde o atual tem a barra
   de dias e o 0a59eb4 não (lista de volume, Base, Sem compra; Etapa 6): a marcação fora da barra = a de lá (no estado que
   ele tem) e o `#dCorpo` do atual é posto na gaveta do 0a59eb4 (nós dele devolvidos depois) para comparar o estilo de cada
