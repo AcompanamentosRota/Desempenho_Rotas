@@ -5635,7 +5635,7 @@ describe('Parte R — Painel de Ritmo: PDF real (html2canvas + jsPDF)', {skip: p
    layout (1440, 1000, 390 e 360 px) e, comparando com o front da main antes da Etapa 5 (REF_ETAPA5, servido por `troca`),
    cards, cascata, Resumo e Painel de Ritmo iguais. Cenário 'exec' = o do Todos a Bordo com clientes sem compra no mês
    (montaSemCompra; o sintético compra tudo). */
-const {confereExecutiva} = require('./executiva_invariantes.js');
+const {confereExecutiva, desfazFalta} = require('./executiva_invariantes.js');
 const REF_ETAPA5 = '321b0ea';
 const FRONT_ETAPA4 = (() => {
   try {
@@ -8731,7 +8731,8 @@ describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Diferen
       const [novo, velho] = [await abre(dados, {entrar, aba: null, largura: 1280}),
                              await abre(dados, {entrar, aba: null, largura: 1280, troca: FRONT_PRE_CASC})];
       const quem = `${dados} ${JSON.stringify(entrar)}`;
-      const lerExec = p => p.evaluate(() => document.getElementById('exec').innerHTML).then(semTam);
+      // (a linha .gFalta do medidor conta o online de hoje desde a correção de 30/10/2026: desfazFalta nos dois)
+      const lerExec = p => p.evaluate(() => document.getElementById('exec').innerHTML).then(semTam).then(desfazFalta);
       assert.equal(await lerExec(novo.page), await lerExec(velho.page), `${quem}: Executiva`);
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         for(const {page} of [novo, velho]) await filtra(page, {aba});
@@ -9233,11 +9234,11 @@ describe('Parte AI — Executiva: cabeçalho fixo, "Abrir por" e busca', {skip: 
         const onde = `${largura} ${JSON.stringify(e)}`;
         const exec = async p => { await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click()));
           const h = semTam(await p.innerHTML('#exec')); await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click())); return h; };
-        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva`);
+        assert.equal(desfazFalta(await exec(novo.page)), desfazFalta(await exec(velho.page)), `${onde}: Executiva`);
         assert.equal(await novo.page.textContent('#abTit'), await velho.page.textContent('#abTit'), `${onde}: título`);
         // passa pelos modos e volta: igual de novo
         for(const ab of ['canal', 'cli', 'ka', 'nivel']) await DIMI.clicaAbrir(novo.page, ab);
-        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva depois dos modos`);
+        assert.equal(desfazFalta(await exec(novo.page)), desfazFalta(await exec(velho.page)), `${onde}: Executiva depois dos modos`);
         const k = await novo.page.$eval('#exGauges .gCard[role="button"]', g => g.dataset.k);
         // a gaveta virou tabela na Etapa 6 do pacote v3 (de propósito): os números de cada unidade (cartão de lá, linha daqui), o
         // título e o subtítulo (sem a ordem) iguais
