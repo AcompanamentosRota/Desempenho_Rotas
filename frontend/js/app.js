@@ -726,9 +726,11 @@ function escolheCat(k, caixa){
   if(el) el.focus({preventScroll:true});
 }
 
-/* Medidores: meia-lua com Real / Meta (até 100%); no centro o % real; "faltam X para a meta" (X = Meta - Real) ou, com
-   Real >= Meta, "meta batida · +X" (X = Real - Meta); Meta | Real; Tendência e o desvio com 2 casas
-   (↓ rosa abaixo de 0, ↑ verde a partir de 0, pelo valor exato); a linha da meta do dia do card. */
+/* Medidores: meia-lua com Real / Meta (até 100%); no centro o % real (sem o online); "faltam X para a meta" (X = Meta -
+   (Real + online de hoje), como a Diferença dos cards e o Faltam da gaveta; sem online, fechamento ou sem online.json, Meta -
+   Real) ou, com Real + online >= Meta, "meta batida · +X" (X = Real + online - Meta); Meta | Real; Tendência e o desvio com
+   2 casas (↓ rosa abaixo de 0, ↑ verde a partir de 0, pelo valor exato); a linha da meta do dia do card. O online da
+   categoria é calculado uma vez (data-online no .gCard; vazio no fechamento e sem online.json). */
 function pintaMedidores(rotas, ind, k){
   const fech = !!P.FECHAMENTO;
   $('exSCat').textContent = fech ? 'Real do mês fechado contra a meta do mês'
@@ -738,18 +740,19 @@ function pintaMedidores(rotas, ind, k){
     if(!comMeta(b)) return `<div class="gCard off" data-k="${esc(c)}"><div class="gTit">${nome}</div>`+
       `<div class="gDia gSem">sem meta neste escopo</div></div>`;
     const v = Math.max(0, Math.min(100, b.real/b.meta*100)), d = desvioVol(b), on = c===k;
+    const onl = fech || !ONLINE ? null : onlineVol(rotas, c), ro = realOnline(c, rotas, b, onl), base = ro == null ? b.real : ro;
     const dia = fech ? '' : `<div class="gDia">${b.metaDia==null ? 'meta do dia —' : metaBatida(b.metaDia) ? 'meta do dia batida'
-      : `meta do dia ${fmt0(b.metaDia)} · online ${fmt0(onlineVol(rotas, c))}`}</div>`;
+      : `meta do dia ${fmt0(b.metaDia)} · online ${fmt0(onl || 0)}`}</div>`;
     const dif = b.real - b.meta;
     return `<div class="gCard${on ? ' sel' : ''}" role="button" tabindex="0" aria-pressed="${on}" data-k="${esc(c)}" data-desvio="${d}"`+
-      ` data-meta="${b.meta}" data-real="${b.real}">`+
+      ` data-meta="${b.meta}" data-real="${b.real}" data-online="${onl == null ? '' : onl}">`+
       `<div class="gTit">${nome}</div>`+
       `<svg class="gSvg" viewBox="0 0 120 66" aria-hidden="true"><path class="tr" d="M10 60 A50 50 0 0 1 110 60"/>`+
       `<path class="vl" d="M10 60 A50 50 0 0 1 110 60" style="stroke:${COR_CAT[c] || 'var(--cinza-escuro)'}" pathLength="100"`+
       ` stroke-dasharray="${v.toFixed(2)} 100"/></svg>`+
       `<div class="gPct">${b.pctReal}%<small>real</small></div>`+
-      (b.real >= b.meta ? `<div class="gFalta ok">meta batida · +${fmt0(b.real - b.meta)}</div>`
-                        : `<div class="gFalta">faltam ${fmt0(b.meta - b.real)} para a meta</div>`)+
+      (base >= b.meta ? `<div class="gFalta ok">meta batida · +${fmt0(base - b.meta)}</div>`
+                      : `<div class="gFalta">faltam ${fmt0(b.meta - base)} para a meta</div>`)+
       `<div class="gMR"><div><small>Meta</small><b data-fit="" data-fit-min="9">${fmt0(b.meta)}</b></div>`+
       `<div><small>Real</small><b data-fit="" data-fit-min="9">${fmt0(b.real)}</b></div></div>`+
       `<div class="gTend"><small>${fech ? 'Realizado x Meta' : 'Tendência'}</small>`+

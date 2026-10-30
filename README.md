@@ -733,8 +733,10 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   dia batida ou online >= meta do dia, a regra da caixa Online). Sem meta do dia: "sem meta do dia do SAP neste escopo".
 - **Categorias**: um medidor (meia-lua) por categoria de volume (Refrigerantes, Cervejas, Still, Água Mineral,
   Novos Negócios; Del Valle Frut fica fora), preenchido com Real ÷ Meta (até 100%) na cor da categoria; no centro o % real;
-  "faltam X para a meta" (X = Meta − Real do próprio medidor, em vermelho e negrito; com Real ≥ Meta, "meta batida · +X",
-  X = Real − Meta, em verde; no fechamento, com o Real do mês fechado; sem a linha no medidor sem meta); Meta | Real;
+  "faltam X para a meta" (X = Meta − (Real + online de hoje) do próprio medidor, como a Diferença dos cards e o Faltam da
+  gaveta da categoria, em vermelho e negrito; com Real + online ≥ Meta, "meta batida · +X", X = Real + online − Meta, em
+  verde; sem online (fechamento, com o Real do mês fechado, ou sem online.json), Meta − Real; sem a linha no medidor sem meta;
+  correção de 30/10/2026, decisão da Karen: o % grande e o arco continuam Real ÷ Meta, sem o online); Meta | Real;
   Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
   valor exato, como o SAC: −0,03% é vermelho mesmo com o card do Volume verde em 100%); "meta do dia N · online N" (ou
   "meta do dia batida" / "meta do dia —"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os

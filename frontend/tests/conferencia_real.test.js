@@ -28,14 +28,16 @@
    Resumo de vendas, bloco "Todos a Bordo 3.0" (invariantes (a)-(d) em resumo_tab_invariantes.js, as mesmas da Parte AF): a
    Diretoria, cada gerência com dados (filtro da Diretoria), cada grupo no Total e uma supervisão, em 1440 e 390 px; e o antes x
    depois contra a main antes do bloco (REF_PRE_TAB), com o mesmo payload: Resumo sem o bloco (padrão e com Novos Negócios),
-   Executiva, cards das 4 abas e o 1º nível da cascata iguais (HTML). */
+   Executiva, cards das 4 abas e o 1º nível da cascata iguais (HTML).
+   "Faltam" do medidor com o online de hoje (30/10/2026): a conta nova está em confereExecutiva (tabela por escopo e categoria:
+   Meta, Real, online, faltam antigo e novo); antes x depois contra REF_PRE_FALTA e 360/390/1000/1440 px no último bloco. */
 'use strict';
 const {test, before, after, describe} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {execSync} = require('node:child_process');
-const {confereExecutiva} = require('./executiva_invariantes.js');
+const {confereExecutiva, desfazFalta} = require('./executiva_invariantes.js');
 const {confereGavetas, leChips} = require('./gavetas_invariantes.js');
 const {confereEvolucao, ABRE_TODAS} = require('./evolucao_invariantes.js');
 const ROT = require('./rotulos_invariantes.js');
@@ -136,6 +138,16 @@ describe('Conferência da Executiva com dado real (seção 7)', {skip: pular}, (
     console.log(`# |${cab.map(() => '---').join('|')}|`);
     for(const l of linhas) console.log(`# | ${[l.onde, l.base, l.sem, l.vis, l.cat, l.cob, l.desvio, l.status, l.ag, l.semHoje,
                                               l.ped, l.restam, l.gaveta].join(' | ')} |`);
+    // "faltam" do medidor (Meta − (Real + online); sem online, Meta − Real), por escopo e categoria: só totais e códigos
+    if(largura === 1440){
+      const n = v => v == null ? '—' : Math.round(v).toLocaleString('pt-BR');
+      const f = v => v > 0 ? n(v) : `+${n(-v)} (batida)`;
+      console.log('# "Faltam" do medidor: antigo = Meta − Real; novo = Meta − (Real + online de hoje)');
+      console.log('# | Escopo | Categoria | Meta | Real | Online | Faltam antigo | Faltam novo |');
+      console.log('# |---|---|---|---|---|---|---|');
+      for(const l of linhas) for(const m of l.medidor)
+        console.log(`# | ${l.onde} | ${m.k} | ${n(m.meta)} | ${n(m.real)} | ${n(m.onl)} | ${f(m.antes)} | ${f(m.novo)} |`);
+    }
   });
 });
 
@@ -784,7 +796,7 @@ describe('Resumo: bloco Todos a Bordo com dado real: antes x depois', {skip: pul
       const comp = [];
       if(e.perfil !== 'rota'){
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
-        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        assert.equal(desfazFalta(await novo.page.innerHTML('#exec')), desfazFalta(await velho.page.innerHTML('#exec')), `${onde}: Executiva`);
         comp.push('Executiva');
       }
       for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
@@ -953,7 +965,7 @@ describe('Cascata com Dif (Real + Online) e cards com Real + online, com dado re
       const comp = [];
       if(e.perfil !== 'rota'){
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
-        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        assert.equal(desfazFalta(await novo.page.innerHTML('#exec')), desfazFalta(await velho.page.innerHTML('#exec')), `${onde}: Executiva`);
         comp.push('Executiva');
       }
       let telas = 0, vz = 0;
@@ -1066,7 +1078,7 @@ describe('Botão "Clientes" por agrupador com dado real', {skip: pular}, () => {
       const comp = [];
       if(e.perfil !== 'rota'){
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
-        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        assert.equal(desfazFalta(await novo.page.innerHTML('#exec')), desfazFalta(await velho.page.innerHTML('#exec')), `${onde}: Executiva`);
         comp.push('Executiva');
       }
       let telas = 0;
@@ -1196,9 +1208,9 @@ describe('"Abrir por" e busca da Executiva com dado real', {skip: pular}, () => 
         const onde = `${largura} ${JSON.stringify(e)}`;
         const exec = async p => { await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click()));
           const h = await p.innerHTML('#exec'); await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click())); return h; };
-        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva`);
+        assert.equal(desfazFalta(await exec(novo.page)), desfazFalta(await exec(velho.page)), `${onde}: Executiva`);
         for(const ab of ['canal', 'cli', 'ka', 'nivel']) await DIMI.clicaAbrir(novo.page, ab);
-        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva depois dos modos`);
+        assert.equal(desfazFalta(await exec(novo.page)), desfazFalta(await exec(velho.page)), `${onde}: Executiva depois dos modos`);
         const k = await novo.page.$eval('#exGauges .gCard[role="button"]', g => g.dataset.k);
         // a gaveta virou tabela na Etapa 6 do pacote v3 (de propósito): os números de cada unidade (cartão de lá, linha daqui), o
         // título e o subtítulo (sem a ordem) iguais
@@ -1366,7 +1378,7 @@ describe('Tabela da categoria e escopo do nível acima com dado real', {skip: pu
       const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
       if(e.perfil !== 'rota'){
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
-        assert.equal(await execHtml(novo.page), await execHtml(velho.page), `${onde}: Executiva`);
+        assert.equal(desfazFalta(await execHtml(novo.page)), desfazFalta(await execHtml(velho.page)), `${onde}: Executiva`);
         // o cabeçalho fixo: o de antes mais o botão de escopo (Gerência e Supervisão)
         const cab = p => p.evaluate(() => { const c = document.querySelector('#abaTopo .abCab').cloneNode(true);
           c.querySelectorAll('#exEsc, .exTraco').forEach(x => x.remove()); return c.innerHTML; });
@@ -1392,5 +1404,97 @@ describe('Tabela da categoria e escopo do nível acima com dado real', {skip: pu
     console.log(`# Antes x depois contra ${REF_PRE_ESC} (escopo do acesso): ${comp.join('; ')} — Executiva, cabeçalho fixo, cards das 4 abas, 1º nível da cascata e Resumo iguais`);
     assert.deepEqual([...novo.erros, ...velho.erros], []);
     for(const {ctx} of [novo, velho]) await ctx.close();
+  });
+});
+
+/* Correção do "faltam" do medidor da Executiva com o online de hoje (decisão da Karen, 30/10/2026): antes x depois contra a main
+   antes da correção (REF_PRE_FALTA), com o mesmo payload real, em 1440 e 390 px: no #exec a ÚNICA diferença é o texto (e a cor)
+   da .gFalta e o data-online novo (desfazFalta); a linha só muda nos medidores com online > 0; abas (cabeçalho e cards), 1º nível
+   da cascata, a gaveta "Categoria por unidade" de cada medidor e o Resumo idênticos. A conta nova (a)-(c) está em
+   confereExecutiva (executiva_invariantes.js), na conferência da Executiva acima. E 360/390/1000/1440 px nos dois fundos sem
+   rolagem lateral nem corte do texto da .gFalta. */
+const REF_PRE_FALTA = '1af3c6d';
+const FRONT_PRE_FALTA = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_FALTA}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+const LE_FALTA = () => [...document.querySelectorAll('#exGauges .gCard')].map(g => { const f = g.querySelector('.gFalta');
+  return {k: g.dataset.k, txt: f ? f.textContent : null, onl: g.dataset.online == null || g.dataset.online === '' ? null : Number(g.dataset.online)}; });
+describe('"Faltam" do medidor com o online de hoje: dado real', {skip: pular}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px: antes x depois (main antes da correção, mesmo payload): só a .gFalta muda; abas, cascata, gaveta da categoria e Resumo iguais`, {skip: !FRONT_PRE_FALTA && `sem o commit ${REF_PRE_FALTA}`}, async () => {
+    const [novo, velho] = [await abre(largura), await abre(largura, undefined, FRONT_PRE_FALTA)];
+    const linhas = [];
+    let mudou = 0, igual = 0;
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      const comp = [];
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+        for(const {page} of [novo, velho])
+          await page.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat[aria-expanded="false"]').forEach(el => el.click()));
+        assert.equal(desfazFalta(await execHtml(novo.page)), desfazFalta(await execHtml(velho.page)), `${onde}: Executiva fora da .gFalta`);
+        const [fn, fv] = [await novo.page.evaluate(LE_FALTA), await velho.page.evaluate(LE_FALTA)];
+        for(let i = 0; i < fn.length; i++){
+          if(fn[i].txt == null){ assert.equal(fv[i].txt, null, `${onde} ${fn[i].k}: sem meta nos dois`); continue; }
+          // sem online (ou online 0) a linha fica como antes; com online, muda
+          if(!fn[i].onl) { assert.equal(fn[i].txt, fv[i].txt, `${onde} ${fn[i].k}: sem online, igual`); igual++; }
+          else if(fn[i].txt !== fv[i].txt) mudou++; else igual++;
+        }
+        // a gaveta "Categoria por unidade" de cada medidor com meta: idêntica
+        const ks = await novo.page.$$eval('#exGauges .gCard[role="button"]', gs => gs.map(g => g.dataset.k));
+        for(const k of ks){
+          const h = [];
+          for(const {page} of [novo, velho]){ await page.click(`#exGauges .gCard[data-k="${k}"]`); h.push(await page.innerHTML('#drw')); await page.keyboard.press('Escape'); }
+          assert.equal(h[0], h[1], `${onde} ${k}: gaveta da categoria`);
+        }
+        comp.push(`Executiva (só .gFalta), ${ks.length} gavetas da categoria`);
+      }
+      for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${onde} ${ab}`);
+        if(!ta) continue;
+        assert.deepEqual(await novo.page.evaluate(TELA_CANON), await velho.page.evaluate(TELA_CANON), `${onde} ${ab}: cabeçalho e cards`);
+        const k = await novo.page.$eval('#lista .ind[data-k]', x => x.dataset.k);
+        for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
+        for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        comp.push(ab);
+      }
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+        comp.push('Resumo');
+      }
+      linhas.push([onde, comp.join(', ')]);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_FALTA} x branch), ${largura} px, mesmo payload real: só a .gFalta muda (${mudou} medidores com texto novo, ${igual} iguais)`);
+    console.log('# | Perfil | Comparado (igual) |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+  });
+
+  for(const largura of [360, 390, 1000, 1440])
+  test(`${largura} px, fundos preto e branco: Executiva sem rolagem lateral nem corte da .gFalta, sem erro no console`, async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre(largura, tema);
+      for(const e of [{perfil: 'dir'}, {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'}]){
+        await entra(page, e);
+        await vaiAba(page, 'EXEC');
+        const onde = `${largura} ${tema} ${JSON.stringify(e)}`;
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde}: rolagem lateral`);
+        const cortes = await page.$$eval('#exGauges .gFalta', fs => fs.filter(f => f.scrollWidth > f.clientWidth + 0.5 ||
+          f.getBoundingClientRect().right > f.closest('.gCard').getBoundingClientRect().right + 0.5).map(f => f.textContent));
+        assert.deepEqual(cortes, [], `${onde}: .gFalta cortada`);
+      }
+      assert.deepEqual(erros, [], `${largura} ${tema}`);
+      await ctx.close();
+    }
   });
 });

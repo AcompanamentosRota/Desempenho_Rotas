@@ -5635,7 +5635,7 @@ describe('Parte R — Painel de Ritmo: PDF real (html2canvas + jsPDF)', {skip: p
    layout (1440, 1000, 390 e 360 px) e, comparando com o front da main antes da Etapa 5 (REF_ETAPA5, servido por `troca`),
    cards, cascata, Resumo e Painel de Ritmo iguais. Cenário 'exec' = o do Todos a Bordo com clientes sem compra no mês
    (montaSemCompra; o sintético compra tudo). */
-const {confereExecutiva} = require('./executiva_invariantes.js');
+const {confereExecutiva, desfazFalta} = require('./executiva_invariantes.js');
 const REF_ETAPA5 = '321b0ea';
 const FRONT_ETAPA4 = (() => {
   try {
@@ -5683,7 +5683,8 @@ const VOL_EXEC = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MI
 /* Ajuste de rótulos (Parte AA): onde o front antigo mostra "Dest+Art+Cnd" o atual mostra "Novos Negócios" (no card de Volume,
    com a 2ª linha .tsub "Dest+Art+Cnd"). As comparações com fronts antigos tiram a 2ª linha do atual e trocam o nome no antigo;
    o resto continua igual, byte a byte. Desde os ajustes visuais da Executiva (Parte AE) o atual também perde a linha
-   "faltam X para a meta" / "meta batida · +X" do medidor (.gFalta) e os data-meta/data-real do .gCard. */
+   "faltam X para a meta" / "meta batida · +X" do medidor (.gFalta) e os data-meta/data-real do .gCard (e o data-online, desde
+   que o "faltam" conta o online de hoje). */
 /* Desde a Etapa 3 do pacote v3 o atual também desfaz a linha "Real + online" dos cards e a cascata nova (linha .cLin.v3,
    cabeçalho/chips de ordenação, lista de clientes com Online): CASC_INV.desfazCasc. */
 const igualSemFalta = (novo, velho) => [require('./cascata_invariantes.js').desfazCasc(require('./rotulos_invariantes.js').desfazAE(novo)), velho];
@@ -8132,25 +8133,68 @@ describe('Parte AE — zebra das coberturas, Evolução hachurada, rótulo da bu
     await ctx.close();
   });
 
-  test('medidor: "faltam X para a meta" = Meta - Real; "meta batida · +X" com Real >= Meta; sem meta, sem a linha; fechamento', async () => {
+  test('medidor: "faltam X para a meta" = Meta - (Real + online); "meta batida · +X" com Real + online >= Meta; sem online, Meta - Real; sem meta, sem a linha; fechamento', async () => {
     const f0 = v => Math.round(v).toLocaleString('pt-BR');
     const le = page => page.$$eval('#exGauges .gCard', gs => gs.map(g => { const f = g.querySelector('.gFalta');
       return {k: g.dataset.k, off: g.classList.contains('off'), meta: Number(g.dataset.meta), real: Number(g.dataset.real),
+        online: g.dataset.online, pct: (g.querySelector('.gPct') || {}).textContent || null,
+        arco: (g.querySelector('.gSvg .vl') || {getAttribute: () => null}).getAttribute('stroke-dasharray'),
+        dia: (g.querySelector('.gDia') || {}).textContent || null,
         txt: f && f.textContent, ok: !!(f && f.classList.contains('ok')), cor: f && getComputedStyle(f).color,
         peso: f && getComputedStyle(f).fontWeight, fs: f && getComputedStyle(f).fontSize,
         ordem: f ? [...g.children].map(c => c.className.baseVal != null ? 'svg' : c.className) : []}; }));
+    // texto esperado pela base (Real + online, ou só o Real)
+    const esperado = (g, base) => base >= g.meta ? `meta batida · +${f0(base - g.meta)}` : `faltam ${f0(g.meta - base)} para a meta`;
+    // põe o online de hoje da categoria k (total `v`) na 1ª rota da G1, zerando as outras
+    const poeOnline = (page, k, v) => page.evaluate(([k, v]) => { const rs = rotasDe('G1', '');
+      ONLINE.volume = ONLINE.volume || {};
+      rs.forEach((r, i) => { ONLINE.volume[r] = {...(ONLINE.volume[r] || {}), [k]: i ? 0 : v}; }); render(); }, [k, v]);
     for(const nome of ['evo', 'evofech']){
+      const fech = nome === 'evofech';
       const {page, ctx, erros} = await abre(nome, {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
       let gs = await le(page);
       assert.ok(gs.some(g => g.off) && gs.some(g => !g.off), `${nome}: medidores com e sem meta`);
+      const vivos = gs.filter(g => !g.off);
       for(const g of gs){
         if(g.off){ assert.equal(g.txt, null, `${nome} ${g.k}: sem meta, sem linha`); continue; }
         assert.ok(g.real < g.meta, `${nome} ${g.k}: o sintético fica abaixo da meta`);
-        assert.equal(g.txt, `faltam ${f0(g.meta - g.real)} para a meta`);
+        // fechamento: sem online (data-online vazio), volta a Meta - Real
+        if(fech) assert.equal(g.online, '', `${nome} ${g.k}: sem online no fechamento`);
+        const base = g.online === '' ? g.real : g.real + Number(g.online);
+        assert.equal(g.txt, esperado(g, base), `${nome} ${g.k}`);
         // --fs-ex-mini: 10,5 px (no PC, ~90% desde a Etapa 7 do pacote v3: 9,5 px)
         const mini = (await page.evaluate(() => innerWidth)) >= 1000 ? '9.5px' : '10.5px';
-        assert.deepEqual([g.ok, g.cor, g.peso, g.fs], [false, 'rgb(198, 40, 40)', '700', mini]);
+        assert.deepEqual([g.ok, g.cor, g.peso, g.fs], base >= g.meta ? [true, 'rgb(20, 107, 79)', '700', mini]
+          : [false, 'rgb(198, 40, 40)', '700', mini]);
         assert.deepEqual(g.ordem.slice(0, 5), ['gTit', 'svg', 'gPct', 'gFalta', 'gMR'], 'entre o % e Meta | Real');
+      }
+      // online que NÃO fecha a meta (metade do que falta) e online que FECHA (o que falta + 7)
+      const [a, b] = vivos;
+      await poeOnline(page, a.k, (a.meta - a.real) / 2);
+      await poeOnline(page, b.k, b.meta - b.real + 7);
+      gs = await le(page);
+      for(const [g0, onl] of [[a, (a.meta - a.real) / 2], [b, b.meta - b.real + 7]]){
+        const g = gs.find(x => x.k === g0.k);
+        // % grande, arco e Meta | Real não mudam com o online
+        assert.deepEqual([g.pct, g.arco, g.meta, g.real], [g0.pct, g0.arco, g0.meta, g0.real], `${nome} ${g.k}: % e arco sem o online`);
+        if(fech){ assert.equal(g.online, '', `${nome} ${g.k}`); assert.equal(g.txt, esperado(g, g.real), `${nome} ${g.k}: fechamento`); continue; }
+        assert.ok(Math.abs(Number(g.online) - onl) < 1e-9, `${nome} ${g.k}: data-online`);
+        if(/online/.test(g.dia || '')) assert.equal(g.dia.replace(/^.* · online /, ''), f0(onl), `${nome} ${g.k}: online da meta do dia`);
+        assert.equal(g.txt, esperado(g, g.real + onl), `${nome} ${g.k}`);
+      }
+      if(!fech){
+        assert.equal(gs.find(x => x.k === a.k).txt, `faltam ${f0((a.meta - a.real) / 2)} para a meta`, 'online que não fecha: faltam menor');
+        assert.ok((a.meta - a.real) / 2 < a.meta - a.real);
+        assert.equal(gs.find(x => x.k === b.k).txt, 'meta batida · +7', 'online que fecha: meta batida · +X');
+        assert.equal(gs.find(x => x.k === b.k).ok, true);
+      }
+      // sem online.json: data-online vazio e Meta - Real (a linha da meta do dia continua "online 0", como antes)
+      await page.evaluate(() => { ONLINE = null; render(); });
+      gs = await le(page);
+      for(const g of gs.filter(x => !x.off)){
+        assert.equal(g.online, '', `${nome} ${g.k}: sem online.json`);
+        assert.equal(g.txt, `faltam ${f0(g.meta - g.real)} para a meta`, `${nome} ${g.k}: sem online.json`);
+        if(/online/.test(g.dia || '')) assert.match(g.dia, / · online 0$/);
       }
       await ritmo(page, 'G1', await page.evaluate(() => rotasDe('G1', '')), 1.25);
       await page.evaluate(() => render());
@@ -8687,7 +8731,8 @@ describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Diferen
       const [novo, velho] = [await abre(dados, {entrar, aba: null, largura: 1280}),
                              await abre(dados, {entrar, aba: null, largura: 1280, troca: FRONT_PRE_CASC})];
       const quem = `${dados} ${JSON.stringify(entrar)}`;
-      const lerExec = p => p.evaluate(() => document.getElementById('exec').innerHTML).then(semTam);
+      // (a linha .gFalta do medidor conta o online de hoje desde a correção de 30/10/2026: desfazFalta nos dois)
+      const lerExec = p => p.evaluate(() => document.getElementById('exec').innerHTML).then(semTam).then(desfazFalta);
       assert.equal(await lerExec(novo.page), await lerExec(velho.page), `${quem}: Executiva`);
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         for(const {page} of [novo, velho]) await filtra(page, {aba});
@@ -9189,11 +9234,11 @@ describe('Parte AI — Executiva: cabeçalho fixo, "Abrir por" e busca', {skip: 
         const onde = `${largura} ${JSON.stringify(e)}`;
         const exec = async p => { await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click()));
           const h = semTam(await p.innerHTML('#exec')); await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click())); return h; };
-        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva`);
+        assert.equal(desfazFalta(await exec(novo.page)), desfazFalta(await exec(velho.page)), `${onde}: Executiva`);
         assert.equal(await novo.page.textContent('#abTit'), await velho.page.textContent('#abTit'), `${onde}: título`);
         // passa pelos modos e volta: igual de novo
         for(const ab of ['canal', 'cli', 'ka', 'nivel']) await DIMI.clicaAbrir(novo.page, ab);
-        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva depois dos modos`);
+        assert.equal(desfazFalta(await exec(novo.page)), desfazFalta(await exec(velho.page)), `${onde}: Executiva depois dos modos`);
         const k = await novo.page.$eval('#exGauges .gCard[role="button"]', g => g.dataset.k);
         // a gaveta virou tabela na Etapa 6 do pacote v3 (de propósito): os números de cada unidade (cartão de lá, linha daqui), o
         // título e o subtítulo (sem a ordem) iguais
