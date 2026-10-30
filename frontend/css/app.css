@@ -1216,6 +1216,118 @@ body.rs-travado{overflow:hidden}
   .rs-k strong{font-size:27px} .rs-k small{font-size:11.5px} .rs-sec{font-size:13px} #rsFolha .rs-nome{font-size:16px}
   .rs-compacto .rs-k strong{font-size:20px}
 }
+
+/* ---------- PC mais compacto (Etapa 7 do pacote v3): a partir de 1000 px tudo fica ~90% do tamanho de antes e, em telas
+   baixas (até 820 px de altura, ex.: 1366x768 e 1280x720), ~85%, para o painel lateral não rolar e caber mais informação.
+   Só por variáveis (nunca zoom nem transform). As letras e os espaçamentos ficam no escopo .lado (painel lateral) e .wrap
+   (conteúdo: cabeçalho das abas, cards .ind, KPIs e blocos da Executiva): a gaveta (.drw, Parte N), o Resumo e o PDF, o
+   Painel de Ritmo, a entrada, a faixa de versão e a caixa de comentário ficam fora dessas caixas e não mudam. Alturas
+   mínimas, caixa Online e largura do painel em :root (só .lado/.wrap as usam; a gaveta usa --lado só na posição). Abaixo
+   de 1000 px nada disto vale. Tabela antes -> 90% -> 85% no README ("Visual") e no CLAUDE.md. ---------- */
+@media (min-width:1000px){
+  :root{--h-card-vol:122px; --h-card-cob:122px; --h-kpi:112px;
+    --ritmo-raio:9px; --ritmo-h:56px; --ritmo-w:76px;
+    --lado-aberto:245px; --lado-recolhido:68px}
+  .lado,.wrap{--fs-titulo:27px; --fs-card:17px; --fs-ind:27px; --fs-valor:13.5px; --fs-legenda:11.5px;
+    --fs-nota:10.5px; --fs-nota-mini:8.5px;
+    --fs-lado-tit:20px; --fs-lado-aba:12.5px; --fs-lado-sec:9.5px; --fs-busca-rot:9.5px;
+    --fs-ex-bloco:14.5px; --fs-ex-gtit:11.5px; --fs-ex-gpct:18px; --fs-ex-valor:12px; --fs-ex-tend:13.5px; --fs-ex-pill:11px;
+    --fs-ex-rot:10.5px; --fs-ex-cel:11px; --fs-ex-mini:9.5px; --fs-ex-th:9px; --fs-ex-busca:12px; --fs-busca-in:14.5px;
+    /* painel lateral: espaçamento, botão do menu, abas, ícones, seletores, caixa de ritmo, ↻ e casa */
+    --lado-pad:14px 14px 16px; --lado-pad-rec:14px 8px; --lado-gap:10px; --lado-menu:36px; --lado-tab-pad:9px 11px;
+    --lado-tab-gap:11px; --lado-ico:18px; --lado-ico-w:46px; --lado-btn-h:36px; --lado-sel-py:7px; --lado-ritmo-pad:7px 9px;
+    --lado-sec-mt:4px; --lado-cred-pt:9px;
+    /* conteúdo: cabeçalho da aba, cards do topo, linha de resumo, grade dos cards, cards .ind e a caixa Online */
+    --aba-mt:14.5px; --aba-mb:11px; --abcab-mb:12.5px; --abcab-pt:11px; --abcab-pb:10px; --cards-gap:14.5px;
+    --card-pad:16px 18px 14.5px; --ki:27px; --ki-pos:11px; --abres-col:234px; --foco-pad:12.5px 14.5px; --foco-fi:31px;
+    --busca-pad:11px; --chip-pad:5.5px 11px;
+    --lista-min:340px; --lista-gap:11px; --ind-pt:12.5px; --ind-pb:11.5px; --ind-gap:11px; --ind-row-mt:9px; --obox-pad:7px 4.5px;
+    /* Executiva */
+    --fs-st:9px; --exfoco-pad:14.5px 18px; --bloco-pad:16px 18px 11px; --gauges-gap:12.5px; --gcard-pad:11px 9px 9px; --gsvg:135px;
+    --gpct-mt:-27px; --divs-gap:16px; --exab-pt:11px; --exab-pb:10px}
+  .wrap .ind{--fs-card:13.5px; --fs-valor:10.5px; --fs-ind:22.5px; --fs-legenda:10px; --fs-card-sub:10px; --fs-acao:11.5px;
+    --fs-online:17px; --fs-online-rot:8.5px; --pad-esq:13.5px}
+}
+@media (min-width:1000px) and (max-height:820px){
+  :root{--h-card-vol:116px; --h-card-cob:116px; --h-kpi:105px;
+    --ritmo-raio:8.5px; --ritmo-h:53px; --ritmo-w:71px;
+    --lado-aberto:231px; --lado-recolhido:64px}
+  .lado,.wrap{--fs-titulo:25.5px; --fs-card:16px; --fs-ind:25.5px; --fs-valor:13px; --fs-legenda:10.5px;
+    --fs-nota:10px; --fs-nota-mini:8px;
+    --fs-lado-tit:18.5px; --fs-lado-aba:12px; --fs-lado-sec:9px; --fs-busca-rot:9px;
+    --fs-ex-bloco:13.5px; --fs-ex-gtit:11px; --fs-ex-gpct:17px; --fs-ex-valor:11.5px; --fs-ex-tend:13px; --fs-ex-pill:10px;
+    --fs-ex-rot:10px; --fs-ex-cel:10px; --fs-ex-mini:9px; --fs-ex-th:8.5px; --fs-ex-busca:11px; --fs-busca-in:13.5px;
+    --lado-pad:13px 13px 15px; --lado-pad-rec:13px 8px; --lado-gap:9px; --lado-menu:34px; --lado-tab-pad:8px 10px;
+    --lado-tab-gap:10px; --lado-ico:17px; --lado-ico-w:44px; --lado-btn-h:34px; --lado-sel-py:6.5px; --lado-ritmo-pad:6.5px 8.5px;
+    --lado-sec-mt:3px; --lado-cred-pt:8.5px;
+    --aba-mt:13.5px; --aba-mb:10px; --abcab-mb:12px; --abcab-pt:10px; --abcab-pb:9.5px; --cards-gap:13.5px;
+    --card-pad:15px 17px 13.5px; --ki:25.5px; --ki-pos:10px; --abres-col:221px; --foco-pad:12px 13.5px; --foco-fi:29px;
+    --busca-pad:10px; --chip-pad:5px 10px;
+    --lista-min:310px; --lista-gap:10px; --ind-pt:12px; --ind-pb:11px; --ind-gap:10px; --ind-row-mt:8.5px; --obox-pad:6.5px 4px;
+    --fs-st:8.5px; --exfoco-pad:13.5px 17px; --bloco-pad:15px 17px 10px; --gauges-gap:12px; --gcard-pad:10px 8.5px 8.5px; --gsvg:128px;
+    --gpct-mt:-25.5px; --divs-gap:15px; --exab-pt:10px; --exab-pb:9.5px}
+  .wrap .ind{--fs-card:13px; --fs-valor:10px; --fs-ind:21px; --fs-legenda:9.5px; --fs-card-sub:9.5px; --fs-acao:10.5px;
+    --fs-online:16px; --fs-online-rot:8px; --pad-esq:13px}
+}
+/* as regras que usam as variáveis acima (só no PC; os valores de antes ficam nas regras de cima, para < 1000 px) */
+@media (min-width:1000px){
+  .lado{gap:var(--lado-gap);padding:var(--lado-pad)}
+  .ladoMenu{width:var(--lado-menu);height:var(--lado-menu)}
+  .ladoMenu .ico{width:calc(var(--lado-menu) * .55);height:calc(var(--lado-menu) * .55)}
+  .ladoSec{margin-top:var(--lado-sec-mt)}
+  .lado .filtros{gap:6px}
+  .lado select{padding-top:var(--lado-sel-py);padding-bottom:var(--lado-sel-py)}
+  .lado .tab{padding:var(--lado-tab-pad);gap:var(--lado-tab-gap)}
+  .lado .tab .ico{width:var(--lado-ico);height:var(--lado-ico)}
+  .lado .ritmo{padding:var(--lado-ritmo-pad);margin-top:2px}
+  .lado .casa,.lado .recarga{height:var(--lado-btn-h)}
+  .lado .casa svg,.lado .recarga svg{width:calc(var(--lado-btn-h) * .45);height:calc(var(--lado-btn-h) * .45)}
+  .ladoCred{padding-top:var(--lado-cred-pt)}
+  body.recolhido .lado{padding:var(--lado-pad-rec)}
+  body.recolhido .lado .tab{padding:var(--lado-tab-pad);padding-left:0;padding-right:0;width:var(--lado-ico-w)}
+  body.recolhido .lado .casa,body.recolhido .lado .recarga{width:var(--lado-ico-w)}
+  .abaTopo{margin:var(--aba-mt) 0 var(--aba-mb)}
+  .abCab{margin-bottom:var(--abcab-mb)}
+  .cards{gap:var(--cards-gap);margin-bottom:var(--cards-gap)}
+  .card{padding:var(--card-pad)}
+  .card .ki{top:var(--ki-pos);right:var(--ki-pos);width:var(--ki);height:var(--ki)}
+  .card .l{padding-right:calc(var(--ki) + 6px)}
+  .card .st{font-size:var(--fs-st)}
+  .abRes{grid-template-columns:var(--abres-col) minmax(0,1fr) minmax(0,1.1fr);gap:var(--cards-gap)}
+  .abRes.semPuxa{grid-template-columns:var(--abres-col) minmax(0,1fr)}
+  .abRes.soBusca{grid-template-columns:minmax(0,1fr)}
+  .foco{padding:var(--foco-pad);grid-template-columns:var(--foco-fi) minmax(0,1fr)}
+  .foco .fi{width:var(--foco-fi);height:var(--foco-fi)}
+  .busca{padding:var(--busca-pad)}
+  .busca input{font-size:var(--fs-busca-in)}
+  .wrap .fchip{padding:var(--chip-pad)}
+  .lista{grid-template-columns:repeat(auto-fill,minmax(var(--lista-min),1fr));gap:var(--lista-gap)}
+  .ind{padding:var(--ind-pt) var(--pad-esq) var(--ind-pb) calc(var(--pad-esq) - var(--faixa))}
+  .ind.off{padding-left:var(--pad-esq)}
+  .ind .row{gap:var(--ind-gap);margin-top:var(--ind-row-mt)}
+  .ind .cm{padding:0 var(--ind-gap)}
+  .obox{padding:var(--obox-pad)}
+  .exec{gap:var(--cards-gap)}
+  .exFocos{gap:var(--cards-gap)}
+  .exFocos .foco{padding:var(--exfoco-pad)}
+  .bloco{padding:var(--bloco-pad)}
+  .gauges{gap:var(--gauges-gap)}
+  .gCard{padding:var(--gcard-pad)}
+  .gSvg{max-width:var(--gsvg)}
+  .gPct{margin-top:var(--gpct-mt)}
+  .divs{gap:var(--divs-gap)}
+  .abaTopo.exec{padding-top:var(--exab-pt);padding-bottom:var(--exab-pb)}
+  /* cabeçalho da aba travado no alto nas abas de indicadores (Volume, ICS GC, Novos Negócios, Todos a Bordo), como o da
+     Executiva: a section#abaTopo fica sem caixa (display:contents; continua o landmark com aria-labelledby="abTit") para a
+     .abCab grudar na página inteira; o resto (Base, Sem compra, linha de resumo, ficha, filtro rápido) rola. Mesma ordem
+     visual e de leitura. A .abCab cobre a largura da .wrap (margem negativa = o padding dela) com o fundo --papel */
+  .abaTopo:not(.exec){display:contents}
+  .abaTopo:not(.exec) .abCab{position:sticky;top:0;z-index:30;background:var(--papel);box-shadow:0 7px 9px -9px rgba(0,0,0,.28);
+    margin:calc(var(--aba-mt) - var(--abcab-pt)) calc(-1 * var(--ex-gut)) calc(var(--abcab-mb) - var(--abcab-pb));
+    padding:var(--abcab-pt) var(--ex-gut) var(--abcab-pb)}
+  .abaTopo:not(.exec)>#abFil{margin-bottom:var(--aba-mb)}
+}
+/* fim do PC mais compacto (os testes de "antes x depois" acrescentam este trecho ao CSS dos fronts antigos) */
 @media(prefers-reduced-motion:reduce){.drw{transition:none!important}}
 
 /* ---------- PDF do Resumo (#rsFolha.rs-pdf, só durante a captura; a tela não muda) ----------

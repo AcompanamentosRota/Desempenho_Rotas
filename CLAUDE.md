@@ -498,7 +498,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   claro dos cards e o verde do ritmo não mudam. Alturas mínimas por tipo (`--h-*`, card de volume com classe `vol`).
   Cabeçalho em 390 px <= 221 px até o fim das abas (Parte M dos testes; era 295).
   **Layout (Etapa 3, 21/10/2026; README, "Layout")**: `header.topo` + `nav.barra` dentro de `<aside class="lado">`
-  (sem duplicar HTML). PC (>= 1000 px): o aside é o painel lateral fixo (`--lado`: 272 px, `body.recolhido` 76 px, só
+  (sem duplicar HTML). PC (>= 1000 px): o aside é o painel lateral fixo (`--lado`: 245 px, `body.recolhido` 68 px desde a
+  Etapa 7 do pacote v3, 231/64 em tela baixa; eram 272/76; só
   ícones com `title`; `#ladoMenu` recolhe; estado em `localStorage 'drotas_lado'` 'recolhido'/'aberto', try/catch, só
   conveniência); `.topo`, `.barra` e os `.hd` com `display:contents` e a ordem por `order` (menu, marca, título,
   `#sub` com o escopo numa linha `.subEsc`, Filtro, selects empilhados, Painéis = abas verticais com SVG `.ico`, ativa
@@ -509,6 +510,46 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   texto inteiro `.tLongo` no PC e no `title`); escopo `.subEsc` oculto só na Diretoria (`#sub.dir`: o seletor
   mostra); nos perfis travados ele fica; `#ritmo .ritCurto` "Dia útil x/n (p%) · ritmo hoje h%" (`.ritLongo` = as duas
   linhas do PC); sem a linha da marca. Escala do painel: `--fs-lado-tit/aba/sec` em `:root`. Testes: Parte U.
+  **PC mais compacto e cabeçalho das abas travado (Etapa 7 do pacote v3, 30/10/2026; README, "Visual" e "Layout"; só CSS)**:
+  dois blocos no fim das regras de tela do `app.css`: `@media (min-width:1000px)` = ~90% e `(min-width:1000px) and
+  (max-height:820px)` = ~85% (1366x768, 1280x720); SÓ variáveis (nunca `zoom`/`transform`). Letras e espaçamentos no escopo
+  `.lado, .wrap` (e `.wrap .ind`), NUNCA em `:root` (a gaveta, o Resumo/PDF, o Ritmo, a entrada, `#aviso` e `.dica` ficam fora
+  dessas caixas e não mudam: Parte N intacta); em `:root` só `--h-*`, `--ritmo-*` e `--lado-aberto/recolhido` (a gaveta usa
+  `--lado` só no `left`). Um 3º bloco `@media (min-width:1000px)` aplica as variáveis novas de espaçamento (`--lado-pad/gap/menu/
+  tab-pad/ico/ico-w/btn-h/sel-py/ritmo-pad/sec-mt/cred-pt`, `--aba-mt/mb`, `--abcab-mb/pt/pb`, `--cards-gap`, `--card-pad`, `--ki`,
+  `--ki-pos`, `--abres-col`, `--foco-pad/fi`, `--busca-pad`, `--fs-busca-in`, `--chip-pad`, `--lista-min/gap`, `--ind-pt/pb/gap/
+  row-mt`, `--obox-pad`, `--exfoco-pad`, `--bloco-pad`, `--gauges-gap`, `--gcard-pad`, `--gsvg`, `--gpct-mt`, `--divs-gap`,
+  `--exab-pt/pb`); abaixo de 1000 px as regras de antes ficam byte a byte (Parte AK compara os estilos computados em 360/390/999
+  px com o CSS do `b83a341`, `REF_PRE_PC`). Antes → PC → PC baixo (px):
+
+  | Variável | Antes | PC | PC baixo |
+  |---|---|---|---|
+  | `--fs-titulo` / `--fs-card` / `--fs-ind` | 30 / 19 / 30 | 27 / 17 / 27 | 25,5 / 16 / 25,5 |
+  | `--fs-valor` / `--fs-legenda` / `--fs-nota` / `--fs-nota-mini` | 15 / 12,5 / 11,5 / 9,5 | 13,5 / 11,5 / 10,5 / 8,5 | 13 / 10,5 / 10 / 8 |
+  | `--fs-lado-tit` / `-aba` / `-sec`; `--fs-busca-rot` | 22 / 14 / 10,5; 10,5 | 20 / 12,5 / 9,5; 9,5 | 18,5 / 12 / 9; 9 |
+  | `--fs-ex-bloco/gtit/gpct/valor/tend` | 16/13/20/13,5/15 | 14,5/11,5/18/12/13,5 | 13,5/11/17/11,5/13 |
+  | `--fs-ex-pill/rot/cel/mini/th/busca` | 12/11,5/12/10,5/10/13 | 11/10,5/11/9,5/9/12 | 10/10/10/9/8,5/11 |
+  | `.ind`: `--fs-card/valor/ind/legenda/acao/online/online-rot/card-sub`, `--pad-esq` | 15/11,5/25/11/12,5/19/9,5/11, 15 | 13,5/10,5/22,5/10/11,5/17/8,5/10, 13,5 | 13/10/21/9,5/10,5/16/8/9,5, 13 |
+  | `--h-card-vol` = `--h-card-cob` / `--h-kpi` | 136 / 124 | 122 / 112 | 116 / 105 |
+  | `.card .st` (`--fs-st`, linha "Status") | 10 | 9 | 8,5 |
+  | `--ritmo-h/w/raio` | 62/84/10 | 56/76/9 | 53/71/8,5 |
+  | `--lado-aberto` / `--lado-recolhido` | 272 / 76 | 245 / 68 | 231 / 64 |
+  | `--abres-col` / `--lista-min` | 260 / 340 | 234 / 340 | 221 / 310 |
+
+  `--lista-min` fica 340 no PC comum (306-330 cortava o % de 7 dígitos em 1680-1920 px, com uma coluna a mais). Painel lateral
+  sem rolagem em 1920x1080/1440x900/1366x768/1280x720, aberto e recolhido, em todos os perfis (folga mínima: grupo IT+MO em
+  1280x720, ~47 px). Cabeçalho travado: no PC, fora da Executiva, `.abaTopo:not(.exec){display:contents}` e a `.abCab` sticky
+  `top:0` (z 30, `--papel`, a sombra da Executiva, margem negativa `--ex-gut` = padding da `.wrap`; o espaço de antes vira
+  padding + margem: `--aba-mt`/`--abcab-pt`/`--abcab-pb`/`--abcab-mb`; o `#abFil` leva o `--aba-mb`). A section continua o
+  landmark "região" com o nome da aba (Chromium mantém o nó com `display:contents`; a Parte AK confere na árvore de
+  acessibilidade) e a ordem não muda; sem caixa no PC, `geometria()` da Parte V usa a largura do `#abRes`. Executiva: a
+  section inteira sticky, como antes. Testes atualizados só nos tamanhos (Parte T `ESCALA_IND`: 15/11,5/25/12,5/11/19/9,5 e
+  padding 15 → 13,5/10,5/22,5/11,5/10/17/8,5 e 13,5 a 1440x900; Parte U `LADO_ABERTO/RECOLHIDO` 272/76 → 245/68; Parte V
+  card de ritmo 260 → 234; Parte AA 2ª linha do card 11 → 10 no PC; Parte AE `.gFalta` 10,5 → 9,5 no PC; Parte AH `--fs-legenda`
+  lido no escopo do botão); nos antes x depois contra fronts antigos no PC (Partes AG e AI) `semTam` tira só o `style="font-size"`
+  que o `encaixa()` grava; na conferência com dado real, o `abre()` acrescenta ao CSS de todo front antigo (`troca`) o trecho do
+  app.css entre "PC mais compacto" e "fim do PC mais compacto" (`ESCALA_PC_CSS`; não tirar esses dois comentários), para os
+  dois fronts terem os mesmos tamanhos e o HTML continuar comparado inteiro; novos na Parte AK.
   **Cabeçalho das abas (Etapa 4, 21/10/2026; README, "Cabeçalho das abas")**: `section#abaTopo` no lugar do `.topoGrid`:
   `.abCab` (h2 `#abTit` = `title` da aba ativa; `button#pilDia` = etiqueta do dia, `pintaEtiquetaDia`: `.pdL` "Dia útil
   DIA_HOJE de T · Semana N" no PC, `.pdC` "DIA_SEMANA · Sem. N" abaixo de 1000 px, `.pdI` "i"; `data-dica` com o dia,
