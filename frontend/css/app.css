@@ -1327,6 +1327,7 @@ body.rs-travado{overflow:hidden}
     padding:var(--abcab-pt) var(--ex-gut) var(--abcab-pb)}
   .abaTopo:not(.exec)>#abFil{margin-bottom:var(--aba-mb)}
 }
+/* fim do PC mais compacto (os testes de "antes x depois" acrescentam este trecho ao CSS dos fronts antigos) */
 @media(prefers-reduced-motion:reduce){.drw{transition:none!important}}
 
 /* ---------- PDF do Resumo (#rsFolha.rs-pdf, só durante a captura; a tela não muda) ----------

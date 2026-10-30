@@ -547,7 +547,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   padding 15 → 13,5/10,5/22,5/11,5/10/17/8,5 e 13,5 a 1440x900; Parte U `LADO_ABERTO/RECOLHIDO` 272/76 → 245/68; Parte V
   card de ritmo 260 → 234; Parte AA 2ª linha do card 11 → 10 no PC; Parte AE `.gFalta` 10,5 → 9,5 no PC; Parte AH `--fs-legenda`
   lido no escopo do botão); nos antes x depois contra fronts antigos no PC (Partes AG e AI) `semTam` tira só o `style="font-size"`
-  que o `encaixa()` grava; novos na Parte AK.
+  que o `encaixa()` grava; na conferência com dado real, o `abre()` acrescenta ao CSS de todo front antigo (`troca`) o trecho do
+  app.css entre "PC mais compacto" e "fim do PC mais compacto" (`ESCALA_PC_CSS`; não tirar esses dois comentários), para os
+  dois fronts terem os mesmos tamanhos e o HTML continuar comparado inteiro; novos na Parte AK.
   **Cabeçalho das abas (Etapa 4, 21/10/2026; README, "Cabeçalho das abas")**: `section#abaTopo` no lugar do `.topoGrid`:
   `.abCab` (h2 `#abTit` = `title` da aba ativa; `button#pilDia` = etiqueta do dia, `pintaEtiquetaDia`: `.pdL` "Dia útil
   DIA_HOJE de T · Semana N" no PC, `.pdC` "DIA_SEMANA · Sem. N" abaixo de 1000 px, `.pdI` "i"; `data-dica` com o dia,

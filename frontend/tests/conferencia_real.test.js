@@ -62,8 +62,15 @@ let browser;
 before(async () => { if(!pular) browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {}); });
 after(async () => { if(browser) await browser.close(); });
 
+/* Etapa 7 do pacote v3 (PC ~90%/~85% por variáveis): nos "antes x depois" o CSS do front antigo leva o mesmo trecho de escala do
+   PC do app.css atual (do comentário "PC mais compacto" ao "fim do PC mais compacto"), para os dois fronts terem os mesmos
+   tamanhos (o encaixa() grava o font-size de partida no HTML) e o resto (HTML, textos, números) continuar comparado inteiro. */
+const ESCALA_PC_CSS = (() => { const css = fs.readFileSync(path.join(FRONT, 'css', 'app.css'), 'utf-8');
+  const i = css.indexOf('/* ---------- PC mais compacto'), j = css.indexOf('/* fim do PC mais compacto');
+  return i >= 0 && j > i ? css.slice(i, j) : ''; })();
 // tema = fundo da entrada guardado ('preta' | 'branca'; sem ele, o padrão); troca = {'/js/app.js': () => texto} (front antigo)
 async function abre(largura = 1440, tema, troca = {}){
+  if(troca['/css/app.css']){ const css = troca['/css/app.css']; troca = {...troca, '/css/app.css': () => String(css()) + '\n' + ESCALA_PC_CSS}; }
   const ctx = await browser.newContext({viewport: {width: largura, height: 1000}});
   const page = await ctx.newPage();
   if(tema) await page.addInitScript(t => { try { localStorage.setItem('drotas_entrada', t); } catch(e){} }, tema);
