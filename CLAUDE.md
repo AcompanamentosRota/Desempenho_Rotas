@@ -125,6 +125,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Cascata com Dif (Real + Online) (Etapa 3 do pacote v3): Diretoria, uma gerência (filtro), IT+MO e uma supervisão em 1440 e
   390 px, invariantes (a)-(e) e (g) em `frontend/tests/cascata_invariantes.js` (as mesmas da Parte AG), ordenação, (f) card da
   Gerência G1 = Dif da linha GC.G1 da Diretoria; 360/390/1000/1440 px nos dois fundos; antes x depois contra `515b1e9`.
+  Botão "Clientes" (Etapa 4 do pacote v3): Diretoria, a 1ª gerência, uma supervisão e uma rota, nas 4 abas e cada agrupador
+  (`frontend/tests/clientes_invariantes.js`, as mesmas da Parte AH; config.js servido com `semLimite`, pois `CONFIG` é
+  congelado); 360/390/1000/1440 px; antes x depois contra `9364d62` (`REF_PRE_CLI`).
   Resumo, bloco Todos a Bordo: Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px
   (`frontend/tests/resumo_tab_invariantes.js`, as mesmas da Parte AF; tabela por escopo com bloco / card / online de cada item);
   e o antes x depois contra o front do `9f82f15` com o mesmo payload (Resumo sem o bloco, Executiva, cards e cascata iguais).
@@ -598,6 +601,22 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `#7d5a00`); 3 colunas (50 px | barra | valor) com as barras em `subgrid` (alinhadas; fallback sem subgrid); grade 1 / 2 (>=
   700 px) / `auto-fill minmax(300px, 1fr)` (>= 1000 px). Nenhuma regra existente da gaveta muda. Testes: Parte AC
   (`categoria_invariantes.js`, também na conferência com dado real; antes x depois contra o `ec60a88`, `FRONT_PRE_CAT`).
+  **Botão "Clientes" por agrupador, com busca (Etapa 4 do pacote v3, 30/10/2026; README, "Botão Clientes"; só front)**:
+  `button#btnClientes.abCli` no `.abCab`, antes do `#pilDia` (ícone de pessoas, `--fs-legenda`, borda `--linha`, hover
+  `--preto`; `.abCli[hidden]` = none); `render()` esconde na Executiva e sem agrupador (`agrupadoresCli()`). `abreClientes` →
+  `abre()` com `.cliBusca` (`#cliQ` type=search, lupa; classe NOVA na gaveta, `--cb-fs` 13 px / 16 px <= 640 px), `#cliKs`
+  (`.chips`/`.dchip` com `data-k`, um por agrupador) e `#dLista`; `pintaClientes` troca título "Clientes · rótulo", subtítulo
+  "<title da aba> · resumoInd(k, agrega(rs).ind[k])" (rs = `rotasInc` no Todos a Bordo) e a lista. Agrupadores = `cardsDaAba`
+  (helper tirado do `render`, mesma regra dos cards: Imperdoáveis/Venda Zero da Neutraliza/Del Valle Frut fora da Diretoria)
+  sem os indisponíveis; Todos a Bordo = itens com `rotasInc`. Rotas = `rotasListas()` com `temItemCli(k, r)` (indicador da rota
+  disponível; Todos a Bordo `temMetaInc`): DECISÃO DA KAREN (30/10/2026) = "só rotas com o item"; a cascata da Diretoria
+  (GC > Clientes) mostra também as rotas sem o item, a da Gerência/Supervisão não. As listas são as da cascata:
+  `listaVolume(k, rotas, op)`, `listaVendaZero(rotas, op)`, `listaCobertura(k, rotas, op)` com `op` opcional {chip, q, aoDia}
+  (sem `op`, a cascata, byte a byte como antes): dia de partida, busca (`buscaCasa(q)`: `semAcento` do nome ou PV contém, ANTES
+  do `LIMITE_LISTA`; "+ N" conta só os que casam) e quem guarda o dia (`aoDia`). Estado `CLI` {k, q, chip}: busca e dia seguem
+  ao trocar de agrupador/dia; `abreClientes` zera. Venda Zero busca por `e.nome`/`e.pv`. Testes: Parte AH (+ conferencia_real).
+  No payload real de 29/10: 0 PVs em mais de uma rota; 343 clientes com nome repetido na mesma rota (a conferência desempata o
+  PV do volume pelo Real).
   **Gavetas com barra de dias (Etapa 6, 21/10/2026; README, "Gavetas com barra de dias")**: o `chipsHtml`/`DIAS_CHIP` das
   coberturas e a regra única `noDia(c, chip)` (Todos; Hoje = `c[4]===1`; dia = `DIAS[c[3]].includes(chip)`: "Seg - Qui"
   aparece na Seg e na Qui; `listaCobertura` usa a mesma). `listaVolume`: barra em `#dLista` acima do `.cCab`, padrão

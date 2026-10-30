@@ -7849,7 +7849,9 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
         }
         for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
           for(const {page} of [novo, velho]) await vaiAba(page, ab);
-          const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').innerHTML, lista: document.getElementById('lista').innerHTML}));
+          // (sem o botão "Clientes" da Etapa 4 do pacote v3, que o front de lá não tem)
+          const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').innerHTML
+            .replace(/\s*<button class="abCli"[^>]*>[\s\S]*?<\/button>/, ''), lista: document.getElementById('lista').innerHTML}));
           assert.deepEqual(...igualSemFalta(await tela(novo.page), await tela(velho.page)), `${onde} ${ab}: cabeçalho e cards`);
           const ks = (await novo.page.$$eval('#lista .ind[data-k]', els => els.map(x => x.dataset.k))).slice(0, 2);
           for(const k of ks){
@@ -8679,4 +8681,309 @@ describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Diferen
       await novo.ctx.close(); await velho.ctx.close();
     }
   });
+});
+
+/* Parte AH — botão "Clientes" por agrupador, com busca (Etapa 4 do pacote v3). Invariantes (a)-(d) em
+   frontend/tests/clientes_invariantes.js (as mesmas da conferência com dado real). */
+const CLI_INV = require('./clientes_invariantes.js');
+// estado do botão e da gaveta "Clientes"
+const LE_CLI = () => {
+  const b = document.getElementById('btnClientes'), cab = document.querySelector('.abCab');
+  return {visivel: !!b && !b.hidden && b.getClientRects().length > 0, texto: b ? b.textContent.trim() : null,
+          antesDoDia: !!b && b.parentElement === cab && b.nextElementSibling === document.getElementById('pilDia'),
+          aberta: document.getElementById('drw').classList.contains('on'), tit: document.getElementById('dTit').textContent,
+          sub: document.getElementById('dSub').textContent, q: (document.getElementById('cliQ') || {}).value,
+          ks: [...document.querySelectorAll('#cliKs .dchip')].map(e => [e.dataset.k, e.textContent, e.getAttribute('aria-pressed')]),
+          dia: (document.querySelector('#dLista .dchip.on') || {dataset: {}}).dataset.d || null,
+          linhas: document.querySelectorAll('#dLista > .cCli, #dLista > .item').length,
+          vazio: [...document.querySelectorAll('#dLista > .vazio')].map(v => v.textContent)};
+};
+const buscaCli = (page, q) => page.evaluate(q => { const i = document.getElementById('cliQ'); i.value = q; i.dispatchEvent(new Event('input')); }, q);
+const ABAS_CLI = ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO'];
+
+describe('Parte AH — botão "Clientes" por agrupador, com busca', {skip: pular}, () => {
+  test('botão nas 4 abas (antes da etiqueta do dia), fora da Executiva; perfil Rota com o botão; estilo e ícone', async () => {
+    const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    assert.equal(await page.evaluate(() => aba), 'EXEC');
+    assert.equal((await page.evaluate(LE_CLI)).visivel, false, 'Executiva sem o botão');
+    for(const ab of ABAS_CLI){
+      await filtra(page, {aba: ab});
+      const e = await page.evaluate(LE_CLI);
+      assert.deepEqual([e.visivel, e.texto, e.antesDoDia], [true, 'Clientes', true], ab);
+    }
+    const est = await page.evaluate(() => {
+      const b = document.getElementById('btnClientes'), cs = getComputedStyle(b), svg = b.querySelector('svg');
+      const v = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+      const rgb = c => { const d = document.createElement('i'); d.style.color = c; document.body.appendChild(d);
+        const x = getComputedStyle(d).color; d.remove(); return x; };
+      return {borda: cs.borderTopColor, linha: rgb(v('--linha')), fundo: cs.backgroundColor, raio: parseFloat(cs.borderTopLeftRadius),
+              traco: getComputedStyle(svg.querySelector('path')).stroke, cor: cs.color, preto: rgb(v('--preto')),
+              ariaSvg: svg.getAttribute('aria-hidden'), fam: cs.fontFamily, tam: cs.fontSize, leg: v('--fs-legenda')};
+    });
+    assert.equal(est.borda, est.linha, 'borda --linha');
+    assert.equal(est.fundo, 'rgb(255, 255, 255)', 'fundo branco');
+    assert.ok(est.raio >= 999, 'arredondado');
+    assert.equal(est.traco, est.cor, 'traço currentColor');
+    assert.equal(est.ariaSvg, 'true');
+    assert.match(est.fam, /^Inter,/);
+    assert.equal(est.tam, est.leg, 'tamanho pela variável');
+    await page.hover('#btnClientes');
+    await page.waitForTimeout(250);     // a transição da borda (.12s)
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('btnClientes')).borderTopColor), est.preto, 'hover --preto');
+    // perfil Rota: sem Executiva, o botão no Volume e nas demais abas
+    await vaiPara(page, {perfil: 'rota', gc: 'G1', rota: 'G111'}, null);
+    for(const ab of ABAS_CLI){
+      await filtra(page, {aba: ab});
+      assert.equal((await page.evaluate(LE_CLI)).visivel, true, `Rota ${ab}`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('gaveta: título "Clientes · <agrupador>", subtítulo "<aba> · <resumo do card>", um botão por agrupador; cascata sem o campo', async () => {
+    const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'G2'}, largura: 1440, aba: 'VOLUME'});
+    for(const ab of ABAS_CLI){
+      await filtra(page, {aba: ab});
+      await page.click('#btnClientes');
+      const e = await page.evaluate(LE_CLI);
+      const esp = await page.evaluate(() => {
+        const ks = aba === 'INCENTIVO' ? itensInc().filter(k => rotasInc(k, rotasAtuais()).length)
+          : [...document.querySelectorAll('#lista .ind[data-k]')].map(x => x.dataset.k);
+        const rs = k => aba === 'INCENTIVO' ? rotasInc(k, rotasAtuais()) : rotasAtuais();
+        return {ks, rot: ks.map(k => rotuloInd(k)), tit: `Clientes · ${rotuloInd(ks[0])}`,
+                sub: `${document.querySelector(`.tab[data-g="${aba}"]`).title} · ${resumoInd(ks[0], agrega(rs(ks[0])).ind[ks[0]])}`};
+      });
+      assert.deepEqual(e.ks.map(x => x[0]), esp.ks, `${ab}: agrupadores`);
+      assert.deepEqual(e.ks.map(x => x[1]), esp.rot, `${ab}: rótulos`);
+      assert.deepEqual(e.ks.map(x => x[2]), esp.ks.map((k, i) => String(i === 0)), `${ab}: o 1º marcado`);
+      assert.deepEqual([e.aberta, e.tit, e.sub, e.q], [true, esp.tit, esp.sub, ''], ab);
+      if(ab === 'VOLUME') assert.ok(esp.ks.includes('VOL DEL VALLE FRUT'), 'Del Valle Frut na G2, como no card');
+      if(ab === 'ICS_GC') assert.ok(esp.ks.includes('VENDAZERO'), 'Venda Zero no ICS GC');
+      // a busca: arredondada, com a lupa, type=search, placeholder e aria-label
+      const b = await page.evaluate(() => { const i = document.getElementById('cliQ');
+        return {tipo: i.type, ph: i.placeholder, aria: i.getAttribute('aria-label'), lupa: !!i.parentElement.querySelector('svg'),
+                raio: parseFloat(getComputedStyle(i).borderTopLeftRadius), antes: !!(i.parentElement.compareDocumentPosition(
+                  document.getElementById('cliKs')) & Node.DOCUMENT_POSITION_FOLLOWING)}; });
+      assert.deepEqual(b, {tipo: 'search', ph: 'Buscar cliente (nome ou PV)', aria: b.aria, lupa: true, raio: b.raio, antes: true});
+      assert.ok(b.aria && b.raio >= 999, 'aria-label e arredondado');
+      // trocar de agrupador troca o título e o subtítulo
+      if(esp.ks.length > 1){
+        await page.click(`#cliKs .dchip[data-k="${esp.ks[1]}"]`);
+        const e2 = await page.evaluate(LE_CLI);
+        assert.equal(e2.tit, `Clientes · ${esp.rot[1]}`);
+        assert.deepEqual(e2.ks.map(x => x[2]), esp.ks.map((k, i) => String(i === 1)));
+      }
+      await page.keyboard.press('Escape');
+      // a cascata continua sem o campo de busca
+      await page.click('#lista .ind[data-k]');
+      assert.equal(await page.$('#cliQ'), null, `${ab}: cascata sem busca`);
+      await page.keyboard.press('Escape');
+    }
+    // Volume na Diretoria: os 5 macros (o Del Valle Frut fica fora da Diretoria, como o card)
+    await vaiPara(page, 'dir', 'VOLUME');
+    await page.click('#btnClientes');
+    assert.deepEqual((await page.evaluate(LE_CLI)).ks.map(x => x[0]), await page.evaluate(() => GROUPS.VOLUME.filter(k => !agrega(rotasAtuais()).ind[k].unavailable)));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const dados of ['inc', 'incfech', 'grupo']){
+    test(`${dados}: lista do botão = cascata (mesmos clientes, ordem e números) na Diretoria, gerência, supervisão e rota; Todos a Bordo só com meta; busca`, async () => {
+      const {page, ctx, erros} = await abre(dados, {entrar: 'dir', largura: 1440, aba: 'VOLUME',
+        troca: {'/js/config.js': CLI_INV.semLimite}});
+      const escopos = dados === 'grupo' ? [{perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'IT', sv: 'SV.IT.1'}]
+        : ['dir', {perfil: 'gc', gc: 'G2'}, {perfil: 'sv', gc: 'G1', sv: 'SV.G1.1'}, {perfil: 'rota', gc: 'IT', rota: 'IT11'}];
+      let n = 0;
+      for(const e of escopos){
+        if(e !== 'dir') await vaiPara(page, e, 'VOLUME');
+        for(const ab of ABAS_CLI){
+          await filtra(page, {aba: ab});
+          const r = await CLI_INV.confereAba(page, `${dados} ${JSON.stringify(e)} ${ab}`);
+          n += Object.values(r.porK).reduce((a, x) => a + x.n, 0);
+        }
+      }
+      assert.ok(n > 50, `linhas conferidas: ${n}`);
+      // Diretoria com uma gerência no filtro
+      if(dados === 'inc'){
+        await vaiPara(page, 'dir', 'ICS_GC');
+        await page.evaluate(() => { sel.dgc = 'G2'; render(); });
+        await CLI_INV.confereAba(page, `${dados} Diretoria G2 ICS_GC`);
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test('Todos a Bordo: só as rotas com meta do item (G2: Heineken só na G211)', async () => {
+    const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'G2'}, largura: 1440, aba: 'INCENTIVO'});
+    await page.click('#btnClientes');
+    const rotasDe = k => page.evaluate(k => { const b = document.querySelector(`#cliKs .dchip[data-k="${k}"]`); if(!b) return null; b.click();
+      document.querySelector('#dLista .dchip[data-d="Todos"]').click();
+      return [...new Set([...document.querySelectorAll('#dLista > .item .sb')].map(s => s.textContent.match(/· rota (\S+)/)[1]))]; }, k);
+    const esp = await page.evaluate(() => Object.fromEntries(itensInc().map(k => [k, rotasListas().filter(r => temMetaInc(k, r))])));
+    assert.deepEqual(esp['INC HEINEKEN'], ['G211']);
+    for(const [k, rs] of Object.entries(esp)){
+      const got = await rotasDe(k);
+      if(!rs.length){ assert.equal(got, null, `${k}: sem botão sem rota com meta`); continue; }
+      assert.ok(got.every(r => rs.includes(r)), `${k}: ${got}`);
+    }
+    assert.ok((await page.evaluate(() => rotasListas().length)) > 1);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('busca: por PV (exatamente 1 linha), por parte do nome, sem acento e sem caixa; sem resultado "Ninguém neste filtro."', async () => {
+    const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'G1'}, largura: 1440, aba: 'ICS_GC'});
+    // um nome com acento por aba (fictícios) e as buscas que têm de achá-lo
+    const NOMES = {VOLUME: ['PADARIA SÃO JOÃO TESTE', ['sao joao', 'SAO JOÃO', 'padaria s', '  joão  ']],
+                   ICS_GC: ['EMPÓRIO CONCEIÇÃO TESTE', ['emporio', 'CONCEICAO', 'pório conc', ' Conceição ']]};
+    for(const ab of ['VOLUME', 'ICS_GC']){
+      await filtra(page, {aba: ab});
+      await page.click('#btnClientes');
+      await page.click('#dLista .dchip[data-d="Todos"]');
+      // um cliente da lista ganha um nome com acento (fictício), na base e nas listas
+      const pv = await page.evaluate(novo => { const el = document.querySelector('#dLista > .cCli, #dLista > .item');
+        const nome = (el.querySelector('.nm .tagOnline') ? el.querySelector('.nm').firstChild.textContent.replace(/ $/, '') : el.querySelector('.nm').firstChild.textContent), rota = el.querySelector('.sb').textContent.match(/· rota (\S+)/)[1];
+        const c = CLIENT_ROSTER[rota].find(c => c[1] === nome); c[1] = novo;
+        (CLIENTES_HOJE[rota] || []).forEach(x => { if(x[0] === c[0]) x[1] = c[1]; }); pintaClientes(); return c[0]; }, NOMES[ab][0]);
+      const total = (await page.evaluate(LE_CLI)).linhas;
+      assert.ok(total > 3, `${ab}: ${total}`);
+      await buscaCli(page, String(pv));
+      assert.equal((await page.evaluate(LE_CLI)).linhas, 1, `${ab}: PV`);
+      for(const q of NOMES[ab][1]){
+        await buscaCli(page, q);
+        const e = await page.evaluate(LE_CLI);
+        assert.equal(e.linhas, 1, `${ab}: "${q}"`);
+        assert.ok((await page.textContent('#dLista .nm')).startsWith(NOMES[ab][0]), `${ab}: "${q}"`);
+      }
+      await buscaCli(page, '');
+      const comTeste = await page.$$eval('#dLista > .cCli .nm, #dLista > .item .nm', els => els.filter(e => /^CLIENTE TESTE/.test(e.textContent)).length);
+      assert.ok(comTeste > 1 && comTeste < total, `${ab}: ${comTeste}`);
+      await buscaCli(page, 'cliente teste');
+      assert.equal((await page.evaluate(LE_CLI)).linhas, comTeste, `${ab}: parte do nome`);
+      await buscaCli(page, 'xyz nada');
+      const v = await page.evaluate(LE_CLI);
+      assert.deepEqual([v.linhas, v.vazio], [0, ['Ninguém neste filtro.']], `${ab}: sem resultado`);
+      await buscaCli(page, '');
+      assert.equal((await page.evaluate(LE_CLI)).linhas, total, `${ab}: busca vazia = lista inteira`);
+      await page.keyboard.press('Escape');
+    }
+    // Venda Zero: pelo nome do cliente do equipamento
+    await page.click('#btnClientes');
+    await page.click('#cliKs .dchip[data-k="VENDAZERO"]');
+    await page.click('#dLista .dchip[data-d="Todos"]');
+    const vz = await page.evaluate(() => { const l = rotasListas().flatMap(r => (VENDAZERO_CLIENTES[r] || []).map(e => e)); return l.length ? l[0] : null; });
+    if(vz){
+      await buscaCli(page, String(vz.pv));
+      const e = await page.evaluate(LE_CLI), esp = await page.evaluate(pv => rotasListas().flatMap(r => VENDAZERO_CLIENTES[r] || [])
+        .filter(x => String(x.pv).includes(pv)).length, String(vz.pv));
+      assert.equal(e.linhas, esp, 'Venda Zero por PV');
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('busca além do limite da lista: procura na lista inteira; o "+ N clientes" conta só os que casam', async () => {
+    const LIM = 4;
+    const {page, ctx, erros} = await abre('inc', {entrar: 'dir', largura: 1440, aba: 'ICS_GC',
+      troca: {'/js/config.js': t => t.replace(/LIMITE_LISTA:\s*\d+/, `LIMITE_LISTA: ${LIM}`)}});
+    // a mesma tela sem limite, para ler a lista inteira
+    const sem = await abre('inc', {entrar: 'dir', largura: 1440, aba: 'ICS_GC', troca: {'/js/config.js': CLI_INV.semLimite}});
+    assert.equal(await page.evaluate(() => CONFIG.LIMITE_LISTA), LIM);
+    const leInteira = async ab => { await filtra(sem.page, {aba: ab}); await sem.page.click('#btnClientes');
+      await sem.page.click('#dLista .dchip[data-d="Todos"]');
+      const r = await sem.page.evaluate(() => [...document.querySelectorAll('#dLista > .cCli, #dLista > .item')].map(el => {
+        const nome = (el.querySelector('.nm .tagOnline') ? el.querySelector('.nm').firstChild.textContent.replace(/ $/, '') : el.querySelector('.nm').firstChild.textContent), rota = el.querySelector('.sb').textContent.match(/· rota (\S+)/)[1];
+        return [nome, rota, CLIENT_ROSTER[rota].find(c => c[1] === nome)[0]]; }));
+      await sem.page.keyboard.press('Escape'); return r; };
+    for(const ab of ['VOLUME', 'ICS_GC']){
+      const inteira = await leInteira(ab);
+      await filtra(page, {aba: ab});
+      await page.click('#btnClientes');
+      await page.click('#dLista .dchip[data-d="Todos"]');
+      assert.ok(inteira.length > LIM * 3, `${ab}: ${inteira.length}`);
+      let e = await page.evaluate(LE_CLI);
+      assert.equal(e.linhas, LIM);
+      assert.deepEqual(e.vazio, [`+ ${inteira.length - LIM} clientes — filtre por rota para ver todos.`]);
+      const [nome, , pv] = inteira[inteira.length - 1];
+      await buscaCli(page, String(pv));
+      e = await page.evaluate(LE_CLI);
+      assert.deepEqual([e.linhas, e.vazio], [1, []], `${ab}: o último da lista inteira pelo PV`);
+      assert.equal(await page.evaluate(() => document.querySelector('#dLista .nm').firstChild.textContent.trim()), nome);
+      // parte do nome que casa com muitos: o aviso conta só os que casam
+      const q = 'cliente teste 100';
+      const casam = inteira.filter(([n]) => n.toLowerCase().includes(q)).length;
+      assert.ok(casam > LIM && casam < inteira.length, `${ab}: ${casam}`);
+      await buscaCli(page, q);
+      e = await page.evaluate(LE_CLI);
+      assert.deepEqual([e.linhas, e.vazio], [LIM, [`+ ${casam - LIM} clientes — filtre por rota para ver todos.`]], `${ab}: aviso`);
+      await page.keyboard.press('Escape');
+    }
+    assert.deepEqual([...erros, ...sem.erros], []);
+    await ctx.close(); await sem.ctx.close();
+  });
+
+  test('a busca e o dia continuam ao trocar de agrupador e de dia; reabrir começa do zero', async () => {
+    const {page, ctx, erros} = await abre('dias', {entrar: {perfil: 'gc', gc: 'G1'}, largura: 1440, aba: 'ICS_GC'});
+    await page.click('#btnClientes');
+    let e = await page.evaluate(LE_CLI);
+    assert.equal(e.dia, 'Hoje', 'coberturas começam no Hoje, como na cascata');
+    const ks = e.ks.map(x => x[0]);
+    await page.click('#dLista .dchip[data-d="Ter"]');
+    await buscaCli(page, 'cliente teste 10');
+    const conta = () => page.evaluate(() => { const casa = buscaCasa(document.getElementById('cliQ').value);
+      return [...document.querySelectorAll('#dLista > .item')].every(el => casa(Number(el.querySelector('.bd').textContent.slice(3)),
+        (el.querySelector('.nm .tagOnline') ? el.querySelector('.nm').firstChild.textContent.replace(/ $/, '') : el.querySelector('.nm').firstChild.textContent))); });
+    for(const k of ks){
+      await page.click(`#cliKs .dchip[data-k="${k}"]`);
+      e = await page.evaluate(LE_CLI);
+      assert.deepEqual([e.q, e.dia], ['cliente teste 10', 'Ter'], k);
+      if(k !== 'VENDAZERO') assert.ok(await conta(), `${k}: só os que casam`);
+    }
+    // trocar o dia mantém a busca
+    await page.click(`#cliKs .dchip[data-k="${ks[0]}"]`);
+    await page.click('#dLista .dchip[data-d="Qua"]');
+    e = await page.evaluate(LE_CLI);
+    assert.deepEqual([e.q, e.dia], ['cliente teste 10', 'Qua']);
+    assert.ok(await conta());
+    const dias = await page.evaluate(() => [...document.querySelectorAll('#dLista > .item .sb')].map(s => s.textContent));
+    assert.ok(dias.every(s => /Qua/.test(s)), 'só quem visita na Qua');
+    // Volume: o dia escolhido segue para os macros
+    await page.keyboard.press('Escape');
+    await filtra(page, {aba: 'VOLUME'});
+    await page.click('#btnClientes');
+    e = await page.evaluate(LE_CLI);
+    assert.deepEqual([e.q, e.dia], ['', 'Todos'], 'reabrir: sem busca, o dia padrão do Volume');
+    await page.click('#dLista .dchip[data-d="Seg"]');
+    await buscaCli(page, 'teste');
+    await page.click(`#cliKs .dchip[data-k="${e.ks[1][0]}"]`);
+    e = await page.evaluate(LE_CLI);
+    assert.deepEqual([e.q, e.dia], ['teste', 'Seg']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [360, 390, 1000, 1440]){
+    test(`${largura} px: sem rolagem lateral (abas e gaveta), nada cortado no cabeçalho e na busca, console sem erro`, async () => {
+      const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'IT+MO'}, largura, altura: 820, aba: 'VOLUME'});
+      for(const ab of ABAS_CLI){
+        await filtra(page, {aba: ab});
+        assert.ok(await semRolagemLateral(page), `${ab}: rolagem lateral`);
+        const cab = await page.evaluate(() => { const b = document.getElementById('btnClientes').getBoundingClientRect(),
+          c = document.querySelector('.abCab').getBoundingClientRect(), p = document.getElementById('pilDia').getBoundingClientRect();
+          return {dentro: b.left >= c.left - 0.5 && b.right <= c.right + 0.5 && p.right <= c.right + 0.5,
+                  corta: [...document.querySelectorAll('.abCab > *')].filter(el => el.scrollWidth > el.clientWidth + 1).length}; });
+        assert.deepEqual(cab, {dentro: true, corta: 0}, `${ab}: cabeçalho`);
+        await page.click('#btnClientes');
+        const g = await page.evaluate(() => { const i = document.getElementById('cliQ'), d = document.getElementById('drw');
+          const ri = i.getBoundingClientRect(), rd = d.getBoundingClientRect();
+          return {dentro: ri.left >= rd.left && ri.right <= rd.right + 0.5, larg: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+                  corpo: document.getElementById('dCorpo').scrollWidth <= document.getElementById('dCorpo').clientWidth + 1}; });
+        assert.deepEqual(g, {dentro: true, larg: true, corpo: true}, `${ab}: gaveta`);
+        await page.keyboard.press('Escape');
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
 });

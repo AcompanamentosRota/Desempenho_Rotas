@@ -437,7 +437,8 @@ const SEM_EVO = () => { const c = document.getElementById('exec').cloneNode(true
     .forEach(n => { n.previousSibling.remove(); n.nextSibling.remove(); n.remove(); });
   c.querySelector('#exEvo').remove();
   return c.innerHTML; };
-const TELA_ABA = () => ({topo: document.getElementById('abaTopo').innerHTML, lista: document.getElementById('lista').innerHTML,
+// (sem o botão "Clientes" da Etapa 4 do pacote v3, que os fronts de antes não têm: o espaço antes dele sai junto)
+const TELA_ABA = () => ({topo: document.getElementById('abaTopo').innerHTML.replace(/\s*<button class="abCli"[^>]*>[\s\S]*?<\/button>/, ''), lista: document.getElementById('lista').innerHTML,
   n: document.querySelectorAll('#lista .ind').length});
 
 describe('Antes x depois do redesenho da Evolução com dado real', {skip: pular || (!FRONT_PRE_EVO && `sem o commit ${REF_PRE_EVO}`)}, () => {
@@ -980,5 +981,150 @@ describe('Cascata com Dif (Real + Online) e cards com Real + online, com dado re
     console.log('# | Perfil | Comparado (igual) |');
     console.log('# |---|---|');
     for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+  });
+});
+
+/* Botão "Clientes" por agrupador, com busca (Etapa 4 do pacote v3; invariantes (a)-(d) em clientes_invariantes.js, as
+   mesmas da Parte AH): a Diretoria, uma gerência (a 1ª com dados), uma supervisão e uma rota dela, nas 4 abas e em cada
+   agrupador: lista do botão = cascata (na Diretoria, a união das listas por gerência na ordem da lista, sem as rotas sem o
+   agrupador), só rotas com o agrupador (no Todos a Bordo, com meta), busca por PV e por parte do nome = a lista filtrada.
+   Config servido sem limite nas listas (semLimite). Imprime uma tabela só de contagens (nada de nomes nem PVs). */
+const CLI_INV = require('./clientes_invariantes.js');
+const REF_PRE_CLI = '9364d62';      // main antes da etapa (PR #44 mesclado)
+const FRONT_PRE_CLI = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_CLI}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+describe('Botão "Clientes" por agrupador com dado real', {skip: pular}, () => {
+  test('Diretoria, uma gerência, uma supervisão e uma rota: lista do botão = cascata, só rotas com o agrupador, busca', async () => {
+    const cfg = fs.readFileSync(path.join(FRONT, 'js', 'config.js'), 'utf-8');
+    const {page, ctx, erros} = await abre(1440, undefined, {'/js/config.js': () => CLI_INV.semLimite(cfg)});
+    const e = await page.evaluate(() => { const g = gcsComDados()[0], sv = svsDaEntrada(g)[0];
+      return {g, sv, rota: rotasNormais(g, sv)[0],
+              // PV em mais de uma rota do roster (sem virtuais): a busca por PV pode dar mais de uma linha
+              pvMulti: (() => { const m = new Map(); for(const [r, cs] of Object.entries(CLIENT_ROSTER)) if(!ehVirtual(r))
+                cs.forEach(c => m.set(c[0], (m.get(c[0]) || 0) + 1)); return [...m.values()].filter(n => n > 1).length; })()}; });
+    const linhas = [];
+    for(const [nome, ent] of [['BAND', {perfil: 'dir'}], [`GC.${e.g}`, {perfil: 'gc', gc: e.g}],
+                              [e.sv, {perfil: 'sv', gc: e.g, sv: e.sv}], [`rota ${e.rota}`, {perfil: 'rota', gc: e.g, rota: e.rota}]]){
+      await entra(page, ent);
+      for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        const ok = await page.evaluate(ab => { const t = document.querySelector(`.tab[data-g="${ab}"]`);
+          if(!t || t.hidden) return false; t.click(); return true; }, ab);
+        if(!ok) continue;
+        const r = await CLI_INV.confereAba(page, `${nome} ${ab}`);
+        for(const [k, x] of Object.entries(r.porK)){
+          const pv = x.buscas.filter(b => b.tipo === 'pv');
+          linhas.push({escopo: nome, aba: ab, k, clientes: x.n, rotas: x.rotas, foraDir: x.foraDir,
+                       pv1: pv.length ? pv.map(b => b.n).join('/') : '-', nome: x.buscas.filter(b => b.tipo === 'nome').map(b => b.n).join('/')});
+          // a busca por PV acha a linha dele: 1 (mais só se o PV casar com outro PV/nome, o "contém")
+          for(const b of pv) assert.ok(b.n >= 1, `${nome} ${ab} ${k}: busca por PV`);
+        }
+      }
+    }
+    // nome sem acento acha o nome com acento: o 1º nome com acento da lista do Volume da Diretoria
+    await entra(page, {perfil: 'dir'});
+    await page.evaluate(() => document.querySelector('.tab[data-g="ICS_GC"]').click());
+    const acento = await page.evaluate(() => {
+      abreClientes(); document.querySelector('#dLista .dchip[data-d="Todos"]').click();
+      const nms = [...document.querySelectorAll('#dLista > .item .nm')].map(n => n.firstChild.textContent.replace(/ $/, ''));
+      const com = nms.find(n => /[À-ÿ]/.test(n));
+      if(!com){ fecha(); return null; }
+      const q = semAcento(com).slice(0, 12), i = document.getElementById('cliQ');
+      i.value = q; i.dispatchEvent(new Event('input'));
+      const achou = [...document.querySelectorAll('#dLista > .item .nm')].some(n => n.firstChild.textContent.replace(/ $/, '') === com);
+      fecha(); return {achou, q: q.length};
+    });
+    if(acento) assert.ok(acento.achou, 'busca sem acento acha o nome com acento');
+    console.log(`\nBotão "Clientes" com dado real (PVs em mais de uma rota do roster: ${e.pvMulti}; nome com acento achado sem acento: ${acento ? acento.achou : 'sem nome com acento'})`);
+    console.log('| escopo | aba | agrupador | clientes | rotas | fora (Diretoria) | busca PV | busca nome |\n|---|---|---|---:|---:|---:|---|---|');
+    for(const l of linhas) console.log(`| ${l.escopo} | ${l.aba} | ${l.k} | ${l.clientes} | ${l.rotas} | ${l.foraDir} | ${l.pv1} | ${l.nome} |`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('antes x depois (main antes da etapa, mesmo payload real): Executiva, cabeçalho sem o botão, cards, cascata, Base, Sem compra e Resumo idênticos',
+       {skip: !FRONT_PRE_CLI && `sem o commit ${REF_PRE_CLI}`}, async () => {
+    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_CLI)];
+    const linhas = [];
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      const comp = [];
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        comp.push('Executiva');
+      }
+      let telas = 0;
+      for(const ab of ABAS_CASC){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${onde} ${ab}`);
+        if(!ta) continue;
+        const [a, b] = [await novo.page.evaluate(TELA_ABA), await velho.page.evaluate(TELA_ABA)];
+        assert.deepEqual(a, b, `${onde} ${ab}: cabeçalho (sem o botão) e cards`);
+        for(const k of await cardsK(novo.page)){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          // todos os níveis pelo 1º caminho, até a lista de clientes (dia "Todos" também)
+          for(let nivel = 0; nivel < 5; nivel++){
+            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            telas++;
+            if(await novo.page.$('#dLista .dchip[data-d="Todos"]:not(.on)')){
+              for(const {page} of [novo, velho]) await page.click('#dLista .dchip[data-d="Todos"]');
+              assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: lista no Todos`);
+              telas++;
+            }
+            if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+          }
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        comp.push(`${ab} (${a.n} cards)`);
+      }
+      comp.push(`${telas} telas de cascata`);
+      for(const id of ['cBase', 'cSem']){
+        const gav = async p => { await p.evaluate(id => document.getElementById(id).click(), id); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
+        assert.equal(await gav(novo.page), await gav(velho.page), `${onde}: gaveta ${id}`);
+      }
+      comp.push('Base e Sem compra');
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+        comp.push('Resumo');
+      }
+      linhas.push([onde, comp.join(', ')]);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_CLI} x branch), mesmo payload real`);
+    console.log('# | Perfil | Comparado (igual) |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+  });
+
+  test('360, 390, 1000 e 1440 px: sem rolagem lateral nas 4 abas e na gaveta, console sem erro', async () => {
+    for(const largura of [360, 390, 1000, 1440]){
+      const {page, ctx, erros} = await abre(largura);
+      for(const ent of [{perfil: 'dir'}, {perfil: 'gc', gc: await page.evaluate(() => gcsComDados()[0])}]){
+        await entra(page, ent);
+        for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          const ok = await page.evaluate(ab => { const t = document.querySelector(`.tab[data-g="${ab}"]`);
+            if(!t || t.hidden) return false; t.click(); return true; }, ab);
+          if(!ok) continue;
+          const lat = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+          assert.ok(await lat(), `${largura} ${ent.perfil} ${ab}: aba`);
+          await page.click('#btnClientes');
+          assert.ok(await lat(), `${largura} ${ent.perfil} ${ab}: gaveta`);
+          assert.ok(await page.evaluate(() => { const d = document.getElementById('dCorpo'); return d.scrollWidth <= d.clientWidth + 1; }),
+            `${largura} ${ent.perfil} ${ab}: corpo da gaveta`);
+          await page.keyboard.press('Escape');
+        }
+      }
+      assert.deepEqual(erros, [], `${largura}: console`);
+      await ctx.close();
+    }
   });
 });

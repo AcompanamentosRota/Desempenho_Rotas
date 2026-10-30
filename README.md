@@ -574,6 +574,21 @@ também pela conferência com dado real (bloco "Cascata com Dif (Real + Online)"
 uma supervisão em 1440 e 390 px, com a ordenação e a (f) card x linha da Diretoria; 360/390/1000/1440 px nos dois fundos;
 antes x depois contra `515b1e9`).
 
+A **Parte AH** confere o botão "Clientes" por agrupador (Etapa 4 do pacote v3): o botão nas 4 abas, antes da etiqueta do
+dia, fora da Executiva e no perfil Rota, com o estilo pedido; um botão por agrupador (os cards que abrem a cascata; Del Valle
+Frut na G2, Venda Zero no ICS GC), título e subtítulo; a lista do botão = a cascata percorrida inteira (mesmos clientes, ordem
+e números, na Diretoria, numa gerência, numa supervisão, numa rota, no grupo IT+MO, no fechamento e com uma gerência no
+filtro da Diretoria), só rotas com o agrupador (Todos a Bordo: a Heineken da G2 só na G211); busca por PV (1 linha), por
+parte do nome, sem acento e sem caixa, "Ninguém neste filtro."; busca além do limite (`LIMITE_LISTA` trocado para 4: o
+último cliente da lista inteira pelo PV e o "+ N" só com os que casam); busca e dia mantidos ao trocar de agrupador e de dia;
+360, 390, 1000 e 1440 px sem rolagem lateral nem corte. A conferência compara as listas inteiras, então o config.js é servido
+com `LIMITE_LISTA` alto (`semLimite`; `CONFIG` é congelado). As invariantes ficam em `frontend/tests/clientes_invariantes.js`,
+usadas também pela conferência com dado real (bloco "Botão Clientes": Diretoria, a 1ª gerência com dados, uma supervisão e
+uma rota dela, nas 4 abas e em cada agrupador, com a tabela de contagens; 360/390/1000/1440 px; antes x depois contra a main
+`9364d62` com o mesmo payload: Executiva, cabeçalho sem o botão, cards, cascata até a lista de clientes, Base, Sem compra e
+Resumo idênticos). Os antes x depois contra fronts antigos tiram o botão do cabeçalho antes de comparar (`TELA_ABA`,
+`TEXTOS_TELA_PAGINA` e a Parte AC).
+
 ```bash
 git show origin/main:frontend/data/payload.json > /tmp/real/payload.json
 git show origin/main:frontend/data/online.json > /tmp/real/online.json
@@ -788,6 +803,38 @@ Desde a Etapa 6 (21/10/2026), três listas de clientes ganharam a mesma barra de
   os primeiros 400 (`CONFIG.LIMITE_LISTA`, o das listas da cascata) e "+ N clientes — filtre por rota para ver todos."; o
   subtítulo traz sempre o total ("1.327 clientes na base", "182 de 1.327 clientes da base · nenhum faturamento no mês").
 - Cada vez que a gaveta abre, a barra volta ao padrão.
+
+### Botão "Clientes" por agrupador, com busca (Volume, ICS GC, Novos Negócios, Todos a Bordo)
+
+Desde a Etapa 4 do pacote v3 (30/10/2026; só front), o cabeçalho das 4 abas tem, antes da etiqueta do dia, o botão
+**Clientes** (arredondado, ícone de pessoas, borda cinza, fundo branco; borda preta no hover). Não aparece na aba Executiva
+(Diretoria, Gerencial, Supervisão); no perfil Rota aparece (a lista da rota). Ele abre a gaveta **"Clientes · <agrupador>"**
+com a lista de clientes do filtro atual:
+
+- **A lista é a mesma do último nível da cascata** (as mesmas funções e regras; os cards e a cascata não mudam): Volume =
+  Cliente | Meta | Real | Online | Dif. Abs | %, pela Dif. Abs (barra de dias em "Todos"); ICS GC, Novos Negócios e Todos a
+  Bordo = só quem ainda não comprou o item, pelo nome, com a barra de dias em "Hoje" e o riscado "Venda Online"; Venda Zero
+  = os equipamentos, pelas geladeiras.
+- **Um botão por agrupador** no alto (o mesmo estilo dos chips de dia), na ordem dos cards: os que abrem a cascata (o
+  indicador disponível no filtro). Volume = os 5 macros (e o Del Valle Frut onde o card dele aparece: na G2, fora da
+  Diretoria); ICS GC = os itens e a Venda Zero; Novos Negócios = os itens; Todos a Bordo = os itens com rota com meta no
+  filtro. Subtítulo: "<aba> · " + o resumo do card (ex.: "Volume · Meta 7.065.000 · Real 5.319.114 · tendência 93%").
+- **Rotas**: as do filtro sem as virtuais, as das eventuais (EV*) e a supervisão oculta (SV.G3.3), como nas listas de
+  sempre, e **só as que têm o agrupador disponível** (decisão da Karen de 30/10/2026); no Todos a Bordo, só as com meta do
+  item. Na Gerência, na Supervisão e na Rota, é exatamente o que a cascata mostra (ela não entra em rota "indisponível"); na
+  Diretoria a cascata abre a gerência direto nos clientes e mostra também os das rotas sem o agrupador (em 29/10/2026, por
+  exemplo, 95 clientes de KS TT, 194 de Artd KO e 440 de Perfetti TT), que ficam fora do botão.
+- **Busca** ("Buscar cliente (nome ou PV)", acima dos botões): filtra enquanto digita, sem acento e sem diferença de
+  maiúsculas, pelo nome ou pelo PV (contém). Procura na lista inteira, antes do limite de 400 linhas: o aviso "+ N clientes
+  — filtre por rota para ver todos." conta só os que casam; sem resultado, "Ninguém neste filtro.". A busca e o dia
+  escolhido continuam ao trocar de agrupador ou de dia; ao reabrir a gaveta, tudo volta ao padrão. Nenhum PV está em mais
+  de uma rota do roster (29/10/2026: 0 de 29.289), então a busca por um PV inteiro dá 1 linha (um PV mais curto pode estar
+  contido em outro).
+- O card "Busca por cliente" da aba e a ficha do cliente não mudam. Na gaveta, só o campo de busca é estilo novo
+  (`.cliBusca`, com a escala no próprio escopo); os botões e as listas são os de sempre.
+- Testes: Parte AH do `front.test.js` e a conferência com dado real (invariantes em `frontend/tests/clientes_invariantes.js`:
+  lista do botão = a cascata percorrida inteira, só rotas com o agrupador, busca = a lista filtrada; e o antes x depois contra
+  a main `9364d62` com o mesmo payload).
 
 ### Rótulo "Novos Negócios" do macro de volume Dest+Art+Cnd
 
