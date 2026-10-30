@@ -68,13 +68,15 @@
      tabela de coberturas, rótulos pequenos e cabeçalho da tabela (igual no PC e no celular) */
   --fs-ex-bloco:16px; --fs-ex-gtit:13px; --fs-ex-gpct:20px; --fs-ex-valor:13.5px; --fs-ex-tend:15px; --fs-ex-pill:12px;
   --fs-ex-rot:11.5px; --fs-ex-cel:12px; --fs-ex-mini:10.5px; --fs-ex-th:10px;
+  --fs-ex-busca:13px;               /* campo de busca do cabeçalho fixo da Executiva (16 px no celular: sem zoom no iPhone) */
+  --ex-gut:12px;                    /* sobra lateral do cabeçalho fixo da Executiva (= o padding da .wrap) */
   /* entrada: "COMERCIAL" / "BANDEIRANTES" embaixo do elmo (igual no PC e no celular) */
   --fs-ent-marca:9.5px;
   --fs-ent-senha:16px;              /* campo de senha da Diretoria (>= 16 px: sem zoom no iPhone) */
   --seguro-b:env(safe-area-inset-bottom,0px);
 }
 @media (max-width:640px){
-  :root{--fs-titulo:24px; --fs-card:18px; --fs-ind:28px; --fs-valor:14px; --fs-legenda:12px; --fs-nota:11px;
+  :root{--fs-titulo:24px; --fs-card:18px; --fs-ind:28px; --fs-valor:14px; --fs-legenda:12px; --fs-nota:11px; --fs-ex-busca:16px;
     --h-card-vol:134px; --h-card-cob:134px; --h-kpi:118px; --ritmo-w:80px}
 }
 html,body{margin:0;padding:0;background:var(--papel);color:var(--preto);
@@ -512,6 +514,68 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .evLin.un .evTxt{text-align:left}
   .evD{flex-direction:column;align-items:flex-end;gap:1px}
 }
+
+/* ---------- Executiva: cabeçalho fixo (título · "Abrir por" · busca · etiqueta do dia) ----------
+   Só na Executiva (.abaTopo.exec): sticky com fundo --papel cobrindo a largura da .wrap (nada do conteúdo por trás) e uma
+   sombra discreta embaixo. PC: top 0 da área de conteúdo, uma linha (os botões rolam de lado se faltar espaço); celular:
+   logo abaixo da .barra (--barra-h = altura real dela, medida pelo app.js), linha 1 = título · lupa · etiqueta, linha 2 =
+   os botões com rolagem lateral; a lupa abre o campo numa linha própria (.buscaAberta). */
+.abaTopo.exec{position:sticky;top:var(--barra-h,0px);z-index:30;background:var(--papel);margin:0 calc(-1 * var(--ex-gut)) 10px;
+  padding:10px var(--ex-gut) 9px;box-shadow:0 7px 9px -9px rgba(0,0,0,.28)}
+.abaTopo.exec .abCab{margin-bottom:0}
+.exFer{display:flex;align-items:center;gap:10px;min-width:0}
+.exAbrir{display:flex;align-items:center;gap:6px;margin:0;min-width:0;overflow-x:auto;scrollbar-width:none;padding-bottom:0}
+.exAbRot{flex:none;font-size:var(--fs-ex-mini);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-apoio);margin-right:2px}
+.exBusca{position:relative;min-width:0}
+.exLupa{display:none;flex:none;width:34px;height:34px;padding:0;place-items:center;border:1px solid var(--linha);border-radius:999px;
+  background:var(--branco);color:var(--preto);cursor:pointer}
+.exLupa[aria-expanded="true"],.exLupa:hover,.exLupa:focus-visible{border-color:var(--preto)}
+.exLupa svg,.exCampo>svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.exCampo{position:relative;min-width:0}
+.exCampo>svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--txt-apoio);pointer-events:none}
+.exCampo input{width:100%;border:1px solid var(--linha);border-radius:999px;padding:7px 12px 7px 33px;background:var(--branco);
+  font-family:inherit;font-size:var(--fs-ex-busca);color:var(--preto);-webkit-appearance:none;appearance:none}
+.exCampo input:focus{outline:none;border-color:var(--preto)}
+.exCampo .sugestoes{min-width:280px;max-height:360px}
+.sugVazio{padding:10px 12px;font-size:var(--fs-legenda);color:var(--txt-apoio)}
+@media (max-width:999px){
+  .abaTopo.exec .abCab{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"tit lupa dia" "abr abr abr";
+    gap:8px;align-items:center}
+  .abaTopo.exec.buscaAberta .abCab{grid-template-areas:"tit lupa dia" "campo campo campo" "abr abr abr"}
+  .abaTopo.exec #abTit{grid-area:tit;min-width:0}
+  .abaTopo.exec .pilDia{grid-area:dia}
+  .exFer,.exBusca{display:contents}
+  .exAbrir{grid-area:abr}
+  .exLupa{grid-area:lupa;display:grid}
+  .exCampo{grid-area:campo;display:none}
+  .abaTopo.exec.buscaAberta .exCampo{display:block}
+  .exCampo .sugestoes{min-width:0}
+}
+@media (min-width:1000px){
+  :root{--ex-gut:clamp(20px,2.4vw,40px)}
+  .abaTopo.exec{top:0;padding-top:12px;padding-bottom:11px}
+  .abaTopo.exec .abCab{flex-wrap:nowrap}
+  .abaTopo.exec #abTit{flex:none}
+  .exFer{flex:1 1 auto;justify-content:flex-end}
+  .exBusca{flex:0 1 250px;min-width:170px}
+  .exCampo .sugestoes{left:auto;width:max(100%,340px)}
+}
+/* "Abrir por" canal / cliente / Key Account na Tendência x Meta: nome mais largo (com reticências) e as notas; marca: aviso */
+.divs.abCanal .dRow{grid-template-columns:96px minmax(0,1fr) minmax(50px,max-content)}
+.divs.abLista .dRow{grid-template-columns:118px minmax(0,1fr) minmax(50px,max-content)}
+.divs.abDim .dNome{text-overflow:ellipsis;text-align:left}
+.dvNota,.exNota,.evNota{margin:6px 0 0;font-size:var(--fs-ex-mini);line-height:1.4;color:var(--txt-apoio)}
+.divs>.exNota{grid-column:1/-1;margin-top:0}
+.evNota{padding:2px 6px 6px}
+.exAviso{grid-column:1/-1;border:1px dashed var(--linha-forte);border-radius:10px;background:var(--papel);padding:14px 12px;
+  text-align:center;font-size:var(--fs-legenda);font-weight:600;color:var(--txt-apoio)}
+/* gaveta: notas da Categoria por canal/cliente/Key Account e da ficha da busca; cartão "sem Meta NEG" (faixa cinza neutra) */
+.cuNota{margin:8px 2px 0;font-size:var(--cu-fs-sub);line-height:1.4;color:var(--txt-apoio)}
+.cuSemNeg{--cu-cor:var(--linha-forte);--cu-esc:var(--txt-apoio);--cu-clr:var(--card)}
+.cuSemNeg .cuPct b{color:var(--txt-apoio)}
+.fxFicha{--fx-fs-sec:12px}
+.fxSec{margin:14px 2px 8px;font-size:var(--fx-fs-sec);font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--preto)}
+.fxFicha>.fxSec:first-child{margin-top:2px}
 
 /* ---------- busca ---------- */
 .busca{background:var(--branco);border:1px solid var(--borda-card);border-radius:14px;padding:12px;min-width:0}

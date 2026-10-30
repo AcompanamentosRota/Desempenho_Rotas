@@ -589,6 +589,19 @@ uma rota dela, nas 4 abas e em cada agrupador, com a tabela de contagens; 360/39
 Resumo idênticos). Os antes x depois contra fronts antigos tiram o botão do cabeçalho antes de comparar (`TELA_ABA`,
 `TEXTOS_TELA_PAGINA` e a Parte AC).
 
+A **Parte AI** confere a Executiva com o cabeçalho fixo, o "Abrir por" e a busca (Etapa 5 do pacote v3), na variante 'dim'
+(Meta NEG e Real por cliente nos 5 macros e 18 Key Accounts fictícias, `montaDim`): o cabeçalho visível depois de rolar (no
+alto no PC; logo abaixo da barra no celular, também depois de redimensionar e trocar o filtro), sem conteúdo por trás, numa
+linha no PC e em duas no celular, com a lupa abrindo o campo numa linha própria; a Parte M continua (≤ 221 px); cada botão
+troca os três lugares com as invariantes (b)-(f) (Diretoria, uma gerência no filtro, G3, IT+MO e uma supervisão), ≤ 15 por
+categoria e as notas; a Marca só na Diretoria, com o aviso; (a) o modo padrão idêntico à main antes da etapa (`0f6fbfe`), com o
+mesmo payload, também depois de passar pelos modos; a busca por nome, PV e Key Account (até 12, etiqueta, sem as ocultas, só o
+filtro) e a ficha do cliente e da KA (cartões sem tendência, "sem Meta NEG" cinza, quadrinhos, classes só de conteúdo); 360,
+390, 1000 e 1440 px sem rolagem lateral nem corte, com os nomes de 96/118 px. As invariantes ficam em
+`frontend/tests/dimensoes_invariantes.js`, usadas também pela conferência com dado real (bloco "Abrir por": Diretoria, cada
+gerência, cada grupo no Total e uma supervisão em 1440 e 390 px, com a tabela do % da meta oficial; o antes x depois contra
+`0f6fbfe`; 360/390/1000/1440 px em cada modo, na gaveta e na ficha).
+
 ```bash
 git show origin/main:frontend/data/payload.json > /tmp/real/payload.json
 git show origin/main:frontend/data/online.json > /tmp/real/online.json
@@ -628,8 +641,50 @@ uma supervisão → rotas; "Neutraliza" no filtro → as rotas Neutraliza. Rotas
 ficam fora das listas de unidades e dentro dos totais. Linha de total: **BAND** na Diretoria; com filtro, o código (GC.AT,
 GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai da mesma agregação dos cards.
 
-- **Cabeçalho**: o nome da aba (Diretoria, Gerencial ou Supervisão; até o ajuste de rótulos, "Resumo executivo") e a etiqueta do dia (a das abas, com a caixa de comentário). Sem busca e sem filtro
-  rápido.
+- **Cabeçalho fixo** (Etapa 5 do pacote v3, 30/10/2026): o nome da aba (Diretoria, Gerencial ou Supervisão; até o ajuste de
+  rótulos, "Resumo executivo"), os botões **"Abrir por"**, a **busca** e a etiqueta do dia (a das abas, com a caixa de
+  comentário). Fica preso no alto durante a rolagem (sticky), com o fundo da página e uma sombra discreta embaixo, cobrindo a
+  largura do conteúdo (nada aparece por trás). **PC**: no alto da área de conteúdo, numa linha (título · botões · busca ·
+  etiqueta; se faltar espaço, os botões rolam de lado). **Celular**: logo abaixo da barra preta (seletores e abas), pela altura
+  real dela (medida pelo app.js em `--barra-h`, de novo no resize e quando a barra muda de tamanho); linha 1 = título · lupa ·
+  etiqueta; linha 2 = os botões, com rolagem lateral; tocar na lupa abre o campo numa linha própria (tocar de novo fecha). A
+  medida do cabeçalho do celular (até o fim das abas, ≤ 221 px) não muda: o cabeçalho da Executiva fica abaixo dela. Nas
+  outras abas o cabeçalho é o de sempre (o bloco novo só entra na Executiva). Sem filtro rápido.
+- **"Abrir por"** (botões no cabeçalho; o marcado tem `aria-pressed="true"`): **[nível do filtro]** (Gerência na Diretoria,
+  Supervisão numa gerência ou grupo, Rota numa supervisão) · **Canal** · **Marca** (só na Diretoria) · **Clientes** · **Key
+  Accounts**. Padrão = o nível do filtro, exatamente a tela de antes. Cada entrada pela tela inicial volta ao padrão. Vale em
+  três lugares: o bloco **Tendência x Meta**, a **gaveta da categoria** (tocar num medidor) e o **detalhe da Evolução**
+  (clicar numa categoria). Sem compra, Agenda e Coberturas (e os KPIs, quadros e medidores) continuam sempre por unidade.
+  - **Canal** = segmento do cliente (o da base de clientes). **Clientes** = os 15 maiores em volume (Real até ontem) de cada
+    categoria, entre os que têm Meta NEG; nome do cadastro, com "PV · segmento · rota". **Key Accounts** = as redes da base
+    (`REDES_CLIENTE`), somando as lojas dela no filtro atual; as 15 maiores em volume por categoria, com "N lojas". A regra dos
+    15 maiores fica numa nota abaixo do quadro (não no botão).
+  - **Números**: Meta = soma da **Meta NEG** dos clientes (a meta distribuída por cliente), Real = soma do Real deles. Linha de
+    total = a soma de **todos** os clientes do filtro (a mesma nos três modos; = Σ dos canais), com a nota "Meta = soma da Meta
+    NEG dos clientes (X% da meta oficial em Refrigerantes)": a meta oficial é a do medidor (META_VOLUME), maior porque parte
+    dela não está distribuída por cliente (em 29/10/2026, na Diretoria: Refrigerantes 98,2%, Cervejas 95,8%, Still 97,0%, Água
+    Mineral 95,1%, Novos Negócios 98,5%).
+  - **Sem tendência** por canal, cliente ou Key Account (não existe a Meta NEG restante por cliente; nada é estimado): o bloco
+    vira **"Realizado x Meta NEG por canal"** (desvio = Real ÷ Meta NEG − 1, barras divergentes como as de sempre, nome com 96
+    px no canal e 118 px no cliente/KA, com reticências), a tendência aparece como "—" na caixa de comentário e a nota diz
+    "Tendência por canal depende de dado novo". A gaveta da categoria mostra os cartões do fechamento (Meta NEG e Real, sem a
+    barra da Tendência; verde com Real ≥ Meta NEG, vermelho abaixo) e a mesma nota. No detalhe da Evolução, só o mês atual
+    (Real ÷ Meta NEG), com "O mês anterior por canal depende de dado novo" (sem estimar o anterior).
+  - **Quem entra** (decisões da Karen, 30/10/2026): as rotas do filtro sem as virtuais e as EV* (que não têm clientes). A
+    supervisão oculta (SV.G3.3) entra no total e no Canal, como no total da gerência, mas fica fora das listas: Clientes, Key
+    Accounts e a busca (como as listas de clientes). Neutraliza entra em tudo.
+  - **Marca**: o botão aparece só na Diretoria e, ao tocar, mostra o aviso "Marca: depende da descoberta no Datasphere" (sem
+    números) no lugar das barras, da gaveta e do detalhe da Evolução.
+  - Depende de dado novo: **D1** tendência por cliente (Meta NEG restante por cliente), **D2** mês anterior por cliente e
+    **D4** marca.
+- **Busca** (no cabeçalho fixo; campo arredondado com a lupa no PC, só a lupa no celular): cliente (nome do cadastro ou PV) e
+  Key Account dentro do filtro atual (sem as virtuais, as EV* e a SV.G3.3), sem acento e sem diferença de maiúsculas; até 12
+  sugestões (no máximo 4 Key Accounts antes dos clientes), a Key Account com a etiqueta **KEY ACCOUNT**. Escolher abre a
+  **ficha na gaveta**: título = o nome; subtítulo "PV · segmento · rota · visita · Key Account" (cliente; sem a Key Account
+  quando ele não tem) ou "Key Account · N lojas no filtro atual". **Volume do mês**: um cartão por categoria com Meta NEG e Real
+  (soma das lojas na Key Account), sem a barra de tendência; categoria sem Meta NEG = cartão com faixa cinza e "sem Meta NEG".
+  **ICS GC** e **Novos Negócios**: os quadrinhos da busca das abas (real / sem compra / não elegível = KS TT fora dos 4
+  segmentos; na Key Account, "x/y lojas").
 - **4 KPIs** (cards brancos, número em Source Serif 4): **Base total de clientes**, **Sem compra** ("X% da base · sem compra
   no mês"), **Visitas hoje** e **Categorias na tendência** ("x / 5", verde ou vermelho pela mesma regra do card do Volume, e
   "Coberturas no ritmo: a / b" = os cards de ritmo do ICS GC e de Novos Negócios somados). Os números são os dos cards Base,

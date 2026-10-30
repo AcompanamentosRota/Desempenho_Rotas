@@ -356,6 +356,7 @@ function render(){
   // Executiva: só o título e a etiqueta do cabeçalho da aba; no lugar dos cards, a seção #exec
   const exec = aba===EXEC;
   $('abaTopo').classList.toggle('exec', exec);
+  cabExec(exec);                   // Executiva: cabeçalho fixo com "Abrir por" e a busca (fora dela, o cabeçalho de sempre)
   $('exec').hidden = !exec;
   $('lista').hidden = exec;
   if(exec){
@@ -648,7 +649,9 @@ function pintaExecutiva(rotas, a, visitas){
   $('exDia').hidden = fech;
   $('exDiaTxt').innerHTML = fech ? '' : textoMetaDia(k, a.ind[k], rotas, us, niv);
   pintaMedidores(rotas, a.ind, k);
-  pintaDesvios(us, tot, niv, k);
+  // "Abrir por" (cabeçalho fixo): o nível do filtro (padrão), canal, cliente, Key Account ou marca (só o aviso)
+  const ab = modoAbrir();
+  if(ab==='nivel') pintaDesvios(us, tot, niv, k); else pintaDesviosDim(ab, tot, k);
   pintaSemCompraExec(us, tot, niv);
   $('exAg').hidden = fech;
   $('exAg').parentNode.classList.toggle('so1', fech);
@@ -771,28 +774,32 @@ const infoCat = (nivel, rotas, gc) => nivel==='gc' ? qtd(svsVisiveis(gc).length,
 const nomeTotalCat = ctx => ctx.nivel==='gc' ? 'BAND · Diretoria'
   : ctx.nivel==='sv' && ehGrupo(ctx.gc) ? membrosGc(ctx.gc).map(g=>'GC.'+g).join(' + ') : ctx.nome;
 
-function cartaoCat(nome, x, info, tot){
-  const {u, b, st} = x, fech = !!P.FECHAMENTO, r = b.real / b.meta, d = desvioVol(b);
+// op.semTend (Abrir por canal/cliente/Key Account e ficha da busca): Meta = Meta NEG dos clientes e sem tendência (não existe
+// a Meta NEG restante por cliente): o cartão do fechamento, sem a barra da Tendência, com "Meta NEG"
+function cartaoCat(nome, x, info, tot, op){
+  const {u, b, st} = x, fech = !!P.FECHAMENTO, semT = !!(op && op.semTend), sb = fech || semT, r = b.real / b.meta;
+  const d = semT ? r - 1 : desvioVol(b), rotM = semT ? 'Meta NEG' : 'Meta';
   const larg = v => `${Math.max(0, Math.min(100, v * 100)).toFixed(2)}%`;
-  const dica = `<div class="t">${esc(nome)} · ${esc(u.cod)}</div>Meta <b>${fmt0(b.meta)}</b><br>`+
+  const dica = `<div class="t">${esc(nome)} · ${esc(u.cod)}</div>${rotM} <b>${fmt0(b.meta)}</b><br>`+
     `${fech ? 'Realizado' : 'Real até ontem'} <b>${fmt0(b.real)}</b> (${b.pctReal}%)<br>`+
-    (fech ? '' : `Tendência <b>${fmt0(b.tendencia)}</b> (${b.pctTendencia}%)<br>`)+
+    (fech ? '' : semT ? 'Tendência — (depende de dado novo)<br>' : `Tendência <b>${fmt0(b.tendencia)}</b> (${b.pctTendencia}%)<br>`)+
     `Desvio <b class="${d >= 0 ? 'g' : 'v'}">${fmtDesvio(d, 2)}</b>`;
-  return `<div class="cuCard ${ST_CAT[st]}${tot ? ' cuTot' : ''}${fech ? ' cuFech' : ''}" tabindex="0" data-u="${esc(u.cod)}"`+
-    ` data-st="${st}" data-meta="${b.meta}" data-real="${b.real}" data-tend="${fech ? '' : b.tendencia}" data-pct="${b.pctReal}"`+
-    ` data-pct-tend="${fech ? '' : b.pctTendencia}" data-dica="${esc(dica)}">`+
+  return `<div class="cuCard ${ST_CAT[st]}${tot ? ' cuTot' : ''}${sb ? ' cuFech' : ''}" tabindex="0" data-u="${esc(u.cod)}"`+
+    ` data-st="${st}" data-meta="${b.meta}" data-real="${b.real}" data-tend="${sb ? '' : b.tendencia}" data-pct="${b.pctReal}"`+
+    ` data-pct-tend="${sb ? '' : b.pctTendencia}" data-dica="${esc(dica)}">`+
     `<div class="cuCab"><b class="cuNome">${esc(tot ? nomeTotalCat(x.ctx) : u.nome)}</b> <span class="cuSub">${esc(info)}</span></div> `+
     `<div class="cuPct"><b>${b.pctReal}%</b> <small>real</small></div> `+
-    `<div class="cuVals"><span><small>Meta</small> <b>${fmt0(b.meta)}</b></span> <span><small>Real</small> <b>${fmt0(b.real)}</b></span></div> `+
+    `<div class="cuVals"><span><small>${rotM}</small> <b>${fmt0(b.meta)}</b></span> <span><small>Real</small> <b>${fmt0(b.real)}</b></span></div> `+
     `<div class="cuBar cuB1"><span class="cuRot">Real</span> <span class="cuTr"><i style="width:${larg(r)}"></i></span> `+
     `<span class="cuVal">${st==='bat' ? `+${Math.round((r - 1) * 100)}% s/ meta` : `faltam ${fmt0(b.meta - b.real)}`}</span></div>`+
-    (fech ? '' : ` <div class="cuBar cuB2"><span class="cuRot">Tendência</span> <span class="cuTr"><i style="width:${larg(b.tendencia / b.meta)}"></i></span> `+
+    (sb ? '' : ` <div class="cuBar cuB2"><span class="cuRot">Tendência</span> <span class="cuTr"><i style="width:${larg(b.tendencia / b.meta)}"></i></span> `+
       `<span class="cuVal">${b.pctTendencia}%</span></div>`) + '</div>';
 }
 
 function abreCategoria(k){
   const ctx = ctxInicial(), rotas = rotasAtuais(), b = agrega(rotas).ind[k];
   if(!comMeta(b)) return;                    // sem meta no escopo: o medidor mostra "sem meta neste escopo" e não abre
+  if(modoAbrir()!=='nivel') return abreCategoriaDim(modoAbrir(), k);
   const fech = !!P.FECHAMENTO, niv = NIVEL_EXEC[ctx.nivel] || NIVEL_EXEC.rota, nome = rotuloInd(k);
   const us = unidadesExec(ctx).map(u=>({u, b:u.a.ind[k]})).filter(x=>comMeta(x.b));
   us.forEach(x=>{ x.st = statusCat(x.b); });
@@ -822,9 +829,8 @@ function pintaDesvios(us, tot, niv, k){
   $('exTDiv').textContent = `${fech ? 'Realizado x Meta' : 'Tendência x Meta'} por ${niv[0]}`;
   $('exSDiv').textContent = fech ? 'Desvio do realizado em relação à meta (Real ÷ Meta − 1).'
     : 'Desvio da tendência em relação à meta (Tendência ÷ Meta − 1).';
-  $('exChips').innerHTML = GROUPS.VOLUME.map(c=>`<button type="button" class="fchip${c===k ? ' on' : ''}" data-k="${esc(c)}"`+
-    ` aria-pressed="${c===k}">${esc(rotuloInd(c))}</button>`).join('');
-  $('exChips').querySelectorAll('.fchip').forEach(el=>el.onclick = ()=>escolheCat(el.dataset.k, 'exChips'));
+  pintaChipsCat(k);
+  $('exDivs').classList.remove('abDim', 'abCanal', 'abLista');
   $('exDivs').innerHTML = GROUPS.VOLUME.map(c=>{
     const nome = rotuloInd(c);
     const ls = [...us, tot].map(u=>({u, b:u.a.ind[c]})).filter(x=>comMeta(x.b));
@@ -845,6 +851,13 @@ function pintaDesvios(us, tot, niv, k){
     return `<div class="dv${c===k ? ' sel' : ''}" data-k="${esc(c)}"><h4>${esc(nome)}</h4>`+
       `${linhas || '<div class="exVazio">Sem meta neste escopo.</div>'}</div>`;
   }).join('');
+}
+
+// chips da categoria em análise (celular): o mesmo nos dois desenhos da Tendência x Meta
+function pintaChipsCat(k){
+  $('exChips').innerHTML = GROUPS.VOLUME.map(c=>`<button type="button" class="fchip${c===k ? ' on' : ''}" data-k="${esc(c)}"`+
+    ` aria-pressed="${c===k}">${esc(rotuloInd(c))}</button>`).join('');
+  $('exChips').querySelectorAll('.fchip').forEach(el=>el.onclick = ()=>escolheCat(el.dataset.k, 'exChips'));
 }
 
 // Sem compra por unidade: sem compra no mês / base (agrega(): o card Sem compra), do maior % para o menor
@@ -994,7 +1007,7 @@ function pintaEvolucao(us, tot, niv){
   // uma linha: nome | trilhas (mês de referência em cima, anterior embaixo; marca de 100% no fim) | % atual sobre % anterior | Δ
   const linhaEvo = (x, nome, cat, i) => {
     const {u, b, a, temA, temB, pt, pa, ok, d, dr} = x;
-    const lA = temA ? `Real <b>${fmt0(a.real)}</b> (${pctTxt(pa)} da meta ${fmt0(a.meta)})` : 'sem meta no mês anterior';
+    const lA = temA ? `Real <b>${fmt0(a.real)}</b> (${pctTxt(pa)} da meta ${fmt0(a.meta)})` : (x.semAnt || 'sem meta no mês anterior');
     const lB = temB ? `Real <b>${fmt0(b.real)}</b> (${pctTxt(pt)} da meta ${fmt0(b.meta)})` : 'sem meta';
     const cls = !ok ? 'nd' : d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero';
     const dTxt = !ok ? '—' : `${d > 0 ? '▲ ' : d < 0 ? '▼ ' : ''}${fmtDpp(d)}`;
@@ -1006,7 +1019,7 @@ function pintaEvolucao(us, tot, niv){
       ` data-real-ant="${a ? a.real : ''}" data-meta-ant="${a ? a.meta : ''}" data-dica="${esc(dica)}"`;
     const aberta = cat && evoAberto.ks.has(x.k);
     const papel = cat ? ` role="button" aria-expanded="${aberta}" aria-controls="exEvDet${i}"`+
-      ` aria-label="${esc(`${nome}: ${rotAtu} ${temB ? pctTxt(pt) : '—'}, ${rotAnt} ${temA ? pctTxt(pa) : '—'}, Δ ${ok ? fmtPP(d) : '—'}. Detalhe por ${niv[0]}`)}"` : '';
+      ` aria-label="${esc(`${nome}: ${rotAtu} ${temB ? pctTxt(pt) : '—'}, ${rotAnt} ${temA ? pctTxt(pa) : '—'}, Δ ${ok ? fmtPP(d) : '—'}. Detalhe por ${por}`)}"` : '';
     return `<div class="evLin ${cat ? 'cat' : 'un'}" tabindex="0"${papel} ${at}>`+
       `<span class="evNome">${cat ? '<svg class="evSeta" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>' : ''}`+
       `<span class="evTxt">${esc(cat ? nome : u.cod)}</span></span>`+
@@ -1015,6 +1028,9 @@ function pintaEvolucao(us, tot, niv){
       `<span class="evVal"><b class="evPA">${temB ? pctTxt(pt) : '—'}</b><span class="evPB">${temA ? pctTxt(pa) : '—'}</span></span>`+
       `<span class="evD ${cls}"><span class="evDN">${dTxt}</span>${ok ? '<small>p.p.</small>' : ''}</span></div>`;
   };
+  // detalhe por "Abrir por": o nível do filtro (padrão, com o mês anterior); canal, cliente ou Key Account só com o mês atual
+  // (Real ÷ Meta NEG dos clientes; o mês anterior por cliente depende de dado novo); marca, só o aviso
+  const ab = modoAbrir(), por = ab==='nivel' ? niv[0] : NIVEL_DIM[ab][0];
   const antTot = NUCLEO.mesAnterior(P, tot.rotas) || {};
   const antUs = us.map(u=>NUCLEO.mesAnterior(P, u.rotas) || {});
   $('exEvLinhas').innerHTML = GROUPS.VOLUME.map((c, i)=>{
@@ -1023,17 +1039,18 @@ function pintaEvolucao(us, tot, niv){
     // unidades: Δ decrescente; sem meta anterior (ou atual) no fim, na ordem de sempre
     const ls = us.map((u, j)=>({...evoDe(u, c, antUs[j]), k:c}));
     const det = [...ls.filter(x=>x.ok).sort((p, q)=>q.d - p.d), ...ls.filter(x=>!x.ok)];
+    const corpo = ab==='nivel' ? det.map(x=>linhaEvo(x, nome, false)).join('') || '<div class="exVazio">Nenhuma unidade neste escopo.</div>'
+      : ab==='marca' ? AVISO_MARCA : evoDim(ab, c, nome, linhaEvo);
     return linhaEvo(total, nome, true, i) +
-      `<div class="evDet" id="exEvDet${i}" data-k="${esc(c)}" role="group" aria-label="${esc(`${nome} por ${niv[0]}`)}"`+
-      `${evoAberto.ks.has(c) ? '' : ' hidden'}>`+
-      (det.map(x=>linhaEvo(x, nome, false)).join('') || '<div class="exVazio">Nenhuma unidade neste escopo.</div>') + '</div>';
+      `<div class="evDet" id="exEvDet${i}" data-k="${esc(c)}" role="group" aria-label="${esc(`${nome} por ${por}`)}"`+
+      `${evoAberto.ks.has(c) ? '' : ' hidden'}>` + corpo + '</div>';
   }).join('');
   $('exEvLinhas').querySelectorAll('.evLin.cat').forEach(el=>clicavel(el, ()=>abreEvo(el)));
   const atu = fech ? `${P.MES_LABEL} (fechado)` : `${P.MES_LABEL} até ${ontem || 'ontem'}`;
   $('exEvLeg').innerHTML = `<span><i class="lg evAtu"></i>${esc(atu)}</span><span><i class="lg evAnt"></i>${esc(comoAnt)}</span>`+
     `<span><i class="lg evCem"></i>100% da meta</span>`+
     `<span>Δ = ${esc(P.MES_LABEL)} − ${esc(M.MES_LABEL)}, em pontos percentuais (p.p.): <b class="pos">▲</b> subiu, <b class="neg">▼</b> caiu</span>`+
-    `<span>Clique ou toque numa categoria para abrir por ${esc(niv[0])}</span>`;
+    `<span>Clique ou toque numa categoria para abrir por ${esc(por)}</span>`;
 }
 // abre ou recolhe as unidades de uma categoria logo abaixo da linha (sem redesenhar o bloco: a caixa de comentário fica)
 function abreEvo(el){
@@ -1041,6 +1058,299 @@ function abreEvo(el){
   det.hidden = !abrir;
   el.setAttribute('aria-expanded', abrir);
   if(abrir) evoAberto.ks.add(k); else evoAberto.ks.delete(k);
+}
+
+/* ---------- Executiva: "Abrir por", cabeçalho fixo e busca (Etapa 5 do pacote v3) ----------
+   "Abrir por" vale na Tendência x Meta, na gaveta da categoria (medidor) e no detalhe da Evolução; Sem compra, Agenda e
+   Coberturas continuam sempre por unidade. Padrão = o nível do filtro (o desenho de sempre, sem nenhuma mudança).
+   Canal = segmento do cliente (SEGS[c[2]] do roster); Clientes = os 15 maiores em Real até ontem de cada categoria entre os
+   com Meta NEG (nome do cadastro; "PV · segmento · rota"); Key Accounts = REDES_CLIENTE (soma das lojas no escopo), as 15
+   maiores em Real por categoria ("N lojas"). Números: Meta = soma da Meta NEG dos clientes (VOLUME_CLIENTE[r][pv][i][0]),
+   Real = soma do Real ([1]). SEM TENDÊNCIA nesses modos (não existe a Meta NEG restante por cliente; nada estimado):
+   desvio = Real ÷ Meta NEG − 1 e "—" no lugar da tendência. Linha de total = a soma de TODOS os clientes do escopo (a mesma
+   nos três modos, = Σ dos canais), com a nota "X% da meta oficial". Decisões da Karen (30/10/2026): as ocultas (SV.G3.3)
+   entram nos totais e no Canal (rotasVisiveis), mas ficam fora das listas: Clientes, Key Accounts e a busca (rotasListas);
+   total = todos os clientes. Marca: só na Diretoria, e só o aviso (depende da descoberta no Datasphere). */
+const NIVEL_DIM = {canal:['canal', 'canais'], cli:['cliente', 'clientes'], ka:['Key Account', 'Key Accounts'], marca:['marca', 'marcas']};
+const TOP_DIM = 15;
+const AVISO_MARCA = '<div class="exAviso">Marca: depende da descoberta no Datasphere</div>';
+let abrirPor = 'nivel';     // 'nivel' | 'canal' | 'marca' | 'cli' | 'ka'
+const ehDim = ab => ab==='canal' || ab==='cli' || ab==='ka';
+const modoAbrir = () => ehDim(abrirPor) || (abrirPor==='marca' && sel.modo==='dir') ? abrirPor : 'nivel';
+const blocoNeg = (r, pv, i) => ((((P.VOLUME_CLIENTE || {})[r] || {})[pv]) || [])[i] || null;
+// clientes do roster das rotas com o bloco [Meta NEG, Real] da categoria i (sem bloco: fora)
+function cliNeg(rotas, i){
+  const out = [];
+  rotas.forEach(r=>(CLIENT_ROSTER[r] || []).forEach(c=>{ const b = blocoNeg(r, c[0], i); if(b) out.push({r, c, b}); }));
+  return out;
+}
+const somaNeg = bs => bs.reduce((s, b)=>({meta:s.meta + b[0], real:s.real + b[1]}), {meta:0, real:0});
+const segDe = c => SEGS[c[2]] || 'Sem segmento';
+// linhas e total de um modo numa categoria: {linhas:[{cod, nome, sub, meta, real, n}], tot:{meta, real, n}, oficial}
+function dimDados(ab, k){
+  const i = GROUPS.VOLUME.indexOf(k);
+  const todos = cliNeg(rotasVisiveis(), i);
+  const tot = {...somaNeg(todos.map(x=>x.b)), n:todos.length};
+  const oficial = ((agrega(rotasAtuais()).ind || {})[k] || {}).meta || 0;
+  const maiores = ls => ls.filter(l=>l.meta > 0)
+    .sort((p, q)=>q.real - p.real || q.meta - p.meta || String(p.cod).localeCompare(String(q.cod))).slice(0, TOP_DIM);
+  let linhas;
+  if(ab==='canal'){
+    const m = new Map();
+    todos.forEach(x=>{ const s = segDe(x.c); if(!m.has(s)) m.set(s, []); m.get(s).push(x.b); });
+    linhas = [...m].map(([s, bs])=>({cod:s, nome:s, sub:qtd(bs.length, 'cliente', 'clientes'), ...somaNeg(bs), n:bs.length}))
+      .filter(l=>l.meta > 0);
+  } else if(ab==='cli'){
+    linhas = maiores(cliNeg(rotasListas(), i).map(({r, c, b})=>({cod:c[1], nome:c[1], pv:c[0], rota:r,
+      sub:`PV ${c[0]} · ${segDe(c)} · rota ${r}`, meta:b[0], real:b[1], n:1})));
+  } else {
+    linhas = maiores([...gruposRede(rotasListas())].map(([key, g])=>{
+      const bs = g.membros.map(([r, pv])=>blocoNeg(r, pv, i)).filter(Boolean);
+      return {cod:g.nome, nome:g.nome, key, sub:qtd(g.membros.length, 'loja', 'lojas'), ...somaNeg(bs), n:g.membros.length};
+    }));
+  }
+  return {linhas, tot, oficial};
+}
+const pctOficial = D => D.oficial > 0 ? `${pctBR(D.tot.meta / D.oficial * 100, 1)}%` : '—';
+const notaMetaNeg = (D, nome) => `Meta = soma da Meta NEG dos clientes (${pctOficial(D)} da meta oficial em ${nome})`;
+const notaTop = ab => ab==='cli' ? `Clientes: os ${TOP_DIM} maiores em volume (Real até ontem) de cada categoria, entre os que têm Meta NEG.`
+  : ab==='ka' ? `Key Accounts: as ${TOP_DIM} maiores em volume (Real até ontem) de cada categoria, somando as lojas no filtro atual.` : '';
+
+// Tendência x Meta por canal/cliente/Key Account: "Realizado x Meta NEG" (desvio = Real ÷ Meta NEG − 1), sem tendência;
+// marca: o aviso no lugar das barras
+function pintaDesviosDim(ab, tot, k){
+  const um = NIVEL_DIM[ab][0];
+  pintaChipsCat(k);
+  const dv = $('exDivs');
+  dv.classList.toggle('abDim', ab!=='marca');
+  dv.classList.toggle('abCanal', ab==='canal');
+  dv.classList.toggle('abLista', ab==='cli' || ab==='ka');
+  if(ab==='marca'){
+    $('exTDiv').textContent = 'Tendência x Meta por marca';
+    $('exSDiv').textContent = 'Sem números por marca por enquanto.';
+    dv.innerHTML = AVISO_MARCA;
+    return;
+  }
+  $('exTDiv').textContent = `Realizado x Meta NEG por ${um}`;
+  $('exSDiv').textContent = 'Desvio do realizado em relação à Meta NEG dos clientes (Real ÷ Meta NEG − 1); sem tendência.';
+  dv.innerHTML = GROUPS.VOLUME.map(c=>{
+    const nome = rotuloInd(c), D = dimDados(ab, c);
+    const ls = [...D.linhas, {cod:tot.cod, nome:tot.cod, sub:qtd(D.tot.n, 'cliente', 'clientes'), meta:D.tot.meta, real:D.tot.real, tot:true}]
+      .filter(l=>l.meta > 0);
+    ls.forEach(l=>{ l.d = l.real / l.meta - 1; });
+    ls.sort((p, q)=>q.d - p.d);
+    const max = Math.max(0.1, ...ls.map(l=>Math.abs(l.d)));
+    const linhas = ls.map(l=>{
+      const w = `${(Math.abs(l.d)/max*100).toFixed(2)}%`, pos = l.d >= 0;
+      const dica = `<div class="t">${esc(nome)} · ${esc(l.nome)}</div>${l.sub ? `${esc(l.sub)}<br>` : ''}Meta NEG <b>${fmt0(l.meta)}</b><br>`+
+        `Real <b>${fmt0(l.real)}</b> (${Math.round(l.real / l.meta * 100)}%)<br>Tendência —<br>`+
+        `Desvio <b class="${pos ? 'g' : 'v'}">${fmtDesvio(l.d, 2)}</b>`;
+      return `<div class="dRow${l.tot ? ' tot' : ''}" tabindex="0" data-u="${esc(l.cod)}"${l.tot ? ' data-tot=""' : ''} data-desvio="${l.d}"`+
+        ` data-meta="${l.meta}" data-real="${l.real}" data-tend="" data-dica="${esc(dica)}">`+
+        `<span class="dNome" title="${esc(l.nome)}">${esc(l.nome)}</span><div class="dEixo"><div class="dN">${pos ? '' : `<i style="width:${w}"></i>`}</div>`+
+        `<div class="dP">${pos ? `<i style="width:${w}"></i>` : ''}</div></div>`+
+        `<span class="dVal ${pos ? 'pos' : 'neg'}">${fmtDesvio(l.d, 1)}</span></div>`;
+    }).join('');
+    return `<div class="dv${c===k ? ' sel' : ''}" data-k="${esc(c)}" data-oficial="${D.oficial}" data-meta-neg="${D.tot.meta}"><h4>${esc(nome)}</h4>`+
+      `${linhas || '<div class="exVazio">Sem Meta NEG neste escopo.</div>'}<p class="dvNota">${esc(notaMetaNeg(D, nome))}</p></div>`;
+  }).join('') + `<p class="exNota">${esc([notaTop(ab), `Tendência por ${um} depende de dado novo (Meta NEG restante por cliente).`].filter(Boolean).join(' '))}</p>`;
+}
+
+// gaveta da categoria (medidor) por canal/cliente/Key Account: os cartões do fechamento (sem a barra da Tendência), com a
+// Meta NEG; cor = meta batida (Real ≥ Meta NEG) ou abaixo; marca: o aviso
+function abreCategoriaDim(ab, k){
+  const nome = rotuloInd(k), [um, varios] = NIVEL_DIM[ab];
+  if(ab==='marca') return abre(`${nome} por marca`, 'Sem números por marca por enquanto', `<div class="cuGav">${AVISO_MARCA}</div>`);
+  const D = dimDados(ab, k), ctx = ctxInicial();
+  const x = (u, l) => { const b = {meta:l.meta, real:l.real, pctReal:Math.round(l.real / l.meta * 100), tendencia:null, pctTendencia:null};
+    return {u, b, st:statusCat(b)}; };
+  const ord = [...D.linhas].sort((p, q)=>q.real/q.meta - p.real/p.meta);
+  const total = D.tot.meta > 0 ? cartaoCat(nome, {...x({cod:totalExec(ctx, [], null).cod}, D.tot), ctx},
+    `Σ Meta NEG · ${qtd(D.tot.n, 'cliente', 'clientes')}`, true, {semTend:true}) : '';
+  const leg = [['bat', 'meta batida (Real ≥ Meta NEG)'], ['abx', 'abaixo da Meta NEG']];
+  abre(`${nome} por ${um}`, `Real até ontem ÷ Meta NEG · sem tendência · ${qtd(ord.length, um, varios)}`,
+    `<div class="cuGav" data-k="${esc(k)}" data-ab="${ab}"><div class="cuGrade">${total}`+
+    ord.map(l=>cartaoCat(nome, x({cod:l.cod, nome:l.nome}, l), l.sub, false, {semTend:true})).join('') + '</div>'+
+    (ord.length ? '' : `<div class="vazio">Sem Meta NEG nesta categoria.</div>`)+
+    `<div class="cuLeg">${leg.map(([s, t])=>`<span><i class="cuLg ${ST_CAT[s]}"></i>${t}</span>`).join('')}</div>`+
+    `<p class="cuNota">${esc([notaMetaNeg(D, nome) + '.', notaTop(ab), `Tendência por ${um} depende de dado novo.`].filter(Boolean).join(' '))}</p></div>`);
+  $('dCorpo').querySelectorAll('.cuCard').forEach(ativaDica);
+}
+
+// detalhe da Evolução por canal/cliente/Key Account: só o mês atual (Real ÷ Meta NEG), do maior % para o menor
+function evoDim(ab, c, nome, linhaEvo){
+  const um = NIVEL_DIM[ab][0], D = dimDados(ab, c);
+  const xs = D.linhas.map(l=>({...evoDe({cod:l.cod, a:{ind:{[c]:{meta:l.meta, real:l.real}}}}, c, null), k:c,
+    semAnt:`mês anterior por ${um}: depende de dado novo`})).sort((p, q)=>q.pt - p.pt);
+  return (xs.map(x=>linhaEvo(x, nome, false)).join('') || '<div class="exVazio">Sem Meta NEG nesta categoria.</div>') +
+    `<p class="evNota">${esc(`O mês anterior por ${um} depende de dado novo. % = Real ÷ Meta NEG dos clientes.`)}</p>`;
+}
+
+/* Cabeçalho fixo da Executiva: título · "Abrir por" · busca · etiqueta do dia. O bloco (.exFer) só entra no .abCab na
+   Executiva; nas outras abas o cabeçalho é o de sempre, byte a byte. No celular fica logo abaixo da .barra (sticky): a altura
+   real dela vai em --barra-h, medida no render, no resize e quando ela muda de tamanho (filtros). */
+let _exFer = null;
+function cabExec(on){
+  if(!_exFer) _exFer = montaCabExec();
+  const cab = document.querySelector('#abaTopo .abCab');
+  if(on){
+    if(_exFer.parentNode!==cab) cab.insertBefore(_exFer, $('pilDia'));
+    pintaAbrir();
+  } else if(_exFer.parentNode){
+    _exFer.remove();
+    _exFer.querySelector('#exSug').classList.remove('on');
+    $('abaTopo').classList.remove('buscaAberta');
+  }
+  medeBarra();
+}
+function medeBarra(){
+  const b = document.querySelector('.barra'), cs = b && getComputedStyle(b);
+  const h = cs && cs.display!=='contents' && cs.position==='sticky' ? b.getBoundingClientRect().height : 0;
+  document.documentElement.style.setProperty('--barra-h', `${Math.round(h * 100) / 100}px`);
+}
+{ const b = document.querySelector('.barra');
+  if(b && window.ResizeObserver) new ResizeObserver(()=>medeBarra()).observe(b);
+  addEventListener('resize', ()=>medeBarra()); }
+function pintaAbrir(){
+  const niv = NIVEL_EXEC[ctxInicial().nivel] || NIVEL_EXEC.rota, ab = modoAbrir();
+  const bts = [['nivel', niv[0][0].toUpperCase() + niv[0].slice(1)], ['canal', 'Canal'], ...(sel.modo==='dir' ? [['marca', 'Marca']] : []),
+               ['cli', 'Clientes'], ['ka', 'Key Accounts']];
+  const box = _exFer.querySelector('#exAbrir');
+  box.innerHTML = '<span class="exAbRot" aria-hidden="true">Abrir por</span>' + bts.map(([v, t])=>
+    `<button type="button" class="fchip${v===ab ? ' on' : ''}" data-ab="${v}" aria-pressed="${v===ab}">${t}</button>`).join('');
+  box.querySelectorAll('.fchip').forEach(el=>el.onclick = ()=>{
+    abrirPor = el.dataset.ab;
+    render();
+    const b = _exFer.querySelector(`.fchip[data-ab="${abrirPor}"]`);
+    if(b){ b.focus({preventScroll:true}); b.scrollIntoView({block:'nearest', inline:'nearest'}); }
+  });
+}
+function montaCabExec(){
+  const el = document.createElement('div');
+  el.className = 'exFer'; el.id = 'exFer';
+  el.innerHTML = `<div class="exAbrir fchips" id="exAbrir" role="group" aria-label="Abrir por"></div>`+
+    `<div class="exBusca"><button type="button" class="exLupa" id="exLupa" aria-label="Buscar cliente ou Key Account" aria-expanded="false"`+
+    ` aria-controls="exCampo">${LUPA}</button>`+
+    `<div class="exCampo" id="exCampo">${LUPA}<label class="sr-only" for="exQ">Buscar cliente ou Key Account</label>`+
+    `<input id="exQ" type="search" placeholder="Cliente, PV ou Key Account" autocomplete="off" enterkeyhint="search">`+
+    `<div id="exSug" class="sugestoes" role="listbox" aria-label="Sugestões"></div></div></div>`;
+  const q = el.querySelector('#exQ'), sug = el.querySelector('#exSug'), lupa = el.querySelector('#exLupa');
+  lupa.onclick = () => {
+    const ab = !$('abaTopo').classList.contains('buscaAberta');
+    $('abaTopo').classList.toggle('buscaAberta', ab);
+    lupa.setAttribute('aria-expanded', ab);
+    if(ab) q.focus(); else sug.classList.remove('on');
+  };
+  q.oninput = sugereEx;
+  q.addEventListener('focus', ()=>{ if(SUG_EX.length) sug.classList.add('on'); });
+  q.addEventListener('keydown', e=>{
+    if(e.key==='ArrowDown'){ const p = sug.querySelector('.sugItem'); if(p){ e.preventDefault(); p.focus(); } }
+    if(e.key==='Enter' && SUG_EX.length){ e.preventDefault(); escolheEx(0); }
+    if(e.key==='Escape'){ sug.classList.remove('on'); }
+  });
+  sug.addEventListener('keydown', e=>{
+    const it = e.target.closest('.sugItem'); if(!it) return;
+    if(e.key==='ArrowDown' && it.nextElementSibling){ e.preventDefault(); it.nextElementSibling.focus(); }
+    if(e.key==='ArrowUp'){ e.preventDefault(); (it.previousElementSibling || q).focus(); }
+    if(e.key==='Escape'){ sug.classList.remove('on'); q.focus(); }
+  });
+  document.addEventListener('click', e=>{ if(!e.target.closest('.exBusca')) sug.classList.remove('on'); });
+  return el;
+}
+function limpaBuscaEx(){
+  SUG_EX = [];
+  if(!_exFer) return;
+  _exFer.querySelector('#exQ').value = '';
+  const s = _exFer.querySelector('#exSug'); s.innerHTML = ''; s.classList.remove('on');
+  $('abaTopo').classList.remove('buscaAberta');
+}
+
+/* Busca da Executiva: cliente (nome do cadastro ou PV) e Key Account dentro do filtro atual (rotasListas: sem virtuais/EV*
+   nem ocultas), sem acento e sem diferença de maiúsculas; até 12 sugestões (no máximo 4 Key Accounts antes dos clientes; sobrando
+   lugar, as outras). Escolher abre a ficha na gaveta. */
+let SUG_EX = [];
+const MAX_SUG_EX = 12;
+function sugereEx(){
+  const q = _exFer.querySelector('#exQ'), box = _exFer.querySelector('#exSug'), t = semAcento(q.value).trim();
+  SUG_EX = [];
+  if(!t){ box.classList.remove('on'); box.innerHTML = ''; return; }
+  const rotas = rotasListas();
+  const kas = [...gruposRede(rotas)].filter(([, g])=>semAcento(g.nome).includes(t)).map(([key, g])=>({tipo:'ka', key, nome:g.nome, membros:g.membros}));
+  const clis = [];
+  for(const r of rotas){
+    for(const c of (CLIENT_ROSTER[r] || [])){
+      if(semAcento(c[1]).includes(t) || String(c[0]).includes(t)) clis.push({tipo:'cli', r, c});
+      if(clis.length >= MAX_SUG_EX) break;
+    }
+    if(clis.length >= MAX_SUG_EX) break;
+  }
+  const k1 = kas.slice(0, 4);
+  SUG_EX = [...k1, ...clis, ...kas.slice(4)].slice(0, MAX_SUG_EX);
+  if(!SUG_EX.length){ box.classList.remove('on'); box.innerHTML = '<div class="sugVazio">Nenhum cliente ou Key Account no filtro atual.</div>'; box.classList.add('on'); return; }
+  box.innerHTML = SUG_EX.map((it, i)=>it.tipo==='ka'
+    ? `<div class="sugItem" role="option" tabindex="0" data-i="${i}"><span class="nm">${esc(it.nome)}<span class="tagRedeSug">Key Account</span></span>`+
+      `<span class="meta">${qtd(it.membros.length, 'loja', 'lojas')}</span></div>`
+    : `<div class="sugItem" role="option" tabindex="0" data-i="${i}"><span class="nm">${esc(it.c[1])}</span>`+
+      `<span class="meta">PV ${esc(it.c[0])} · rota ${esc(it.r)}</span></div>`).join('');
+  box.classList.add('on');
+  box.querySelectorAll('.sugItem').forEach(el=>clicavel(el, ()=>escolheEx(Number(el.dataset.i))));
+}
+function escolheEx(i){
+  const it = SUG_EX[i]; if(!it) return;
+  _exFer.querySelector('#exSug').classList.remove('on');
+  abreFichaEx(it);
+}
+// Key Account do cliente (REDES_CLIENTE da rota dele), ou ''
+function kaDoCliente(r, pv){
+  const gs = (P.REDES_CLIENTE || {})[r] || {};
+  for(const key in gs) if((gs[key].clientes || []).includes(pv)) return gs[key].nome;
+  return '';
+}
+// quadrinhos de cobertura da ficha (os da busca das abas): cliente = real / sem compra / não elegível (KS TT fora dos 4
+// segmentos); Key Account = "x/y lojas"
+function tileCobCli(k, r, c){
+  if(k==='KS TT' && !ehKstt(c)) return tileCob(k, 'na', 'não elegível');
+  if(!P.FONTES.venda) return tileCob(k, 'nd', 'sem venda');
+  const ok = (((COBERTOS[r] || {})[k]) || []).includes(c[0]);
+  return tileCob(k, ok ? 'ok' : 'no', ok ? 'real' : 'sem compra');
+}
+function tileCobKa(k, membros){
+  if(!P.FONTES.venda) return tileCob(k, 'nd', 'sem venda');
+  let eleg = 0, cob = 0;
+  membros.forEach(([r, pv])=>{
+    const c = (CLIENT_ROSTER[r] || []).find(x=>x[0]===pv);
+    if(k==='KS TT' && (!c || !ehKstt(c))) return;
+    eleg++;
+    if((((COBERTOS[r] || {})[k]) || []).includes(pv)) cob++;
+  });
+  if(!eleg) return tileCob(k, 'na', 'não elegível');
+  return tileCob(k, cob===eleg ? 'ok' : cob===0 ? 'no' : 'parcial', `${cob}/${eleg} lojas`);
+}
+/* Ficha na gaveta: cliente (título = nome; "PV · segmento · rota · visita · Key Account") ou Key Account ("Key Account · N lojas
+   no filtro atual"). "Volume do mês" = um cartão por categoria com Meta NEG e Real, sem a barra de tendência (não existe o
+   dado); sem Meta NEG = faixa cinza e "sem Meta NEG". "ICS GC" e "Novos Negócios" = os quadrinhos da busca das abas. */
+function abreFichaEx(it){
+  const ka = it.tipo==='ka', membros = ka ? it.membros : [[it.r, it.c[0]]];
+  const nome = ka ? it.nome : it.c[1];
+  const sub = ka ? `Key Account · ${qtd(membros.length, 'loja', 'lojas')} no filtro atual`
+    : [`PV ${it.c[0]}`, segDe(it.c), `rota ${it.r}`, `visita ${DIAS[it.c[3]] || '—'}`, kaDoCliente(it.r, it.c[0])].filter(Boolean).join(' · ');
+  const vol = GROUPS.VOLUME.map((k, i)=>{
+    const bs = membros.map(([r, pv])=>blocoNeg(r, pv, i)).filter(Boolean), s = somaNeg(bs), rot = rotuloInd(k);
+    if(s.meta > 0){
+      const b = {meta:s.meta, real:s.real, pctReal:Math.round(s.real / s.meta * 100), tendencia:null, pctTendencia:null};
+      return cartaoCat(nome, {u:{cod:rot, nome:rot}, b, st:statusCat(b)}, ka ? 'Σ Meta NEG das lojas' : 'Meta NEG', false, {semTend:true});
+    }
+    return `<div class="cuCard cuSemNeg cuFech" tabindex="0" data-u="${esc(rot)}" data-st="semneg" data-meta="" data-real="${bs.length ? s.real : ''}">`+
+      `<div class="cuCab"><b class="cuNome">${esc(rot)}</b> <span class="cuSub">sem Meta NEG</span></div> `+
+      `<div class="cuPct"><b>—</b></div> `+
+      `<div class="cuVals"><span><small>Meta NEG</small> <b>—</b></span> <span><small>Real</small> <b>${bs.length ? fmt0(s.real) : '—'}</b></span></div></div>`;
+  }).join('');
+  const cob = g => P.COV_GRUPO[g].map(k=>ka ? tileCobKa(k, membros) : tileCobCli(k, it.r, it.c)).join('');
+  abre(nome, sub, `<div class="fxFicha" data-tipo="${it.tipo}"><h4 class="fxSec">Volume do mês</h4>`+
+    `<div class="cuGav"><div class="cuGrade">${vol}</div><p class="cuNota">Real até ontem ÷ Meta NEG${ka ? ' (soma das lojas)' : ''}; sem tendência por cliente (depende de dado novo).</p></div>`+
+    `<h4 class="fxSec">ICS GC</h4><div class="grid13 fxCob" data-g="ICS_GC">${cob('ICS_GC')}</div>`+
+    `<h4 class="fxSec">Novos Negócios</h4><div class="grid13 fxCob" data-g="NOVOS_NEG">${cob('NOVOS_NEG')}</div></div>`);
+  $('dCorpo').querySelectorAll('.cuCard[data-dica]').forEach(ativaDica);
 }
 
 function linha(k, b, rotas){
@@ -1865,6 +2175,8 @@ function validaAcesso(a){
 function aplicaAcesso(a){
   ACESSO = a;
   evoAberto.ks.clear();      // Evolução contra o mês anterior: cada entrada começa com as categorias recolhidas
+  abrirPor = 'nivel';        // "Abrir por" da Executiva: cada entrada começa no nível do filtro
+  limpaBuscaEx();
   sel = a.perfil==='dir' ? {...sel, modo:'dir', dgc:'', sv:'', rota:''} : {...sel, modo:'gc', gc:a.gc, sv:a.sv, rota:a.rota};
   marcaAba(a.perfil==='rota' ? 'VOLUME' : EXEC);
   fecha();

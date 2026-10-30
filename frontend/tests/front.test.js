@@ -198,6 +198,15 @@ before(async () => {
     fs.copyFileSync(path.join(DADOS[origem], 'online.json'), path.join(dir, 'online.json'));
     DADOS[nome] = dir;
   }
+  // Parte AI ("Abrir por" e busca da Executiva): o 'vol5' com Meta NEG e Real por cliente nos 5 macros e Key Accounts
+  // fictícias (montaDim; o sintético só traz Refrigerantes por cliente e uma rede só)
+  const dim = path.join(tmp, 'dim');
+  fs.mkdirSync(dim);
+  const pdm = JSON.parse(fs.readFileSync(path.join(DADOS.vol5, 'payload.json'), 'utf-8'));
+  montaDim(pdm);
+  fs.writeFileSync(path.join(dim, 'payload.json'), JSON.stringify(pdm));
+  fs.copyFileSync(path.join(DADOS.vol5, 'online.json'), path.join(dim, 'online.json'));
+  DADOS.dim = dim;
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -210,7 +219,7 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' | 'evcob' |
    'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm' | 'evo' | 'evogrupo' | 'evogrande' |
-   'evofech' | 'semevo' | 'vol5' | 'vol5fech');
+   'evofech' | 'semevo' | 'vol5' | 'vol5fech' | 'dim');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
@@ -8987,3 +8996,311 @@ describe('Parte AH — botão "Clientes" por agrupador, com busca', {skip: pular
     });
   }
 });
+
+/* ---------- Parte AI — Executiva: cabeçalho fixo, "Abrir por" e busca (Etapa 5 do pacote v3) ----------
+   Cabeçalho da Executiva sticky (PC: no alto do conteúdo; celular: logo abaixo da .barra, pela altura medida dela) com o título,
+   os botões "Abrir por" (nível do filtro · Canal · Marca só na Diretoria · Clientes · Key Accounts), a busca e a etiqueta do dia.
+   Invariantes dos modos (b)-(f) e da marca em frontend/tests/dimensoes_invariantes.js (as mesmas da conferência com dado real);
+   (a) = o antes x depois contra a main antes da etapa (REF_PRE_ABRIR), com o mesmo payload: a Executiva no modo padrão e as
+   abas iguais (HTML). Variante 'dim' (montaDim): Meta NEG e Real por cliente nos 5 macros (alguns clientes sem Meta NEG numa
+   categoria, um sem nenhuma) e 18 Key Accounts FICTÍCIAS ("KA FICTICIA nn"), cada loja numa só. */
+function montaDim(p){
+  let n = 0;
+  p.REDES_CLIENTE = {};
+  for(const r of Object.keys(p.CLIENT_ROSTER)){
+    const vc = p.VOLUME_CLIENTE[r] = p.VOLUME_CLIENTE[r] || {};
+    for(const c of p.CLIENT_ROSTER[r]){
+      const bl = [];
+      for(let i = 0; i < 5; i++){
+        const meta = (n + i) % 7 === 0 ? 0 : 20 + ((n * 37 + i * 11) % 300);
+        const real = meta ? Math.round(meta * (0.4 + ((n + i * 3) % 9) / 10) * 10) / 10 : 5;
+        bl.push(n === 1 || (n + i) % 11 === 0 ? null : [meta, real, meta ? Math.round(real / meta * 100) : 0, 0]);
+      }
+      vc[c[0]] = [...bl, ...((vc[c[0]] || []).slice(5))];      // o Del Valle Frut (6º bloco, G2) fica
+      if(n % 3 === 0){
+        const nome = `KA FICTICIA ${String((n / 3) % 18).padStart(2, '0')}`, g = (p.REDES_CLIENTE[r] = p.REDES_CLIENTE[r] || {});
+        (g[nome] = g[nome] || {nome, clientes: []}).clientes.push(c[0]);
+      }
+      n++;
+    }
+  }
+}
+const DIMI = require('./dimensoes_invariantes.js');
+const REF_PRE_ABRIR = '0f6fbfe';
+const FRONT_PRE_ABRIR = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_ABRIR}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
+    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+  } catch(e) { return null; }
+})();
+// posição do cabeçalho da Executiva e da barra; o que está no meio do cabeçalho (nada do conteúdo por trás)
+const LE_CAB_EX = () => {
+  const b = s => { const el = document.querySelector(s); return el && el.getClientRects().length ? el.getBoundingClientRect() : null; };
+  const a = b('#abaTopo'), cs = getComputedStyle(document.getElementById('abaTopo'));
+  const dentro = [[0.5, 0.5], [0.05, 0.5], [0.95, 0.5]].map(([x, y]) => { const el = document.elementFromPoint(a.left + a.width * x, a.top + a.height * y);
+    return !!el && !!el.closest('#abaTopo'); });
+  const pc = matchMedia('(min-width:1000px)').matches;
+  return {top: a.top, bottom: a.bottom, h: a.height, left: a.left, right: a.right, barra: pc ? 0 : b('.barra').bottom, pos: cs.position,
+    fundo: cs.backgroundColor, sombra: cs.boxShadow, dentro, tit: b('#abTit'), abrir: b('#exAbrir'), campo: b('#exCampo'), lupa: b('#exLupa'),
+    dia: b('#pilDia'), wrap: b('.wrap'), scroll: scrollY};
+};
+
+describe('Parte AI — Executiva: cabeçalho fixo, "Abrir por" e busca', {skip: pular}, () => {
+  for(const largura of [1440, 1000, 390, 360]){
+    test(`${largura} px: cabeçalho fixo visível depois de rolar (PC no alto; celular abaixo da barra), sem conteúdo por trás`, async () => {
+      const {page, ctx, erros} = await abre('dim', {entrar: 'dir', largura, altura: 800, aba: null});
+      const pc = largura >= 1000;
+      for(const y of [0, 900, 2400]){
+        await page.evaluate(y => scrollTo(0, y), y);
+        await page.waitForTimeout(60);
+        const c = await page.evaluate(LE_CAB_EX), onde = `${largura} y=${y}`;
+        assert.equal(c.pos, 'sticky', onde);
+        if(y > 0){
+          assert.ok(c.scroll > 0, `${onde}: rolou`);
+          assert.ok(Math.abs(c.top - (pc ? 0 : c.barra)) < 1, `${onde}: topo ${c.top} x ${pc ? 0 : c.barra}`);
+          assert.deepEqual(c.dentro, [true, true, true], `${onde}: nada do conteúdo por trás do cabeçalho`);
+        }
+        assert.equal(c.fundo, await page.evaluate(() => { const s = document.createElement('i'); s.style.color = 'var(--papel)';
+          document.body.appendChild(s); const x = getComputedStyle(s).color; s.remove(); return x; }), `${onde}: fundo --papel`);
+        assert.notEqual(c.sombra, 'none', `${onde}: sombra`);
+        // o cabeçalho cobre a largura da .wrap (com a sobra lateral)
+        assert.ok(c.left <= c.wrap.left + 0.5 && c.right >= c.wrap.right - 0.5, `${onde}: largura`);
+        if(pc){
+          // uma linha: título · botões · busca · etiqueta do dia
+          const meio = r => (r.top + r.bottom) / 2;
+          assert.ok(!c.lupa, `${onde}: no PC, sem a lupa solta`);
+          for(const [n, r] of [['botões', c.abrir], ['busca', c.campo], ['etiqueta', c.dia]]) assert.ok(Math.abs(meio(r) - meio(c.tit)) < 6, `${onde}: ${n} na linha do título`);
+          assert.ok(c.tit.right <= c.abrir.left && c.abrir.right <= c.campo.left && c.campo.right <= c.dia.left, `${onde}: ordem`);
+        } else {
+          // linha 1: título · lupa · etiqueta; linha 2: os botões; o campo só com a lupa
+          assert.ok(c.lupa && !c.campo, `${onde}: só a lupa`);
+          assert.ok(Math.abs(c.lupa.top - c.tit.top) < 12 && c.lupa.right <= c.dia.left + 0.5, `${onde}: lupa na linha 1`);
+          assert.ok(c.abrir.top >= c.tit.bottom - 0.5, `${onde}: botões na linha 2`);
+        }
+      }
+      if(!pc){
+        // a lupa abre o campo numa linha própria (entre a linha 1 e os botões) e fecha de novo
+        await page.click('#exLupa');
+        let c = await page.evaluate(LE_CAB_EX);
+        assert.ok(c.campo && c.campo.top >= c.tit.bottom - 0.5 && c.abrir.top >= c.campo.bottom - 0.5, 'campo numa linha própria');
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'exQ', 'foco no campo');
+        assert.equal(await page.getAttribute('#exLupa', 'aria-expanded'), 'true');
+        await page.click('#exLupa');
+        assert.equal((await page.evaluate(LE_CAB_EX)).campo, null, 'fecha');
+        // a altura da barra é medida de novo no resize e na troca de filtro
+        await page.setViewportSize({width: largura === 390 ? 360 : 390, height: 800});
+        await page.selectOption('#fgc', 'G1');
+        await page.evaluate(() => scrollTo(0, 1500));
+        await page.waitForTimeout(250);
+        c = await page.evaluate(LE_CAB_EX);
+        assert.ok(Math.abs(c.top - c.barra) < 1, `depois do resize e do filtro: ${c.top} x ${c.barra}`);
+      }
+      // fora da Executiva o cabeçalho é o de sempre (sem o bloco novo e sem sticky)
+      await vaiAba(page, 'VOLUME');
+      assert.deepEqual(await page.evaluate(() => [!!document.getElementById('exFer'), getComputedStyle(document.getElementById('abaTopo')).position]), [false, 'static']);
+      assert.ok(await semRolagemLateral(page));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+
+  test('Parte M continua: cabeçalho até o fim das abas <= 221 px em 390 px, na Executiva', async () => {
+    const {page, ctx, erros} = await abre('dim', {entrar: {perfil: 'gc', gc: 'G1'}, largura: 390, aba: null});
+    assert.equal(await page.evaluate(() => aba), 'EXEC');
+    assert.ok(await page.evaluate(() => document.querySelector('.barra').getBoundingClientRect().bottom) <= LIMITE_CABECALHO_390);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('cada botão troca os três lugares (Tendência x Meta, gaveta da categoria e Evolução); ≤ 15 por categoria; notas; Sem compra, Agenda e Coberturas iguais; invariantes (b)-(f)', async () => {
+    const {page, ctx, erros} = await abre('dim', {entrar: 'dir', largura: 1440, aba: null});
+    const linhas = [];
+    linhas.push(await DIMI.confereDimensoes(page, 'BAND'));
+    await page.selectOption('#fgc', 'G2');
+    linhas.push(await DIMI.confereDimensoes(page, 'GC.G2 (Diretoria)'));
+    for(const e of [{perfil: 'gc', gc: 'G3'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G1', sv: '1'}]){
+      await vaiPara(page, e, null);
+      linhas.push(await DIMI.confereDimensoes(page, JSON.stringify(e)));
+    }
+    // a BAND da variante tem mais de 15 clientes e de 15 Key Accounts com Meta NEG em cada categoria: o corte vale
+    for(const k in linhas[0].cats) assert.deepEqual([linhas[0].cats[k].cli, linhas[0].cats[k].ka], [15, 15], `BAND ${k}: 15 maiores`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('Marca só na Diretoria, com o aviso (sem números) na Tendência x Meta, na gaveta e na Evolução; entrada volta ao padrão', async () => {
+    const {page, ctx, erros} = await abre('dim', {entrar: 'dir', largura: 1440, aba: null});
+    const botoes = () => page.$$eval('#exAbrir .fchip', bs => bs.map(b => b.textContent));
+    assert.deepEqual(await botoes(), ['Gerência', 'Canal', 'Marca', 'Clientes', 'Key Accounts']);
+    await DIMI.clicaAbrir(page, 'marca');
+    const t = await page.evaluate(DIMI.LE_DIVS);
+    assert.equal(t.aviso, 'Marca: depende da descoberta no Datasphere');
+    assert.ok(!/\d/.test(await page.$eval('#exDivs', el => el.textContent)), 'sem números');
+    await page.click('#exGauges .gCard[role="button"]');
+    const g = await page.evaluate(DIMI.LE_GAV);
+    assert.ok(g.aberta && g.aviso && !g.cards.length && /por marca$/.test(g.tit), 'gaveta com o aviso');
+    await page.keyboard.press('Escape');
+    // filtro de gerência na Diretoria: o 1º botão vira "Supervisão" e a Marca continua
+    await page.selectOption('#fgc', 'G1');
+    assert.deepEqual(await botoes(), ['Supervisão', 'Canal', 'Marca', 'Clientes', 'Key Accounts']);
+    // a casa e uma nova entrada voltam ao padrão; Gerência e Supervisão sem a Marca
+    await vaiPara(page, {perfil: 'gc', gc: 'G1'}, null);
+    assert.deepEqual(await botoes(), ['Supervisão', 'Canal', 'Clientes', 'Key Accounts']);
+    assert.equal(await page.$eval('#exAbrir .fchip.on', b => b.dataset.ab), 'nivel');
+    await vaiPara(page, {perfil: 'sv', gc: 'G1', sv: '1'}, null);
+    assert.deepEqual(await botoes(), ['Rota', 'Canal', 'Clientes', 'Key Accounts']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(a) modo padrão idêntico à main antes da etapa (mesmo payload): Executiva, gaveta da categoria, Evolução aberta e as 4 abas; depois de passar pelos modos também', {skip: !FRONT_PRE_ABRIR && `sem o commit ${REF_PRE_ABRIR}`}, async () => {
+    for(const largura of [1440, 390]){
+      const [novo, velho] = [await abre('dim', {entrar: 'dir', largura, aba: null}), await abre('dim', {entrar: 'dir', largura, aba: null, troca: FRONT_PRE_ABRIR})];
+      for(const e of [{perfil: 'dir'}, {perfil: 'gc', gc: 'G2'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G3', sv: '1'}]){
+        for(const {page} of [novo, velho]) await vaiPara(page, e, null);
+        const onde = `${largura} ${JSON.stringify(e)}`;
+        const exec = async p => { await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click()));
+          const h = await p.innerHTML('#exec'); await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click())); return h; };
+        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva`);
+        assert.equal(await novo.page.textContent('#abTit'), await velho.page.textContent('#abTit'), `${onde}: título`);
+        // passa pelos modos e volta: igual de novo
+        for(const ab of ['canal', 'cli', 'ka', 'nivel']) await DIMI.clicaAbrir(novo.page, ab);
+        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva depois dos modos`);
+        const k = await novo.page.$eval('#exGauges .gCard[role="button"]', g => g.dataset.k);
+        const gav = async p => { await p.click(`#exGauges .gCard[data-k="${k}"]`); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
+        assert.equal(await gav(novo.page), await gav(velho.page), `${onde}: gaveta da categoria`);
+        for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          for(const {page} of [novo, velho]) await vaiAba(page, ab);
+          const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').outerHTML, lista: document.getElementById('lista').innerHTML}));
+          assert.deepEqual(await tela(novo.page), await tela(velho.page), `${onde} ${ab}: cabeçalho e cards`);
+        }
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+      }
+      assert.deepEqual([novo.erros, velho.erros], [[], []]);
+      await novo.ctx.close(); await velho.ctx.close();
+    }
+  });
+
+  test('busca: por nome, PV e Key Account no filtro atual (sem as ocultas), até 12 sugestões, etiqueta "KEY ACCOUNT"; ficha do cliente e da KA', async () => {
+    const {page, ctx, erros} = await abre('dim', {entrar: 'dir', largura: 1440, aba: null});
+    const busca = (q) => page.evaluate(q => { const i = document.getElementById('exQ'); i.value = q; i.dispatchEvent(new Event('input')); }, q);
+    const sug = () => page.$$eval('#exSug .sugItem', els => els.map(e => ({nm: e.querySelector('.nm').childNodes[0].textContent,
+      tag: (e.querySelector('.tagRedeSug') || {}).textContent || '', meta: e.querySelector('.meta').textContent,
+      caixa: e.querySelector('.tagRedeSug') ? getComputedStyle(e.querySelector('.tagRedeSug')).textTransform : ''})));
+    // nome (sem acento e sem diferença de maiúsculas): no máximo 12
+    await busca('cliente teste');
+    let s = await sug();
+    assert.equal(s.length, 12, 'até 12 sugestões');
+    // Key Account: etiqueta e "N lojas"; no máximo 4 KAs antes dos clientes
+    await busca('fictícia');
+    s = await sug();
+    assert.ok(s.length === 12 && s.every(x => x.tag === 'Key Account' && x.caixa === 'uppercase' && /^\d+ lojas?$/.test(x.meta)), 'KAs com a etiqueta');
+    // PV: o cliente
+    const alvo = await page.evaluate(() => { const r = rotasListas().find(r => (CLIENT_ROSTER[r] || []).length > 1); const c = CLIENT_ROSTER[r][1];
+      return {r, pv: c[0], nome: c[1], seg: SEGS[c[2]], dia: DIAS[c[3]], kstt: ['LANCHONETE', 'RESTAURANTE', 'BOTECO', 'PADARIAS'].includes(SEGS[c[2]].toUpperCase())}; });
+    await busca(String(alvo.pv));
+    s = await sug();
+    assert.deepEqual(s[0], {nm: alvo.nome, tag: '', meta: `PV ${alvo.pv} · rota ${alvo.r}`, caixa: ''});
+    // ocultas fora: um cliente da SV.G3.3 (rota 331) não aparece; filtro de gerência: só os dela
+    const pv331 = await page.evaluate(() => CLIENT_ROSTER['331'][0][0]);
+    await busca(String(pv331));
+    assert.ok(!(await sug()).some(x => x.meta.includes('rota 331')), 'oculta fora da busca');
+    await page.selectOption('#fgc', 'G1');
+    await busca('cliente teste');
+    assert.ok((await sug()).every(x => /rota G1/.test(x.meta)), 'só a G1');
+    await page.selectOption('#fgc', '');
+    // ficha do cliente: título, subtítulo, 5 cartões sem a Tendência, quadrinhos de ICS GC e Novos Negócios
+    await busca(String(alvo.pv));
+    await page.click('#exSug .sugItem');
+    let f = await page.evaluate(() => ({aberta: document.getElementById('drw').classList.contains('on'), tit: dTit.textContent, sub: dSub.textContent,
+      secs: [...document.querySelectorAll('#dCorpo .fxSec')].map(h => h.textContent), b2: document.querySelectorAll('#dCorpo .cuB2').length,
+      cards: [...document.querySelectorAll('#dCorpo .cuCard')].map(c => ({u: c.dataset.u, st: c.dataset.st, meta: c.dataset.meta, real: c.dataset.real,
+        cls: c.className, vals: c.querySelector('.cuVals').textContent.replace(/\s+/g, ' ').trim()})),
+      ics: [...document.querySelectorAll('#dCorpo .fxCob[data-g="ICS_GC"] .tile')].map(t => [t.className, t.querySelector('.e').textContent]),
+      nn: document.querySelectorAll('#dCorpo .fxCob[data-g="NOVOS_NEG"] .tile').length}));
+    const esp = await page.evaluate(a => ({bl: P.VOLUME_CLIENTE[a.r][a.pv].slice(0, 5), ka: Object.values(P.REDES_CLIENTE[a.r] || {}).find(g => g.clientes.includes(a.pv)),
+      rot: GROUPS.VOLUME.map(rotuloInd), nIcs: P.COV_GRUPO.ICS_GC.length, nNn: P.COV_GRUPO.NOVOS_NEG.length}), alvo);
+    assert.ok(f.aberta);
+    assert.equal(f.tit, alvo.nome);
+    assert.equal(f.sub, [`PV ${alvo.pv}`, alvo.seg, `rota ${alvo.r}`, `visita ${alvo.dia}`, esp.ka ? esp.ka.nome : ''].filter(Boolean).join(' · '));
+    assert.deepEqual(f.secs, ['Volume do mês', 'ICS GC', 'Novos Negócios']);
+    assert.equal(f.b2, 0, 'sem a barra de tendência');
+    assert.deepEqual(f.cards.map(c => c.u), esp.rot, 'um cartão por categoria');
+    f.cards.forEach((c, i) => { const b = esp.bl[i];
+      if(b && b[0] > 0){ assert.deepEqual([Number(c.meta), Number(c.real), c.st], [b[0], b[1], b[1] >= b[0] ? 'bat' : 'abx'], c.u); assert.match(c.vals, /^Meta NEG /, c.u); }
+      else { assert.equal(c.st, 'semneg', c.u); assert.match(c.cls, /\bcuSemNeg\b/); assert.match(c.vals, /^Meta NEG — Real /, c.u); } });
+    assert.equal(f.ics.length, esp.nIcs);
+    assert.equal(f.nn, esp.nNn);
+    const ks = f.ics[P_KSTT_IDX(await page.evaluate(() => P.COV_GRUPO.ICS_GC))];
+    assert.deepEqual(ks[1] === 'não elegível', !alvo.kstt, 'KS TT fora dos 4 segmentos = não elegível');
+    await page.keyboard.press('Escape');
+    // cliente sem Meta NEG em nenhuma categoria: os 5 cartões cinza
+    const sem = await page.evaluate(() => { for(const r of rotasListas()) for(const c of CLIENT_ROSTER[r] || []){ const b = (P.VOLUME_CLIENTE[r] || {})[c[0]];
+      if(b && b.slice(0, 5).every(x => !x || !(x[0] > 0))) return c[0]; } return null; });
+    assert.ok(sem, 'a variante tem um cliente sem Meta NEG');
+    await busca(String(sem));
+    await page.click('#exSug .sugItem');
+    assert.deepEqual(await page.$$eval('#dCorpo .cuCard', cs => cs.map(c => c.dataset.st)), Array(5).fill('semneg'));
+    // faixa cinza neutra (não vermelha nem verde)
+    const faixa = await page.$eval('#dCorpo .cuCard', c => getComputedStyle(c).borderLeftColor);
+    assert.equal(faixa, await page.evaluate(() => { const s = document.createElement('i'); s.style.color = 'var(--linha-forte)'; document.body.appendChild(s);
+      const x = getComputedStyle(s).color; s.remove(); return x; }));
+    await page.keyboard.press('Escape');
+    // ficha da Key Account: "Key Account · N lojas no filtro atual", soma das lojas, "x/y lojas"
+    await busca('KA FICTICIA 03');
+    await page.click('#exSug .sugItem');
+    const kaEsp = await page.evaluate(() => { const ms = []; for(const r of rotasListas()){ const g = (P.REDES_CLIENTE[r] || {})['KA FICTICIA 03']; if(g) g.clientes.forEach(pv => ms.push([r, pv])); }
+      const soma = i => ms.reduce((s, [r, pv]) => { const b = (P.VOLUME_CLIENTE[r] || {})[pv]; const x = b && b[i]; return x ? [s[0] + x[0], s[1] + x[1]] : s; }, [0, 0]);
+      return {n: ms.length, vol: GROUPS.VOLUME.map((k, i) => soma(i))}; });
+    f = await page.evaluate(() => ({tit: dTit.textContent, sub: dSub.textContent,
+      cards: [...document.querySelectorAll('#dCorpo .cuCard')].map(c => [Number(c.dataset.meta) || 0, Number(c.dataset.real) || 0]),
+      tiles: [...document.querySelectorAll('#dCorpo .fxCob .tile .e')].map(e => e.textContent)}));
+    assert.deepEqual([f.tit, f.sub], ['KA FICTICIA 03', `Key Account · ${kaEsp.n} lojas no filtro atual`]);
+    f.cards.forEach((c, i) => { if(kaEsp.vol[i][0] > 0){ assert.ok(Math.abs(c[0] - kaEsp.vol[i][0]) < 1e-6 && Math.abs(c[1] - kaEsp.vol[i][1]) < 1e-6, `KA ${i}`); } });
+    assert.ok(f.tiles.every(t => /^\d+\/\d+ lojas$|^não elegível$|^sem venda$/.test(t)), 'x/y lojas');
+    // a ficha usa só classes de conteúdo (novas ou existentes); o cromo da gaveta é o de sempre (Parte N)
+    const cls = await page.evaluate(() => [...new Set([...document.querySelectorAll('#dCorpo *')].flatMap(el => [...el.classList]))]);
+    const OK = new Set(['fxFicha', 'fxSec', 'cuGav', 'cuGrade', 'cuCard', 'cuBat', 'cuAbx', 'cuFech', 'cuSemNeg', 'cuCab', 'cuNome', 'cuSub', 'cuPct',
+      'cuVals', 'cuBar', 'cuB1', 'cuRot', 'cuTr', 'cuVal', 'cuNota', 'grid13', 'fxCob', 'tile', 'ok', 'no', 'na', 'nd', 'parcial', 't', 'e']);
+    assert.deepEqual(cls.filter(c => !OK.has(c)), [], 'classes da ficha');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [360, 390, 1000, 1440]){
+    test(`${largura} px: cada modo, a gaveta e a ficha sem rolagem lateral nem texto cortado no cabeçalho; nomes com a largura do pedido; console sem erro`, async () => {
+      const {page, ctx, erros} = await abre('dim', {entrar: 'dir', largura, altura: 820, aba: null});
+      await medidas(page);
+      for(const ab of ['nivel', 'canal', 'marca', 'cli', 'ka']){
+        await DIMI.clicaAbrir(page, ab);
+        assert.ok(await semRolagemLateral(page), `${ab}: rolagem lateral`);
+        assert.deepEqual(await page.evaluate(() => __vis.estouros('#abaTopo .abCab > :not(.exFer), #exTDiv, #exSDiv')), [], `${ab}: cortes`);
+        if(ab === 'canal' || ab === 'cli' || ab === 'ka'){
+          const w = await page.$eval('#exDivs .dv.sel .dRow .dNome', el => el.getBoundingClientRect().width);
+          assert.ok(Math.abs(w - (ab === 'canal' ? 96 : 118)) < 1, `${ab}: largura do nome ${w}`);
+          assert.equal(await page.$eval('#exDivs .dv.sel .dRow .dNome', el => getComputedStyle(el).textOverflow), 'ellipsis');
+        }
+        if(ab !== 'nivel'){
+          await page.click('#exGauges .gCard[role="button"]');
+          await page.waitForTimeout(260);
+          assert.ok(await page.evaluate(() => document.getElementById('dCorpo').scrollWidth <= document.getElementById('dCorpo').clientWidth + 1), `${ab}: gaveta`);
+          await page.keyboard.press('Escape');
+        }
+      }
+      if(largura < 1000) await page.click('#exLupa');
+      await page.fill('#exQ', 'fictícia');
+      assert.ok(await semRolagemLateral(page), 'sugestões');
+      const sg = await page.evaluate(() => { const b = document.getElementById('exSug').getBoundingClientRect(); return b.left >= -0.5 && b.right <= innerWidth + 0.5; });
+      assert.ok(sg, 'sugestões dentro da tela');
+      await page.click('#exSug .sugItem');
+      await page.waitForTimeout(260);
+      assert.ok(await page.evaluate(() => document.getElementById('dCorpo').scrollWidth <= document.getElementById('dCorpo').clientWidth + 1), 'ficha');
+      assert.ok(await semRolagemLateral(page));
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    });
+  }
+});
+// posição do KS TT no grupo ICS GC (a ficha mostra os quadrinhos na ordem do grupo)
+function P_KSTT_IDX(ics){ return ics.indexOf('KS TT'); }

@@ -1132,3 +1132,112 @@ describe('Botão "Clientes" por agrupador com dado real', {skip: pular}, () => {
     }
   });
 });
+
+/* "Abrir por" da Executiva com dado real (Etapa 5 do pacote v3; invariantes (b)-(f) em dimensoes_invariantes.js, as mesmas da
+   Parte AI): a Diretoria, cada gerência com dados (filtro da Diretoria), cada grupo no Total e uma supervisão, em 1440 e 390 px;
+   (a) o modo padrão idêntico à main antes da etapa (REF_PRE_ABRIR), com o mesmo payload: Executiva (com a Evolução aberta), gaveta
+   da categoria e as 4 abas iguais (HTML), também depois de passar pelos modos; e 360/390/1000/1440 px sem rolagem lateral nem
+   erro no console, em cada modo, na gaveta e na ficha da busca. Imprime o % da meta oficial que a Meta NEG somada cobre, por
+   categoria e escopo (só totais e códigos de gerência; nada de clientes). */
+const DIMI = require('./dimensoes_invariantes.js');
+const REF_PRE_ABRIR = '0f6fbfe';
+const FRONT_PRE_ABRIR = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_ABRIR}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+
+describe('"Abrir por" e busca da Executiva com dado real', {skip: pular}, () => {
+  for(const largura of [1440, 390])
+  test(`${largura} px: Diretoria, cada gerência, cada grupo no Total e uma supervisão: invariantes (b) a (f)`, async () => {
+    const {page, ctx, erros} = await abre(largura);
+    const info = await page.evaluate(() => ({gcs: gcsComDados(), grupos: gruposGc().map(g => g.chave).filter(temDados),
+      mes: P.MES_LABEL, dia: `${P.DIA_HOJE}/${P.TOTAL_DIAS_UTEIS}`, fech: !!P.FECHAMENTO}));
+    const linhas = [];
+    await entra(page, {perfil: 'dir'});
+    linhas.push(await DIMI.confereDimensoes(page, 'BAND'));
+    for(const g of info.gcs){
+      await page.selectOption('#fgc', g);
+      linhas.push(await DIMI.confereDimensoes(page, `GC.${g}`, {gaveta: largura === 1440}));
+    }
+    for(const g of info.grupos){
+      await entra(page, {perfil: 'gc', gc: g});
+      linhas.push(await DIMI.confereDimensoes(page, `Total ${g}`));
+    }
+    const sv = await page.evaluate(() => { const g = gcsComDados()[0]; return {gc: g, sv: svsDaEntrada(g)[0]}; });
+    await entra(page, {perfil: 'sv', gc: sv.gc, sv: sv.sv});
+    linhas.push(await DIMI.confereDimensoes(page, sv.sv));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    console.log(`# "Abrir por" com dado real (${largura} px): ${info.mes}, dia útil ${info.dia}${info.fech ? ' (fechamento)' : ''}`);
+    console.log('# Cada célula: % da meta oficial coberto pela Meta NEG somada dos clientes · canais / clientes / Key Accounts exibidos');
+    console.log(`# | Escopo | ${KS_VOL.map(k => CURTO_VOL[k]).join(' | ')} |`);
+    console.log(`# |---|${KS_VOL.map(() => '---').join('|')}|`);
+    for(const l of linhas) console.log(`# | ${l.onde} | ${KS_VOL.map(k => { const c = l.cats[k];
+      return c ? `${c.pctOf}% · ${c.canal}/${c.cli}/${c.ka}` : '—'; }).join(' | ')} |`);
+  });
+
+  test('(a) modo padrão idêntico à main antes da etapa (mesmo payload): Executiva com a Evolução aberta, gaveta da categoria e as 4 abas', {skip: !FRONT_PRE_ABRIR && `sem o commit ${REF_PRE_ABRIR}`}, async () => {
+    for(const largura of [1440, 390]){
+      const [novo, velho] = [await abre(largura), await abre(largura, undefined, FRONT_PRE_ABRIR)];
+      const sv = await novo.page.evaluate(() => { const g = gcsComDados()[0]; return {gc: g, sv: svsDaEntrada(g)[0]}; });
+      const escopos = [{perfil: 'dir'}, ...(await novo.page.evaluate(() => gcsComDados())).slice(0, 4).map(g => ({perfil: 'dir', dgc: g})),
+        {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: sv.gc, sv: sv.sv}];
+      for(const e of escopos){
+        for(const {page} of [novo, velho]){ await entra(page, e); if(e.dgc) await page.selectOption('#fgc', e.dgc); }
+        const onde = `${largura} ${JSON.stringify(e)}`;
+        const exec = async p => { await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click()));
+          const h = await p.innerHTML('#exec'); await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click())); return h; };
+        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva`);
+        for(const ab of ['canal', 'cli', 'ka', 'nivel']) await DIMI.clicaAbrir(novo.page, ab);
+        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva depois dos modos`);
+        const k = await novo.page.$eval('#exGauges .gCard[role="button"]', g => g.dataset.k);
+        const gav = async p => { await p.click(`#exGauges .gCard[data-k="${k}"]`); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
+        assert.equal(await gav(novo.page), await gav(velho.page), `${onde}: gaveta da categoria`);
+        for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+          for(const {page} of [novo, velho]) await page.evaluate(ab => document.querySelector(`.tab[data-g="${ab}"]`).click(), ab);
+          const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').outerHTML, lista: document.getElementById('lista').innerHTML}));
+          assert.deepEqual(await tela(novo.page), await tela(velho.page), `${onde} ${ab}: cabeçalho e cards`);
+        }
+        for(const {page} of [novo, velho]) await page.evaluate(() => document.querySelector('.tab[data-g="EXEC"]').click());
+      }
+      assert.deepEqual([novo.erros, velho.erros], [[], []]);
+      await novo.ctx.close(); await velho.ctx.close();
+    }
+  });
+
+  for(const largura of [360, 390, 1000, 1440])
+  test(`${largura} px: cada modo, a gaveta e a ficha da busca sem rolagem lateral, sem erro no console`, async () => {
+    const {page, ctx, erros} = await abre(largura);
+    for(const e of [{perfil: 'dir'}, {perfil: 'gc', gc: 'G1'}]){
+      await entra(page, e);
+      for(const ab of ['nivel', 'canal', ...(e.perfil === 'dir' ? ['marca'] : []), 'cli', 'ka']){
+        await DIMI.clicaAbrir(page, ab);
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${largura} ${e.perfil} ${ab}`);
+        if(ab !== 'nivel'){
+          await page.click('#exGauges .gCard[role="button"]');
+          await page.waitForTimeout(260);
+          assert.ok(await page.evaluate(() => document.getElementById('dCorpo').scrollWidth <= document.getElementById('dCorpo').clientWidth + 1), `${largura} ${ab}: gaveta`);
+          await page.keyboard.press('Escape');
+        }
+      }
+      // ficha: a 1ª sugestão de uma Key Account e a de um cliente (sem imprimir nomes)
+      for(const q of ['a', '1']){
+        if(largura < 1000 && !(await page.evaluate(() => document.getElementById('abaTopo').classList.contains('buscaAberta')))) await page.click('#exLupa');
+        await page.fill('#exQ', q);
+        const n = await page.$$eval('#exSug .sugItem', els => els.length);
+        assert.ok(n > 0 && n <= 12, `${largura} ${e.perfil}: sugestões ${n}`);
+        await page.click('#exSug .sugItem');
+        await page.waitForTimeout(260);
+        assert.ok(await page.evaluate(() => document.getElementById('drw').classList.contains('on') && document.querySelectorAll('#dCorpo .cuCard').length === GROUPS.VOLUME.length &&
+          !document.querySelector('#dCorpo .cuB2')), `${largura} ${e.perfil}: ficha`);
+        assert.ok(await page.evaluate(() => document.getElementById('dCorpo').scrollWidth <= document.getElementById('dCorpo').clientWidth + 1 &&
+          document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${largura} ${e.perfil}: ficha sem rolagem lateral`);
+        await page.keyboard.press('Escape');
+      }
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+});
