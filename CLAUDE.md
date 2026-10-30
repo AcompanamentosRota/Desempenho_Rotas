@@ -128,6 +128,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Botão "Clientes" (Etapa 4 do pacote v3): Diretoria, a 1ª gerência, uma supervisão e uma rota, nas 4 abas e cada agrupador
   (`frontend/tests/clientes_invariantes.js`, as mesmas da Parte AH; config.js servido com `semLimite`, pois `CONFIG` é
   congelado); 360/390/1000/1440 px; antes x depois contra `9364d62` (`REF_PRE_CLI`).
+  "Abrir por" e busca da Executiva (Etapa 5 do pacote v3): Diretoria, cada gerência, cada grupo no Total e uma supervisão em
+  1440 e 390 px (`frontend/tests/dimensoes_invariantes.js`, as mesmas da Parte AI; tabela do % da meta oficial por escopo e
+  categoria); (a) modo padrão contra `0f6fbfe` (`REF_PRE_ABRIR`) com o mesmo payload; 360/390/1000/1440 px em cada modo.
   Resumo, bloco Todos a Bordo: Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px
   (`frontend/tests/resumo_tab_invariantes.js`, as mesmas da Parte AF; tabela por escopo com bloco / card / online de cada item);
   e o antes x depois contra o front do `9f82f15` com o mesmo payload (Resumo sem o bloco, Executiva, cards e cascata iguais).
@@ -526,7 +529,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   **Aba Executiva (Etapa 5, 21/10/2026; README, "Aba Executiva")**: `.tab[data-g="EXEC"]` (primeira da barra; `aba` começa
   em 'EXEC'), `section#exec` (KPIs `.card.kpi` `#exBase/#exSem/#exVis/#exCat`, quadros `.foco` `#exFoco`/`#exDia`, blocos
   `.bloco`: `#exGauges`, `#exChips` + `#exDivs`, `.dupla` com `#exSemc` e `#exAg`/`#exAgenda`, `table#exCob` em `.rolaX`);
-  no EXEC o `#abaTopo` fica só com `.abCab` (`.abaTopo.exec`, título = nome da aba pelo perfil; era "Resumo executivo") e `#lista` vazio e `hidden`
+  no EXEC o `#abaTopo` fica só com `.abCab` (`.abaTopo.exec`, título = nome da aba pelo perfil; era "Resumo executivo") e, desde a Etapa 5 do pacote v3, sticky com o `#exFer` ("Abrir por" e busca; abaixo) e `#lista` vazio e `hidden`
   (`linhaResumo`/`filtraCards` não rodam; `buscaCliente` sai cedo). `temExecutiva()` = sem rota no filtro (modo 'gc'): com
   rota (perfil Rota) a aba some e `render` vai ao Volume. `pintaExecutiva(rotas, {ind, tot}, visitas)`: unidades =
   `gruposDo(ctxInicial(), null)` sem `off` (`unidadesExec`, cada uma com `agrega()` próprio; `cod` = nome sem " · ...");
@@ -617,6 +620,34 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   ao trocar de agrupador/dia; `abreClientes` zera. Venda Zero busca por `e.nome`/`e.pv`. Testes: Parte AH (+ conferencia_real).
   No payload real de 29/10: 0 PVs em mais de uma rota; 343 clientes com nome repetido na mesma rota (a conferência desempata o
   PV do volume pelo Real).
+  **Cabeçalho fixo, "Abrir por" e busca da Executiva (Etapa 5 do pacote v3, 30/10/2026; README, "Aba Executiva"; só front)**:
+  `cabExec(on)` (no `render`) põe o `div#exFer.exFer` (`#exAbrir.exAbrir` com os `.fchip[data-ab]` + `.exBusca`: `#exLupa`,
+  `.exCampo` com `#exQ` e `#exSug.sugestoes`) no `.abCab` antes do `#pilDia` SÓ na Executiva e o tira nas outras abas (o
+  cabeçalho delas fica byte a byte o de antes). `.abaTopo.exec` sticky (`top: var(--barra-h)`; PC 0), fundo `--papel`, sombra,
+  margem negativa `--ex-gut`; `medeBarra()` grava `--barra-h` (altura da `.barra` sticky; 0 no PC, `display:contents`) no
+  render, no resize e por `ResizeObserver`. Celular: `.abCab` em grade "tit lupa dia" / "abr abr abr" (`.exFer`/`.exBusca`
+  `display:contents`); a lupa põe `.buscaAberta` no `#abaTopo` (campo na linha 2). A Parte M (até o fim da `.barra`) não muda.
+  "Abrir por": `abrirPor` ('nivel' | 'canal' | 'marca' | 'cli' | 'ka'; `aplicaAcesso` volta a 'nivel'), `modoAbrir()` (marca só
+  com `sel.modo==='dir'`), `pintaAbrir()` (1º botão = `NIVEL_EXEC[ctxInicial().nivel]`; `aria-pressed`). Modo 'nivel' = o desenho
+  de sempre (`pintaDesvios`, `abreCategoria`, detalhe da Evolução; HTML idêntico ao da main, Parte AI (a)). Outros modos:
+  `pintaDesviosDim` (título "Realizado x Meta NEG por canal", desvio = Real ÷ Meta NEG − 1, `.divs.abDim` + `.abCanal` (nome 96
+  px) / `.abLista` (118 px), `.dvNota` "Meta = soma da Meta NEG dos clientes (X% da meta oficial em <categoria>)" com
+  `data-oficial`/`data-meta-neg` no `.dv`, `.exNota` com a regra dos 15 e "Tendência por <canal> depende de dado novo"; linhas
+  com `data-tend=""`), `abreCategoriaDim` (os cartões `cartaoCat(..., {semTend:true})`: como no fechamento, sem `.cuB2`, "Meta
+  NEG", status bat/abx; `.cuNota`) e `evoDim` (só o mês atual, `x.semAnt`, `.evNota`). Marca: `AVISO_MARCA` (`.exAviso`) nos três.
+  Dados: `dimDados(ab, k)` = {linhas, tot, oficial}: total = todos os clientes de `rotasVisiveis()` com bloco (`cliNeg`,
+  `VOLUME_CLIENTE[r][pv][i]` = [Meta NEG, Real]); Canal = por `SEGS[c[2]]` no mesmo universo (canais com Meta NEG > 0; Σ = total);
+  Clientes e Key Accounts (`gruposRede`) de `rotasListas()` (sem as ocultas), os `TOP_DIM` (15) maiores em Real com Meta NEG > 0
+  (desempate: Meta, nome). DECISÕES DA KAREN (30/10/2026): ocultas (SV.G3.3) no total e no Canal, fora das listas (Clientes, KA e
+  busca); total = todos os clientes. NADA de tendência estimada (D1 Meta NEG restante por cliente, D2 mês anterior por cliente e
+  D4 marca dependem de dado novo). Busca: `sugereEx` (`semAcento`; KAs e clientes de `rotasListas()`, 4 KAs antes dos clientes,
+  até `MAX_SUG_EX` 12; `.sugItem` + `.tagRedeSug` "Key Account") → `abreFichaEx` (`abre()`: `.fxFicha` com `.fxSec`, `cartaoCat`
+  por categoria com `semTend` ou o cartão `.cuSemNeg` (faixa `--linha-forte`, "sem Meta NEG"), `tileCobCli`/`tileCobKa` nos
+  `.grid13.fxCob`); `kaDoCliente`. Classes novas: `.exFer .exAbrir .exAbRot .exBusca .exLupa .exCampo .sugVazio .abDim .abCanal
+  .abLista .dvNota .exNota .evNota .exAviso .cuNota .cuSemNeg .fxFicha .fxSec .fxCob`; escala `--fs-ex-busca` (13/16 px),
+  `--fx-fs-sec`, `--ex-gut`. Testes: Parte AI (`dimensoes_invariantes.js`, também na conferência com dado real). Payload real de
+  29/10: Meta NEG somada = 98,2/95,8/97,0/95,1/98,5% da meta oficial na Diretoria; 290 KAs (107 em mais de uma rota), nenhuma loja
+  em duas.
   **Gavetas com barra de dias (Etapa 6, 21/10/2026; README, "Gavetas com barra de dias")**: o `chipsHtml`/`DIAS_CHIP` das
   coberturas e a regra única `noDia(c, chip)` (Todos; Hoje = `c[4]===1`; dia = `DIAS[c[3]].includes(chip)`: "Seg - Qui"
   aparece na Seg e na Qui; `listaCobertura` usa a mesma). `listaVolume`: barra em `#dLista` acima do `.cCab`, padrão

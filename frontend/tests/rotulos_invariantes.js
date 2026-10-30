@@ -86,6 +86,8 @@ const TEXTOS_TELA_PAGINA = () => {
   topo.querySelector('#abTit').remove();
   // o botão "Clientes" (Etapa 4 do pacote v3) não existe nos fronts de antes
   const cli = topo.querySelector('#btnClientes'); if(cli) cli.remove();
+  // nem o "Abrir por" e a busca do cabeçalho fixo da Executiva (Etapa 5 do pacote v3; só na aba Executiva)
+  const fer = topo.querySelector('#exFer'); if(fer) fer.remove();
   const ex = document.getElementById('exec');
   return {lista: [...document.querySelectorAll('#lista .ind')].map(limpa), topo: limpa(topo), exec: ex.hidden ? '' : limpa(ex)};
 };
