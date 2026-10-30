@@ -759,7 +759,11 @@ const REF_PRE_TAB = '9f82f15';
 const FRONT_PRE_TAB = (() => {
   try {
     const arq = f => execSync(`git show ${REF_PRE_TAB}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
-    return Object.fromEntries(['index.html', 'css/app.css', 'js/resumo.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+    // o index.html de lá com o botão "Clientes" (Etapa 4 do pacote v3), que o app.js atual liga ao carregar
+    const botao = fs.readFileSync(path.join(FRONT, 'index.html'), 'utf-8').match(/\n\s*<button class="abCli"[^\n]*/)[0];
+    const com = {'index.html': t => t.replace(/(<h2 id="abTit"><\/h2>)/, `$1${botao}`)};
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/resumo.js'].map(f => { const t = (com[f] || (x => x))(arq(f));
+      return ['/' + f, () => t]; }));
   } catch(e) { return null; }
 })();
 describe('Resumo: bloco Todos a Bordo com dado real: antes x depois', {skip: pular || (!FRONT_PRE_TAB && `sem o commit ${REF_PRE_TAB}`)}, () => {
