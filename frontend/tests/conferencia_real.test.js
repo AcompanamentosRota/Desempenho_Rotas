@@ -1193,8 +1193,13 @@ describe('"Abrir por" e busca da Executiva com dado real', {skip: pular}, () => 
         for(const ab of ['canal', 'cli', 'ka', 'nivel']) await DIMI.clicaAbrir(novo.page, ab);
         assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva depois dos modos`);
         const k = await novo.page.$eval('#exGauges .gCard[role="button"]', g => g.dataset.k);
-        const gav = async p => { await p.click(`#exGauges .gCard[data-k="${k}"]`); const h = await p.innerHTML('#drw'); await p.keyboard.press('Escape'); return h; };
-        assert.equal(await gav(novo.page), await gav(velho.page), `${onde}: gaveta da categoria`);
+        // a gaveta virou tabela na Etapa 6 do pacote v3 (de propósito): os números de cada unidade (cartão de lá, linha daqui), o
+        // título e o subtítulo (sem a ordem) iguais
+        const gav = async p => { await p.click(`#exGauges .gCard[data-k="${k}"]`);
+          const h = await p.evaluate(() => ({tit: dTit.textContent, sub: dSub.textContent.replace(/ · ordenado por .*$/, ''),
+            un: [...document.querySelectorAll('#dCorpo .cuCard, #dCorpo .ctLin')].map(c => ['u', 'st', 'meta', 'real', 'tend', 'pct', 'pctTend'].map(x => c.dataset[x]))}));
+          await p.keyboard.press('Escape'); return h; };
+        assert.deepEqual(await gav(novo.page), await gav(velho.page), `${onde}: gaveta da categoria (números)`);
         for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
           for(const {page} of [novo, velho]) await page.evaluate(ab => document.querySelector(`.tab[data-g="${ab}"]`).click(), ab);
           const tela = p => p.evaluate(() => ({topo: document.getElementById('abaTopo').outerHTML, lista: document.getElementById('lista').innerHTML}));
