@@ -81,6 +81,8 @@ def indicador_vendazero(meta: float | None, real: int, revertido_hoje: int, opor
 #                 quando a META_NEG do mês bate com a META_VOLUME (1%); senão Meta x (restante / mês) (escalonado)
 #   Tendência   = Vol Real + Neg Restante; % Tendência = Tendência / Meta; no ritmo (verde) com % >= 100
 #   Dif         = Vol Real - Meta; Meta do dia = META_RECUPERAVEL_ROTA de hoje
+#   Neg de hoje = a parte da Neg Restante planejada para hoje (META_NEG de hoje), na mesma escala (neg_hoje);
+#                 só informada (negHoje), não entra em nenhuma conta
 # Supervisão e gerência somam as rotas e recalculam o % (agrega_volume = agrega() do app.js).
 # No fechamento do mês: sem tendência e sem meta do dia; no ritmo com % realizado (Real / Meta) >= 100.
 DIRETO, CURVA, SEM_CURVA, SEM_META_ROTA = "direto", "curva", "sem_curva", "sem_meta_rota"
@@ -112,6 +114,30 @@ def meta_e_restante(meta_rota: float | None, neg_mes: float | None, neg_restante
     return None, None, None
 
 
+def neg_hoje(caso: str | None, meta: float | None, neg_mes: float | None, hoje_bruto: float | None,
+             dias_mes: int) -> float | None:
+    """Neg de hoje (negHoje) de uma rota x macro, na mesma base e escala da Neg Restante do `caso`.
+
+    A Neg Restante vai de hoje (inclusive) ao fim do mês; negHoje é a parte dela planejada para hoje.
+    hoje_bruto = META_NEG com DATA_MOVIMENTO = hoje pela mesma rota da curva (None = sem o dado: dia não útil,
+    sem linha de hoje, consulta falhou ou fechamento; aí negHoje = None em todos os casos, nunca outra conta).
+    direto        hoje_bruto
+    curva         Meta x hoje_bruto / META_NEG do mês (o mesmo fator do restante)
+    sem_curva     Meta / dias úteis do mês (o restante é Meta x dias restantes / dias do mês)
+    sem_meta_rota hoje_bruto
+    sem_meta      0 (meta 0 e Neg Restante 0); rota oculta das EV*: 0 (fontes.carregar)
+    """
+    if hoje_bruto is None or caso is None:
+        return None
+    if caso == DIRETO or caso == SEM_META_ROTA:
+        return hoje_bruto
+    if caso == CURVA:
+        return meta * hoje_bruto / neg_mes if meta and neg_mes else 0.0
+    if caso == SEM_CURVA:
+        return meta / dias_mes if meta and dias_mes else 0.0
+    return 0.0
+
+
 def volume_indisponivel() -> dict:
     return {"meta": None, "real": None, "dif": None, "metaDia": None, "pctTendencia": None,
             "onPace": None, "unavailable": True}
@@ -137,12 +163,14 @@ def indicador_volume(v: VolumeRota | None, cal: Calendario, sem_dado_hoje: bool 
         pct_real = _pct(v.real, v.meta)
         return {**base, "metaDia": None, "tendencia": None, "pctTendencia": None,
                 "onPace": pct_real is not None and pct_real >= 100, "unavailable": False,
-                "semDadoHoje": False, "negRestante": None, "metaNegClientes": _r1_ou_none(v.meta_neg_clientes)}
+                "semDadoHoje": False, "negRestante": None, "metaNegClientes": _r1_ou_none(v.meta_neg_clientes),
+                "negHoje": None}
     tend = tendencia(v)
     pct_t = _pct(tend, v.meta)
     return {**base, "metaDia": _r1_ou_none(v.meta_dia_hoje), "tendencia": _r1(tend), "pctTendencia": pct_t,
             "onPace": pct_t is not None and pct_t >= 100, "unavailable": False, "semDadoHoje": sem_dado_hoje,
-            "negRestante": _r1(v.neg_restante or 0.0), "metaNegClientes": _r1_ou_none(v.meta_neg_clientes)}
+            "negRestante": _r1(v.neg_restante or 0.0), "metaNegClientes": _r1_ou_none(v.meta_neg_clientes),
+            "negHoje": _r1_ou_none(v.neg_hoje)}
 
 
 def agrega_volume(blocos: list[dict | None], fechamento: bool = False) -> dict:
@@ -160,11 +188,13 @@ def agrega_volume(blocos: list[dict | None], fechamento: bool = False) -> dict:
     if fechamento:
         pct = _pct(real, meta)
         return {**out, "tendencia": None, "negRestante": None, "pctTendencia": None,
-                "onPace": pct is not None and pct >= 100, "unavailable": False}
+                "onPace": pct is not None and pct >= 100, "unavailable": False, "negHoje": None}
     tend = soma("tendencia")
     pct_t = _pct(tend, meta)
+    # negHoje: soma das rotas com o campo; None se nenhuma tiver (payload antigo, sem o dado de hoje)
+    nh = [b["negHoje"] for b in disp if b.get("negHoje") is not None]
     return {**out, "tendencia": tend, "negRestante": soma("negRestante"), "pctTendencia": pct_t,
-            "onPace": pct_t is not None and pct_t >= 100, "unavailable": False}
+            "onPace": pct_t is not None and pct_t >= 100, "unavailable": False, "negHoje": sum(nh) if nh else None}
 
 
 def bloco_volume_cliente(meta: float | None, real: float, pace_pct: int) -> list | None:

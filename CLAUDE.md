@@ -70,6 +70,12 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   resíduo) x curva diária; Refrigerantes por gerência x E10d (chave e Real de hoje do payload); tamanho; tempo; rotas
   (null, EV*, total); caso (normal, limitado, fechamento). Só contagens e códigos de rota. Testes:
   `test_mes_anterior_payload.py` (o sintético do front + setembro/26 pelo `ConsultaE10`).
+- E12 do conferir (`negHoje`, Neg de hoje; README "Neg de hoje"): com rede, depois da E10 (`neg_hoje_conferencia`: a
+  consulta nova pela rota da curva, o caso exato de cada rota x macro e o tempo; grava `e12_neg_hoje.json`, `ARQ_E12`) e do
+  payload gravado (`--e12 DIR/payload.json [--e12-tempo S]`, sem rede; também junto da `--e11`, então o workflow já a
+  traz): por gerência e BAND nos 5 macros, Σ negHoje x Σ negRestante, %, casos (DIRETO/CURVA/SEM_CURVA/SEM_META_ROTA/
+  SEM_META/EV*/null), violações (fora de 0..negRestante, `TOL_E12` 0,1 cx), diferença contra o ARQ_E12 e tamanho com x sem
+  o campo. Só totais, contagens e códigos de rota. Testes: `test_neg_hoje.py`.
 - Front local: `cd frontend && python -m http.server 8765`.
 - **Versão do código e aviso de versão nova** (README, "Versão do código e aviso de versão nova"): versão = hash de 12
   caracteres de `frontend/` sem `frontend/data/**` (`.github/scripts/versao-front.sh`; nunca o SHA do commit: com só os
@@ -229,6 +235,17 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `DATA_MOVIMENTO` = hoje (se der HTTP 500, repete por gerência; se falhar ou vier sem rota, pela rota do cliente,
   com aviso no log; se falhar também, `metaDia = null`, nunca outra conta). Supervisão e gerência somam as rotas e recalculam
   o %. `validacao.py` informa por gerência a meta não distribuída (META_VOLUME − soma META_NEG), sem reprovar.
+  **Neg de hoje (`negHoje`, 30/10/2026; README "Neg de hoje")**: chave opcional no fim do bloco de volume de cada rota
+  (5 macros e Del Valle Frut), base da futura "tendência com online" (decisão C da Karen: Real + Online + (Neg Restante −
+  Neg de hoje)); nenhuma tela usa ainda e nenhum outro número muda. `fontes.carregar_neg_hoje` = `META_NEG` com
+  `DATA_MOVIMENTO eq hoje` (`filtro_hoje`) por rota x agrupador, no pool das consultas do mês, pela rota da meta; se a curva
+  ficar na rota do cliente (`ROTA_CLIENTE`), de novo por `CD_ROTA_Clien` (mesma base da Neg Restante); HTTP 500 = por
+  gerência (`_por_rota`); falha ou sem linha de hoje com valor = null em TODAS as rotas + aviso (nunca outra conta); só com
+  `Calendario.hoje_util` (dia útil, fora do fechamento); rota sem linha = 0. `modelo.neg_hoje(caso, ...)`: DIRETO e
+  SEM_META_ROTA = bruto; CURVA = Meta x bruto / META_NEG do mês (o fator do restante); SEM_CURVA = Meta / dias úteis do mês;
+  SEM_META e EV* = 0. 0 <= negHoje <= negRestante (`validacao._neg_hoje`, `TOL_NEG_HOJE` 0,1: só aviso). Espelho:
+  `modelo.agrega_volume` e `NUCLEO.agrega` (`volAgg.nh`) somam as rotas com o campo (null se nenhuma; null no fechamento);
+  `TestEspelhoNucleo` roda o nucleo.js no node. Tempo em `Fontes.tempos['neg_hoje_s']`. Payload real: ~+18 KB.
   **`DATA_MOVIMENTO` só no `$filter`, nunca no groupby**: por rota × agrupador × dia são ~25 mil linhas e ~150 s
   por medida (17/10); `META_NEG` do mês e restante são duas consultas por rota × agrupador. Literal de data pelo
   tipo do `$metadata` (`fontes.literal_data`). Todas as consultas do mês rodam em paralelo (meta: gerar.py < 60 s).
