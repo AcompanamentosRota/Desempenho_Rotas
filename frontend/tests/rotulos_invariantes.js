@@ -105,7 +105,7 @@ const desfazAE = x => {
   if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazAE(v)]));
   if(typeof x !== 'string') return x;
   return x.replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '')
-    .replace(/( data-desvio="[^"]*") data-meta="[^"]*" data-real="[^"]*"( data-online="[^"]*")?>/g, '$1>')
+    .replace(/( data-desvio="[^"]*") data-meta="[^"]*" data-real="[^"]*"( data-online="[^"]*")?( data-tend="[^"]*")?>/g, '$1>')
     .replace(/<label class="buscaRot" for="q">Busca por cliente<\/label>(\s*)<div class="buscaWrap">(\s*)<input/g,
              '<div class="buscaWrap">$2<label class="sr-only" for="q">Buscar cliente ou rede</label>$2<input')
     .replace('placeholder="Digite nome, código ou rede"', 'placeholder="Buscar cliente por nome, código ou rede"')

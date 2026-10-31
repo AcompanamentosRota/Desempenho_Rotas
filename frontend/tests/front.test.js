@@ -9957,3 +9957,119 @@ describe('Parte AL — "sem meta do dia" em dia não útil', {skip: pular}, () =
     }
   });
 });
+
+/* ---------- Parte AM: medidor da Executiva com o online em dia não útil (decisão da Karen, 31/10/2026) ----------
+   Em dia não útil (DIA_HOJE = DIA_ONTEM fora do fechamento) e com online, o arco e o % do medidor ficam sobre Real + online
+   (rótulo "real + online"), a Tendência = Real + online + Neg Restante (a Neg de hoje é zero) e o desvio sobre ela; data-tend
+   = a Tendência mostrada. Sem online, em dia útil e no fechamento: como antes (antes x depois contra a main 3647363). */
+const REF_PRE_MED = '3647363';
+const FRONT_PRE_MED = (() => {
+  try { const js = execSync(`git show ${REF_PRE_MED}:frontend/js/app.js`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return {'/js/app.js': () => js}; } catch(e) { return null; }
+})();
+// o medidor de k: arco, %, rótulo, Tendência mostrada e data-*
+const leMedidor = (page, k) => page.$eval(`#exGauges .gCard[data-k="${k}"]`, g => ({off: g.classList.contains('off'),
+  arco: (g.querySelector('.gSvg .vl') || {getAttribute: () => null}).getAttribute('stroke-dasharray'),
+  pct: g.querySelector('.gPct') ? g.querySelector('.gPct').firstChild.textContent : null,
+  rot: (g.querySelector('.gPct small') || {}).textContent || null, tendTxt: (g.querySelector('.gTend b') || {}).textContent || null,
+  pill: (g.querySelector('.gTend .pill') || {}).textContent || null, pillCls: (g.querySelector('.gTend .pill') || {}).className || null,
+  tend: g.dataset.tend, desvio: g.dataset.desvio, mr: [...g.querySelectorAll('.gMR b')].map(b => b.textContent)}));
+// recontagem independente do payload e do online, nas rotas do escopo
+const somaMed = (page, k) => page.evaluate(k => rotasAtuais().reduce((a, r) => { const b = nodo('', r).indicators[k];
+  a.onl += ONLINE ? (((ONLINE.volume || {})[r] || {})[k] || 0) : 0;
+  if(b && !b.unavailable){ a.meta += b.meta || 0; a.real += b.real || 0; a.neg += b.negRestante || 0; }
+  return a; }, {meta: 0, real: 0, neg: 0, onl: 0}), k);
+const pctBr = v => `${Math.abs(v).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}%`;
+// HTML dos medidores sem o .gDia (o rótulo do PR #51, que já difere em dia não útil) e sem o data-tend novo
+const medSemDia = page => page.innerHTML('#exGauges').then(h => h.replace(/<div class="gDia">[^<]*<\/div>/g, '').replace(/ data-tend="[^"]*"/g, ''));
+
+describe('Parte AM — medidor da Executiva com o online em dia não útil', {skip: pular}, () => {
+  test('(a) meio do mês (Neg Restante > 0): arco e % sobre Real + online ("real + online"), Tendência = Real + online + Neg Restante, desvio sobre ela; Meta | Real no faturado', async () => {
+    const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    let comOnline = 0;
+    for(const k of VOL_AA){
+      const m = await leMedidor(page, k), s = await somaMed(page, k);
+      if(!(s.meta > 0)){ assert.ok(m.off, k); continue; }
+      const base = s.real + s.onl, tend = base + s.neg, d = tend / s.meta - 1;
+      assert.ok(s.neg > 0, `${k}: o cenário tem Neg Restante`);
+      assert.equal(m.arco, `${Math.max(0, Math.min(100, base / s.meta * 100)).toFixed(2)} 100`, `${k}: arco`);
+      assert.deepEqual([m.pct, m.rot], [`${Math.round(base / s.meta * 100)}%`, 'real + online'], `${k}: %`);
+      assert.ok(Math.abs(Number(m.tend) - tend) < 1e-6, `${k}: data-tend ${m.tend} x ${tend}`);
+      assert.equal(m.tendTxt, fmtPt(tend), `${k}: Tendência`);
+      assert.ok(Math.abs(Number(m.desvio) - d) < 1e-12, `${k}: data-desvio`);
+      assert.deepEqual([m.pill, m.pillCls], [`${d >= 0 ? '↑' : '↓'} ${pctBr(d * 100)}`, `pill ${d >= 0 ? 'pos' : 'neg'}`], `${k}: desvio`);
+      assert.deepEqual(m.mr, [fmtPt(s.meta), fmtPt(s.real)], `${k}: Meta | Real faturado, sem o online`);
+      if(s.onl > 0) comOnline++;
+    }
+    assert.ok(comOnline > 0, 'pelo menos uma categoria com online');
+    // o card da aba Volume continua no % real faturado (consequência aceita)
+    const s = await somaMed(page, 'VOL REFRIGERANTES');
+    await vaiAba(page, 'VOLUME');
+    assert.equal(await page.$eval('#lista .ind[data-k="VOL REFRIGERANTES"] .opo', e => e.textContent), `${Math.round(s.real / s.meta * 100)}% real`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(b) fim do mês (Neg Restante = 0): Tendência = Real + online', async () => {
+    const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    const k = 'VOL REFRIGERANTES';
+    await page.evaluate(k => { for(const r of rotasAtuais()){ const b = nodo('', r).indicators[k];
+      if(b && !b.unavailable){ b.tendencia -= b.negRestante || 0; b.negRestante = 0; } } render(); }, k);
+    const m = await leMedidor(page, k), s = await somaMed(page, k);
+    assert.equal(s.neg, 0);
+    assert.ok(Math.abs(Number(m.tend) - (s.real + s.onl)) < 1e-6, `data-tend ${m.tend}`);
+    assert.equal(m.tendTxt, fmtPt(s.real + s.onl));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(c) dia não útil sem online.json: medidores como no dia útil (só o rótulo do .gDia do PR #51 muda)', async () => {
+    const [sab, util] = [await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440}),
+                         await abre('util0', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440})];
+    for(const {page} of [sab, util]) await page.evaluate(() => { ONLINE = null; render(); });
+    assert.equal(await medSemDia(sab.page), await medSemDia(util.page));
+    assert.equal((await leMedidor(sab.page, 'VOL REFRIGERANTES')).rot, 'real');
+    assert.deepEqual([...sab.erros, ...util.erros], []);
+    for(const {ctx} of [sab, util]) await ctx.close();
+  });
+
+  for(const [dados, nome] of [['util0', 'd) dia útil'], ['vol5fech', 'e) fechamento']])
+  test(`(${nome}: medidores idênticos aos da main antes da etapa (fora o data-tend novo)`, {skip: !FRONT_PRE_MED && `sem o commit ${REF_PRE_MED}`}, async () => {
+    for(const entrar of ['dir', {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G2', sv: '1'}]){
+      const [novo, velho] = [await abre(dados, {entrar, aba: null, largura: 1440}), await abre(dados, {entrar, aba: null, largura: 1440, troca: FRONT_PRE_MED})];
+      const h = p => p.innerHTML('#exec').then(x => x.replace(/ data-tend="[^"]*"/g, ''));
+      for(const k of VOL_AA){
+        for(const {page} of [novo, velho]) await page.evaluate(k => { catExec = k; render(); }, k);
+        assert.equal(await h(novo.page), await h(velho.page), `${JSON.stringify(entrar)} ${k}: #exec`);
+      }
+      const t = await novo.page.$$eval('#exGauges .gCard:not(.off)', gs => gs.map(g => g.dataset.tend));
+      if(dados === 'util0') assert.ok(t.every(x => x !== ''), 'data-tend = b.tendencia no dia útil');
+      else assert.ok(t.every(x => x === ''), 'sem data-tend no fechamento');
+      assert.deepEqual([...novo.erros, ...velho.erros], []);
+      for(const {ctx} of [novo, velho]) await ctx.close();
+    }
+  });
+
+  test('(f) categoria sem meta no escopo: o cartão off de sempre', async () => {
+    const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    await page.evaluate(() => { for(const r of rotasAtuais()){ const b = nodo('', r).indicators['VOL STILL']; if(b) b.unavailable = true; } render(); });
+    assert.equal(await page.$eval('#exGauges .gCard[data-k="VOL STILL"]', g => g.outerHTML),
+      '<div class="gCard off" data-k="VOL STILL"><div class="gTit">Still</div><div class="gDia gSem">sem meta neste escopo</div></div>');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('rótulo "real + online" sem corte nem rolagem lateral: 360, 390, 1000 e 1440 px', async () => {
+    for(const largura of [360, 390, 1000, 1440]){
+      const {page, ctx, erros} = await abre('sab', {entrar: 'dir', aba: null, largura, altura: 900});
+      const r = await page.$$eval('#exGauges .gCard:not(.off) .gPct', gs => gs.map(g => { const s = g.querySelector('small');
+        const cg = g.closest('.gCard').getBoundingClientRect(), rs = s.getBoundingClientRect();
+        return {t: s.textContent, corta: s.scrollWidth > s.clientWidth + 0.5 || rs.right > cg.right + 0.5 || rs.left < cg.left - 0.5,
+          g: g.scrollWidth > g.clientWidth + 0.5}; }));
+      assert.ok(r.length && r.every(x => x.t === 'real + online' && !x.corta && !x.g), `${largura}: ${JSON.stringify(r)}`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${largura}: rolagem lateral`);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+});

@@ -409,6 +409,15 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   lugares, só com metaDia não nula: caixa Online do card (`caixaOnline`) e da cascata (`meioLinha`), `.gDia` do medidor
   ("… · online X"), `linhaCtHtml` (Online sem cor, tooltip "· sem meta do dia") e `textoMetaDia` ("hoje não é dia útil
   (sábado); não há meta do dia. Online de hoje: X."). `metaBatida`/`coberturaBatida` não mudam; nenhum número muda.
+  **Medidor com o online em dia não útil (31/10/2026, decisão da Karen; README, "Categorias" da Executiva; só `pintaMedidores`)**:
+  com `semDiaUtil()` e online (`ro != null`), arco e `.gPct` = (Real + online) ÷ Meta com o `small` "real + online",
+  `.gTend` = Real + online + `negRestante` (a Neg de hoje é zero em dia não útil; com a Neg Restante 0, Real + online) e o
+  `.pill`/`data-desvio` sobre ela; `.gMR` continua Meta | Real faturado; `data-tend` (novo) = a Tendência mostrada (dia útil
+  `b.tendencia`, vazio no fechamento). O card de Volume e a coluna "% Real" da gaveta ficam no faturado (aceito). Sem online, dia
+  útil e fechamento: como antes. Os antes x depois que comparam o `#exec` com fronts antigos tiram o `data-tend` (`desfazFalta`,
+  `desfazAE`). Testes: Parte AM (sobre 'sab'/'util0'/'vol5fech'; antes x depois contra `3647363`, `REF_PRE_MED`), invariantes do
+  medidor em `executiva_invariantes.js` e o "% do medidor" em `categoria_invariantes.js`; com dado real, o bloco "Medidor da
+  Executiva com o online em dia não útil" do `conferencia_real.test.js` (sábado: (a) recontagem; dia útil: (b) `#exec` igual).
   Testes: Parte AL (variantes 'sab', 'dom', 'fer', 'semdsem', 'util0'; `semdia_teste.js`), as invariantes de executiva/
   cascata/categoria e, com dado real, o bloco "Sem meta do dia" do `conferencia_real.test.js` (payload de sábado `1f72a2b`:
   (a) e (b) contra `97a19db`, `REF_PRE_SEMDIA`; payload de dia útil `efb4f3a`: (c) idêntico).

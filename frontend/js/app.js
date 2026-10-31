@@ -730,7 +730,8 @@ function escolheCat(k, caixa){
   if(el) el.focus({preventScroll:true});
 }
 
-/* Medidores: meia-lua com Real / Meta (até 100%); no centro o % real (sem o online); "faltam X para a meta" (X = Meta -
+/* Medidores: meia-lua com Real / Meta (até 100%); no centro o % real (sem o online; em dia não útil, com online, arco e %
+   sobre Real + online e Tendência = Real + online + Neg Restante: ver abaixo); "faltam X para a meta" (X = Meta -
    (Real + online de hoje), como a Diferença dos cards e o Faltam da gaveta; sem online, fechamento ou sem online.json, Meta -
    Real) ou, com Real + online >= Meta, "meta batida · +X" (X = Real + online - Meta); Meta | Real; Tendência e o desvio com
    2 casas (↓ rosa abaixo de 0, ↑ verde a partir de 0, pelo valor exato); a linha da meta do dia do card. O online da
@@ -743,25 +744,29 @@ function pintaMedidores(rotas, ind, k){
     const b = ind[c], nome = esc(rotuloInd(c));
     if(!comMeta(b)) return `<div class="gCard off" data-k="${esc(c)}"><div class="gTit">${nome}</div>`+
       `<div class="gDia gSem">sem meta neste escopo</div></div>`;
-    const v = Math.max(0, Math.min(100, b.real/b.meta*100)), d = desvioVol(b), on = c===k;
     const onl = fech || !ONLINE ? null : onlineVol(rotas, c), ro = realOnline(c, rotas, b, onl), base = ro == null ? b.real : ro;
+    /* dia não útil (decisão da Karen, 31/10/2026): a Neg de hoje é zero (o SAP não tem o dia), então a venda de hoje entra
+       por cima do plano: arco e % sobre Real + online ("real + online"), Tendência = Real + online + Neg Restante e o desvio
+       sobre ela. Sem online (sem online.json), tudo como no dia útil. Dia útil e fechamento: como antes. */
+    const sdu = semDiaUtil() && ro != null, tend = sdu ? base + (b.negRestante || 0) : b.tendencia;
+    const v = Math.max(0, Math.min(100, (sdu ? base : b.real)/b.meta*100)), d = sdu ? tend / b.meta - 1 : desvioVol(b), on = c===k;
     const dia = fech ? '' : `<div class="gDia">${b.metaDia==null ? 'meta do dia —' : semDiaUtil() ? `${rotuloSemMetaDia()} · online ${fmt0(onl || 0)}`
       : metaBatida(b.metaDia) ? 'meta do dia batida'
       : `meta do dia ${fmt0(b.metaDia)} · online ${fmt0(onl || 0)}`}</div>`;
     const dif = b.real - b.meta;
     return `<div class="gCard${on ? ' sel' : ''}" role="button" tabindex="0" aria-pressed="${on}" data-k="${esc(c)}" data-desvio="${d}"`+
-      ` data-meta="${b.meta}" data-real="${b.real}" data-online="${onl == null ? '' : onl}">`+
+      ` data-meta="${b.meta}" data-real="${b.real}" data-online="${onl == null ? '' : onl}" data-tend="${tend == null ? '' : tend}">`+
       `<div class="gTit">${nome}</div>`+
       `<svg class="gSvg" viewBox="0 0 120 66" aria-hidden="true"><path class="tr" d="M10 60 A50 50 0 0 1 110 60"/>`+
       `<path class="vl" d="M10 60 A50 50 0 0 1 110 60" style="stroke:${COR_CAT[c] || 'var(--cinza-escuro)'}" pathLength="100"`+
       ` stroke-dasharray="${v.toFixed(2)} 100"/></svg>`+
-      `<div class="gPct">${b.pctReal}%<small>real</small></div>`+
+      `<div class="gPct">${sdu ? Math.round(base / b.meta * 100) : b.pctReal}%<small>${sdu ? 'real + online' : 'real'}</small></div>`+
       (base >= b.meta ? `<div class="gFalta ok">meta batida · +${fmt0(base - b.meta)}</div>`
                       : `<div class="gFalta">faltam ${fmt0(b.meta - base)} para a meta</div>`)+
       `<div class="gMR"><div><small>Meta</small><b data-fit="" data-fit-min="9">${fmt0(b.meta)}</b></div>`+
       `<div><small>Real</small><b data-fit="" data-fit-min="9">${fmt0(b.real)}</b></div></div>`+
       `<div class="gTend"><small>${fech ? 'Realizado x Meta' : 'Tendência'}</small>`+
-      `<b data-fit="" data-fit-min="10">${fech ? (dif>0 ? '+' : '') + fmt0(dif) : fmt0(b.tendencia)}</b>`+
+      `<b data-fit="" data-fit-min="10">${fech ? (dif>0 ? '+' : '') + fmt0(dif) : fmt0(tend)}</b>`+
       `<span class="pill ${d>=0 ? 'pos' : 'neg'}">${d>=0 ? '↑' : '↓'} ${pctBR(Math.abs(d*100), 2)}%</span></div>${dia}</div>`;
   }).join('');
   // escolhe a categoria em análise (como sempre) e abre a gaveta dela por unidade; o medidor sem meta não é clicável
