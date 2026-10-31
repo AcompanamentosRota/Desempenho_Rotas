@@ -710,6 +710,10 @@ function textoMetaDia(k, b, rotas, us, niv){
   const nome = esc(rotuloInd(k)), md = b && !b.unavailable ? b.metaDia : null;
   if(md==null) return `${nome}: sem meta do dia do SAP neste escopo.`;
   const onl = onlineVol(rotas, k);
+  if(semDiaUtil()){   // dia não útil: sem a frase "N de M ... alcançaram"
+    const q = diaNaoUtil();
+    return `${nome}: hoje não é dia útil${q ? ` (${q})` : ''}; não há meta do dia. Online de hoje: <b>${fmt0(onl)}</b>.`;
+  }
   if(metaBatida(md)) return `${nome}: meta do dia já batida neste escopo. Online de hoje: <b class="ok">${fmt0(onl)}</b>.`;
   const com = us.map(u=>({md:(u.a.ind[k] || {}).metaDia, onl:onlineVol(u.rotas, k)})).filter(x=>x.md!=null);
   const alc = com.filter(x=>metaBatida(x.md) || x.onl >= x.md).length;
@@ -741,7 +745,8 @@ function pintaMedidores(rotas, ind, k){
       `<div class="gDia gSem">sem meta neste escopo</div></div>`;
     const v = Math.max(0, Math.min(100, b.real/b.meta*100)), d = desvioVol(b), on = c===k;
     const onl = fech || !ONLINE ? null : onlineVol(rotas, c), ro = realOnline(c, rotas, b, onl), base = ro == null ? b.real : ro;
-    const dia = fech ? '' : `<div class="gDia">${b.metaDia==null ? 'meta do dia —' : metaBatida(b.metaDia) ? 'meta do dia batida'
+    const dia = fech ? '' : `<div class="gDia">${b.metaDia==null ? 'meta do dia —' : semDiaUtil() ? `${rotuloSemMetaDia()} · online ${fmt0(onl || 0)}`
+      : metaBatida(b.metaDia) ? 'meta do dia batida'
       : `meta do dia ${fmt0(b.metaDia)} · online ${fmt0(onl || 0)}`}</div>`;
     const dif = b.real - b.meta;
     return `<div class="gCard${on ? ' sel' : ''}" role="button" tabindex="0" aria-pressed="${on}" data-k="${esc(c)}" data-desvio="${d}"`+
@@ -836,11 +841,12 @@ function ordenaCt(ls, col, dir){
 }
 function linhaCtHtml(x, n, tot){
   const fech = CT.fech, ro = roCt(x), bat = linhaBatida(x, ro), base = ro ?? x.real, ok = base >= x.meta;
-  const corO = x.md==null || x.onl==null ? '' : metaBatida(x.md) || x.onl >= x.md ? ' ok' : ' no';
+  const semDia = x.md!=null && semDiaUtil();   // dia não útil: sem cor e "sem meta do dia" no tooltip
+  const corO = x.md==null || x.onl==null || semDia ? '' : metaBatida(x.md) || x.onl >= x.md ? ' ok' : ' no';
   const rotM = CT.dim ? 'Meta NEG' : 'Meta', t = x.nome + (x.info ? ` · ${x.info}` : '');
   const dica = `<div class="t">${esc(rotuloInd(CT.k))} · ${esc(x.cod)}</div>${rotM} <b>${fmt0(x.meta)}</b><br>`+
     `${fech ? 'Realizado' : 'Real até ontem'} <b>${fmt0(x.real)}</b> (${x.pct}%)<br>`+
-    `${fech ? 'Online hoje' : 'Online'} <b>${x.onl==null ? '—' : fmt0(x.onl)}</b>${x.md==null ? '' : ` · meta do dia ${metaBatida(x.md) ? 'batida' : fmt0(x.md)}`}<br>`+
+    `${fech ? 'Online hoje' : 'Online'} <b>${x.onl==null ? '—' : fmt0(x.onl)}</b>${x.md==null ? '' : semDia ? ` · ${rotuloSemMetaDia(true)}` : ` · meta do dia ${metaBatida(x.md) ? 'batida' : fmt0(x.md)}`}<br>`+
     (fech ? '' : x.tend==null ? 'Tendência —' : `Tendência <b>${fmt0(x.tend)}</b> (${x.pctTend}%)`);
   return `<tr class="ctLin ${ST_CAT[x.st]}${tot ? ' ctTot' : ''}${bat ? ' ctBat' : ''}" tabindex="0" data-u="${esc(x.cod)}" data-st="${x.st}"`+
     ` data-meta="${x.meta}" data-real="${x.real}" data-onl="${x.onl==null ? '' : x.onl}" data-tend="${x.tend==null ? '' : x.tend}"`+
@@ -1544,6 +1550,18 @@ const numObox = txt => `<b data-fit="" data-fit-min="10">${txt}</b>`;
    número do online e todos os valores seguem iguais. Resíduo de soma de decimais (ex.: 1e-14) conta como zero. */
 const META_BATIDA = 'Meta batida!';
 const metaBatida = md => md!=null && md <= 1e-9;
+/* Dia não útil (sábado, domingo, feriado; decisão da Karen, 31/10/2026): o calendário do SAP não tem o dia, a meta do dia
+   vem 0 em todas as rotas e o metaBatida leria "Meta batida!". Sem dado novo: em dia útil o gerador entrega DIA_ONTEM =
+   DIA_HOJE - 1; em dia não útil (e no fechamento, tratado à parte) os dois são iguais. Nesse caso a meta do dia do volume
+   (caixa Online do card e da cascata, .gDia do medidor, tooltip da gaveta da categoria, texto da Executiva) mostra
+   "sem meta do dia · sábado|domingo|feriado" com a cor neutra (nd). Só rótulo e cor: nenhum número muda; metaBatida e
+   coberturaBatida ficam como estão. */
+const semDiaUtil = () => !P.FECHAMENTO && P.DIA_HOJE === P.DIA_ONTEM;
+const diaNaoUtil = () => {
+  const d = semAcento(String(P.DIA_SEMANA || '')).trim();
+  return !d ? '' : d.startsWith('sabado') ? 'sábado' : d.startsWith('domingo') ? 'domingo' : 'feriado';
+};
+const rotuloSemMetaDia = curto => curto || !diaNaoUtil() ? 'sem meta do dia' : `sem meta do dia · ${diaNaoUtil()}`;
 /* Coberturas (ICS GC e Novos Negócios; a Venda Zero não): "Meta batida!" e caixa do Online verde quando a meta do mês
    do nível (já somada) foi alcançada, Real >= Meta com Meta > 0 (daí em diante não falta nada no dia). Só o rótulo e a
    cor; fora do fechamento (como no volume, o fechamento fica como antes). */
@@ -1585,6 +1603,9 @@ function caixaOnline(k, rotas, b){
     if(b.metaDia==null)   // fechamento do mês (online de hoje, sem meta do dia) ou META_RECUPERAVEL_ROTA ausente
       return `<div class="obox nd">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
         <span>${P.FECHAMENTO?'online hoje':'meta do dia —'}</span></div>`;
+    if(semDiaUtil())   // dia não útil: meta do dia 0 do SAP não é "Meta batida!"; caixa neutra
+      return `<div class="obox nd">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
+      <span>${rotuloSemMetaDia()}</span></div>`;
     const metaDia = b.metaDia, batida = metaBatida(metaDia);
     const ok = batida || volHoje >= metaDia;
     return `<div class="obox ${ok?'ok':'no'}">${numObox(Math.round(volHoje).toLocaleString('pt-BR'))}
@@ -1828,6 +1849,8 @@ function meioLinha(m, k){
   const {b, onl, md} = m, f = ehVolume(k) ? fmt0 : fmtN;
   if(k==='VENDAZERO') return `<span class="cOn ok">${fmtN(onl)}</span><small>revertidos hoje</small>`;
   // volume: meta do dia da linha <= 0; cobertura: Real >= Meta do mês (fora do fechamento)
+  if(ehVolume(k) && md!=null && semDiaUtil())   // dia não útil: sem meta do dia, caixa neutra
+    return `<span class="cOn nd">${f(onl)}</span><small>${rotuloSemMetaDia()}</small>`;
   const batida = ehVolume(k) ? metaBatida(md) : md!=null && coberturaBatida(b);
   const cor = md==null ? 'nd' : (batida || onl>=md ? 'ok' : 'no');
   return `<span class="cOn ${cor}">${f(onl)}</span><small>${md==null ? (P.FECHAMENTO ? 'online hoje' : 'meta do dia —')

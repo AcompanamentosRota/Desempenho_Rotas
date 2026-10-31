@@ -207,6 +207,23 @@ before(async () => {
   fs.writeFileSync(path.join(dim, 'payload.json'), JSON.stringify(pdm));
   fs.copyFileSync(path.join(DADOS.vol5, 'online.json'), path.join(dim, 'online.json'));
   DADOS.dim = dim;
+  // Parte AL (dia não útil): o 'vol5' com a meta do dia 0 em todas as rotas e macros (o calendário do SAP não tem o dia, como
+  // em 31/10/2026) e DIA_ONTEM = DIA_HOJE (R-DIA-06); sábado, domingo, feriado (quarta-feira) e sem DIA_SEMANA; 'util0' = o
+  // mesmo zero num dia útil (DIA_ONTEM = DIA_HOJE - 1: continua "Meta batida!")
+  for(const [nome, dia, naoUtil] of [['sab', 'Sábado', true], ['dom', 'Domingo', true], ['fer', 'Quarta-feira', true],
+                                     ['semdsem', null, true], ['util0', 'Terça-feira', false]]){
+    const dir = path.join(tmp, nome);
+    fs.mkdirSync(dir);
+    const pz = JSON.parse(fs.readFileSync(path.join(DADOS.vol5, 'payload.json'), 'utf-8'));
+    for(const svs of Object.values(pz.DATA)) for(const rs of Object.values(svs)) for(const no of Object.values(rs))
+      for(const k of pz.GROUPS.VOLUME) if(no.indicators[k] && !no.indicators[k].unavailable && no.indicators[k].metaDia != null)
+        no.indicators[k].metaDia = 0;
+    if(naoUtil) pz.DIA_ONTEM = pz.DIA_HOJE;
+    if(dia == null) delete pz.DIA_SEMANA; else pz.DIA_SEMANA = dia;
+    fs.writeFileSync(path.join(dir, 'payload.json'), JSON.stringify(pz));
+    fs.copyFileSync(path.join(DADOS.vol5, 'online.json'), path.join(dir, 'online.json'));
+    DADOS[nome] = dir;
+  }
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -219,7 +236,7 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' | 'evcob' |
    'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm' | 'evo' | 'evogrupo' | 'evogrande' |
-   'evofech' | 'semevo' | 'vol5' | 'vol5fech' | 'dim');
+   'evofech' | 'semevo' | 'vol5' | 'vol5fech' | 'dim' | 'sab' | 'dom' | 'fer' | 'semdsem' | 'util0');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
@@ -9798,4 +9815,133 @@ describe('Parte AK — PC mais compacto e cabeçalho das abas travado (Etapa 7 d
       }
     });
   }
+});
+
+/* ---------- Parte AL: "sem meta do dia" em dia não útil (sábado, domingo, feriado; decisão da Karen, 31/10/2026) ----------
+   Dia não útil = DIA_HOJE === DIA_ONTEM fora do fechamento: a meta do dia do volume (0 do SAP) não vira "Meta batida!";
+   caixa Online do card e da cascata, .gDia do medidor, tooltip da gaveta da categoria e texto da Executiva mostram "sem meta
+   do dia · sábado|domingo|feriado" (forma curta sem DIA_SEMANA e no tooltip), com a cor neutra. Nenhum número muda. */
+const SEMDIA = require('./semdia_teste.js');
+// os cinco lugares, no escopo atual (aba Executiva aberta no início): rótulos e classes; números à parte
+async function leSemDia(page, k){
+  await vaiAba(page, 'EXEC');
+  await page.evaluate(k => { if(catAtual() !== k){ catExec = k; render(); } }, k);
+  const ex = await page.evaluate(k => ({gDia: (document.querySelector(`#exGauges .gCard[data-k="${k}"] .gDia`) || {}).textContent || null,
+    texto: document.getElementById('exDiaTxt').textContent,
+    gFalta: (document.querySelector(`#exGauges .gCard[data-k="${k}"] .gFalta`) || {}).textContent || null}), k);
+  await abreCat(page, k);
+  const gav = await page.$$eval('#dCorpo tr.ctLin', trs => trs.map(tr => ({onl: tr.querySelector('.ctOnl').className,
+    falt: tr.querySelector('.ctFalt').textContent, dica: tr.dataset.dica.replace(/<[^>]*>/g, ' ')})));
+  await page.keyboard.press('Escape');
+  await vaiAba(page, 'VOLUME');
+  const card = await page.$eval(`#lista .ind[data-k="${k}"]`, el => ({cls: el.querySelector('.obox').className,
+    rot: el.querySelector('.obox span').textContent.trim(), num: el.querySelector('.obox b').textContent,
+    big: el.querySelector('.big').textContent, dif: el.querySelector('.dif').textContent, cl: el.querySelector('.cl').innerText}));
+  await page.click(`#lista .ind[data-k="${k}"]`);
+  const casc = await page.$$eval('#dCorpo .cLin:not(.off)', ls => ls.map(l => ({cls: l.querySelector('.cOn').className,
+    num: l.querySelector('.cOn').textContent, rot: l.querySelector('.cMeio small').textContent,
+    dif: (l.querySelector('.cDif') || {}).textContent, pct: (l.querySelector('.cPct') || {}).textContent})));
+  await page.keyboard.press('Escape');
+  return {ex, gav, card, casc};
+}
+
+describe('Parte AL — "sem meta do dia" em dia não útil', {skip: pular}, () => {
+  const k = 'VOL REFRIGERANTES';
+  for(const [dados, dia, rot] of [['sab', 'sábado', 'sem meta do dia · sábado'], ['dom', 'domingo', 'sem meta do dia · domingo'],
+                                  ['fer', 'feriado', 'sem meta do dia · feriado'], ['semdsem', '', 'sem meta do dia']]){
+    test(`${dados}: os cinco lugares com "${rot}" e a cor neutra; números iguais aos do dia útil com a mesma meta do dia 0`, async () => {
+      const {page, ctx, erros} = await abre(dados, {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+      assert.equal(await page.evaluate(() => [semDiaUtil(), diaNaoUtil(), rotuloSemMetaDia(), rotuloSemMetaDia(true)].join('|')),
+        `true|${dia}|${rot}|sem meta do dia`);
+      const r = await leSemDia(page, k);
+      assert.equal(r.card.rot, rot, 'caixa Online do card');
+      assert.equal(r.card.cls, 'obox nd', 'caixa do card neutra');
+      assert.ok(r.casc.length > 0);
+      for(const l of r.casc) assert.deepEqual([l.cls, l.rot], ['cOn nd', rot], 'caixa Online da cascata');
+      assert.ok(r.ex.gDia.startsWith(`${rot} · online `), `medidor: ${r.ex.gDia}`);
+      assert.equal(r.ex.texto, `Refrigerantes: hoje não é dia útil${dia ? ` (${dia})` : ''}; não há meta do dia. Online de hoje: ` +
+        `${r.card.num}.`, 'texto da Executiva');
+      assert.ok(r.gav.length > 0);
+      for(const l of r.gav){
+        assert.equal(l.onl, 'ctOnl', 'Online da gaveta sem cor');
+        assert.ok(l.dica.includes(' · sem meta do dia') && !/meta do dia (batida|\d)/.test(l.dica), l.dica);
+      }
+      // nada de "Meta batida!" pela meta do dia em lugar nenhum da aba Volume, nem de "meta do dia batida" na Executiva
+      assert.ok(!(await page.$$eval('#lista .ind.vol .obox span', ss => ss.map(s => s.textContent))).includes('Meta batida!'));
+      // os números = os do dia útil (util0: o mesmo payload com DIA_ONTEM = DIA_HOJE - 1) sem os rótulos e as classes;
+      // a tendência e o % não mudam com DIA_ONTEM (vêm do payload)
+      const {page: p2, ctx: c2} = await abre('util0', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+      const u = await leSemDia(p2, k);
+      assert.equal(u.card.rot, 'Meta batida!');
+      assert.equal(u.card.cls, 'obox ok');
+      const sem = x => ({...x, card: {...x.card, rot: '', cls: ''}, casc: x.casc.map(l => ({...l, rot: '', cls: ''})),
+        ex: {...x.ex, gDia: x.ex.gDia.replace(/^.* · online /, ''), texto: ''}, gav: x.gav.map(l => ({falt: l.falt}))});
+      assert.deepEqual(sem(r), sem({...u, ex: {...u.ex, gDia: `x · online ${r.ex.gDia.replace(/^.* · online /, '')}`}}));
+      assert.equal(u.ex.gDia, 'meta do dia batida');
+      // as invariantes da Executiva, da cascata e da gaveta da categoria
+      await confereExecutiva(page, dados);
+      await vaiAba(page, 'VOLUME');
+      await page.click(`#lista .ind[data-k="${k}"]`);
+      await CASC_INV.confereNivel(page, dados);
+      await page.keyboard.press('Escape');
+      await vaiAba(page, 'EXEC');
+      await CAT.confereCategoria(page, dados, {ordena: false});
+      assert.deepEqual(erros, []);
+      await ctx.close(); await c2.close();
+    });
+  }
+
+  test('coberturas (ICS GC): "Meta batida!" pela meta do mês continua em dia não útil', async () => {
+    const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}});
+    // uma rota com Real >= Meta no CCTM 2L Pet (ICS GC): a caixa do card fica "Meta batida!" verde, como em dia útil
+    const k = await page.$eval('#lista .ind[data-k]', el => el.dataset.k);
+    await page.evaluate(k => { for(const r of rotasAtuais()){ const b = nodo('', r).indicators[k]; if(b && !b.unavailable && b.meta > 0) b.real = b.meta; }
+      render(); }, k);
+    const c = await page.$eval(`#lista .ind[data-k="${k}"] .obox`, el => [el.className, el.querySelector('span').textContent.trim()]);
+    assert.deepEqual(c, ['obox ok', 'Meta batida!'], k);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('fechamento (DIA_HOJE = DIA_ONTEM com FECHAMENTO): o rótulo novo nunca aparece', async () => {
+    const {page, ctx, erros} = await abre('vol5fech', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    assert.deepEqual(await page.evaluate(() => [P.DIA_HOJE === P.DIA_ONTEM, semDiaUtil()]), [true, false]);
+    const html = await page.evaluate(() => document.body.innerHTML);
+    await vaiAba(page, 'VOLUME');
+    const vol = await page.evaluate(() => document.body.innerHTML);
+    await page.click('#lista .ind.vol');
+    const casc = await page.evaluate(() => document.getElementById('dCorpo').innerHTML);
+    for(const h of [html, vol, casc]) assert.ok(!/sem meta do dia|não é dia útil/.test(h));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('dia útil com a meta do dia 0: continua "Meta batida!" e verde nos cinco lugares', async () => {
+    const {page, ctx, erros} = await abre('util0', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    assert.equal(await page.evaluate(() => semDiaUtil()), false);
+    const r = await leSemDia(page, k);
+    assert.deepEqual([r.card.cls, r.card.rot], ['obox ok', 'Meta batida!']);
+    for(const l of r.casc) assert.deepEqual([l.cls, l.rot], ['cOn ok', 'Meta batida!']);
+    assert.equal(r.ex.texto.startsWith('Refrigerantes: meta do dia já batida neste escopo.'), true, r.ex.texto);
+    for(const l of r.gav){ assert.equal(l.onl, 'ctOnl ok'); assert.ok(l.dica.includes(' · meta do dia batida')); }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('rótulo novo sem corte nem rolagem lateral: 360, 390, 1000 e 1440 px (card e cascata)', async () => {
+    for(const largura of [360, 390, 1000, 1440]){
+      const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, largura, altura: 900});
+      await filtra(page, {aba: 'VOLUME'});
+      const corte = el => { const s = el; return s.scrollWidth > s.clientWidth + 1 || s.getBoundingClientRect().right > innerWidth + 1; };
+      const card = await page.$$eval('#lista .ind.vol .obox span', (ss, f) => ss.map(s => ({t: s.textContent.trim(), c: eval(f)(s)})), String(corte));
+      assert.ok(card.length && card.every(c => c.t.startsWith('sem meta do dia') && !c.c), `${largura} card: ${JSON.stringify(card)}`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${largura}: rolagem lateral`);
+      await page.click('#lista .ind.vol');
+      const casc = await page.$$eval('#dCorpo .cLin:not(.off) .cMeio small', (ss, f) => ss.map(s => ({t: s.textContent, c: eval(f)(s)})), String(corte));
+      assert.ok(casc.length && casc.every(c => c.t.startsWith('sem meta do dia') && !c.c), `${largura} cascata: ${JSON.stringify(casc)}`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${largura}: rolagem lateral na gaveta`);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
 });

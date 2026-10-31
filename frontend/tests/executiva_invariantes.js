@@ -19,12 +19,14 @@
    Devolve uma linha de resumo (só totais e códigos de unidade). */
 'use strict';
 const assert = require('node:assert/strict');
+const {rotuloSemMetaDiaDe} = require('./semdia_teste');
 
 // lê a Executiva do filtro atual (aba ativa: Executiva)
 const LE_EXEC = () => {
   const t = id => document.getElementById(id).textContent.trim();
   return {
-    k: catAtual(), fech: !!P.FECHAMENTO,
+    k: catAtual(), fech: !!P.FECHAMENTO, semDia: !P.FECHAMENTO && P.DIA_HOJE === P.DIA_ONTEM, diaSem: P.DIA_SEMANA,
+    texto: (document.getElementById('exDiaTxt') || {}).textContent || '',
     kpi: {base: t('exNBase'), sem: t('exNSem'), vis: t('exNVis'), cat: t('exNCat'), cob: t('exXCat')},
     gauges: [...document.querySelectorAll('#exGauges .gCard')].map(g => ({k: g.dataset.k,
       dia: (g.querySelector('.gDia') || {}).textContent || '', falta: (g.querySelector('.gFalta') || {}).textContent || null,
@@ -114,7 +116,21 @@ async function confereExecutiva(page, onde){
     for(let i = 1; i < ordem.length; i++) assert.ok(ordem[i - 1] >= ordem[i], `${onde} ${k}: ordem decrescente`);
     const g = ex.gauges.find(x => x.k === k);
     if(/online/.test(g.dia)) assert.equal(g.dia, `${card.onRot} · online ${card.on}`, `${onde} ${k}: medidor x caixa Online`);
+    // dia útil: meta do dia batida = "Meta batida!" nos dois; dia não útil (DIA_HOJE = DIA_ONTEM fora do fechamento):
+    // "sem meta do dia · sábado|domingo|feriado" nos dois, nunca "Meta batida!" nem "meta do dia batida"
+    if(ex.semDia && !/—/.test(g.dia)){
+      const rot = rotuloSemMetaDiaDe(ex.diaSem);
+      assert.equal(card.onRot, rot, `${onde} ${k}: caixa Online em dia não útil`);
+      assert.ok(g.dia.startsWith(`${rot} · online `), `${onde} ${k}: medidor em dia não útil "${g.dia}"`);
+      assert.ok(!/batida/.test(g.dia), `${onde} ${k}: sem "meta do dia batida" em dia não útil`);
+    }
     if(/batida/.test(g.dia)) assert.equal(card.onRot, 'Meta batida!', `${onde} ${k}: meta do dia batida`);
+  }
+  // texto da meta do dia da Executiva em dia não útil: sem a frase "N de M ... alcançaram"
+  if(ex.semDia && !/sem meta do dia do SAP/.test(ex.texto)){
+    assert.match(ex.texto, /: hoje não é dia útil( \((sábado|domingo|feriado)\))?; não há meta do dia\. Online de hoje: [\d.]+\.$/,
+      `${onde}: texto da meta do dia em dia não útil "${ex.texto}"`);
+    assert.ok(!/alcanç|batida/.test(ex.texto), `${onde}: texto sem "alcançaram"/"batida" em dia não útil`);
   }
   // medidor: "faltam X para a meta" = Meta - (Real + online); "meta batida · +X" = Real + online - Meta; sem online
   // (fechamento, sem online.json) Meta - Real; sem meta, sem a linha

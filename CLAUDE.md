@@ -102,7 +102,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`), 'exec' (o 'inc' com clientes sem compra no
   mês, `montaSemCompra`: o sintético compra tudo; Parte W) e 'dias'/'diasscm' (o 'exec' com dias de visita "Seg - Qui",
   "Ter" e "Qua - Sex" por rota, `montaDias`; o 2º sem SEM_COMPRA_MES; Parte X e o cenário "barra de dias" da Parte N) e
-  'vol5'/'vol5fech' (o 'exec'/'incfech' com os 5 macros de volume com dado, `montaVolume5`, + `montaMesAnterior`; Parte AA). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
+  'vol5'/'vol5fech' (o 'exec'/'incfech' com os 5 macros de volume com dado, `montaVolume5`, + `montaMesAnterior`; Parte AA)) e 'sab'/'dom'/'fer'/'semdsem'/'util0' (o 'vol5' com a meta do dia 0 em todas as rotas e
+  DIA_ONTEM = DIA_HOJE, DIA_SEMANA Sábado/Domingo/Quarta-feira/sem a chave; 'util0' = dia útil; Parte AL). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
   `require.resolve` (local, `NODE_PATH` ou global); sem eles, pulado. `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
   a Parte N serve o CSS e o app.js do 0a59eb4 assim).
 - Conferência da Executiva com DADO REAL (sob demanda, fora do CI): `PAYLOAD_REAL=/tmp/real/payload.json
@@ -400,6 +401,17 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   coberturas ICS GC/Novos Negócios (`coberturaBatida`, pedido da Karen em 20/10/2026) com Real >= Meta do mês do nível
   (Meta > 0; a "meta do dia" da cobertura, gap ou fatia, nunca chega a 0 com meta). O número do online e todos os
   valores seguem iguais; metaDia > 0/null, meta 0, Venda Zero, fechamento e o Resumo de vendas como antes.
+  **"Sem meta do dia" em dia não útil (31/10/2026, decisão da Karen; README, "Sem meta do dia em dia não útil"; só front)**:
+  meta do dia <= 0 em dia ÚTIL = "Meta batida!"; em dia NÃO útil (`semDiaUtil()` = `!P.FECHAMENTO && P.DIA_HOJE ===
+  P.DIA_ONTEM`: o calendário só iguala os dois com `eh_dia_util=False`, `calendario.montar`; o SAP não tem o dia e a meta do
+  dia vem 0) o volume mostra `rotuloSemMetaDia()` ("sem meta do dia · sábado|domingo|feriado" por `diaNaoUtil()` sobre o
+  `DIA_SEMANA` sem acento; sem ele, "sem meta do dia"; `rotuloSemMetaDia(true)` = forma curta) com a cor NEUTRA (`nd`) em cinco
+  lugares, só com metaDia não nula: caixa Online do card (`caixaOnline`) e da cascata (`meioLinha`), `.gDia` do medidor
+  ("… · online X"), `linhaCtHtml` (Online sem cor, tooltip "· sem meta do dia") e `textoMetaDia` ("hoje não é dia útil
+  (sábado); não há meta do dia. Online de hoje: X."). `metaBatida`/`coberturaBatida` não mudam; nenhum número muda.
+  Testes: Parte AL (variantes 'sab', 'dom', 'fer', 'semdsem', 'util0'; `semdia_teste.js`), as invariantes de executiva/
+  cascata/categoria e, com dado real, o bloco "Sem meta do dia" do `conferencia_real.test.js` (payload de sábado `1f72a2b`:
+  (a) e (b) contra `97a19db`, `REF_PRE_SEMDIA`; payload de dia útil `efb4f3a`: (c) idêntico).
   **Cascata com Dif (Real + Online) e cards com Real + online (Etapa 3 do pacote v3, 29/10/2026; README, "Cascata" e
   "Cards"; só front)**: `realOnline(k, rotas, b, onl)` é a conta ÚNICA (cards, cascata, selo): volume = `b.real` + online de
   hoje (`onl` já somado ou `onlineVol`); coberturas = `realMaisOnline` (clientes distintos no Real ou no online); null no
