@@ -31,13 +31,23 @@ const LE_EXEC = () => {
     gauges: [...document.querySelectorAll('#exGauges .gCard')].map(g => ({k: g.dataset.k,
       dia: (g.querySelector('.gDia') || {}).textContent || '', falta: (g.querySelector('.gFalta') || {}).textContent || null,
       faltaOk: !!g.querySelector('.gFalta.ok'), meta: Number(g.dataset.meta), real: Number(g.dataset.real),
-      online: g.dataset.online == null || g.dataset.online === '' ? null : Number(g.dataset.online)})),
+      online: g.dataset.online == null || g.dataset.online === '' ? null : Number(g.dataset.online),
+      // arco, % (e o rótulo pequeno), Tendência mostrada e os data-tend/data-desvio (medidor com o online em dia não útil)
+      arco: (g.querySelector('.gSvg .vl') || {getAttribute: () => null}).getAttribute('stroke-dasharray'),
+      pct: g.querySelector('.gPct') ? g.querySelector('.gPct').firstChild.textContent : null,
+      pctRot: (g.querySelector('.gPct small') || {}).textContent || null,
+      tendTxt: (g.querySelector('.gTend b') || {}).textContent || null,
+      tend: g.dataset.tend == null || g.dataset.tend === '' ? null : Number(g.dataset.tend),
+      desvio: g.dataset.desvio == null ? null : Number(g.dataset.desvio),
+      pill: (g.querySelector('.gTend .pill') || {}).className || null})),
     // Meta e Real do agrega() das rotas do filtro (o do card de Volume), para a linha "faltam" do medidor
     // e o online recontado direto do online.json (null no fechamento e sem online.json)
     mrP: Object.fromEntries(GROUPS.VOLUME.map(c => { const b = agrega(rotasAtuais()).ind[c];
       const onl = P.FECHAMENTO || !ONLINE ? null
         : rotasAtuais().reduce((s, r) => s + ((((ONLINE.volume || {})[r] || {})[c]) || 0), 0);
-      return [c, b && !b.unavailable && b.meta > 0 ? {meta: b.meta, real: b.real, onl} : null]; })),
+      return [c, b && !b.unavailable && b.meta > 0 ? {meta: b.meta, real: b.real, onl, neg: b.negRestante, tend: b.tendencia,
+        pctReal: b.pctReal} : null]; })),
+    semDiaM: !P.FECHAMENTO && P.DIA_HOJE === P.DIA_ONTEM,
     totDesvio: [...document.querySelectorAll('#exDivs .dv')].map(dv => {
       const r = dv.querySelector('.dRow.tot');
       return {k: dv.dataset.k, d: r ? Number(r.dataset.desvio) : null, txt: r ? r.querySelector('.dVal').textContent : null,
@@ -146,6 +156,19 @@ async function confereExecutiva(page, onde){
     assert.equal(g.falta, bat ? `meta batida · +${f0(base - p.meta)}` : `faltam ${f0(p.meta - base)} para a meta`,
       `${onde} ${g.k}: linha "faltam" do medidor`);
     assert.equal(g.faltaOk, bat, `${onde} ${g.k}: cor da linha "faltam"`);
+    // arco, % e Tendência: dia útil e fechamento sobre o Real faturado (como sempre); dia não útil (DIA_HOJE = DIA_ONTEM fora do
+    // fechamento) sobre Real + online (sem online, o Real), Tendência = Real + online + Neg Restante e o desvio sobre ela
+    const sdu = ex.semDiaM && p.onl != null, baseM = sdu ? base : p.real, tEsp = ex.fech ? null : sdu ? base + (p.neg || 0) : p.tend;
+    assert.equal(g.arco, `${Math.max(0, Math.min(100, baseM / p.meta * 100)).toFixed(2)} 100`, `${onde} ${g.k}: arco`);
+    assert.equal(g.pct, `${sdu ? Math.round(base / p.meta * 100) : p.pctReal}%`, `${onde} ${g.k}: % do medidor`);
+    assert.equal(g.pctRot, sdu ? 'real + online' : 'real', `${onde} ${g.k}: rótulo do %`);
+    if(!ex.fech){
+      assert.ok(tEsp != null && Math.abs(g.tend - tEsp) <= 1e-6 * Math.max(1, Math.abs(tEsp)), `${onde} ${g.k}: data-tend ${g.tend} x ${tEsp}`);
+      assert.equal(g.tendTxt, f0(tEsp), `${onde} ${g.k}: Tendência mostrada`);
+      const dEsp = tEsp / p.meta - 1;
+      assert.ok(Math.abs(g.desvio - dEsp) < 1e-12, `${onde} ${g.k}: desvio ${g.desvio} x ${dEsp}`);
+      assert.equal(g.pill, `pill ${dEsp >= 0 ? 'pos' : 'neg'}`, `${onde} ${g.k}: cor do desvio`);
+    } else assert.equal(g.tend, null, `${onde} ${g.k}: sem data-tend no fechamento`);
     // o online do medidor = o da linha da meta do dia dele = o da caixa Online do card de Volume
     if(p.onl != null){
       if(/online/.test(g.dia)) assert.equal(g.dia.replace(/^.* · online /, ''), f0(p.onl), `${onde} ${g.k}: online da meta do dia`);
@@ -201,12 +224,12 @@ async function confereExecutiva(page, onde){
 
 /* "Antes x depois" contra fronts de antes da correção do "faltam" do medidor com o online de hoje: a linha .gFalta (texto e
    cor) é a única coisa que muda de propósito no #exec (e o data-online novo do .gCard); nos dois lados, a linha vira um marcador
-   neutro e o data-online sai. A conta da linha é conferida à parte, em confereExecutiva (acima). */
+   neutro e o data-online sai (e o data-tend, desde o medidor com o online em dia não útil). A conta da linha é conferida à parte, em confereExecutiva (acima). */
 const desfazFalta = x => {
   if(Array.isArray(x)) return x.map(desfazFalta);
   if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazFalta(v)]));
   if(typeof x !== 'string') return x;
-  return x.replace(/ data-online="[^"]*"/g, '').replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '<div class="gFalta">·</div>');
+  return x.replace(/ data-online="[^"]*"/g, '').replace(/ data-tend="[^"]*"/g, '').replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '<div class="gFalta">·</div>');
 };
 
 module.exports = {confereExecutiva, LE_EXEC, LE_ABA, desfazFalta};

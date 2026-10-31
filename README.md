@@ -759,6 +759,14 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   "meta do dia batida" / "meta do dia —"; em dia não útil, "sem meta do dia · sábado · online N"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os
   dois quadros acima, e abre a gaveta da categoria por unidade (abaixo). Sem meta no escopo: "sem meta neste escopo" (o
   medidor não é clicável e não abre a gaveta).
+  **Em dia não útil** (sábado, domingo, feriado: `DIA_HOJE == DIA_ONTEM` fora do fechamento; decisão da Karen, 31/10/2026),
+  com online, o medidor anda com a venda do dia: arco e % sobre **Real + online** ÷ Meta (rótulo pequeno **"real +
+  online"**), **Tendência = Real + online + Neg Restante** e o desvio sobre ela. Em dia não útil o SAP não tem a linha de
+  hoje, então a "Neg de hoje" é zero e tudo o que se vende entra por cima do plano; no fim do mês, com a Neg Restante zerada,
+  a Tendência vira Real + online (é a mesma conta da Etapa 9, Real + Online + (Neg Restante − Neg de hoje), com a Neg de
+  hoje zero). Meta | Real continuam Meta e Real faturado. De propósito, o card da aba Volume e a coluna "% Real" da gaveta
+  continuam no % real faturado (números diferentes com rótulos diferentes). Sem online.json, em dia útil e no fechamento,
+  nada muda. O `.gCard` traz `data-tend` (a Tendência mostrada) e `data-desvio` (o desvio mostrado).
 - **Categoria por unidade** (gaveta; desde 22/10/2026; em **tabela** desde a Etapa 6 do pacote v3, 30/10/2026): tocar num
   medidor (ou Enter/Espaço com o foco nele) abre a gaveta **"Refrigerantes por gerência"** (ou "por supervisão", "por rota":
   o nível abaixo do escopo, como na cascata: Diretoria (ou Gerência em BAND) → gerências; gerência (ou Supervisão em GC) →

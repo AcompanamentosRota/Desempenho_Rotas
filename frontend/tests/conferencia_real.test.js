@@ -1672,3 +1672,97 @@ describe('"Sem meta do dia" em dia não útil, com dado real', {skip: pular}, ()
     }
   });
 });
+
+/* Medidor da Executiva com o online em dia não útil (decisão da Karen, 31/10/2026). Rode com o payload de sábado (`1f72a2b`) e
+   com o de um dia útil (`efb4f3a`), cada um com o online do mesmo commit, copiados FORA do repositório.
+   (a) dia não útil: em cada escopo (Diretoria, cada gerência com dados, cada grupo no Total, uma supervisão) e nas 5
+       categorias, arco e % = (Real + online) ÷ Meta, rótulo "real + online", Tendência = Real + online + Neg Restante e o
+       desvio sobre ela, recontados do payload e do online (Σ das rotas do escopo); Meta | Real no faturado;
+   (b) dia útil: o #exec das 5 categorias idêntico ao da main antes da etapa (REF_PRE_MED), fora o data-tend novo.
+   Imprime só escopo, categoria e números agregados. */
+const REF_PRE_MED = '3647363';
+const FRONT_PRE_MED = (() => {
+  try { const t = execSync(`git show ${REF_PRE_MED}:frontend/js/app.js`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return {'/js/app.js': () => t}; } catch(e) { return null; }
+})();
+const LE_MED = k => { const g = document.querySelector(`#exGauges .gCard[data-k="${k}"]`);
+  const s = rotasAtuais().reduce((a, r) => { const b = nodo('', r).indicators[k];
+    a.onl += ONLINE ? (((ONLINE.volume || {})[r] || {})[k] || 0) : 0;
+    if(b && !b.unavailable){ a.meta += b.meta || 0; a.real += b.real || 0; a.neg += b.negRestante || 0; }
+    return a; }, {meta: 0, real: 0, neg: 0, onl: 0});
+  return {s, off: g.classList.contains('off'), arco: (g.querySelector('.gSvg .vl') || {getAttribute: () => null}).getAttribute('stroke-dasharray'),
+    pct: g.querySelector('.gPct') ? g.querySelector('.gPct').firstChild.textContent : null, rot: (g.querySelector('.gPct small') || {}).textContent || null,
+    tendTxt: (g.querySelector('.gTend b') || {}).textContent || null, pill: (g.querySelector('.gTend .pill') || {}).textContent || null,
+    tend: g.dataset.tend, desvio: g.dataset.desvio, mr: [...g.querySelectorAll('.gMR b')].map(b => b.textContent)}; };
+const fmt0R = v => Math.round(v).toLocaleString('pt-BR');
+const pctBrR = v => `${Math.abs(v).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}%`;
+
+describe('Medidor da Executiva com o online em dia não útil, com dado real', {skip: pular}, () => {
+  test('(a) dia não útil: arco, % e Tendência = (Real + online) ÷ Meta e Real + online + Neg Restante, recontados', async (t) => {
+    const {page, ctx, erros} = await abre(1440);
+    const dia = await page.evaluate(() => ({nao: !P.FECHAMENTO && P.DIA_HOJE === P.DIA_ONTEM, ds: P.DIA_SEMANA}));
+    if(!dia.nao){ t.skip('o payload é de um dia útil (ou do fechamento): ver (b)'); await ctx.close(); return; }
+    const tab = [];
+    for(const s of await escoposSemDia(page)){
+      await vaiEscopo(page, s);
+      await vaiAba(page, 'EXEC');
+      for(const k of VOL5){
+        const m = await page.evaluate(LE_MED, k), q = `${s.onde} ${k}`, x = m.s;
+        if(!(x.meta > 0)){ assert.ok(m.off, `${q}: sem meta = off`); continue; }
+        const base = x.real + x.onl, tend = base + x.neg, d = tend / x.meta - 1;
+        assert.equal(m.arco, `${Math.max(0, Math.min(100, base / x.meta * 100)).toFixed(2)} 100`, `${q}: arco`);
+        assert.deepEqual([m.pct, m.rot], [`${Math.round(base / x.meta * 100)}%`, 'real + online'], `${q}: %`);
+        assert.ok(Math.abs(Number(m.tend) - tend) <= 1e-6 * Math.max(1, tend), `${q}: data-tend ${m.tend} x ${tend}`);
+        assert.equal(m.tendTxt, fmt0R(tend), `${q}: Tendência`);
+        assert.ok(Math.abs(Number(m.desvio) - d) < 1e-9, `${q}: desvio`);
+        assert.equal(m.pill, `${d >= 0 ? '↑' : '↓'} ${pctBrR(d * 100)}`, `${q}: desvio mostrado`);
+        assert.deepEqual(m.mr, [fmt0R(x.meta), fmt0R(x.real)], `${q}: Meta | Real faturado`);
+        tab.push([s.onde, k, fmt0R(x.meta), fmt0R(x.real), fmt0R(x.onl), fmt0R(x.neg),
+          `${Math.round(x.real / x.meta * 100)}% → ${m.pct}`, m.tendTxt, m.pill]);
+      }
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    console.log(`# Medidor em dia não útil (${dia.ds}): arco/% = (Real + online) ÷ Meta, Tendência = Real + online + Neg Restante`);
+    console.log('# | Escopo | Categoria | Meta | Real | Online | Neg Restante | % real → % real + online | Tendência | Desvio |');
+    console.log('# |---|---|---|---|---|---|---|---|---|');
+    for(const l of tab) console.log(`# | ${l.join(' | ')} |`);
+  });
+
+  test('(b) dia útil: a Executiva das 5 categorias idêntica à da main antes da etapa (fora o data-tend novo)', {skip: !FRONT_PRE_MED && `sem o commit ${REF_PRE_MED}`}, async (t) => {
+    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_MED)];
+    const nao = await novo.page.evaluate(() => !P.FECHAMENTO && P.DIA_HOJE === P.DIA_ONTEM);
+    if(nao){ t.skip('o payload é de um dia não útil: ver (a)'); for(const {ctx} of [novo, velho]) await ctx.close(); return; }
+    const h = p => p.innerHTML('#exec').then(x => x.replace(/ data-tend="[^"]*"/g, ''));
+    const linhas = [];
+    for(const s of await escoposSemDia(novo.page)){
+      for(const {page} of [novo, velho]){ await vaiEscopo(page, s); await vaiAba(page, 'EXEC'); }
+      for(const k of VOL5){
+        for(const {page} of [novo, velho]) await escolheCatReal(page, k);
+        assert.equal(await h(novo.page), await h(velho.page), `${s.onde} ${k}: Executiva`);
+      }
+      linhas.push(s.onde);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_MED} x branch), dia útil: #exec idêntico nas 5 categorias em ${linhas.length} escopos: ${linhas.join(', ')}`);
+  });
+
+  for(const largura of [360, 390, 1000, 1440])
+  test(`${largura} px, fundos preto e branco: rótulo do % do medidor sem corte, sem rolagem lateral nem erro no console`, async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre(largura, tema);
+      for(const e of [{perfil: 'dir'}, {perfil: 'gc', gc: 'G2'}, {perfil: 'gc', gc: 'IT+MO'}]){
+        await entra(page, e);
+        await vaiAba(page, 'EXEC');
+        const onde = `${largura} ${tema} ${JSON.stringify(e)}`;
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde}: rolagem lateral`);
+        const corta = await page.$$eval('#exGauges .gCard:not(.off) .gPct small', ss => ss.filter(s => s.scrollWidth > s.clientWidth + 0.5 ||
+          s.getBoundingClientRect().right > s.closest('.gCard').getBoundingClientRect().right + 0.5).map(s => s.textContent));
+        assert.deepEqual(corta, [], `${onde}: rótulo cortado`);
+      }
+      assert.deepEqual(erros, [], `${largura} ${tema}`);
+      await ctx.close();
+    }
+  });
+});

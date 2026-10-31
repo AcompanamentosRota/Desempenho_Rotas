@@ -93,6 +93,7 @@ const ESPERADO = k => {
 // o medidor da categoria (Meta, Real, % real) e o card de Volume (lidos antes, na aba Volume)
 const LE_MEDIDOR = k => { const g = document.querySelector(`#exGauges .gCard[data-k="${k}"]`);
   return {off: g.classList.contains('off'), role: g.getAttribute('role'), pct: (g.querySelector('.gPct') || {}).firstChild ? g.querySelector('.gPct').firstChild.textContent : null,
+    pctRot: (g.querySelector('.gPct small') || {}).textContent || null,
     mr: [...g.querySelectorAll('.gMR b')].map(b => b.textContent), sel: g.classList.contains('sel'),
     dia: (g.querySelector('.gDia') || {}).textContent || ''}; };
 const LE_VOLUME = () => Object.fromEntries([...document.querySelectorAll('#lista .ind.vol[data-k]')].map(el => {
@@ -160,7 +161,16 @@ async function confereCategoria(page, onde, {ordena = true} = {}){
     if(!esp.fech) quase(tot.tend, esp.tot.tend, `${o}: total tendência`);
     assert.deepEqual([tot.metaTxt, tot.realTxt], [f0(tot.meta), f0(tot.real)], `${o}: Meta e Real do total`);
     assert.deepEqual(med.mr, [f0(tot.meta), f0(tot.real)], `${o}: total x medidor (Meta, Real)`);
-    assert.equal(tot.pctTxt, med.pct, `${o}: % real do total x medidor`);
+    // % do medidor: em dia útil e no fechamento = % Real do total; em dia não útil (decisão da Karen, 31/10/2026) o medidor
+    // mostra (Real + online) / Meta com o rótulo "real + online" e a coluna % Real da gaveta continua no faturado
+    if(esp.semDia && esp.temOnline){
+      assert.equal(med.pct, `${Math.round((esp.tot.real + esp.tot.onl) / esp.tot.meta * 100)}%`, `${o}: % do medidor com o online (dia não útil)`);
+      assert.equal(med.pctRot, 'real + online', `${o}: rótulo do % do medidor (dia não útil)`);
+      assert.equal(tot.pctTxt, `${Math.round(tot.real / tot.meta * 100)}%`, `${o}: % Real do total continua no faturado`);
+    } else {
+      assert.equal(tot.pctTxt, med.pct, `${o}: % real do total x medidor`);
+      assert.equal(med.pctRot, 'real', `${o}: rótulo do % do medidor`);
+    }
     if(esp.temOnline){
       quase(tot.onl, esp.tot.onl, `${o}: online do total`);
       const mo = med.dia.match(/online ([\d.]+)$/);
