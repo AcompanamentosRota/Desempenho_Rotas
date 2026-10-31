@@ -565,7 +565,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   lido no escopo do botão); nos antes x depois contra fronts antigos no PC (Partes AG e AI) `semTam` tira só o `style="font-size"`
   que o `encaixa()` grava; na conferência com dado real, o `abre()` acrescenta ao CSS de todo front antigo (`troca`) o trecho do
   app.css entre "PC mais compacto" e "fim do PC mais compacto" (`ESCALA_PC_CSS`; não tirar esses dois comentários), para os
-  dois fronts terem os mesmos tamanhos e o HTML continuar comparado inteiro; novos na Parte AK.
+  dois fronts terem os mesmos tamanhos e o HTML continuar comparado inteiro. No front.test.js, o mesmo trecho
+  (`ESCALA_PC_CSS`, `comEscalaPc`) vai no CSS dos fronts antigos dos antes x depois de HTML das Partes X (`FRONT_ETAPA5`), Z
+  (`FRONT_PRE_EVO`) e AC (`FRONT_PRE_CAT`), e o teste das notas menores da Parte AA serve o app.css atual sem ele
+  (`semEscalaPc`: mede só a redução da AA); antes disso esses 4 falhavam desde a Etapa 7. Novos na Parte AK.
   **Cabeçalho das abas (Etapa 4, 21/10/2026; README, "Cabeçalho das abas")**: `section#abaTopo` no lugar do `.topoGrid`:
   `.abCab` (h2 `#abTit` = `title` da aba ativa; `button#pilDia` = etiqueta do dia, `pintaEtiquetaDia`: `.pdL` "Dia útil
   DIA_HOJE de T · Semana N" no PC, `.pdC` "DIA_SEMANA · Sem. N" abaixo de 1000 px, `.pdI` "i"; `data-dica` com o dia,
