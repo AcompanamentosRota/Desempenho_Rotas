@@ -13,6 +13,7 @@
    Devolve linhas de resumo (só contagens, totais e códigos; nada de clientes). */
 'use strict';
 const assert = require('node:assert/strict');
+const {rotuloSemMetaDiaDe} = require('./semdia_teste');
 
 // a cascata aberta: cada linha (na ordem da tela) com os números dos data-* e os textos; e o esperado recontado
 const LE_CASCATA = () => {
@@ -43,12 +44,14 @@ const LE_CASCATA = () => {
     return {i, nome: t('.cNomeL b') || t('.cNome b'), off: el.classList.contains('off'), v3: el.classList.contains('v3'),
       fim: !!(g && g.fim), meta: num(d.meta), real: num(d.real), dir: num(d.dir), onl: num(d.onl), ro: num(d.ro), dif: num(d.dif),
       bat: d.bat === '1', fundo: el.classList.contains('bat'), selo: t('.cSelo'), difTxt: t('.cDif b'), difSub: t('.cDif small'),
-      pct: t('.cPct b'), caixa: t('.cMeio .cOn'), colunas: [...el.children].map(c => c.classList[0]),
+      pct: t('.cPct b'), caixa: t('.cMeio .cOn'), caixaRot: t('.cMeio small'),
+      caixaCls: (el.querySelector('.cMeio .cOn') || {className: ''}).className, colunas: [...el.children].map(c => c.classList[0]),
       esp: g && !g.off ? {onl: onl(doItem(g.rotas)), ro: roIndep(doItem(g.rotas))} : null};
   });
   const notas = [...document.querySelectorAll('#dCorpo .cNota')].map(n => ({meta: num(n.dataset.meta), real: num(n.dataset.real)}));
   const card = agrega(doItem(ctx.rotas)).ind[k];
-  return {k, vol, vz: k === 'VENDAZERO', fech: !!P.FECHAMENTO, temOnline: !!ONLINE, nivel: ctx.nivel, nome: ctx.nome, n: gs.length,
+  return {k, vol, vz: k === 'VENDAZERO', fech: !!P.FECHAMENTO, semDia: !P.FECHAMENTO && P.DIA_HOJE === P.DIA_ONTEM,
+    diaSem: P.DIA_SEMANA, temOnline: !!ONLINE, nivel: ctx.nivel, nome: ctx.nome, n: gs.length,
     codigo: gs.map(g => g.nome), linhas, notas, card: card && !card.unavailable ? {meta: card.meta, real: card.real} : null,
     cab: !!document.querySelector('#dCorpo .cOrd'), chips: !!document.querySelector('#dCorpo .cOrdCh')};
 };
@@ -95,6 +98,12 @@ async function confereNivel(page, onde){
       assert.equal(l.fundo, bat, `${q}: fundo verde-claro`);
       assert.equal(l.selo, bat ? '✓ Meta batida' : '', `${q}: selo`);
       assert.equal(l.pct, l.dir == null ? '—' : `${l.dir}%`, `${q}: %`);
+      // caixa do Online do volume: dia útil com meta do dia <= 0 = "Meta batida!" (ok); dia não útil = rótulo novo, neutra
+      if(c.vol && c.semDia && l.caixaRot !== 'meta do dia —'){
+        assert.equal(l.caixaRot, rotuloSemMetaDiaDe(c.diaSem), `${q}: caixa Online em dia não útil`);
+        assert.equal(l.caixaCls, 'cOn nd', `${q}: caixa Online neutra em dia não útil`);
+      }
+      if(c.vol && l.caixaRot === 'Meta batida!') assert.ok(!c.semDia && l.caixaCls === 'cOn ok', `${q}: Meta batida! só em dia útil, verde`);
     }
   }
   // (c) linhas (+ nota das virtuais/EV*) = card do nível

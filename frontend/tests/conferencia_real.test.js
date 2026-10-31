@@ -1498,3 +1498,177 @@ describe('"Faltam" do medidor com o online de hoje: dado real', {skip: pular}, (
     }
   });
 });
+
+/* "Sem meta do dia" em dia não útil (decisão da Karen, 31/10/2026): rode com o payload de um dia NÃO útil (ex.: o de sábado,
+   `git show 1f72a2b:frontend/data/payload.json`, DIA_HOJE = DIA_ONTEM, FECHAMENTO false) e com o de um dia ÚTIL (ex.:
+   `git show efb4f3a:frontend/data/payload.json`), cada um com o online do mesmo commit, copiados FORA do repositório.
+   Escopos: a Diretoria, cada gerência com dados (filtro da Diretoria), cada grupo no Total e uma supervisão; as 5 categorias.
+   (a) dia não útil: nenhum "Meta batida!" nem caixa verde pela meta do dia; os cinco lugares (caixa Online do card e da
+       cascata, .gDia do medidor, tooltip e cor do Online da gaveta da categoria, texto da Executiva) com o rótulo novo;
+   (b) dia não útil: antes x depois contra a main antes da etapa (REF_PRE_SEMDIA), mesmo payload: Executiva, gavetas da
+       categoria, cards e cascata de Volume iguais fora desses rótulos e classes (NORMALIZA_SEMDIA); ICS GC, Novos Negócios,
+       Todos a Bordo e Resumo idênticos;
+   (c) dia útil: a tela inteira (Executiva, gavetas da categoria, cards e 1º nível da cascata das 4 abas, Resumo) idêntica à
+       da main. Imprime só escopo, categoria, meta do dia somada e rótulo (nada de clientes). */
+const REF_PRE_SEMDIA = '97a19db';
+const FRONT_PRE_SEMDIA = (() => {
+  try {
+    const t = execSync(`git show ${REF_PRE_SEMDIA}:frontend/js/app.js`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return {'/js/app.js': () => t};
+  } catch(e) { return null; }
+})();
+const {rotuloSemMetaDiaDe} = require('./semdia_teste.js');
+const VOL5 = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MINERAL', 'VOL DEST+ART+CND'];
+const escoposSemDia = page => page.evaluate(() => {
+  const gcs = gcsComDados(), grupos = gruposGc().map(g => g.chave).filter(temDados), g0 = gcs[0];
+  return [{e: {perfil: 'dir'}, dgc: '', onde: 'BAND'}, ...gcs.map(g => ({e: {perfil: 'dir'}, dgc: g, onde: 'GC.' + g})),
+    ...grupos.map(g => ({e: {perfil: 'gc', gc: g}, onde: 'GC.' + g})),
+    {e: {perfil: 'sv', gc: g0, sv: svsDaEntrada(g0)[0]}, onde: svsDaEntrada(g0)[0]}];
+});
+async function vaiEscopo(page, s){
+  await entra(page, s.e);
+  if(s.e.perfil === 'dir' && s.dgc) await page.selectOption('#fgc', s.dgc);
+}
+// normaliza SÓ o que a etapa troca: rótulo e classe das caixas Online de volume (card e cascata), .gDia, texto da meta do
+// dia da Executiva, cor e tooltip do Online da gaveta da categoria
+const NORMALIZA_SEMDIA = sel => { const el = document.querySelector(sel); if(!el) return null; const c = el.cloneNode(true);
+  const vol = new Set(GROUPS.VOLUME);
+  c.querySelectorAll('.ind[data-k]').forEach(i => { if(!vol.has(i.dataset.k)) return; const o = i.querySelector('.obox');
+    if(o){ o.className = 'obox'; const s = o.querySelector('span'); if(s) s.textContent = ''; } });
+  c.querySelectorAll('.cLin .cMeio').forEach(m => { const on = m.querySelector('.cOn'), sm = m.querySelector('small');
+    if(on && sm && /meta do dia|Meta batida!/.test(sm.textContent)){ on.className = 'cOn'; sm.textContent = ''; } });
+  c.querySelectorAll('.gDia:not(.gSem)').forEach(g => { g.textContent = ''; });
+  const t = c.querySelector('#exDiaTxt'); if(t) t.textContent = '';
+  c.querySelectorAll('tr.ctLin').forEach(tr => { tr.removeAttribute('data-dica'); const o = tr.querySelector('.ctOnl'); if(o) o.className = 'ctOnl'; });
+  return c.innerHTML; };
+const escolheCatReal = (page, k) => page.evaluate(k => { catExec = k; render(); }, k);
+
+describe('"Sem meta do dia" em dia não útil, com dado real', {skip: pular}, () => {
+  test('(a) dia não útil: os cinco lugares com o rótulo novo e a cor neutra, nenhum "Meta batida!" pela meta do dia', async (t) => {
+    const {page, ctx, erros} = await abre(1440);
+    const dia = await page.evaluate(() => ({nao: !P.FECHAMENTO && P.DIA_HOJE === P.DIA_ONTEM, ds: P.DIA_SEMANA}));
+    if(!dia.nao){ t.skip('o payload é de um dia útil (ou do fechamento): ver (c)'); await ctx.close(); return; }
+    const rot = rotuloSemMetaDiaDe(dia.ds), tab = [];
+    for(const s of await escoposSemDia(page)){
+      await vaiEscopo(page, s);
+      await vaiAba(page, 'EXEC');
+      for(const k of VOL5){
+        await escolheCatReal(page, k);
+        const r = await page.evaluate(k => { const b = agrega(rotasAtuais()).ind[k] || {}, g = document.querySelector(`#exGauges .gCard[data-k="${k}"]`);
+          return {md: b.unavailable ? null : b.metaDia, gDia: (g.querySelector('.gDia') || {}).textContent, gSem: !!g.querySelector('.gSem'),
+            btn: g.getAttribute('role') === 'button', texto: document.getElementById('exDiaTxt').textContent}; }, k);
+        const q = `${s.onde} ${k}`;
+        if(r.md != null){
+          if(!r.gSem) assert.ok(r.gDia.startsWith(`${rot} · online `), `${q}: medidor "${r.gDia}"`);
+          assert.ok(/: hoje não é dia útil/.test(r.texto) && !/alcanç|batida/.test(r.texto), `${q}: texto "${r.texto}"`);
+        }
+        if(r.btn){
+          await page.click(`#exGauges .gCard[data-k="${k}"]`);
+          const gav = await page.$$eval('#dCorpo tr.ctLin', trs => trs.map(tr => ({cls: tr.querySelector('.ctOnl').className, dica: tr.dataset.dica})));
+          await page.keyboard.press('Escape');
+          for(const l of gav){
+            assert.equal(l.cls, 'ctOnl', `${q}: Online da gaveta sem cor`);
+            assert.ok(!/meta do dia (batida|\d)/.test(l.dica), `${q}: tooltip da gaveta`);
+          }
+        }
+        tab.push([s.onde, k, r.md == null ? '—' : Math.round(r.md), r.md == null ? 'meta do dia —' : rot]);
+      }
+      await vaiAba(page, 'VOLUME');
+      const cards = await page.$$eval('#lista .ind.vol[data-k]', els => els.map(el => ({k: el.dataset.k, cls: el.querySelector('.obox').className,
+        rot: el.querySelector('.obox span').textContent.trim()})));
+      for(const c of cards){
+        assert.notEqual(c.rot, 'Meta batida!', `${s.onde} ${c.k}: card`);
+        if(c.rot !== 'meta do dia —') assert.deepEqual([c.cls, c.rot], ['obox nd', rot], `${s.onde} ${c.k}: caixa do card`);
+        await page.click(`#lista .ind[data-k="${c.k}"]`);
+        const ls = await page.$$eval('#dCorpo .cLin:not(.off)', ls => ls.map(l => [l.querySelector('.cOn').className, l.querySelector('.cMeio small').textContent]));
+        await page.keyboard.press('Escape');
+        for(const [cls, sm] of ls) if(sm !== 'meta do dia —') assert.deepEqual([cls, sm], ['cOn nd', rot], `${s.onde} ${c.k}: cascata`);
+      }
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    console.log(`# Dia não útil (${dia.ds}): rótulo "${rot}"`);
+    console.log('# | Escopo | Categoria | Meta do dia somada | Rótulo |');
+    console.log('# |---|---|---|---|');
+    for(const l of tab) console.log(`# | ${l.join(' | ')} |`);
+  });
+
+  test('(b)/(c) antes x depois contra a main antes da etapa, mesmo payload: dia útil idêntico; dia não útil igual fora dos rótulos da meta do dia', {skip: !FRONT_PRE_SEMDIA && `sem o commit ${REF_PRE_SEMDIA}`}, async () => {
+    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_SEMDIA)];
+    const nao = await novo.page.evaluate(() => !P.FECHAMENTO && P.DIA_HOJE === P.DIA_ONTEM);
+    const h = (p, s) => nao ? p.evaluate(NORMALIZA_SEMDIA, s) : p.innerHTML(s);
+    const linhas = [];
+    let mudou = 0;
+    for(const s of await escoposSemDia(novo.page)){
+      for(const {page} of [novo, velho]) await vaiEscopo(page, s);
+      const comp = [];
+      for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+      for(const k of VOL5){
+        for(const {page} of [novo, velho]) await escolheCatReal(page, k);
+        assert.equal(await h(novo.page, '#exec'), await h(velho.page, '#exec'), `${s.onde} ${k}: Executiva`);
+        if(nao && await novo.page.innerHTML('#exec') !== await velho.page.innerHTML('#exec')) mudou++;
+        if(await novo.page.$(`#exGauges .gCard[data-k="${k}"][role="button"]`)){
+          const g = [];
+          for(const {page} of [novo, velho]){ await page.click(`#exGauges .gCard[data-k="${k}"]`); g.push(await h(page, '#drw')); await page.keyboard.press('Escape'); }
+          assert.equal(g[0], g[1], `${s.onde} ${k}: gaveta da categoria`);
+        }
+      }
+      comp.push('Executiva x 5 categorias + gavetas');
+      for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
+        assert.equal(ta, tb, `${s.onde} ${ab}`);
+        if(!ta) continue;
+        // volume: normalizado em dia não útil; as coberturas e o Todos a Bordo, sempre idênticos
+        const hh = ab === 'VOLUME' ? h : (p, x) => p.innerHTML(x);
+        assert.equal(await hh(novo.page, '#lista'), await hh(velho.page, '#lista'), `${s.onde} ${ab}: cards`);
+        assert.equal(await novo.page.innerHTML('#abaTopo'), await velho.page.innerHTML('#abaTopo'), `${s.onde} ${ab}: cabeçalho`);
+        const ks = await novo.page.$$eval('#lista .ind[data-k]', xs => xs.map(x => x.dataset.k));
+        for(const k of ab === 'VOLUME' ? ks : ks.slice(0, 1)){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          assert.equal(await hh(novo.page, '#drw'), await hh(velho.page, '#drw'), `${s.onde} ${ab} ${k}: cascata`);
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        comp.push(ab);
+      }
+      for(const {page} of [novo, velho]) await page.click('#btnResumo');
+      assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${s.onde}: Resumo`);
+      for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+      comp.push('Resumo');
+      linhas.push([s.onde, comp.join(', ')]);
+    }
+    if(nao) assert.ok(mudou > 0, 'em dia não útil a etapa muda os rótulos');
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_SEMDIA} x branch), ${nao ? 'dia NÃO útil: igual fora dos rótulos da meta do dia' : 'dia útil: idêntico'}` +
+      `${nao ? ` (${mudou} telas da Executiva com rótulo novo)` : ''}`);
+    console.log('# | Escopo | Comparado (igual) |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+  });
+
+  for(const largura of [360, 390, 1000, 1440])
+  test(`${largura} px, fundos preto e branco: rótulo novo sem corte (card e cascata), sem rolagem lateral nem erro no console`, async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre(largura, tema);
+      for(const e of [{perfil: 'dir'}, {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'}]){
+        await entra(page, e);
+        for(const ab of ['EXEC', 'VOLUME']){
+          await vaiAba(page, ab);
+          const onde = `${largura} ${tema} ${JSON.stringify(e)} ${ab}`;
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde}: rolagem lateral`);
+          const corta = await page.$$eval('#lista .ind.vol .obox span, #exGauges .gDia', ss => ss.filter(s => s.offsetParent &&
+            (s.scrollWidth > s.clientWidth + 0.5)).map(s => s.textContent));
+          assert.deepEqual(corta, [], `${onde}: rótulo cortado`);
+        }
+        await page.click('#lista .ind.vol');
+        const corta = await page.$$eval('#dCorpo .cLin .cMeio small', ss => ss.filter(s => s.scrollWidth > s.clientWidth + 0.5 ||
+          s.getBoundingClientRect().right > s.closest('.cLin').getBoundingClientRect().right + 0.5).map(s => s.textContent));
+        assert.deepEqual(corta, [], `${largura} ${tema}: rótulo da cascata cortado`);
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${largura} ${tema}: rolagem lateral na gaveta`);
+        await page.keyboard.press('Escape');
+      }
+      assert.deepEqual(erros, [], `${largura} ${tema}`);
+      await ctx.close();
+    }
+  });
+});

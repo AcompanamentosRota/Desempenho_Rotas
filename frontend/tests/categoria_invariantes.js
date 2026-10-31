@@ -63,7 +63,7 @@ const CORES = () => { const ref = v => { const s = document.createElement('span'
     verdeE: ref('--verdeE'), vermelho2: ref('--vermelho2'), txt: ref('--txt'), batBg: 'rgb(238, 248, 242)'}; };
 // o esperado da categoria k no escopo atual da Executiva, recontado do payload e do online (ver o cabeçalho)
 const ESPERADO = k => {
-  const fech = !!P.FECHAMENTO, acima = typeof acimaAtivo === 'function' && acimaAtivo();
+  const fech = !!P.FECHAMENTO, semDia = !fech && P.DIA_HOJE === P.DIA_ONTEM, acima = typeof acimaAtivo === 'function' && acimaAtivo();
   const dir = acima ? ACESSO.perfil === 'gc' : sel.modo === 'dir';
   const gc = acima ? (ACESSO.perfil === 'gc' ? '' : ACESSO.gc) : dir ? sel.dgc : sel.gc, sv = acima || dir ? '' : sel.sv;
   const onl = r => ONLINE ? ((((ONLINE.volume || {})[r]) || {})[k] || 0) : 0;
@@ -87,7 +87,7 @@ const ESPERADO = k => {
   const un = us.map(([u, rs]) => { const x = soma(rs); return {u, ...x, com: x.n > 0 && x.meta > 0}; });
   un.filter(x => x.com).forEach(x => { x.st = st(x); });
   const t = soma(tot);
-  return {fech, acima, nivel, nome: rotuloInd(k), tot: {...t, st: t.n && t.meta > 0 ? st(t) : null}, un, temOnline: !!ONLINE,
+  return {fech, semDia, acima, nivel, nome: rotuloInd(k), tot: {...t, st: t.n && t.meta > 0 ? st(t) : null}, un, temOnline: !!ONLINE,
     fora: soma(tot.filter(r => !dentro.has(r))), nFora: tot.filter(r => !dentro.has(r)).length};
 };
 // o medidor da categoria (Meta, Real, % real) e o card de Volume (lidos antes, na aba Volume)
@@ -210,8 +210,14 @@ async function confereCategoria(page, onde, {ordena = true} = {}){
       assert.equal(c.onlTxt, c.onl == null ? '—' : f0(c.onl), `${oc}: Online`);
       // Online: verde com a meta do dia batida ou online >= meta do dia; vermelho abaixo; sem cor sem meta do dia
       const md = esp.fech || !e.mdN ? null : e.md;
-      const corO = md == null || c.onl == null ? '' : md <= 1e-9 || c.onl >= md ? 'ok' : 'no';
+      // dia não útil (DIA_HOJE = DIA_ONTEM fora do fechamento): sem cor e "sem meta do dia" no tooltip
+      const corO = md == null || c.onl == null || esp.semDia ? '' : md <= 1e-9 || c.onl >= md ? 'ok' : 'no';
       assert.equal(c.onlCls, `ctOnl${corO ? ' ' + corO : ''}`, `${oc}: cor do Online (meta do dia ${md})`);
+      if(md != null){
+        const dOn = String(c.dica).replace(/<[^>]*>/g, '').split(/\n|<br>/).join(' ');
+        if(esp.semDia) assert.ok(dOn.includes(' · sem meta do dia') && !/meta do dia batida|meta do dia \d/.test(dOn), `${oc}: tooltip em dia não útil`);
+        else assert.ok(dOn.includes(md <= 1e-9 ? ' · meta do dia batida' : ' · meta do dia '), `${oc}: tooltip com a meta do dia`);
+      }
       // selo e fundo: Real + Online >= Meta (fechamento: Real >= Meta)
       const bat = c.meta > 0 && (esp.fech || c.onl == null ? c.real : c.real + c.onl) >= c.meta;
       assert.equal(c.bat, bat, `${oc}: selo`);

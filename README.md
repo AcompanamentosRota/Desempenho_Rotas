@@ -305,6 +305,23 @@ Rota, que não tem a Executiva, abre no **Volume**.
   O número do online continua aparecendo e somando; nenhum valor muda (meta do dia, metas e totais iguais aos do
   SAC). Fora disso, como antes (volume: verde se o online alcança a meta do dia; cobertura: "no ritmo" ou "meta do
   dia X"); sem meta do dia, meta 0, Venda Zero e fechamento do mês: como antes. O Resumo de vendas não muda.
+- **"Sem meta do dia" em dia não útil** (sábado, domingo, feriado; decisão da Karen, 31/10/2026, depois do sábado 31/10 com
+  operação de antecipação): o calendário do SAP não tem o dia, então a meta do dia (`META_RECUPERAVEL_ROTA` com
+  `DATA_MOVIMENTO` = hoje) vem 0 em todas as rotas e o painel mostrava "Meta batida!" em todos os cards de volume. Dia não
+  útil = `DIA_HOJE == DIA_ONTEM` fora do fechamento (em dia útil o gerador entrega `DIA_ONTEM = DIA_HOJE − 1`; em dia não
+  útil vale a R-DIA-06, o dia útil de hoje é o último dia útil; no 1º dia útil do mês são 1 e 0). Nesse caso, só no volume:
+  - caixa Online do card e da linha da cascata: **"sem meta do dia · sábado"** (ou "· domingo"; "· feriado" em qualquer
+    outro dia da semana, pelo `DIA_SEMANA`, sem acento e sem caixa; sem `DIA_SEMANA`, só "sem meta do dia"), caixa
+    **neutra** (`nd`), nunca verde nem vermelha;
+  - medidor da Executiva: "sem meta do dia · sábado · online X"; texto da meta do dia da Executiva: "Refrigerantes: hoje
+    não é dia útil (sábado); não há meta do dia. Online de hoje: X." (sem o "N de M ... alcançaram");
+  - gaveta "Categoria por unidade": Online sem cor e "· sem meta do dia" no comentário da linha.
+
+  Nenhum número muda (Real, Meta, Diferença, %, tendência, meta do dia somada, online, o "faltam X" / "meta batida · +X"
+  do medidor, que é sobre a meta do mês); o selo "✓ Meta batida" (meta do mês), o "Meta batida!" das coberturas e do Todos
+  a Bordo (`coberturaBatida`), a Venda Zero, o fechamento, o Painel de Ritmo e o Resumo ficam como estão. Em dia útil, meta
+  do dia ≤ 0 continua "Meta batida!". Limite: num feriado de semana em que o calendário do Datasphere traga a linha do
+  próprio dia, o gerador o trata como dia útil (`DIA_ONTEM = DIA_HOJE − 1`) e o painel fica como antes.
 - **Rotas Neutraliza** (por rota, em qualquer gerência: A41, 431, 251, I31, M31, C31, R31, S31, U31, 151, O21 e
   551): Meta e Real de Volume, ICS GC e Novos Negócios entram no total da gerência (e da Diretoria). Na cascata,
   ao abrir as supervisões de uma gerência, a última linha é **"Neutraliza"** (todas as rotas Neutraliza da
@@ -739,7 +756,7 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   correção de 30/10/2026, decisão da Karen: o % grande e o arco continuam Real ÷ Meta, sem o online); Meta | Real;
   Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
   valor exato, como o SAC: −0,03% é vermelho mesmo com o card do Volume verde em 100%); "meta do dia N · online N" (ou
-  "meta do dia batida" / "meta do dia —"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os
+  "meta do dia batida" / "meta do dia —"; em dia não útil, "sem meta do dia · sábado · online N"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os
   dois quadros acima, e abre a gaveta da categoria por unidade (abaixo). Sem meta no escopo: "sem meta neste escopo" (o
   medidor não é clicável e não abre a gaveta).
 - **Categoria por unidade** (gaveta; desde 22/10/2026; em **tabela** desde a Etapa 6 do pacote v3, 30/10/2026): tocar num
@@ -756,7 +773,7 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
     rotas / clientes"; o `title` da linha traz o nome inteiro. % Real = o `pctReal` do card, na cor do status. **Online** =
     volume online de hoje (unidade: o mesmo da caixa Online do card, `onlineVol`; canal/cliente/KA: Σ de
     `ONLINE.volumeCliente` dos clientes): verde com a meta do dia batida ou online ≥ meta do dia, vermelho abaixo, sem cor
-    sem meta do dia (e em canal/cliente/KA). **Faltam** = Meta − (Real + Online) em vermelho, a mesma conta da Diferença dos cards
+    sem meta do dia (e em canal/cliente/KA) e em dia não útil (o comentário diz "sem meta do dia"). **Faltam** = Meta − (Real + Online) em vermelho, a mesma conta da Diferença dos cards
     (pedido da Karen, 30/10/2026); com Real + Online ≥ Meta, "+X" (Real + Online − Meta) em verde; no fechamento e sem online,
     pelo Real (Meta − Real). **Tendência** = o % de tendência do card (`pctTendencia`), no tom escuro do status; "—" sem tendência
     (canal/cliente/KA).
