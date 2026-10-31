@@ -2967,6 +2967,17 @@ const INSTALA_MEDIDAS = () => {
 /* tira o font-size que o encaixa() grava nos [data-fit] (o tamanho de partida é o da escala): nos "antes x depois" no PC contra
    fronts de antes da Etapa 7 do pacote v3 (PC ~90%), só o tamanho muda de propósito; texto e estrutura continuam comparados */
 const semTam = h => String(h).replace(/ style="font-size: [\d.]+px;"/g, '');
+/* Etapa 7 do pacote v3 (PC ~90%/~85% por variáveis): o trecho do app.css atual entre "PC mais compacto" e "fim do PC mais
+   compacto" (o mesmo ESCALA_PC_CSS do conferencia_real.test.js). Os "antes x depois" de HTML contra fronts de antes dela o
+   acrescentam ao CSS do front antigo (comEscalaPc), para os dois fronts terem os mesmos tamanhos de partida (o encaixa()
+   grava o font-size no HTML) e o resto continuar comparado inteiro; semEscalaPc tira o trecho do CSS atual (teste que
+   mede a redução de uma etapa anterior). */
+const ESCALA_PC_CSS = (() => { const css = fs.readFileSync(path.join(FRONT, 'css', 'app.css'), 'utf-8');
+  const i = css.indexOf('/* ---------- PC mais compacto'), j = css.indexOf('/* fim do PC mais compacto');
+  return i >= 0 && j > i ? css.slice(i, j) : ''; })();
+const comEscalaPc = css => String(css) + '\n' + ESCALA_PC_CSS;
+const semEscalaPc = () => { const css = fs.readFileSync(path.join(FRONT, 'css', 'app.css'), 'utf-8');
+  return ESCALA_PC_CSS ? css.replace(ESCALA_PC_CSS, '') : css; };
 const medidas = page => page.evaluate(INSTALA_MEDIDAS);
 const semRolagemLateral = page => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
@@ -6175,7 +6186,7 @@ const FRONT_ETAPA5 = (() => {
   try {
     const arq = f => execSync(`git show ${REF_ETAPA6}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
     const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
-    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+    return {'/index.html': () => html, '/css/app.css': () => comEscalaPc(css), '/js/app.js': () => js};
   } catch(e) { return null; }
 })();
 /* Dias de visita variados (no sintético todos são "Seg - Qui"): em cada rota, os clientes na ordem do roster ficam "Seg -
@@ -6533,7 +6544,7 @@ const FRONT_PRE_EVO = (() => {
   try {
     const arq = f => execSync(`git show ${REF_PRE_EVO}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
     const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
-    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+    return {'/index.html': () => html, '/css/app.css': () => comEscalaPc(css), '/js/app.js': () => js};
   } catch(e) { return null; }
 })();
 const linhasEvo = (page, k) => page.evaluate(k => {
@@ -7169,7 +7180,8 @@ describe('Parte AA — rótulo "Novos Negócios" do volume, aba por perfil e not
 
   for(const largura of [1440, 390]){
     test(`notas menores que as da main (rodapé, crédito, legendas da visão executiva), com contraste AA; notas da gaveta iguais (${largura} px)`, {skip: !FRONT_PRE_ROTULOS && `sem o commit ${REF_ROTULOS}`}, async () => {
-      const [novo, velho] = [await abre('evo', {entrar: 'dir', largura, aba: null}),
+      // o atual sem a escala do PC (Etapa 7, que reduz de novo as notas no PC): aqui só a redução da Parte AA
+      const [novo, velho] = [await abre('evo', {entrar: 'dir', largura, aba: null, troca: {'/css/app.css': semEscalaPc}}),
                              await abre('evo', {entrar: 'dir', largura, aba: null, troca: FRONT_PRE_ROTULOS})];
       const [a, b] = [await novo.page.evaluate(ROT.NOTAS_PAGINA), await velho.page.evaluate(ROT.NOTAS_PAGINA)];
       const esperadas = largura >= 1000 ? ['rodape', 'creditos', 'legenda', 'ladoCred'] : ['rodape', 'creditos', 'legenda'];
@@ -7469,7 +7481,7 @@ const FRONT_PRE_CAT = (() => {
   try {
     const arq = f => execSync(`git show ${REF_PRE_CAT}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
     const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
-    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+    return {'/index.html': () => html, '/css/app.css': () => comEscalaPc(css), '/js/app.js': () => js};
   } catch(e) { return null; }
 })();
 /* status por gerência (na ordem de GC_ATIVAS), em todas as categorias de volume: [Real, Tendência] em fração da meta, com um
