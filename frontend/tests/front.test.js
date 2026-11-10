@@ -3470,7 +3470,8 @@ describe('Parte T — fonte dos números e cards (Etapa 2)', {skip: pular}, () =
    `troca`) e compara, elemento a elemento dentro da gaveta, o estilo computado. A única diferença aceita é a família
    (Inter no atual). Sem o histórico do git (clone raso), os testes são pulados.
    Etapa 3 do pacote v3 (mudança autorizada pela Karen, só nos itens 4 a 8 do pedido): (1) a linha da cascata de todas as
-   abas menos a Venda Zero (.cLin.v3: Nome | Meta · Real | % | Dif (Real + Online) | Online · meta do dia, selo .cSelo e o
+   abas menos a Venda Zero (.cLin.v3: Nome | Meta · Real | Real + Online | % | Dif | Online · meta do dia, a célula .cRo, o
+   selo .cSelo e o
    fundo .bat), o cabeçalho de colunas (.cOrd) e os chips "Ordenar:" (.cOrdCh) e a lista de clientes de volume com a coluna
    Online (.cCab.v3/.cCli.v3) são classes novas, todas dentro de um `.v3`: ficam FORA da comparação (no front de antes, saem
    as linhas .cLin que não são .off e o .cCab/.cCli que elas substituem); a caixa do Online da linha nova (.cMeio > *) é
@@ -8464,17 +8465,34 @@ describe('Parte AF — Resumo: bloco Todos a Bordo 3.0', {skip: pular}, () => {
 
 /* ---------- Parte AG — cascata com Dif (Real + Online), selo de meta batida e cards com Diferença (Real + online) (Etapa 3 do pacote v3) ----------
    Cards de Volume e coberturas (também os do Todos a Bordo): "Diferença" = (Real + online de hoje) − Meta (realOnline; pedido
-   da Karen de 29/10/2026, no lugar da 4ª linha "Real + online ±X"); na Venda Zero, no fechamento e sem online, Real − Meta. Cascata (menos a Venda Zero): Nome | Meta · Real | % | Dif (Real + Online) | Online
+   da Karen de 29/10/2026, no lugar da 4ª linha "Real + online ±X"); na Venda Zero, no fechamento e sem online, Real − Meta. Cascata (menos a Venda Zero): Nome | Meta · Real | Real + Online | % | Dif | Online
    · meta do dia; cabeçalho de colunas só no PC (>= 1000 px) e chips "Ordenar:" só no celular; ordem padrão = a do código;
    ordenar por %, Dif ou Online (2º clique inverte), "Neutraliza" e grupos sem dados no fim; selo "✓ META BATIDA" com Real +
    online >= Meta (coberturas: clientes distintos). Diretoria: a gerência abre direto a lista de clientes dela (todas as abas).
    Lista de clientes de volume com a coluna Online (Real = só o faturado; Dif. Abs e % como antes). Invariantes em
-   cascata_invariantes.js (as mesmas da conferência com dado real). Antes x depois contra a main antes da etapa (REF_PRE_CASC). */
+   cascata_invariantes.js (as mesmas da conferência com dado real). Antes x depois contra a main antes da etapa (REF_PRE_CASC).
+   Coluna "Real + Online" (10/11/2026; a Etapa 9, "tendência com online", foi CANCELADA e o negHoje do payload segue sem
+   consumidor): 6ª coluna no PC e, no celular, a faixa .cRo logo abaixo da caixa "Meta · Real" (a linha de números continua
+   com quatro células e o número aparece uma vez só no HTML; o rótulo vem do CSS). O botão de ordenar por diferença passou a
+   dizer só "Dif" e o valor dela não mudou. Invariante (h) em cascata_invariantes.js; antes x depois contra a main de antes
+   dela (REF_PRE_RO, só a cascata muda: CASC_INV.desfazRo). */
 const CASC_INV = require('./cascata_invariantes.js');
 const REF_PRE_CASC = '515b1e9';
+// main de 10/11/2026, antes da coluna "Real + Online" (só a cascata muda nesta etapa)
+const REF_PRE_RO = 'f5f9fcc';
 const FRONT_PRE_CASC = (() => {
   try {
     const ler = a => execSync(`git show ${REF_PRE_CASC}:frontend/${a}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const out = {};
+    for(const a of ['js/app.js', 'css/app.css', 'js/config.js', 'js/nucleo.js', 'js/resumo.js', 'js/ritmo.js', 'js/main.js', 'index.html']){
+      const t = ler(a); out['/' + a] = () => t;
+    }
+    return out;
+  } catch(e) { return null; }
+})();
+const FRONT_PRE_RO = (() => {
+  try {
+    const ler = a => execSync(`git show ${REF_PRE_RO}:frontend/${a}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
     const out = {};
     for(const a of ['js/app.js', 'css/app.css', 'js/config.js', 'js/nucleo.js', 'js/resumo.js', 'js/ritmo.js', 'js/main.js', 'index.html']){
       const t = ler(a); out['/' + a] = () => t;
@@ -8573,10 +8591,12 @@ describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Diferen
           if(k === 'VENDAZERO') assert.deepEqual(vis, {cab: false, chips: false}, 'Venda Zero sem ordenação');
           else assert.deepEqual(vis, {cab: largura >= 1000, chips: largura < 1000}, `${largura} ${k}`);
           if(k !== 'VENDAZERO' && r.linhas){
-            // cabeçalho: nível | Meta · Real | % tendência / % real da meta | Dif (Real + Online) | Online · meta do dia
+            // cabeçalho: nível | Meta · Real | Real + Online | % tendência / % real da meta | Dif | Online · meta do dia
             const cab = await page.$$eval('#dCorpo .cOrd > *', els => els.map(e => e.textContent.trim()));
-            assert.deepEqual(cab, ['Supervisão', 'Meta · Real', k.startsWith('VOL ') ? '% tendência' : '% real da meta',
-                                   'Dif (Real + Online)', 'Online · meta do dia']);
+            assert.deepEqual(cab, ['Supervisão', 'Meta · Real', 'Real + Online',
+                                   k.startsWith('VOL ') ? '% tendência' : '% real da meta', 'Dif', 'Online · meta do dia']);
+            // a coluna nova não é ordenavel: só as quatro chaves de sempre têm botão
+            assert.deepEqual(await page.$$eval('#dCorpo .cOrd .cOrdB', els => els.map(e => e.dataset.o)), ['', 'pct', 'dif', 'onl']);
             assert.deepEqual(await page.$$eval('#dCorpo .cOrdCh > *', els => els.map(e => e.textContent.trim())),
                              ['Ordenar:', 'Código', '%', 'Dif', 'Online']);
             // no PC as colunas das linhas e do cabeçalho alinham (mesmo x de início)
@@ -8780,6 +8800,154 @@ describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Diferen
           }
           for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
         }
+      }
+      if(await novo.page.$('#btnResumo:not([hidden])')){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${quem}: Resumo`);
+      }
+      assert.deepEqual(novo.erros, []);
+      await novo.ctx.close(); await velho.ctx.close();
+    }
+  });
+
+  /* Coluna "Real + Online" (10/11/2026). (a) o texto dela = fmt0 do data-ro da própria linha e (b) a Dif mostrada =
+     (coluna) − Meta, nas quatro abas, na Diretoria, numa gerência, num grupo e numa supervisão (o resto de (h) e (a)-(e)
+     vem do confereNivel). */
+  test('coluna "Real + Online": o texto = fmt0(data-ro) e a Dif mostrada = coluna − Meta (4 abas, Diretoria, gerência, grupo e supervisão)', async () => {
+    const LE_RO = () => [...document.querySelectorAll('#dCorpo .cLin.v3')].map(el => ({
+      nome: (el.querySelector('.cNomeL b') || {}).textContent, meta: Number(el.dataset.meta), real: Number(el.dataset.real),
+      ro: el.dataset.ro === '' ? null : Number(el.dataset.ro), dif: el.dataset.dif === '' ? null : Number(el.dataset.dif),
+      col: (el.querySelector('.cRo span') || {}).textContent, difTxt: (el.querySelector('.cDif b') || {}).textContent}));
+    const f0 = n => Math.round(n || 0).toLocaleString('pt-BR');
+    let linhas = 0;
+    for(const [dados, entrar] of [['inc', 'dir'], ['inc', {perfil: 'gc', gc: 'G1'}], ['grupo', {perfil: 'gc', gc: 'IT+MO'}],
+                                  ['inc', {perfil: 'sv', gc: 'G2', sv: '1'}]]){
+      const {page, ctx, erros} = await abre(dados, {entrar, aba: null, largura: 1440});
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        if(!(await page.$(`.tab[data-g="${aba}"]`))) continue;
+        await filtra(page, {aba});
+        for(const k of await page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))){
+          if(k === 'VENDAZERO') continue;
+          await page.click(`#lista .ind[data-k="${k}"]`);
+          for(const l of await page.evaluate(LE_RO)){
+            const q = `${dados} ${JSON.stringify(entrar)} ${aba} ${k} ${l.nome}`;
+            // (a) o texto da coluna = fmt0 do data-ro (sem online, o Real faturado)
+            if(l.ro == null) assert.equal(CASC_INV.leNum(l.col), Math.round(l.real), `${q}: coluna sem online`);
+            else assert.equal(l.col, f0(l.ro), `${q}: coluna "${l.col}" x fmt0(${l.ro})`);
+            // (b) a Dif mostrada = (coluna) − Meta, pelos data-* exatos
+            if(l.ro != null){
+              assert.ok(Math.abs(l.dif - (l.ro - l.meta)) < 1e-9, `${q}: data-dif ${l.dif} x ${l.ro} − ${l.meta}`);
+              const esp = k.startsWith('VOL ') ? Math.round(l.dif) || 0 : Math.round(l.dif * 10) / 10 || 0;
+              assert.equal(CASC_INV.leNum(l.difTxt), esp, `${q}: Dif mostrada "${l.difTxt}"`);
+            }
+            linhas++;
+          }
+          await page.keyboard.press('Escape');
+        }
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+    assert.ok(linhas > 20, `linhas conferidas: ${linhas}`);
+  });
+
+  test('celular (390 px): a linha de números continua com 4 células, a .cRo na faixa de baixo e o número uma vez só no HTML', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}, largura: 390, altura: 900, aba: 'VOLUME'});
+    await page.click('#lista .ind[data-k="VOL REFRIGERANTES"]');
+    const geo = await page.evaluate(() => [...document.querySelectorAll('#dCorpo .cLin.v3')].map(el => {
+      const r = c => el.querySelector(c).getBoundingClientRect(), caixas = [r('.cEsq'), r('.cPct'), r('.cDif'), r('.cMeio')];
+      const ro = r('.cRo'), fim = Math.max(...caixas.map(x => x.bottom));
+      return {// as quatro células de números na mesma faixa (topos iguais) e a .cRo na faixa logo abaixo delas
+        faixa: caixas.every(x => Math.abs(x.top - caixas[0].top) <= 1), nums: caixas.length,
+        roAbaixo: ro.top >= fim - 1 && ro.top - fim <= 8, roEsq: Math.abs(ro.left - r('.cEsq').left) <= 1,
+        rotulo: getComputedStyle(el.querySelector('.cRo'), '::before').content,
+        txt: el.querySelector('.cRo span').textContent, html: el.innerHTML};
+    }));
+    assert.ok(geo.length > 1);
+    for(const g of geo){
+      assert.deepEqual([g.faixa, g.nums, g.roAbaixo, g.roEsq], [true, 4, true, true], 'faixa dos números e a .cRo logo abaixo, à esquerda');
+      assert.equal(g.rotulo, '"Real + Online"', 'o rótulo do celular vem do CSS (::before)');
+      // o número da coluna aparece uma vez só no HTML da linha (nada repetido na .cEsq)
+      const n = g.html.split(`<span>${g.txt}</span>`).length - 1;
+      assert.equal(n, 1, `"${g.txt}" ${n} vezes no HTML da linha`);
+    }
+    // a .cRo não aparece como célula do cabeçalho (que no celular é o .cOrdCh, com os 4 chips de sempre)
+    assert.deepEqual(await page.$$eval('#dCorpo .cOrdCh > *', els => els.map(e => e.textContent.trim())),
+                     ['Ordenar:', 'Código', '%', 'Dif', 'Online']);
+    assert.ok(await page.evaluate(() => !document.querySelector('#dCorpo .cOrd').offsetParent), 'sem cabeçalho de colunas no celular');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('360, 390, 1000, 1280 e 1440 px, painel lateral aberto e recolhido: seis colunas sem rolagem lateral nem texto cortado', async () => {
+    for(const largura of [360, 390, 1000, 1280, 1440]){
+      for(const recolhido of largura >= 1000 ? [false, true] : [false]){
+        const {page, ctx, erros} = await abre('inc', {entrar: {perfil: 'gc', gc: 'IT+MO'}, largura, altura: 900, aba: 'VOLUME',
+          armazenado: recolhido ? {drotas_lado: 'recolhido'} : undefined});
+        for(const aba of ['VOLUME', 'ICS_GC', 'INCENTIVO']){
+          await filtra(page, {aba});
+          for(const k of await page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))){
+            if(k === 'VENDAZERO') continue;
+            await page.click(`#lista .ind[data-k="${k}"]`);
+            const onde = `${largura}${recolhido ? ' recolhido' : ''} ${aba} ${k}`;
+            assert.deepEqual(await page.evaluate(CORTES_GAVETA), [], `${onde}: texto cortado`);
+            assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde}: rolagem lateral`);
+            if(largura >= 1000){
+              // as seis colunas do cabeçalho e da linha começam no mesmo x e cabem na gaveta
+              const g = await page.evaluate(() => {
+                const cab = document.querySelector('#dCorpo .cOrd'), lin = document.querySelector('#dCorpo .cLin.v3');
+                const xs = el => [...el.children].map(c => Math.round(c.getBoundingClientRect().left));
+                return {cab: xs(cab), lin: xs(lin), drw: Math.round(document.getElementById('drw').getBoundingClientRect().width)};
+              });
+              assert.equal(g.cab.length, 6, `${onde}: 6 colunas no cabeçalho`);
+              assert.equal(g.lin.length, 6, `${onde}: 6 células na linha`);
+              g.cab.forEach((x, i) => assert.ok(Math.abs(x - g.lin[i]) <= 1, `${onde}: coluna ${i} ${x} x ${g.lin[i]}`));
+            }
+            await page.keyboard.press('Escape');
+          }
+        }
+        assert.deepEqual(erros, []);
+        await ctx.close();
+      }
+    }
+  });
+
+  test(`antes x depois (${REF_PRE_RO}): só a cascata muda; Executiva, cards, Resumo, Venda Zero e gavetas idênticos`,
+       {skip: !FRONT_PRE_RO && `sem o commit ${REF_PRE_RO}`}, async () => {
+    for(const [dados, entrar] of [['inc', 'dir'], ['inc', {perfil: 'gc', gc: 'G1'}], ['grupo', {perfil: 'gc', gc: 'IT+MO'}],
+                                  ['fech', 'gc'], ['exec', {perfil: 'sv', gc: 'G2', sv: '1'}]]){
+      const [novo, velho] = [await abre(dados, {entrar, aba: null, largura: 1280}),
+                             await abre(dados, {entrar, aba: null, largura: 1280, troca: FRONT_PRE_RO})];
+      const quem = `${dados} ${JSON.stringify(entrar)}`;
+      // Executiva (medidores, gaveta da categoria, Evolução, tabela) byte a byte: a etapa não a toca
+      if(await novo.page.$('#exec:not([hidden])')){
+        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${quem}: Executiva`);
+      }
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        if(!(await novo.page.$(`.tab[data-g="${aba}"]`))) continue;
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        // cabeçalho das abas e cards: idênticos (sem nenhum desfaz)
+        assert.equal(await novo.page.innerHTML('#abaTopo'), await velho.page.innerHTML('#abaTopo'), `${quem} ${aba}: cabeçalho`);
+        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${quem} ${aba}: cards`);
+        for(const k of await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          for(let nivel = 0; nivel < 5; nivel++){
+            const [hn, hv] = [await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw')];
+            // Venda Zero: byte a byte (não passa pela linhaCascata). As outras: só a coluna nova e o rótulo "Dif"
+            if(k === 'VENDAZERO') assert.equal(hn, hv, `${quem} Venda Zero nível ${nivel}`);
+            else assert.equal(CASC_INV.desfazRo(hn), hv, `${quem} ${aba} ${k}: cascata nível ${nivel}`);
+            if(entrar === 'dir' || !(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+          }
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+      }
+      // gavetas Base, Sem compra e Clientes: idênticas (clique pelo elemento, como o abreCardTopo: o card pode estar oculto)
+      for(const sel of ['cBase', 'cSem', 'btnClientes']){
+        if(!(await novo.page.$(`#${sel}`))) continue;
+        for(const {page} of [novo, velho]) await abreCardTopo(page, sel);
+        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} #${sel}: gaveta`);
+        for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
       }
       if(await novo.page.$('#btnResumo:not([hidden])')){
         for(const {page} of [novo, velho]) await page.click('#btnResumo');
