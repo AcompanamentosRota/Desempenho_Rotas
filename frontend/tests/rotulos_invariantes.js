@@ -104,7 +104,8 @@ const desfazAE = x => {
   if(Array.isArray(x)) return x.map(desfazAE);
   if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazAE(v)]));
   if(typeof x !== 'string') return x;
-  return x.replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '')
+  // antes, o medidor com Real + Online (10/11/2026; desfazMed de executiva_invariantes.js), com os data-* do .gCard no HTML
+  return require('./executiva_invariantes.js').desfazMed(x).replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '')
     .replace(/( data-desvio="[^"]*") data-meta="[^"]*" data-real="[^"]*"( data-online="[^"]*")?( data-tend="[^"]*")?>/g, '$1>')
     .replace(/<label class="buscaRot" for="q">Busca por cliente<\/label>(\s*)<div class="buscaWrap">(\s*)<input/g,
              '<div class="buscaWrap">$2<label class="sr-only" for="q">Buscar cliente ou rede</label>$2<input')

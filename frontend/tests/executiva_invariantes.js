@@ -10,7 +10,8 @@
      online >= Meta, "meta batida · +X", X = Real + online - Meta) do agrega() das rotas do filtro, recontado do payload e do
      online.json; sem online (fechamento, sem online.json) Meta - Real; sem a linha no medidor sem meta. O online do medidor
      (data-online) = o da linha da meta do dia dele = o da caixa Online do card de Volume; o "faltam" = o Faltam da linha de
-     total da gaveta "Categoria por unidade" da mesma categoria;
+     total da gaveta "Categoria por unidade" da mesma categoria; arco e % do medidor (10/11/2026) = (Real + online) / Meta em
+     qualquer dia (data-pct exato; % com 1 casa; "Real + Online", sem online "real" e Real / Meta) e o quadro Meta | Real | Online;
    - coberturas: % da linha de total = % dos cards do ICS GC, Novos Negócios e Todos a Bordo ("—" = card sem meta); Status =
      "x / n itens em 100%" da aba Todos a Bordo;
    - Sem compra: soma das unidades = total = KPI; % = sem compra / base;
@@ -36,6 +37,9 @@ const LE_EXEC = () => {
       arco: (g.querySelector('.gSvg .vl') || {getAttribute: () => null}).getAttribute('stroke-dasharray'),
       pct: g.querySelector('.gPct') ? g.querySelector('.gPct').firstChild.textContent : null,
       pctRot: (g.querySelector('.gPct small') || {}).textContent || null,
+      // o % exato (data-pct) e o quadro Meta | Real | Online (rótulo e número de cada caixa)
+      dataPct: g.dataset.pct == null ? null : Number(g.dataset.pct),
+      mr: [...g.querySelectorAll('.gMR > div')].map(d => [(d.querySelector('small') || {}).textContent, (d.querySelector('b') || {}).textContent]),
       tendTxt: (g.querySelector('.gTend b') || {}).textContent || null,
       tend: g.dataset.tend == null || g.dataset.tend === '' ? null : Number(g.dataset.tend),
       desvio: g.dataset.desvio == null ? null : Number(g.dataset.desvio),
@@ -156,12 +160,18 @@ async function confereExecutiva(page, onde){
     assert.equal(g.falta, bat ? `meta batida · +${f0(base - p.meta)}` : `faltam ${f0(p.meta - base)} para a meta`,
       `${onde} ${g.k}: linha "faltam" do medidor`);
     assert.equal(g.faltaOk, bat, `${onde} ${g.k}: cor da linha "faltam"`);
-    // arco, % e Tendência: dia útil e fechamento sobre o Real faturado (como sempre); dia não útil (DIA_HOJE = DIA_ONTEM fora do
-    // fechamento) sobre Real + online (sem online, o Real), Tendência = Real + online + Neg Restante e o desvio sobre ela
-    const sdu = ex.semDiaM && p.onl != null, baseM = sdu ? base : p.real, tEsp = ex.fech ? null : sdu ? base + (p.neg || 0) : p.tend;
-    assert.equal(g.arco, `${Math.max(0, Math.min(100, baseM / p.meta * 100)).toFixed(2)} 100`, `${onde} ${g.k}: arco`);
-    assert.equal(g.pct, `${sdu ? Math.round(base / p.meta * 100) : p.pctReal}%`, `${onde} ${g.k}: % do medidor`);
-    assert.equal(g.pctRot, sdu ? 'real + online' : 'real', `${onde} ${g.k}: rótulo do %`);
+    // arco e % (decisão da Karen, 10/11/2026): em QUALQUER dia sobre Real + online de hoje (sem online, fechamento ou sem
+    // online.json, o Real), o % com 1 casa em pt-BR e "Real + Online" / "real"; data-pct = base / Meta exato. Tendência: dia útil
+    // e fechamento a de sempre; dia não útil (DIA_HOJE = DIA_ONTEM fora do fechamento) com online, Real + online + Neg Restante e
+    // o desvio sobre ela. Quadro: Meta | Real (faturado) | Online (o de hoje; "—" sem online).
+    const sdu = ex.semDiaM && p.onl != null, tEsp = ex.fech ? null : sdu ? base + (p.neg || 0) : p.tend;
+    assert.ok(g.dataPct != null && Math.abs(g.dataPct - base / p.meta) <= 1e-12 * Math.max(1, base / p.meta),
+      `${onde} ${g.k}: data-pct ${g.dataPct} x (Real${p.onl == null ? '' : ' + online'}) / Meta ${base / p.meta}`);
+    assert.equal(g.arco, `${Math.max(0, Math.min(100, g.dataPct * 100)).toFixed(2)} 100`, `${onde} ${g.k}: arco = data-pct (até 100)`);
+    assert.equal(g.pct, `${br1(g.dataPct * 100)}%`, `${onde} ${g.k}: % do medidor = data-pct com 1 casa`);
+    assert.equal(g.pctRot, p.onl != null ? 'Real + Online' : 'real', `${onde} ${g.k}: rótulo do %`);
+    assert.deepEqual(g.mr, [['Meta', f0(p.meta)], ['Real', f0(p.real)], ['Online', p.onl == null ? '—' : f0(p.onl)]],
+      `${onde} ${g.k}: quadro Meta | Real | Online`);
     if(!ex.fech){
       assert.ok(tEsp != null && Math.abs(g.tend - tEsp) <= 1e-6 * Math.max(1, Math.abs(tEsp)), `${onde} ${g.k}: data-tend ${g.tend} x ${tEsp}`);
       assert.equal(g.tendTxt, f0(tEsp), `${onde} ${g.k}: Tendência mostrada`);
@@ -183,7 +193,8 @@ async function confereExecutiva(page, onde){
       assert.equal(ct.txt, bat ? `+${f0(base - p.meta)}` : f0(p.meta - base), `${onde} ${g.k}: faltam do medidor x Faltam da gaveta`);
       assert.equal(ct.ok, bat, `${onde} ${g.k}: cor do Faltam da gaveta`);
     }
-    medidor.push({k: g.k, meta: p.meta, real: p.real, onl: p.onl, antes: p.meta - p.real, novo: p.meta - base});
+    medidor.push({k: g.k, meta: p.meta, real: p.real, onl: p.onl, antes: p.meta - p.real, novo: p.meta - base, pct: g.pct,
+      dataPct: g.dataPct});
   }
   // coberturas: linha de total = % dos cards
   const conf = (k, card, cel, aba) => {
@@ -222,6 +233,42 @@ async function confereExecutiva(page, onde){
     gaveta: gav.itens, medidor};
 }
 
+/* "Antes x depois" contra a main de antes do medidor com Real + Online (10/11/2026; decisão da Karen): desfaz no front atual, em
+   HTML (strings dentro de objetos e listas também), SÓ o que essa etapa trocou de propósito, e o resto continua comparado byte a
+   byte. No front de antes nada disto existe, então em HTML antigo é um no-op (pode ser aplicada nos dois lados):
+   - o arco e o .gPct voltam aos de antes: Real / Meta (arco até 100, stroke-dasharray com 2 casas) e Math.round(Real / Meta *
+     100) (= o pctReal de agrega()) com "real"; em dia não útil com online, (Real + online) / Meta e "real + online" (o ramo do
+     PR #53). Os números vêm dos data-meta/data-real/
+     data-online exatos do próprio .gCard; o dia não útil, do texto "sem meta do dia" (sem o "do SAP") ou "hoje não é dia útil"
+     no mesmo HTML (o .gDia do medidor ou o quadro da meta do dia);
+   - o data-pct novo do .gCard e a 3ª caixa (Online) do .gMR saem;
+   - na gaveta "Categoria por unidade", a célula .ctRo, o título "Real + Online" e a linha "Real + Online" da dica saem.
+   A conta nova (data-pct, % com 1 casa, rótulo, 3ª caixa, coluna da gaveta) é conferida à parte (confereExecutiva e
+   categoria_invariantes.js). */
+const DIA_NAO_UTIL_HTML = /sem meta do dia(?! do SAP)|hoje não é dia útil/;
+const desfazMed = x => {
+  if(Array.isArray(x)) return x.map(desfazMed);
+  if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazMed(v)]));
+  if(typeof x !== 'string') return x;
+  const sdu = DIA_NAO_UTIL_HTML.test(x);
+  return x.split(/(?=<div class="gCard)/).map(c => {
+    const tag = c.match(/^<div class="gCard[^>]*? data-pct="[^"]*"[^>]*>/);
+    if(!tag) return c;
+    const at = n => (tag[0].match(new RegExp(` data-${n}="([^"]*)"`)) || [])[1];
+    const meta = Number(at('meta')), real = Number(at('real')), onl = at('online');
+    const semDia = sdu && onl !== '' && onl != null;
+    const pct = semDia ? Math.round((real + Number(onl)) / meta * 100) : Math.round(real / meta * 100);
+    const arco = Math.max(0, Math.min(100, (semDia ? real + Number(onl) : real) / meta * 100)).toFixed(2);
+    return c.replace(/ data-pct="[^"]*"(?= data-tend=")/, '')
+      .replace(/(<path class="vl" [^>]*stroke-dasharray=")[^ "]* 100"/, `$1${arco} 100"`)
+      .replace(/<div class="gPct">[^<]*<small>[^<]*<\/small><\/div>/, `<div class="gPct">${pct}%<small>${semDia ? 'real + online' : 'real'}</small></div>`)
+      .replace(/<div><small>Online<\/small><b data-fit="" data-fit-min="9"[^>]*>[^<]*<\/b><\/div>(?=<\/div>)/, '');
+  }).join('')
+    .replace(/<td class="ctRo">[^<]*<\/td>/g, '')
+    .replace(/<th scope="col" class="ctRo">Real \+ Online<\/th>/g, '')
+    .replace(/Real \+ Online (?:<b>|&lt;b&gt;)[^<&]*(?:<\/b>|&lt;\/b&gt;)(?:<br>|&lt;br&gt;)/g, '');
+};
+
 /* "Antes x depois" contra fronts de antes da correção do "faltam" do medidor com o online de hoje: a linha .gFalta (texto e
    cor) é a única coisa que muda de propósito no #exec (e o data-online novo do .gCard); nos dois lados, a linha vira um marcador
    neutro e o data-online sai (e o data-tend, desde o medidor com o online em dia não útil). A conta da linha é conferida à parte, em confereExecutiva (acima). */
@@ -229,7 +276,8 @@ const desfazFalta = x => {
   if(Array.isArray(x)) return x.map(desfazFalta);
   if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazFalta(v)]));
   if(typeof x !== 'string') return x;
-  return x.replace(/ data-online="[^"]*"/g, '').replace(/ data-tend="[^"]*"/g, '').replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '<div class="gFalta">·</div>');
+  // o medidor com Real + Online (desfazMed, acima) sai antes: com ele os data-* do .gCard ainda estão no HTML
+  return desfazMed(x).replace(/ data-online="[^"]*"/g, '').replace(/ data-tend="[^"]*"/g, '').replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '<div class="gFalta">·</div>');
 };
 
-module.exports = {confereExecutiva, LE_EXEC, LE_ABA, desfazFalta};
+module.exports = {confereExecutiva, LE_EXEC, LE_ABA, desfazFalta, desfazMed};

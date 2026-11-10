@@ -765,22 +765,30 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
 - **Meta do dia (SAP)**: online de hoje contra a meta do dia (a mesma do card) e quantas unidades já alcançaram (meta do
   dia batida ou online >= meta do dia, a regra da caixa Online). Sem meta do dia: "sem meta do dia do SAP neste escopo".
 - **Categorias**: um medidor (meia-lua) por categoria de volume (Refrigerantes, Cervejas, Still, Água Mineral,
-  Novos Negócios; Del Valle Frut fica fora), preenchido com Real ÷ Meta (até 100%) na cor da categoria; no centro o % real;
+  Novos Negócios; Del Valle Frut fica fora), preenchido com **(Real + online de hoje) ÷ Meta** (até 100%) na cor da categoria;
+  no centro esse % com **uma casa decimal** (26,3%) e, embaixo, o rótulo **"Real + Online"** (decisões da Karen de 10/11/2026,
+  em QUALQUER dia; até então o arco e o % eram Real ÷ Meta, inteiros, e só contavam o online em dia não útil). Sem online
+  (fechamento, com o Real do mês fechado, ou sem online.json): Real ÷ Meta, ainda com uma casa, e o rótulo "real". A casa
+  decimal é só do medidor: cards, cascata, gaveta, Resumo e Painel de Ritmo continuam com o % inteiro. O `.gCard` traz
+  `data-pct` = o % mostrado, exato (base ÷ Meta, sem formatar);
   "faltam X para a meta" (X = Meta − (Real + online de hoje) do próprio medidor, como a Diferença dos cards e o Faltam da
   gaveta da categoria, em vermelho e negrito; com Real + online ≥ Meta, "meta batida · +X", X = Real + online − Meta, em
-  verde; sem online (fechamento, com o Real do mês fechado, ou sem online.json), Meta − Real; sem a linha no medidor sem meta;
-  correção de 30/10/2026, decisão da Karen: o % grande e o arco continuam Real ÷ Meta, sem o online); Meta | Real;
+  verde; sem online, Meta − Real; sem a linha no medidor sem meta); quadro com **três caixas: Meta | Real | Online** (o Real
+  faturado e o online de hoje, separados, não somados; "—" sem online). Num medidor estreito (conteúdo com menos de 180 px:
+  dois por linha no celular e cinco por linha no PC até ~1400 px com o painel aberto) três caixas lado a lado não cabem um
+  número de 7 dígitos ("5.949.999", a Meta de Refrigerantes da BAND em 10/11/2026), então as três viram linhas (rótulo à
+  esquerda, número à direita), na mesma ordem (container query pela largura do `.gCard`);
   Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
   valor exato, como o SAC: −0,03% é vermelho mesmo com o card do Volume verde em 100%); "meta do dia N · online N" (ou
   "meta do dia batida" / "meta do dia —"; em dia não útil, "sem meta do dia · sábado · online N"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os
   dois quadros acima, e abre a gaveta da categoria por unidade (abaixo). Sem meta no escopo: "sem meta neste escopo" (o
   medidor não é clicável e não abre a gaveta).
   **Em dia não útil** (sábado, domingo, feriado: `DIA_HOJE == DIA_ONTEM` fora do fechamento; decisão da Karen, 31/10/2026),
-  com online, o medidor anda com a venda do dia: arco e % sobre **Real + online** ÷ Meta (rótulo pequeno **"real +
-  online"**), **Tendência = Real + online + Neg Restante** e o desvio sobre ela. Em dia não útil o SAP não tem a linha de
+  com online, o medidor anda com a venda do dia: **Tendência = Real + online + Neg Restante** e o desvio sobre ela (o arco e o
+  % já contam o online em qualquer dia, acima). Em dia não útil o SAP não tem a linha de
   hoje, então a "Neg de hoje" é zero e tudo o que se vende entra por cima do plano; no fim do mês, com a Neg Restante zerada,
   a Tendência vira Real + online (é a mesma conta da Etapa 9, Real + Online + (Neg Restante − Neg de hoje), com a Neg de
-  hoje zero). Meta | Real continuam Meta e Real faturado. De propósito, o card da aba Volume e a coluna "% Real" da gaveta
+  hoje zero). A caixa Real continua o Real faturado. De propósito, o card da aba Volume e a coluna "% Real" da gaveta
   continuam no % real faturado (números diferentes com rótulos diferentes). Sem online.json, em dia útil e no fechamento,
   nada muda. O `.gCard` traz `data-tend` (a Tendência mostrada) e `data-desvio` (o desvio mostrado).
 - **Categoria por unidade** (gaveta; desde 22/10/2026; em **tabela** desde a Etapa 6 do pacote v3, 30/10/2026): tocar num
@@ -790,9 +798,14 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   no filtro → as rotas dela; com "Abrir por" canal, cliente ou Key Account, as linhas do modo). O nome da categoria é o
   central ("Novos Negócios", sem a 2ª linha do card). Fechar (ESC, ×, tocar fora) mantém a categoria em análise; os chips do
   celular só escolhem a categoria, sem abrir a gaveta. A Rota não tem a Executiva.
-  - Colunas: **#** | **Gerência/Supervisão/Rota** (ou Canal, Cliente, Key Account) | **Meta** | **Real** | **% Real** |
-    **Online** | **Faltam** | **Tendência**. Sem barras e sem Desvio: só os números, os mesmos de antes (`agrega()`,
-    `statusCat`), mais o Online. No fechamento do mês, sem a coluna Tendência e com o título **"Online hoje"** (7 colunas).
+  - Colunas: **#** | **Gerência/Supervisão/Rota** (ou Canal, Cliente, Key Account) | **Meta** | **Real** | **Real + Online** |
+    **% Real** | **Online** | **Faltam** | **Tendência**. Sem barras e sem Desvio: só os números, os mesmos de antes (`agrega()`,
+    `statusCat`), mais o Online e o Real + Online. No fechamento do mês, sem a coluna Tendência e com o título **"Online hoje"**
+    (8 colunas).
+  - **Real + Online** (decisão da Karen, 10/11/2026): o MESMO valor que a linha já usava no selo e no Faltam (`data-ro`, `roCt`),
+    em caixas inteiras; sem online (fechamento, sem online.json), o Real faturado. Não ordena (as quatro chaves continuam % Real,
+    Online, Faltam e Tendência). A caixa de comentário ganha a linha "Real + Online" logo abaixo do Real. A coluna **% Real** não
+    muda: continua Real ÷ Meta, sem o online.
   - Unidade: só o código (GC.UR, SV.G2.1, Rota 111; canal, cliente e Key Account com o nome) e, ao lado, "N supervisões /
     rotas / clientes"; o `title` da linha traz o nome inteiro. % Real = o `pctReal` do card, na cor do status. **Online** =
     volume online de hoje (unidade: o mesmo da caixa Online do card, `onlineVol`; canal/cliente/KA: Σ de
@@ -819,9 +832,10 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
     ÷ Meta NEG · sem tendência · …". Rodapé: a legenda das três cores e "Clique em % Real, Online, Faltam ou Tendência para
     reordenar".
   - Passar o mouse, focar pelo teclado (Tab passa pelos títulos que ordenam e depois de linha em linha) ou tocar numa linha
-    abre a caixa de comentário: Meta / Real até ontem (X%) / Online (· meta do dia) / Tendência (Y%); no toque, rolar a lista
+    abre a caixa de comentário: Meta / Real até ontem (X%) / Real + Online / Online (· meta do dia) / Tendência (Y%); no toque, rolar a lista
     fecha a caixa.
-  - **Celular** (< 700 px): sem as colunas #, Meta e Real; o nome sem o "N supervisões"; um valor fora do comum (ex.: o % de
+  - **Celular** (< 700 px): sem as colunas #, Meta, Real e Real + Online (com ela a tabela passava da gaveta a 360 px; o Faltam
+    já é Meta − (Real + Online) e a caixa de comentário mostra o valor); o nome sem o "N supervisões"; um valor fora do comum (ex.: o % de
     uma meta de 0,1 cx) quebra dentro da célula; sem rolagem lateral em 360 px. A gaveta mantém a aparência de sempre
     (moldura, cabeçalho, ×); a tabela é conteúdo novo (classes `.ct*` dentro do `.cuGav`), em Inter, com a escala própria
     (12 px; cabeçalho 10 px; variáveis `--ct-*`) e algarismos alinhados. O cartão `cartaoCat` continua só na ficha da busca.

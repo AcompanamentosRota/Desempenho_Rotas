@@ -149,6 +149,12 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   gaveta em `confereExecutiva` (Diretoria, cada gerência, cada grupo, uma supervisão; tabela Meta | Real | Online | faltam
   antigo | novo); antes x depois contra `1af3c6d` (`REF_PRE_FALTA`: só a `.gFalta` muda; gavetas da categoria, abas, cascata e
   Resumo iguais); 360/390/1000/1440 px nos dois fundos sem rolagem lateral nem `.gFalta` cortada.
+  Medidor com Real + Online e coluna "Real + Online" da gaveta (10/11/2026): recontagem INDEPENDENTE no Node, direto dos dois
+  JSONs (sem agrega/realOnline/onlineVol; rotas pelo DATA), em BAND, cada gerência, cada grupo e uma supervisão: `data-pct` e o %
+  do medidor, rótulo, arco, quadro Meta | Real | Online e a `.ctRo` de cada linha (= fmt0 do `data-ro`; total e gerências = Real +
+  online recontado); tabela só com totais e códigos; antes x depois contra `ac94f8b` (`REF_PRE_MEDRO`: só o medidor e a coluna,
+  `desfazMed`; Executiva com a Evolução aberta, gavetas, cards, 1º nível da cascata, Clientes, Ritmo e Resumo iguais);
+  360/390/1000/1280/1440 px, painel aberto e recolhido, nos dois fundos.
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -430,11 +436,21 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   ("… · online X"), `linhaCtHtml` (Online sem cor, tooltip "· sem meta do dia") e `textoMetaDia` ("hoje não é dia útil
   (sábado); não há meta do dia. Online de hoje: X."). `metaBatida`/`coberturaBatida` não mudam; nenhum número muda.
   **Medidor com o online em dia não útil (31/10/2026, decisão da Karen; README, "Categorias" da Executiva; só `pintaMedidores`)**:
-  com `semDiaUtil()` e online (`ro != null`), arco e `.gPct` = (Real + online) ÷ Meta com o `small` "real + online",
-  `.gTend` = Real + online + `negRestante` (a Neg de hoje é zero em dia não útil; com a Neg Restante 0, Real + online) e o
-  `.pill`/`data-desvio` sobre ela; `.gMR` continua Meta | Real faturado; `data-tend` (novo) = a Tendência mostrada (dia útil
-  `b.tendencia`, vazio no fechamento). O card de Volume e a coluna "% Real" da gaveta ficam no faturado (aceito). Sem online, dia
-  útil e fechamento: como antes. Os antes x depois que comparam o `#exec` com fronts antigos tiram o `data-tend` (`desfazFalta`,
+  com `semDiaUtil()` e online (`ro != null`), `.gTend` = Real + online + `negRestante` (a Neg de hoje é zero em dia não útil;
+  com a Neg Restante 0, Real + online) e o `.pill`/`data-desvio` sobre ela; `data-tend` = a Tendência mostrada (dia útil
+  `b.tendencia`, vazio no fechamento). Sem online, dia útil e fechamento: a Tendência e o desvio de sempre. (Até 10/11/2026 o
+  arco e o % também só contavam o online aqui; ver o bloco abaixo.)
+  **Medidor com Real + Online em qualquer dia e quadro Meta | Real | Online (10/11/2026, decisões da Karen; README, "Categorias";
+  só front, Parte AN)**: em `pintaMedidores`, `v` (arco) = `base / b.meta` e o `.gPct` = `pctBR(base / b.meta * 100, 1)` (UMA casa,
+  pt-BR; nunca `toFixed`) com o `small` "Real + Online" (`ro != null`) ou "real" (sem online: fechamento ou sem online.json, base =
+  Real); `b.pctReal` não é mais usado ali e o `sdu` só decide `tend`/`d`. `data-pct` no `.gCard` (entre `data-online` e
+  `data-tend`) = `base / b.meta` exato. `.gMR` com três caixas Meta | Real (faturado) | Online (`onl`; "—" sem online), cada `b`
+  com `data-fit` mín. 9; `.gCard{container-type:inline-size}` e `@container (max-width:179.98px)` empilha as três em linhas
+  (rótulo à esquerda, número à direita): três lado a lado não cabem "5.949.999" (Meta de Refrigerantes da BAND em 10/11) em 390 px
+  nem a 1200-1366 px com o painel aberto. A casa decimal é só do medidor (cards, cascata, gaveta, Resumo, Ritmo inteiros). Os
+  antes x depois contra a main anterior desfazem só isso com `desfazMed` (executiva_invariantes.js: arco, `.gPct`, `data-pct`, 3ª
+  caixa e a coluna `.ctRo` da gaveta, pelos `data-*` do próprio `.gCard`; no-op em HTML antigo), chamada no início do
+  `desfazFalta` e do `desfazAE` (rotulos_invariantes.js); `REF_PRE_MEDRO` = `ac94f8b`. Os antes x depois que comparam o `#exec` com fronts antigos tiram o `data-tend` (`desfazFalta`,
   `desfazAE`). Testes: Parte AM (sobre 'sab'/'util0'/'vol5fech'; antes x depois contra `3647363`, `REF_PRE_MED`), invariantes do
   medidor em `executiva_invariantes.js` e o "% do medidor" em `categoria_invariantes.js`; com dado real, o bloco "Medidor da
   Executiva com o online em dia não útil" do `conferencia_real.test.js` (sábado: (a) recontagem; dia útil: (b) `#exec` igual).
@@ -661,7 +677,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `data-meta`/`data-real` exatos no `.gCard`. **Correção de 30/10/2026 (decisão da Karen)**: base = Real + online de hoje (X =
   Meta − (Real + online)), como a Diferença dos cards e o Faltam da gaveta da categoria (`pintaMedidores`: `onl` = `onlineVol(rotas, c)` uma vez
   por cartão, null no fechamento e sem ONLINE, reaproveitado na `.gDia`; `realOnline(c, rotas, b, onl)`; null = Meta − Real);
-  `data-online` no `.gCard` (vazio sem online); o `.gPct` e o arco continuam Real ÷ Meta, sem o online. Testes: Parte AE
+  `data-online` no `.gCard` (vazio sem online); o `.gPct` e o arco ficaram em Real ÷ Meta até 10/11/2026, quando passaram a
+  usar a mesma base (bloco "Medidor com Real + Online" acima). Testes: Parte AE
   ("medidor: ... Meta - (Real + online)"), `executiva_invariantes.js` (recontagem pelo online.json, = `.gDia`, = caixa Online do
   card de Volume, = Faltam da linha de total da gaveta) e, com dado real, o antes x depois contra `1af3c6d` (`REF_PRE_FALTA`); os
   antes x depois que comparam o `#exec` inteiro com fronts antigos normalizam só a `.gFalta` e o `data-online` (`desfazFalta`,
@@ -709,8 +726,11 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   escolhem; sem `comMeta` no escopo o medidor é `.off` (sem role/tabindex/clique) e a função também sai cedo; fechar não mexe em
   `catExec`. Unidades = `unidadesExec(ctxInicial())` (com `filho`), total = `agrega(rotasAtuais())`; unidade sem meta fora.
   Tabela `.ctTab` (classes novas `.ct*` dentro do `.cuGav`; `CT` = estado {k, tit, sub, nivel, linhas, tot, fech, dim, col, dir};
-  `linhaCt`, `ordenaCt`, `linhaCtHtml`, `pintaTabCat`, `abreTabCat`): # | unidade | Meta | Real | % Real | Online | Faltam |
-  Tendência (fechamento: sem a Tendência, "Online hoje", 7 colunas); sem barras nem Desvio. Unidade = só o código (`u.cod`;
+  `linhaCt`, `ordenaCt`, `linhaCtHtml`, `pintaTabCat`, `abreTabCat`): # | unidade | Meta | Real | Real + Online | % Real | Online |
+  Faltam | Tendência (fechamento: sem a Tendência, "Online hoje", 8 colunas); sem barras nem Desvio. **Real + Online** (`.ctRo`,
+  10/11/2026, decisão da Karen) = `fmt0` do MESMO `ro` do `data-ro` (`roCt`; null = o Real), `th` simples (não ordena: as chaves
+  seguem pct/onl/falt/tend), linha "Real + Online" na dica logo abaixo do Real; oculta < 700 px (com ela a tabela passava da
+  gaveta a 360 px); a "% Real" não muda (Real ÷ Meta). Unidade = só o código (`u.cod`;
   canal/cliente/KA com o nome) + `.ctInfo` ("N supervisões" de `infoCat`), `title` com o nome inteiro. Online = `onlineVol(rotas,
   k)` (unidade) ou Σ `volCliOnline` dos clientes (`dimDados` ganhou `onl` nas linhas e no total; `cliNeg` guarda `o`); cor
   `.ctOnl.ok/.no` só com meta do dia (`metaBatida` ou online >= metaDia), nunca em canal/cliente/KA. Faltam = Meta − (Real +
@@ -725,8 +745,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `.on` em `--vermelho2`; `aria-sort`); sem valor no fim; "Neutraliza" sempre por último; numeração `.ctN` segue a ordem.
   Subtítulo "… · N <nível> · ordenado por <% da meta|online|faltam|tendência>" (`CT_ORD`). Rodapé `.cuLeg` + `.ctRod`
   ("Clique em % Real, Online, Faltam ou Tendência para reordenar."). Zebra `--ct-zebra` #f7f7f9 (nth-child(even) do tbody),
-  hover/`emFoco` `--ct-hover` #ececef. Dica (`ativaDica` em cada `tr`): Meta / Real até ontem (X%) / Online (· meta do dia) /
-  Tendência (Y%). < 700 px: sem `.ctN`, `.ctMeta`, `.ctReal`, `.ctInfo`, `.ctSeloT`; células do corpo com
+  hover/`emFoco` `--ct-hover` #ececef. Dica (`ativaDica` em cada `tr`): Meta / Real até ontem (X%) / Real + Online / Online (· meta do dia) /
+  Tendência (Y%). < 700 px: sem `.ctN`, `.ctMeta`, `.ctReal`, `.ctRo`, `.ctInfo`, `.ctSeloT`; células do corpo com
   `overflow-wrap:anywhere` (o % da meta de 0,1 cx da rota 151 quebra em vez de rolar). Canal/cliente/KA (`abreCategoriaDim`): a
   mesma tabela com "Meta NEG", tendência "—", Online sem cor, a `.cuNota`. `cartaoCat` (cartões `.cu*`) continua SÓ na ficha
   da busca (Etapa 5). Testes: Parte AC (`categoria_invariantes.js`: (a)-(g), também na conferência com dado real; antes x
