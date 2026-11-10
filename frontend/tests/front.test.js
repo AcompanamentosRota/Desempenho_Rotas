@@ -5716,7 +5716,10 @@ const VOL_EXEC = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MI
    que o "faltam" conta o online de hoje). */
 /* Desde a Etapa 3 do pacote v3 o atual também desfaz a linha "Real + online" dos cards e a cascata nova (linha .cLin.v3,
    cabeçalho/chips de ordenação, lista de clientes com Online): CASC_INV.desfazCasc. */
-const igualSemFalta = (novo, velho) => [require('./cascata_invariantes.js').desfazCasc(require('./rotulos_invariantes.js').desfazAE(novo)), velho];
+/* Desde 10/11/2026 o desfazAE começa pelo desfazMed (medidor com Real + Online), que no HTML de antes só tira o font-size que o
+   encaixa() grava nos números do quadro (a largura deles mudou com a 3ª caixa): o lado de antes passa por ele também. */
+const igualSemFalta = (novo, velho) => [require('./cascata_invariantes.js').desfazCasc(require('./rotulos_invariantes.js').desfazAE(novo)),
+  require('./executiva_invariantes.js').desfazMed(velho)];
 const igualRotulo = (novo, velho) => {
   novo = require('./cascata_invariantes.js').desfazCasc(novo);
   const tiraSub = t => t.replace(/<div class=\\?"tsub\\?">[^<]*<\/div>/g, '').replace(/Novos Negócios(\s|\\n)+Dest\+Art\+Cnd/g, 'Novos Negócios');
@@ -8930,7 +8933,7 @@ describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Diferen
       // Executiva (medidores, gaveta da categoria, Evolução, tabela) byte a byte: a etapa não a toca
       // (desde 10/11/2026 o medidor e a gaveta da categoria têm a etapa "Real + Online" por cima: desfazMed só nela)
       if(await novo.page.$('#exec:not([hidden])')){
-        assert.equal(desfazMed(await novo.page.innerHTML('#exec')), await velho.page.innerHTML('#exec'), `${quem}: Executiva`);
+        assert.equal(desfazMed(await novo.page.innerHTML('#exec')), desfazMed(await velho.page.innerHTML('#exec')), `${quem}: Executiva`);
       }
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         if(!(await novo.page.$(`.tab[data-g="${aba}"]`))) continue;
@@ -10377,7 +10380,7 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
       const quem = `${dados} ${JSON.stringify(entrar)}`;
       const exec = p => p.innerHTML('#exec');
       assert.notEqual(await exec(novo.page), await exec(velho.page), `${quem}: a Executiva mudou (o medidor)`);
-      assert.equal(desfazMed(await exec(novo.page)), await exec(velho.page), `${quem}: Executiva fora do medidor`);
+      assert.equal(desfazMed(await exec(novo.page)), desfazMed(await exec(velho.page)), `${quem}: Executiva fora do medidor`);
       // a gaveta da categoria de cada medidor com meta: só a coluna nova (e a linha da dica)
       for(const k of await novo.page.$$eval('#exGauges .gCard[role="button"]', gs => gs.map(g => g.dataset.k))){
         for(const {page} of [novo, velho]) await abreCat(page, k);
@@ -10428,10 +10431,10 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
     }
   });
 
-  test('desfazMed é um no-op no HTML de antes e só desfaz o que a etapa trocou', async () => {
+  test('desfazMed no HTML de antes só tira o font-size do encaixa() nos números do quadro', async () => {
     const {page, ctx} = await abre('vol5', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440, troca: FRONT_PRE_MEDRO || {}});
     const h = await page.innerHTML('#exec');
-    assert.equal(desfazMed(h), h, 'no-op na Executiva de antes');
+    assert.equal(desfazMed(h), h.replace(/(<b data-fit="" data-fit-min="9") style="font-size: [^"]*"/g, '$1'), 'Executiva de antes: só o font-size do quadro');
     await abreCat(page, 'VOL REFRIGERANTES');
     const d = await page.innerHTML('#drw');
     assert.equal(desfazMed(d), d, 'no-op na gaveta de antes');

@@ -449,8 +449,11 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (rótulo à esquerda, número à direita): três lado a lado não cabem "5.949.999" (Meta de Refrigerantes da BAND em 10/11) em 390 px
   nem a 1200-1366 px com o painel aberto. A casa decimal é só do medidor (cards, cascata, gaveta, Resumo, Ritmo inteiros). Os
   antes x depois contra a main anterior desfazem só isso com `desfazMed` (executiva_invariantes.js: arco, `.gPct`, `data-pct`, 3ª
-  caixa e a coluna `.ctRo` da gaveta, pelos `data-*` do próprio `.gCard`; no-op em HTML antigo), chamada no início do
-  `desfazFalta` e do `desfazAE` (rotulos_invariantes.js); `REF_PRE_MEDRO` = `ac94f8b`. Os antes x depois que comparam o `#exec` com fronts antigos tiram o `data-tend` (`desfazFalta`,
+  caixa e a coluna `.ctRo` da gaveta, pelos `data-*` do próprio `.gCard`; e o `font-size` que o `encaixa()` grava nos
+  `b[data-fit-min="9"]` do quadro, a única coisa que ela faz no HTML de antes: a largura dos números mudou, então o lado de antes
+  comparado cru passa por ela também), chamada no início do `desfazFalta` e do `desfazAE` (rotulos_invariantes.js); em texto, o
+  `TEXTOS_TELA_PAGINA` faz o mesmo no DOM; `confereEvolucao` lê só as duas primeiras caixas (Meta, Real); `REF_PRE_MEDRO` =
+  `ac94f8b`. Os antes x depois que comparam o `#exec` com fronts antigos tiram o `data-tend` (`desfazFalta`,
   `desfazAE`). Testes: Parte AM (sobre 'sab'/'util0'/'vol5fech'; antes x depois contra `3647363`, `REF_PRE_MED`), invariantes do
   medidor em `executiva_invariantes.js` e o "% do medidor" em `categoria_invariantes.js`; com dado real, o bloco "Medidor da
   Executiva com o online em dia não útil" do `conferencia_real.test.js` (sábado: (a) recontagem; dia útil: (b) `#exec` igual).

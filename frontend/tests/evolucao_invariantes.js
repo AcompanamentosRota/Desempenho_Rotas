@@ -41,8 +41,9 @@ const LE_EVO = () => {
     vis: !document.getElementById('exEvo').hidden && document.getElementById('exEvo').getClientRects().length > 0,
     band: sel.modo === 'dir' && !sel.dgc, fora: fora.length, unidades: us.map(u => u.cod),
     totCod: (document.querySelector('#exDivs .dRow.tot') || {dataset: {}}).dataset.u || null,
+    // Meta e Real do medidor (as duas primeiras caixas; a 3ª, Online, entrou em 10/11/2026 e é conferida em executiva_invariantes.js)
     gauges: Object.fromEntries([...document.querySelectorAll('#exGauges .gCard')].map(g => [g.dataset.k,
-      [...g.querySelectorAll('.gMR b')].map(b => b.textContent)])),
+      [...g.querySelectorAll('.gMR b')].slice(0, 2).map(b => b.textContent)])),
     ordem: [...document.querySelectorAll('#exEvLinhas .evLin.cat')].map(l => l.dataset.k),
     rotulos: GROUPS.VOLUME.map(rotuloInd),
     cats: GROUPS.VOLUME.map(k => {

@@ -470,7 +470,8 @@ describe('Antes x depois do redesenho da Evolução com dado real', {skip: pular
       const comp = [];
       if(e.perfil !== 'rota'){
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
-        assert.equal(ROT.desfazAE(await novo.page.evaluate(SEM_EVO)), await velho.page.evaluate(SEM_EVO), `${onde}: Executiva sem o bloco`);
+        // (o lado de antes passa pelo desfazMed: só o font-size do encaixa() nos números do quadro do medidor, 10/11/2026)
+        assert.equal(ROT.desfazAE(await novo.page.evaluate(SEM_EVO)), desfazMed(await velho.page.evaluate(SEM_EVO)), `${onde}: Executiva sem o bloco`);
         comp.push('Executiva sem o bloco');
       }
       for(const ab of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
@@ -596,7 +597,7 @@ describe('Gaveta "Categoria por unidade" com dado real', {skip: pular}, () => {
       const comp = [];
       if(e.perfil !== 'rota'){
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
-        assert.equal(ROT.desfazAE(await novo.page.innerHTML('#exec')), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        assert.equal(ROT.desfazAE(await novo.page.innerHTML('#exec')), desfazMed(await velho.page.innerHTML('#exec')), `${onde}: Executiva`);
         for(const id of ['exBase', 'exSem', 'exVis'])
           assert.equal(await gaveta(novo.page, clica(id)), await gaveta(velho.page, clica(id)), `${onde}: gaveta do KPI ${id}`);
         comp.push('Executiva (HTML) e as gavetas dos KPIs');
@@ -668,7 +669,7 @@ describe('Ajustes visuais da Executiva com dado real: antes x depois', {skip: pu
         for(const {page} of [novo, velho])
           await page.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat[aria-expanded="false"]').forEach(el => el.click()));
         const [a, b] = [await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec')];
-        assert.equal(ROT.desfazAE(a), b, `${onde}: Executiva`);
+        assert.equal(ROT.desfazAE(a), desfazMed(b), `${onde}: Executiva`);
         const nf = (a.match(/class="gFalta/g) || []).length;
         comp.push(`Executiva (HTML; ${nf} linhas "faltam")`);
       }
@@ -1031,7 +1032,7 @@ describe('Cascata com Dif (Real + Online) e cards com Real + online, com dado re
       if(e.perfil !== 'rota'){
         for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
         // (desde 10/11/2026 o medidor com Real + Online: desfazMed só nele)
-        assert.equal(desfazMed(await novo.page.innerHTML('#exec')), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        assert.equal(desfazMed(await novo.page.innerHTML('#exec')), desfazMed(await velho.page.innerHTML('#exec')), `${onde}: Executiva`);
         comp.push('Executiva (byte a byte fora do medidor)');
       }
       let telas = 0, vz = 0;
@@ -1960,7 +1961,7 @@ describe('Medidor com Real + Online e coluna "Real + Online" da gaveta, com dado
         await page.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat[aria-expanded="false"]').forEach(el => el.click()));
       const [a, b] = [await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec')];
       assert.notEqual(a, b, `${s.onde}: o medidor mudou`);
-      assert.equal(desfazMed(a), b, `${s.onde}: Executiva fora do medidor`);
+      assert.equal(desfazMed(a), desfazMed(b), `${s.onde}: Executiva fora do medidor`);
       comp.push('Executiva');
       for(const k of await novo.page.$$eval('#exGauges .gCard[role="button"]', gs => gs.map(g => g.dataset.k))){
         const h = [];

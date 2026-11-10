@@ -235,14 +235,18 @@ async function confereExecutiva(page, onde){
 
 /* "Antes x depois" contra a main de antes do medidor com Real + Online (10/11/2026; decisão da Karen): desfaz no front atual, em
    HTML (strings dentro de objetos e listas também), SÓ o que essa etapa trocou de propósito, e o resto continua comparado byte a
-   byte. No front de antes nada disto existe, então em HTML antigo é um no-op (pode ser aplicada nos dois lados):
+   byte. No front de antes nada disto existe, então em HTML antigo só o último item vale (pode ser aplicada nos dois lados):
    - o arco e o .gPct voltam aos de antes: Real / Meta (arco até 100, stroke-dasharray com 2 casas) e Math.round(Real / Meta *
      100) (= o pctReal de agrega()) com "real"; em dia não útil com online, (Real + online) / Meta e "real + online" (o ramo do
      PR #53). Os números vêm dos data-meta/data-real/
      data-online exatos do próprio .gCard; o dia não útil, do texto "sem meta do dia" (sem o "do SAP") ou "hoje não é dia útil"
      no mesmo HTML (o .gDia do medidor ou o quadro da meta do dia);
    - o data-pct novo do .gCard e a 3ª caixa (Online) do .gMR saem;
-   - na gaveta "Categoria por unidade", a célula .ctRo, o título "Real + Online" e a linha "Real + Online" da dica saem.
+   - na gaveta "Categoria por unidade", a célula .ctRo, o título "Real + Online" e a linha "Real + Online" da dica saem;
+   - o font-size que o encaixa() grava nos números do quadro (b[data-fit-min="9"], só o .gMR usa esse mínimo) sai: com três
+     caixas (ou as três em linhas, no medidor estreito) a largura de cada número mudou, e um número de 7 dígitos encolhe numa
+     largura e não na outra. Isto vale também no HTML de antes, onde é a ÚNICA coisa que a função faz: nos antes x depois em que
+     o lado de antes é comparado cru, ele passa por desfazMed também.
    A conta nova (data-pct, % com 1 casa, rótulo, 3ª caixa, coluna da gaveta) é conferida à parte (confereExecutiva e
    categoria_invariantes.js). */
 const DIA_NAO_UTIL_HTML = /sem meta do dia(?! do SAP)|hoje não é dia útil/;
@@ -251,7 +255,7 @@ const desfazMed = x => {
   if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazMed(v)]));
   if(typeof x !== 'string') return x;
   const sdu = DIA_NAO_UTIL_HTML.test(x);
-  return x.split(/(?=<div class="gCard)/).map(c => {
+  return x.replace(/(<b data-fit="" data-fit-min="9") style="font-size: [^"]*"/g, '$1').split(/(?=<div class="gCard)/).map(c => {
     const tag = c.match(/^<div class="gCard[^>]*? data-pct="[^"]*"[^>]*>/);
     if(!tag) return c;
     const at = n => (tag[0].match(new RegExp(` data-${n}="([^"]*)"`)) || [])[1];
