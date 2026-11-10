@@ -30,7 +30,7 @@ const NUCLEO = (()=>{
     // os itens da aba Todos a Bordo (GROUPS.INCENTIVO) com a mesma conta das coberturas do ICS GC
     [...new Set([...G.ICS_GC,...G.NOVOS_NEG,...(G.INCENTIVO||[])])].forEach(k=>ind[k]={meta:0,real:0,n:0});
     const volKs=[...G.VOLUME, ...volExtras(P)];
-    const volAgg={}; volKs.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,neg:0,mdia:null,n:0});
+    const volAgg={}; volKs.forEach(k=>volAgg[k]={meta:0,real:0,tend:0,neg:0,mdia:null,nh:null,n:0});
     rotas.forEach(r=>{
       const d=nodo(r);
       if(!ehVirtual(P, r)){            // clientes das virtuais não aparecem (só os indicadores somam)
@@ -46,6 +46,7 @@ const NUCLEO = (()=>{
         const b=d.indicators[k], a=volAgg[k]; if(!b||b.unavailable) return;
         a.meta+=b.meta||0; a.real+=b.real||0; a.tend+=b.tendencia||0; a.neg+=b.negRestante||0;
         if(b.metaDia!=null) a.mdia=(a.mdia||0)+b.metaDia;
+        if(b.negHoje!=null) a.nh=(a.nh||0)+b.negHoje;   // Neg de hoje: ausente (payload antigo) ou null fica fora
         a.n++;
       });
     });
@@ -66,7 +67,9 @@ const NUCLEO = (()=>{
       o.unavailable = false;
     });
     /* Volume (critério do SAC): soma as rotas (Vol Real, Neg Restante, Tendência, Meta, Meta do dia) e recalcula o %
-       sobre as somas. Fechamento do mês: sem tendência nem meta do dia, no ritmo pelo % realizado (Real / Meta). */
+       sobre as somas. Fechamento do mês: sem tendência nem meta do dia, no ritmo pelo % realizado (Real / Meta).
+       negHoje (Neg de hoje, a parte da Neg Restante planejada para hoje) = soma das rotas com o campo, null se nenhuma
+       tiver e no fechamento (igual a modelo.agrega_volume); nenhuma tela usa ainda. */
     const fech = !!P.FECHAMENTO;
     volKs.forEach(k=>{
       const a=volAgg[k];
@@ -74,7 +77,7 @@ const NUCLEO = (()=>{
       const pctT = (!fech && a.meta) ? Math.round(a.tend/a.meta*100) : null;
       const pctR = a.meta ? Math.round(a.real/a.meta*100) : null;
       const o = out[k] = {meta:a.meta,real:a.real,dif:a.real-a.meta, metaDia: fech?null:a.mdia,
-        tendencia: fech?null:a.tend, negRestante: fech?null:a.neg, pctTendencia:pctT, pctReal:pctR,
+        tendencia: fech?null:a.tend, negRestante: fech?null:a.neg, negHoje: fech?null:a.nh, pctTendencia:pctT, pctReal:pctR,
         onPace: fech ? (pctR!=null && pctR>=100) : (pctT!=null && pctT>=100), unavailable:false};
       if(hoje) o.semDadoHoje = rotas.length===1 && !!(nodo(rotas[0]).indicators[k]||{}).semDadoHoje;
     });
