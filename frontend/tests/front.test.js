@@ -7673,9 +7673,10 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
     assert.deepEqual([s2.st, s2.pctTend, s2.tendTxt, s2.faltTxt, s2.faltCls], ['tend', 100, '100%', f0(s2.meta - s2.real - s2.onl), 'ctFalt no']);
     // como o card de Volume (verde em 100%), mesmo com o desvio exato da Tendência x Meta abaixo de 0
     assert.ok(s2.tend < s2.meta);
-    // caixa de comentário: Meta / Real até ontem (X%) / Online (· meta do dia) / Tendência (Y%)
+    // caixa de comentário: Meta / Real até ontem (X%) / Real + Online (desde 10/11/2026) / Online (· meta do dia) / Tendência (Y%)
     const dica = await page.evaluate(() => { const rs = rotasNormais('G1', 'SV.G1.2'), b = agrega(rs).ind['VOL REFRIGERANTES'];
       return ['Refrigerantes · SV.G1.2', `Meta ${fmt0(b.meta)}`, `Real até ontem ${fmt0(b.real)} (${b.pctReal}%)`,
+              `Real + Online ${fmt0(b.real + onlineVol(rs, 'VOL REFRIGERANTES'))}`,
               `Online ${fmt0(onlineVol(rs, 'VOL REFRIGERANTES'))}${b.metaDia == null ? '' : ` · meta do dia ${metaBatida(b.metaDia) ? 'batida' : fmt0(b.metaDia)}`}`,
               `Tendência ${fmt0(b.tendencia)} (${b.pctTendencia}%)`]; });
     const box = await page.locator('#dCorpo .ctLin[data-u="SV.G1.2"]').boundingBox();
@@ -7784,7 +7785,9 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
     assert.ok(e.on && e.n === 1, 'hover: dica aberta');
     assert.deepEqual(e.emFoco, ['GC.G2']);
     assert.match(e.linhas[0], /^Refrigerantes · GC\.G2$/);
-    assert.deepEqual(e.linhas.slice(1).map(l => l.split(' ')[0]), ['Meta', 'Real', 'Online', 'Tendência']);
+    // (a linha "Real + Online", desde 10/11/2026, logo abaixo do Real)
+    assert.deepEqual(e.linhas.slice(1).map(l => l.split(' ')[0]), ['Meta', 'Real', 'Real', 'Online', 'Tendência']);
+    assert.match(e.linhas[3], /^Real \+ Online [\d.]+$/);
     const p1 = e.pos;
     await page.mouse.move(box.x + 220, box.y + box.height / 2);
     assert.ok((await estadoDica(page)).pos[0] > p1[0], 'acompanha o cursor');
