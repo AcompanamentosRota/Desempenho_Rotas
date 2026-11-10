@@ -5724,7 +5724,9 @@ const igualRotulo = (novo, velho) => {
   novo = require('./cascata_invariantes.js').desfazCasc(novo);
   const tiraSub = t => t.replace(/<div class=\\?"tsub\\?">[^<]*<\/div>/g, '').replace(/Novos Negócios(\s|\\n)+Dest\+Art\+Cnd/g, 'Novos Negócios');
   const j = (o, f) => typeof o === 'string' ? f(o) : JSON.parse(f(JSON.stringify(o)));
-  return [j(require('./rotulos_invariantes.js').desfazAE(novo), tiraSub), j(velho, t => t.replace(/Dest\+Art\+Cnd/g, 'Novos Negócios'))];
+  // (o lado de antes passa pelo desfazMed, como no igualSemFalta: só o font-size do encaixa() nos números do quadro do medidor)
+  return [j(require('./rotulos_invariantes.js').desfazAE(novo), tiraSub),
+    j(require('./executiva_invariantes.js').desfazMed(velho), t => t.replace(/Dest\+Art\+Cnd/g, 'Novos Negócios'))];
 };
 describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
   test('aba inicial: Executiva na Diretoria, na Gerência (e no grupo) e na Supervisão; a Rota não tem e abre no Volume; rota no filtro tira a aba', async () => {
