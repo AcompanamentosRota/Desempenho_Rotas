@@ -268,11 +268,19 @@ Rota, que não tem a Executiva, abre no **Volume**.
   clientes dela (GC > Clientes), em todas as abas, com a barra de dias e o limite das listas (`CONFIG.LIMITE_LISTA`); no
   Todos a Bordo, só as rotas com meta do item; virtuais e ocultas fora, como sempre. As supervisões de uma gerência continuam
   na Diretoria com a gerência no filtro; Gerência, Supervisão e Rota têm a cascata completa.
-  Linha da cascata (desde a Etapa 3 do pacote v3; todas as abas menos a Venda Zero, que continua como antes): **Nome |
-  Meta · Real | % | Dif (Real + Online) | Online · meta do dia**. % = o de sempre (volume: tendência; no fechamento, o
+  Linha da cascata (desde a Etapa 3 do pacote v3; todas as abas menos a Venda Zero, que continua como antes): no PC
+  (>= 1000 px), seis colunas — **Nome | Meta · Real | Real + Online | % | Dif | Online · meta do dia**. % = o de sempre
+  (volume: tendência; no fechamento, o
   realizado; coberturas: Real ÷ Meta), verde/vermelho pelo ritmo, como a faixa lateral; no celular, com "tendência" /
-  "realizado" / "real da meta" embaixo. Dif = Real + online de hoje − Meta (volume: o faturado até ontem + o volume online;
-  coberturas: clientes DISTINTOS no Real ou no online, quem já está coberto e comprou hoje conta uma vez), verde se >= 0,
+  "realizado" / "real da meta" embaixo. **Real + Online** (coluna nova, 10/11/2026) mostra o número que a linha já
+  calculava para a Dif (`realOnline` em app.js, o mesmo do selo e do `data-ro` da linha): volume = o faturado até ontem +
+  o volume online de hoje; coberturas e Todos a Bordo = clientes DISTINTOS no Real ou no online (quem já está coberto e
+  comprou hoje conta uma vez). Sem online (fechamento, sem `online.json`) a coluna mostra o Real faturado com o mesmo
+  texto de apoio da Dif ("sem online" / "sem online no fechamento"). Nenhum número mudou de valor: a coluna só mostra o
+  que a linha já tinha. No celular (< 1000 px) ela NÃO é uma 5ª célula: a linha de números continua com quatro (Meta ·
+  Real | % | Dif | Online) e o "Real + Online" vai na faixa logo abaixo, alinhado à esquerda com a caixa "Meta · Real"
+  (o rótulo vem do CSS, então o número aparece uma vez só). Dif = Real + online de hoje − Meta (o mesmo valor de antes;
+  só o título da coluna encurtou de "Dif (Real + Online)" para "Dif"), verde se >= 0,
   vermelho se < 0, e embaixo "x% da meta com online"; sem online: "—" e "sem online" (no fechamento, "sem online no
   fechamento"). Online · meta do dia: a caixa de sempre. **Selo "✓ META BATIDA"** (fundo verde-claro, faixa verde) quando
   Real + online >= Meta (Meta > 0); no fechamento (e sem online), Real >= Meta. A caixa do Online continua com o "Meta
@@ -280,9 +288,10 @@ Rota, que não tem a Executiva, abre no **Volume**.
   supervisões e rotas em ordem crescente natural (SV.G1.2 antes de SV.G1.10; 111, 112...; A11, A12...; I11...), com a
   linha "Neutraliza" sempre por último; num grupo, as supervisões de uma gerência e depois as da outra (SV.UR.1, SV.UR.2,
   SV.RI.1...). Rotas virtuais e '-EV' nunca aparecem em lista. Reordenar é opção do usuário: no PC (>= 1000 px) o
-  cabeçalho de colunas (caixa alta pequena: nível | Meta · Real | % tendência ou % real da meta | Dif (Real + Online) |
+  cabeçalho de colunas (caixa alta pequena: nível | Meta · Real | Real + Online | % tendência ou % real da meta | Dif |
   Online · meta do dia) tem %, Dif e Online clicáveis (maior para o menor; 2º clique inverte; seta ↓/↑ em vermelho no
-  ativo; o título da 1ª coluna volta ao código); no celular, chips "Ordenar: Código · % · Dif · Online". "Neutraliza" e
+  ativo; o título da 1ª coluna volta ao código); "Meta · Real" e "Real + Online" são só rótulos (a coluna nova não é
+  ordenável: a ordenação segue com as quatro chaves de sempre); no celular, chips "Ordenar: Código · % · Dif · Online". "Neutraliza" e
   grupos sem dados ficam no fim em qualquer ordem; a ordem vale enquanto a gaveta estiver aberta (descer e voltar mantém) e
   volta ao código ao abrir de novo. Venda Zero: sem cabeçalho e sem ordenação.
   Na lista de clientes de volume: **Cliente | Meta | Real | Online | Dif. Abs | %** (Real = só o faturado do mês; Online
@@ -584,6 +593,13 @@ real (2 → 3 páginas na Diretoria); os 4 botões sem corte em 360, 390, 1000 e
 `frontend/tests/resumo_tab_invariantes.js`, usadas também pela conferência com dado real (bloco "Resumo de vendas: bloco
 Todos a Bordo 3.0": Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px; e o antes x depois
 contra a main antes do bloco, `9f82f15`: Resumo sem o bloco, Executiva, cards e cascata iguais).
+A **Parte AG** confere também a coluna "Real + Online" (10/11/2026): em toda linha da cascata o texto dela = `fmt0` do
+`data-ro` da própria linha (invariante (h) de `cascata_invariantes.js`) e a Dif mostrada = (coluna) − Meta, nas quatro
+abas, na Diretoria, numa gerência, num grupo ('IT+MO') e numa supervisão; no celular, a linha de números continua com
+quatro células e o número aparece uma vez só no HTML da linha; o botão de ordenar por diferença diz só "Dif"; 360, 390,
+1000, 1280 e 1440 px, com o painel lateral aberto e recolhido, sem rolagem lateral nem texto cortado; e o antes x depois
+contra a main de antes dela (`f5f9fcc`), em que só a cascata muda (`CASC_INV.desfazRo`) — Executiva, cabeçalho das abas,
+cards, Venda Zero, gavetas Base, Sem compra e Clientes e Resumo idênticos byte a byte.
 A **Parte AG** confere a cascata com Dif (Real + Online), o selo e a Diferença dos cards (Etapa 3 do pacote v3): a Diferença
 dos cards de Volume e coberturas (= `realOnline` − Meta, recontado do payload e do online; cor; 3 linhas; alturas iguais), Real
 − Meta na Venda Zero, no fechamento (`incfech`) e sem online, e a do Todos a Bordo só com as rotas com meta; a cascata com as 5 colunas, o cabeçalho só >= 1000 px e os chips só < 1000 px (1440, 1000, 390 e 360 px, colunas do
@@ -1400,6 +1416,10 @@ Só totais, contagens e códigos de rota e gerência: nunca nomes nem códigos d
 Depois do merge: rodar **"Atualizar dados"** uma vez para o payload publicado trazer a chave.
 
 ### Neg de hoje (`negHoje`; seção E12)
+
+> **A "tendência com online" (Etapa 9) foi CANCELADA** (decisão da Karen, 10/11/2026). A chave `negHoje` continua no
+> payload, medida e validada como abaixo, mas **sem consumidor**: nenhuma tela do front a lê e nenhum número depende
+> dela. Não há "tendência c/ online" em lugar nenhum do painel.
 
 Campo novo (30/10/2026), **opcional**, no indicador de volume de cada rota (5 macros e Del Valle Frut onde existir), no
 fim do bloco: a parte da Neg Restante planejada para **hoje**. É a base da futura "tendência com online" da cascata

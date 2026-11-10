@@ -837,7 +837,9 @@ describe('Resumo: bloco Todos a Bordo com dado real: antes x depois', {skip: pul
    cascata_invariantes.js, as mesmas da Parte AG): em cada aba (Volume, ICS GC, Novos Negócios, Todos a Bordo) e cada card, a
    Diretoria (gerências; a 1ª gerência abre direto a lista de clientes), uma gerência pelo filtro da Diretoria (supervisões e as
    rotas da 1ª), o grupo IT+MO no Total e uma supervisão; ordenação por %, Dif e Online (2º clique inverte; volta ao código)
-   na Diretoria e na gerência; (f) a "Diferença" de cada card da Gerência G1 (= (Real + online) − Meta) = a Dif da linha GC.G1
+   na Diretoria e na gerência; (h) o texto da coluna "Real + Online" de cada linha = fmt0 do data-ro dela = o recontado aqui do
+   payload e do online (Volume: Real da linha + Σ do online das rotas; coberturas: |COBERTOS ∪ online|), nas quatro abas;
+   (f) a "Diferença" de cada card da Gerência G1 (= (Real + online) − Meta) = a Dif da linha GC.G1
    da cascata da Diretoria; sem rolagem lateral nem erro em 360, 390, 1000 e 1440 px com a cascata e a lista abertas. Antes x depois contra
    a main antes da etapa (REF_PRE_CASC), com o mesmo payload: Executiva, Resumo e Venda Zero idênticos; cards e cascata
    iguais depois de desfeito só o que a etapa trocou (CASC_INV.desfazCasc: a Diferença do card volta a Real − Meta). Imprime totais e códigos (nada de clientes). */
@@ -845,6 +847,14 @@ const REF_PRE_CASC = '515b1e9';
 const FRONT_PRE_CASC = (() => {
   try {
     const arq = f => execSync(`git show ${REF_PRE_CASC}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return Object.fromEntries(['index.html', 'css/app.css', 'js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
+  } catch(e) { return null; }
+})();
+// main de 10/11/2026, antes da coluna "Real + Online" (nesta etapa só a cascata muda: CASC_INV.desfazRo)
+const REF_PRE_RO = 'f5f9fcc';
+const FRONT_PRE_RO = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_RO}:frontend/${f}`, {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore']}).toString();
     return Object.fromEntries(['index.html', 'css/app.css', 'js/app.js'].map(f => { const t = arq(f); return ['/' + f, () => t]; }));
   } catch(e) { return null; }
 })();
@@ -918,10 +928,11 @@ describe('Cascata com Dif (Real + Online) e cards com Real + online, com dado re
     await ctx.close();
     console.log(`# Cascata com Real + Online, dado real (${largura} px): ${info.mes}, dia útil ${info.dia}${info.fech ? ' (fechamento)' : ''}, online ${info.upd}`);
     console.log(`# (f) card x linha da cascata da Diretoria: ${nF} cards da Gerência ${info.gc} conferidos`);
-    console.log('# | Escopo · indicador | Nível | Linhas | Com selo | Real + online > Real | Meta / Real do card |');
-    console.log('# |---|---|---|---|---|---|');
+    console.log(`# Coluna "Real + Online" (10/11/2026): o texto de cada linha = fmt0(data-ro) = o recontado do payload e do online`);
+    console.log('# | Escopo · indicador | Nível | Linhas | Coluna Real + Online | Com selo | Real + online > Real | Meta / Real do card |');
+    console.log('# |---|---|---|---|---|---|---|');
     const f = n => n == null ? '—' : (Math.round(n * 10) / 10).toLocaleString('pt-BR');
-    for(const r of res) console.log(`# | ${r.onde} | ${r.nivel} | ${r.linhas} | ${r.selos} | ${r.comOnline} | ${r.card ? `${f(r.card.meta)} / ${f(r.card.real)}` : '—'} |`);
+    for(const r of res) console.log(`# | ${r.onde} | ${r.nivel} | ${r.linhas} | ${r.coluna} | ${r.selos} | ${r.comOnline} | ${r.card ? `${f(r.card.meta)} / ${f(r.card.real)}` : '—'} |`);
     console.log('# | Lista de clientes (GC > Clientes) | Clientes exibidos | Com online |');
     console.log('# |---|---|---|');
     for(const l of listas) console.log(`# | ${l.onde} | ${l.clientes} | ${l.comOnline} |`);
@@ -1001,6 +1012,65 @@ describe('Cascata com Dif (Real + Online) e cards com Real + online, com dado re
     assert.deepEqual([...novo.erros, ...velho.erros], []);
     for(const {ctx} of [novo, velho]) await ctx.close();
     console.log(`# Antes x depois (main ${REF_PRE_CASC} x branch), mesmo payload real: Executiva, Resumo e Venda Zero idênticos; cards e cascata iguais fora a etapa`);
+    console.log('# | Perfil | Comparado (igual) |');
+    console.log('# |---|---|');
+    for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
+  });
+
+  /* Coluna "Real + Online" (10/11/2026): antes x depois contra a main de antes dela, com o mesmo payload real. Só a cascata
+     muda (CASC_INV.desfazRo: a célula .cRo, a coluna do cabeçalho e o rótulo do botão de ordenar por diferença); Executiva,
+     cabeçalho das abas, cards, Venda Zero, gavetas e Resumo idênticos byte a byte, sem nenhum desfaz. */
+  test('antes x depois da coluna "Real + Online" (mesmo payload real): só a cascata muda',
+       {skip: !FRONT_PRE_RO && `sem o commit ${REF_PRE_RO}`}, async () => {
+    const [novo, velho] = [await abre(1440), await abre(1440, undefined, FRONT_PRE_RO)];
+    const linhas = [];
+    for(const e of await perfisRotulos(novo.page)){
+      for(const {page} of [novo, velho]) await entra(page, e);
+      const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
+      const comp = [];
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await vaiAba(page, 'EXEC');
+        assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+        comp.push('Executiva (byte a byte)');
+      }
+      let telas = 0, vz = 0;
+      for(const ab of ABAS_CASC){
+        if(!await vaiAba(novo.page, ab) || !await vaiAba(velho.page, ab)) continue;
+        assert.equal(await novo.page.innerHTML('#abaTopo'), await velho.page.innerHTML('#abaTopo'), `${onde} ${ab}: cabeçalho`);
+        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${onde} ${ab}: cards`);
+        for(const k of await cardsK(novo.page)){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          for(let nivel = 0; nivel < 5; nivel++){
+            const [hn, hv] = [await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw')];
+            if(k === 'VENDAZERO'){ assert.equal(hn, hv, `${onde} Venda Zero nível ${nivel}`); vz++; }
+            else assert.equal(CASC_INV.desfazRo(hn), hv, `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            telas++;
+            if(e.perfil === 'dir' || !(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+          }
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        comp.push(`${ab} (cabeçalho e cards idênticos)`);
+      }
+      comp.push(`${telas} telas de cascata (${vz} da Venda Zero, idênticas)`);
+      for(const sel of ['cBase', 'cSem', 'btnClientes']){
+        if(!(await novo.page.$(`#${sel}`))) continue;
+        for(const {page} of [novo, velho]) await page.evaluate(id => document.getElementById(id).click(), sel);
+        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} #${sel}: gaveta`);
+        for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        comp.push(`gaveta #${sel}`);
+      }
+      if(e.perfil !== 'rota'){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+        for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+        comp.push('Resumo');
+      }
+      linhas.push([onde, comp.join(', ')]);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois (main ${REF_PRE_RO} x branch), mesmo payload real: só a cascata muda (desfazRo)`);
     console.log('# | Perfil | Comparado (igual) |');
     console.log('# |---|---|');
     for(const l of linhas) console.log(`# | ${l.join(' | ')} |`);
@@ -1092,11 +1162,12 @@ describe('Botão "Clientes" por agrupador com dado real', {skip: pular}, () => {
           for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
           // todos os níveis pelo 1º caminho, até a lista de clientes (dia "Todos" também)
           for(let nivel = 0; nivel < 5; nivel++){
-            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            // a coluna "Real + Online" (10/11/2026) sai antes da comparação; o resto da gaveta é byte a byte
+            assert.equal(CASC_INV.desfazRo(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
             telas++;
             if(await novo.page.$('#dLista .dchip[data-d="Todos"]:not(.on)')){
               for(const {page} of [novo, velho]) await page.click('#dLista .dchip[data-d="Todos"]');
-              assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: lista no Todos`);
+              assert.equal(CASC_INV.desfazRo(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: lista no Todos`);
               telas++;
             }
             if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
@@ -1391,7 +1462,8 @@ describe('Tabela da categoria e escopo do nível acima com dado real', {skip: pu
         assert.deepEqual(await novo.page.evaluate(TELA_CANON), await velho.page.evaluate(TELA_CANON), `${onde} ${ab}: cabeçalho e cards`);
         const k = await novo.page.$eval('#lista .ind[data-k]', x => x.dataset.k);
         for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
-        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
+        // a coluna "Real + Online" (10/11/2026) sai antes da comparação
+        assert.equal(CASC_INV.desfazRo(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
         for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
       }
       if(e.perfil !== 'rota'){
@@ -1460,7 +1532,8 @@ describe('"Faltam" do medidor com o online de hoje: dado real', {skip: pular}, (
         assert.deepEqual(await novo.page.evaluate(TELA_CANON), await velho.page.evaluate(TELA_CANON), `${onde} ${ab}: cabeçalho e cards`);
         const k = await novo.page.$eval('#lista .ind[data-k]', x => x.dataset.k);
         for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
-        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
+        // a coluna "Real + Online" (10/11/2026) sai antes da comparação
+        assert.equal(CASC_INV.desfazRo(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
         for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
         comp.push(ab);
       }
@@ -1619,13 +1692,14 @@ describe('"Sem meta do dia" em dia não útil, com dado real', {skip: pular}, ()
         assert.equal(ta, tb, `${s.onde} ${ab}`);
         if(!ta) continue;
         // volume: normalizado em dia não útil; as coberturas e o Todos a Bordo, sempre idênticos
+        // a coluna "Real + Online" (10/11/2026) sai antes da comparação da gaveta (no volume, depois do NORMALIZA_SEMDIA)
         const hh = ab === 'VOLUME' ? h : (p, x) => p.innerHTML(x);
         assert.equal(await hh(novo.page, '#lista'), await hh(velho.page, '#lista'), `${s.onde} ${ab}: cards`);
         assert.equal(await novo.page.innerHTML('#abaTopo'), await velho.page.innerHTML('#abaTopo'), `${s.onde} ${ab}: cabeçalho`);
         const ks = await novo.page.$$eval('#lista .ind[data-k]', xs => xs.map(x => x.dataset.k));
         for(const k of ab === 'VOLUME' ? ks : ks.slice(0, 1)){
           for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
-          assert.equal(await hh(novo.page, '#drw'), await hh(velho.page, '#drw'), `${s.onde} ${ab} ${k}: cascata`);
+          assert.equal(CASC_INV.desfazRo(await hh(novo.page, '#drw')), await hh(velho.page, '#drw'), `${s.onde} ${ab} ${k}: cascata`);
           for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
         }
         comp.push(ab);

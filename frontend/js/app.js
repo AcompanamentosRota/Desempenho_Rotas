@@ -1876,21 +1876,28 @@ function linhaGrupo(g, m, k, i){
     <div class="cDir"><b>${dir==null?'—':dir+'%'}</b><small>do mês</small></div></div>`;
 }
 
-/* Linha da cascata (Etapa 3 do pacote v3; todas as abas menos a Venda Zero): Nome (+ selo) | Meta · Real | % | Dif (Real +
-   Online) | Online · meta do dia. % = o de sempre (volume: tendência, no fechamento o realizado; coberturas: Real ÷ Meta),
+/* Linha da cascata (Etapa 3 do pacote v3; todas as abas menos a Venda Zero): Nome (+ selo) | Meta · Real | Real + Online |
+   % | Dif | Online · meta do dia. % = o de sempre (volume: tendência, no fechamento o realizado; coberturas: Real ÷ Meta),
    cor pelo onPace. Dif = Real + online − Meta (realOnline), embaixo "x% da meta com online". Selo "✓ META BATIDA" e
-   fundo verde-claro com linhaBatida. Online · meta do dia: a caixa de sempre (meioLinha). */
+   fundo verde-claro com linhaBatida. Online · meta do dia: a caixa de sempre (meioLinha).
+   Coluna "Real + Online" (10/11/2026; só mostra o número que a linha já calcula, nada muda de valor): é o MESMO ro da
+   realOnline() que a Dif usa, publicado em data-ro, formatado com fmt0 (volume = Real + online de hoje; coberturas e Todos
+   a Bordo = clientes distintos no Real ou no online). Sem online (fechamento, sem online.json) mostra o Real faturado com
+   o texto de apoio da Dif ("sem online" / "sem online no fechamento"). No PC é a 3ª coluna; no celular, a linha logo abaixo
+   da caixa "Meta · Real" (o rótulo vem do CSS, ::before: o número aparece uma vez só no HTML). */
 function linhaCascata(g, m, k, i){
   const {b, onl, dir, ro} = m, vol = ehVolume(k), f = vol ? fmt0 : fmtN, fech = !!P.FECHAMENTO;
   const bat = linhaBatida(b, ro), v = ro==null ? null : difMostrada(k, ro - b.meta);
   const pctRo = ro!=null && b.meta > 0 ? Math.round(ro / b.meta * 100) : null;
-  const sub = ro==null ? (fech ? 'sem online no fechamento' : 'sem online') : pctRo==null ? 'sem meta' : `${pctRo}% da meta com online`;
+  const semOnl = fech ? 'sem online no fechamento' : 'sem online';
+  const sub = ro==null ? semOnl : pctRo==null ? 'sem meta' : `${pctRo}% da meta com online`;
   const rot = vol ? (fech ? 'realizado' : 'tendência') : 'real da meta';
   return `<div class="cLin v3 ${b.onPace?'ok':'no'}${bat?' bat':''}" role="button" tabindex="0" data-i="${i}"
       data-meta="${b.meta}" data-real="${b.real}" data-dir="${dir==null?'':dir}" data-onl="${onl}"
       data-ro="${ro==null?'':ro}" data-dif="${ro==null?'':ro-b.meta}" data-bat="${bat?1:0}">
     <div class="cNome"><div class="cNomeL"><b>${esc(g.nome)}</b>${bat?' <span class="cSelo">✓ Meta batida</span>':''}</div><small>${esc(g.info)}</small></div>
     <div class="cEsq"><span>Meta ${f(b.meta)}</span><span>Real ${f(b.real)}</span></div>
+    <div class="cRo"><span>${ro==null ? f(b.real) : fmt0(ro)}</span>${ro==null ? `<small>${semOnl}</small>` : ''}</div>
     <div class="cPct"><b>${dir==null?'—':dir+'%'}</b><small>${rot}</small></div>
     <div class="cDif ${v==null?'nd':v>=0?'pos':'neg'}"><b>${v==null?'—':sinal(k, v)}</b><small>${sub}</small></div>
     <div class="cMeio">${meioLinha(m, k)}</div></div>`;
@@ -1908,7 +1915,8 @@ function ordenaGrupos(xs, ord){
   return xs.slice().sort((a, b)=> faixa(a) - faixa(b) || (faixa(a)===0 ? (val(a) - val(b)) * ord.dir : 0) || a.i - b.i);
 }
 const NIVEL_CASC = {gc:'Gerência', sv:'Supervisão', rota:'Rota'};
-// cabeçalho de colunas (PC, >= 1000 px) e chips "Ordenar:" (celular); o CSS mostra um ou outro
+/* cabeçalho de colunas (PC, >= 1000 px) e chips "Ordenar:" (celular); o CSS mostra um ou outro. "Meta · Real" e
+   "Real + Online" são rótulos (span), não botões: a ordenação continua com as quatro chaves ('', pct, dif, onl). */
 function ordemCascata(k, nivel){
   const o = CASC.ord, seta = c => o.col===c && c ? ` <span class="cSeta" aria-hidden="true">${o.dir<0 ? '↓' : '↑'}</span>` : '';
   const pct = ehVolume(k) ? (P.FECHAMENTO ? '% realizado' : '% tendência') : '% real da meta';
@@ -1916,7 +1924,7 @@ function ordemCascata(k, nivel){
   const bt = (c, txt) => `<button type="button" class="cOrdB${c && o.col===c?' on':''}" data-o="${c}" aria-pressed="${o.col===c}">${txt}${seta(c)}</button>`;
   const ch = (c, txt) => `<button type="button" class="fchip${o.col===c?' on':''}" data-o="${c}" aria-pressed="${o.col===c}">${txt}${seta(c)}</button>`;
   return `<div class="cOrd v3" role="group" aria-label="Ordenar">${bt('', NIVEL_CASC[nivel] || 'Nome')}<span>Meta · Real</span>`+
-    `${bt('pct', pct)}${bt('dif', 'Dif (Real + Online)')}${bt('onl', 'Online · meta do dia')}</div>`+
+    `<span>Real + Online</span>${bt('pct', pct)}${bt('dif', 'Dif')}${bt('onl', 'Online · meta do dia')}</div>`+
     `<div class="cOrdCh v3" role="group" aria-label="Ordenar"><span class="cOrdL">Ordenar:</span>`+
     `${ch('', 'Código')}${ch('pct', '%')}${ch('dif', 'Dif')}${ch('onl', 'Online')}</div>`;
 }

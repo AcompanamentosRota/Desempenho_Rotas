@@ -8,7 +8,10 @@
    (d) ordem padrão = a do código (gruposDo); ordenar por % dá data-dir decrescente (2º clique, crescente), com "Neutraliza"
        e os grupos sem dados no fim; o título da 1ª coluna (chip "Código") volta à ordem do código;
    (e) selo "✓ META BATIDA" ⇔ Real + online >= Meta (Meta > 0; no fechamento e sem online, Real >= Meta);
-   (g) lista de clientes de volume: Real (faturado) + Online − Meta = Dif. Abs em todas as linhas exibidas.
+   (g) lista de clientes de volume: Real (faturado) + Online − Meta = Dif. Abs em todas as linhas exibidas;
+   (h) coluna "Real + Online" (10/11/2026): o texto dela = fmt0 do data-ro da própria linha (= o recontado de (a)/(b));
+       sem online (fechamento, sem online.json) = o Real faturado com o texto de apoio da Dif ("sem online" /
+       "sem online no fechamento"); a linha tem seis células no PC e, no celular, a linha de números continua com quatro.
    A (f) (card "Real + online" = Dif da linha do nível de cima) fica em conferencia_real.test.js e na Parte AG.
    Devolve linhas de resumo (só contagens, totais e códigos; nada de clientes). */
 'use strict';
@@ -44,6 +47,7 @@ const LE_CASCATA = () => {
     return {i, nome: t('.cNomeL b') || t('.cNome b'), off: el.classList.contains('off'), v3: el.classList.contains('v3'),
       fim: !!(g && g.fim), meta: num(d.meta), real: num(d.real), dir: num(d.dir), onl: num(d.onl), ro: num(d.ro), dif: num(d.dif),
       bat: d.bat === '1', fundo: el.classList.contains('bat'), selo: t('.cSelo'), difTxt: t('.cDif b'), difSub: t('.cDif small'),
+      roTxt: t('.cRo span'), roSub: t('.cRo small'), roCels: el.querySelectorAll('.cRo').length,
       pct: t('.cPct b'), caixa: t('.cMeio .cOn'), caixaRot: t('.cMeio small'),
       caixaCls: (el.querySelector('.cMeio .cOn') || {className: ''}).className, colunas: [...el.children].map(c => c.classList[0]),
       esp: g && !g.off ? {onl: onl(doItem(g.rotas)), ro: roIndep(doItem(g.rotas))} : null};
@@ -59,6 +63,9 @@ const LE_CASCATA = () => {
 // número mostrado (pt-BR, com sinal) -> Number
 const leNum = s => Number(String(s).replace(/[^\d,+−-]/g, '').replace(/−/g, '-').replace(/\./g, '').replace(',', '.'));
 const perto = (a, b, tol = 1e-6) => Math.abs(a - b) <= tol * Math.max(1, Math.abs(a), Math.abs(b));
+// os formatadores do front (fmt0 e fmtN), para conferir o texto das células
+const f0 = n => Math.round(n || 0).toLocaleString('pt-BR');
+const fN = n => (n || 0).toLocaleString('pt-BR', {maximumFractionDigits: 1});
 
 // (a), (b), (c), (e) e a ordem padrão (d) no nível aberto; devolve o resumo
 async function confereNivel(page, onde){
@@ -73,8 +80,18 @@ async function confereNivel(page, onde){
     for(const l of ls){
       const q = `${onde} ${l.nome}`;
       assert.ok(l.v3, `${q}: linha nova`);
-      assert.deepEqual(l.colunas, ['cNome', 'cEsq', 'cPct', 'cDif', 'cMeio'], `${q}: 5 colunas`);
+      assert.deepEqual(l.colunas, ['cNome', 'cEsq', 'cRo', 'cPct', 'cDif', 'cMeio'], `${q}: 6 colunas`);
+      assert.equal(l.roCels, 1, `${q}: uma só célula "Real + Online"`);
       assert.ok(perto(l.onl, l.esp.onl), `${q}: online ${l.onl} x ${l.esp.onl}`);
+      // (h) coluna "Real + Online": fmt0 do data-ro; sem online, o Real faturado com o texto de apoio da Dif
+      if(l.ro == null){
+        assert.equal(l.roTxt, (c.vol ? f0 : fN)(l.real), `${q}: coluna "Real + Online" = Real faturado`);
+        assert.equal(l.roSub, c.fech ? 'sem online no fechamento' : 'sem online', `${q}: apoio da coluna "Real + Online"`);
+      } else {
+        assert.equal(l.roTxt, f0(l.ro), `${q}: coluna "Real + Online" "${l.roTxt}" x fmt0(data-ro) ${l.ro}`);
+        assert.equal(l.roSub, '', `${q}: coluna "Real + Online" sem texto de apoio`);
+        assert.ok(perto(l.ro, l.esp.ro), `${q}: data-ro ${l.ro} x recontado ${l.esp.ro}`);
+      }
       if(c.fech || !c.temOnline){
         assert.equal(l.ro, null, `${q}: sem Real + online`);
         assert.equal(l.difTxt, '—');
@@ -112,7 +129,8 @@ async function confereNivel(page, onde){
     assert.ok(perto(s.meta, c.card.meta, 1e-9) && perto(s.real, c.card.real, 1e-9), `${onde}: Σ linhas = card (${s.meta}/${s.real} x ${c.card.meta}/${c.card.real})`);
   }
   return {onde, k: c.k, nivel: c.nivel, linhas: ls.length, selos: ls.filter(l => l.bat).length,
-    comOnline: ls.filter(l => l.ro != null && l.ro > l.real).length, card: c.card};
+    comOnline: ls.filter(l => l.ro != null && l.ro > l.real).length,
+    coluna: c.vz ? 0 : ls.filter(l => l.roTxt !== '').length, card: c.card};
 }
 
 // (d) ordenar por % (data-dir decrescente; 2º clique crescente) e voltar ao código; pelo cabeçalho (PC) ou pelos chips
@@ -171,8 +189,20 @@ async function confereLista(page, onde){
   return {onde, clientes: l.linhas.length, comOnline: l.linhas.filter(x => x.onl > 0).length};
 }
 
+/* Para os "antes x depois" contra a main de antes da coluna "Real + Online" (10/11/2026): desfaz, em HTML, só o que essa
+   etapa trocou de propósito — a célula .cRo da linha, a coluna "Real + Online" do cabeçalho e o rótulo do botão de ordenar
+   por diferença, que voltou a ser "Dif (Real + Online)". Nenhum número muda: a Dif e todos os data-* continuam iguais. */
+const desfazRo = x => {
+  if(Array.isArray(x)) return x.map(desfazRo);
+  if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazRo(v)]));
+  if(typeof x !== 'string') return x;
+  return x.replace(/\n\s*<div class="cRo"><span>[^<]*<\/span>(?:<small>[^<]*<\/small>)?<\/div>/g, '')
+    .replace(/<span>Meta · Real<\/span><span>Real \+ Online<\/span>/g, '<span>Meta · Real</span>')
+    .replace(/(<button type="button" class="cOrdB[^"]*" data-o="dif" aria-pressed="[^"]*">)Dif(?=\s*<)/g, '$1Dif (Real + Online)');
+};
+
 /* Para os "antes x depois" contra fronts de antes da Etapa 3 do pacote v3: desfaz, em HTML (strings dentro de objetos e
-   listas também), só o que a etapa trocou de propósito, e o resto continua comparado byte a byte:
+   listas também), só o que a etapa trocou de propósito (depois da desfazRo acima), e o resto continua comparado byte a byte:
    - a Diferença dos cards, que desde 29/10/2026 é (Real + online de hoje) − Meta: volta a Real − Meta, pelos valores exatos
      do div (data-meta/data-real; data-vol = volume, arredondado);
    - o cabeçalho de colunas e os chips de ordenação da cascata (.cOrd, .cOrdCh);
@@ -191,9 +221,9 @@ const LINHA_V3 = new RegExp('<div class="cLin v3 (ok|no)(?: bat)?" role="button"
 const CLI_V3 = new RegExp('<div class="cCli v3" data-dif="([^"]*)" data-meta="([^"]*)" data-real="[^"]*" data-onl="[^"]*">\\n\\s*' +
   '<div class="cCliN">(<div class="nm">[^<]*</div>\\n\\s*<div class="sb">[^<]*</div></div>)\\n\\s*' +
   '(<span>[^<]*</span>)<span>[^<]*</span>\\n\\s*<span class="onl0?">[^<]*</span>\\n\\s*(<span class="(?:pos|neg)">[^<]*</span><span>[^<]*</span></div>)', 'g');
-const desfazCasc = x => {
-  if(Array.isArray(x)) return x.map(desfazCasc);
-  if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazCasc(v)]));
+const desfazV3 = x => {
+  if(Array.isArray(x)) return x.map(desfazV3);
+  if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazV3(v)]));
   if(typeof x !== 'string') return x;
   return x.replace(/<div class="dif (?:pos|neg)" data-meta="([^"]*)" data-real="([^"]*)" data-ro="[^"]*"( data-vol="")?>Diferença [^<]*<\/div>/g,
       (m, meta, real, vol) => { const d = Number(real) - Number(meta);
@@ -210,4 +240,7 @@ const desfazCasc = x => {
       `<span>${f1(Number(meta) + Number(dif))}</span>\n      ${resto}`);
 };
 
-module.exports = {LE_CASCATA, LE_LISTA, confereNivel, confereOrdem, confereLista, leNum, desfazCasc};
+// contra fronts de antes da Etapa 3 do pacote v3: a coluna nova sai primeiro, depois a linha volta à de antes dela
+const desfazCasc = x => desfazV3(desfazRo(x));
+
+module.exports = {LE_CASCATA, LE_LISTA, confereNivel, confereOrdem, confereLista, leNum, desfazRo, desfazCasc};

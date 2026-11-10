@@ -241,8 +241,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   com aviso no log; se falhar também, `metaDia = null`, nunca outra conta). Supervisão e gerência somam as rotas e recalculam
   o %. `validacao.py` informa por gerência a meta não distribuída (META_VOLUME − soma META_NEG), sem reprovar.
   **Neg de hoje (`negHoje`, 30/10/2026; README "Neg de hoje")**: chave opcional no fim do bloco de volume de cada rota
-  (5 macros e Del Valle Frut), base da futura "tendência com online" (decisão C da Karen: Real + Online + (Neg Restante −
-  Neg de hoje)); nenhuma tela usa ainda e nenhum outro número muda. `fontes.carregar_neg_hoje` = `META_NEG` com
+  (5 macros e Del Valle Frut). A "tendência com online" que ela serviria (Etapa 9) foi **CANCELADA** pela Karen em
+  10/11/2026: a chave continua no payload (medida e validada), **sem consumidor** — nenhuma tela do front a lê, nenhum
+  número depende dela e não existe "tendência c/ online" no painel. Não reintroduzir sem uma decisão nova. `fontes.carregar_neg_hoje` = `META_NEG` com
   `DATA_MOVIMENTO eq hoje` (`filtro_hoje`) por rota x agrupador, no pool das consultas do mês, pela rota da meta; se a curva
   ficar na rota do cliente (`ROTA_CLIENTE`), de novo por `CD_ROTA_Clien` (mesma base da Neg Restante); HTTP 500 = por
   gerência (`_por_rota`); falha ou sem linha de hoje com valor = null em TODAS as rotas + aviso (nunca outra conta); só com
@@ -450,7 +451,22 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Online de sempre): Nome (+ `.cSelo` "✓ Meta batida", maiúsculas pelo CSS) | Meta · Real | % (`.cPct`: o `dir` de sempre,
   cor pelo `onPace`; "tendência"/"realizado"/"real da meta" só no celular) | Dif (`.cDif`: Real + online − Meta, "x% da meta
   com online"; "—" "sem online" / "sem online no fechamento") | Online · meta do dia; `data-onl/ro/dif/bat` exatos. Selo
-  (`linhaBatida`, decisão B): Meta > 0 e (realOnline, ou Real sem ele) >= Meta. Ordem: padrão = `gruposDo` (código);
+  (`linhaBatida`, decisão B): Meta > 0 e (realOnline, ou Real sem ele) >= Meta.
+  **Coluna "Real + Online" e rótulo "Dif" (10/11/2026; só front, nenhum número muda de valor)**: a linha ganhou a célula
+  `.cRo` (6ª coluna no PC, entre a `.cEsq` e a `.cPct`) com o MESMO `ro` da `realOnline` que a Dif usa, formatado com
+  `fmt0` (= o `data-ro` da linha; essa igualdade é a invariante (h) de `cascata_invariantes.js`); `ro` null (fechamento,
+  sem ONLINE) = o Real faturado com o texto de apoio da Dif ("sem online" / "sem online no fechamento"), nunca "—". No
+  celular NÃO há célula nova: a linha de números continua com quatro (areas `"e p d o"`) e a `.cRo` cai na faixa `"r r r r"`
+  logo abaixo, com o rótulo "Real + Online" num `::before` (nunca no HTML: o número aparece uma vez só e o `textContent`
+  da célula é só ele). O `.cOrd` ganhou o rótulo `<span>Real + Online</span>` entre "Meta · Real" e o `%` e o botão de
+  `dif` passou de 'Dif (Real + Online)' para 'Dif'; o `.cOrdCh` do celular NÃO muda e a coluna nova NÃO é ordenável (as
+  chaves seguem '', pct, dif, onl). `--casc-cols` com 6 faixas (mínimas somando 656 px com os vãos, `--casc-gap` 12 px:
+  cabem nos ~687 px de conteúdo da gaveta a 1000 px com o painel lateral aberto; a do % guarda o min-content de
+  "% TENDÊNCIA") e `.drw[data-casc]` com `max-width` 960 px (era 860). Venda Zero, lista de clientes de volume, cards,
+  Executiva, Resumo e Painel de Ritmo não mudam. Testes: Parte AG (invariante (h), celular, larguras e antes x depois
+  contra `f5f9fcc`, `REF_PRE_RO`/`CASC_INV.desfazRo`; os antes x depois contra fronts mais antigos desfazem esta etapa
+  primeiro, dentro do próprio `desfazCasc`).
+  Ordem: padrão = `gruposDo` (código);
   `CASC.ord` {col: ''|'pct'|'dif'|'onl', dir}, `ordenaGrupos` (valores, depois sem valor, depois "Neutraliza"/sem dados, na
   ordem do código), `ordemCascata` (cabeçalho `.cOrd` >= 1000 px; chips `.cOrdCh` < 1000), vale enquanto a gaveta estiver
   aberta (novo `CASC` ao abrir). Diretoria: `gruposDo(ctx, k, true)` (só `pintaCascata`) dá à gerência o filho `{nivel:'cli',
