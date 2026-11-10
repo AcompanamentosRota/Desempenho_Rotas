@@ -1429,8 +1429,10 @@ Regra de consistência: 0 ≤ negHoje ≤ negRestante (tolerância de 0,1 cx, o 
 `validacao.py` avisa por rota × macro, sem reprovar. Payload sem o campo (antigo) continua válido.
 Agregação: `modelo.agrega_volume` soma `negHoje` das rotas que têm o campo (null se nenhuma tiver; null no
 fechamento) e o espelho `NUCLEO.agrega` (`frontend/js/nucleo.js`, `volAgg.nh`) soma igual e expõe `negHoje` no indicador
-agregado (teste `backend/tests/test_neg_hoje.py`, `TestEspelhoNucleo`, roda o nucleo.js no node). Peso estimado no
-payload real de 30/10/2026 (1.139 rotas × macro): +18 KB (6,66 → 6,68 MB).
+agregado (teste `backend/tests/test_neg_hoje.py`, `TestEspelhoNucleo`, roda o nucleo.js no node). Peso medido no
+payload real de 10/11/2026 (1.124 rotas × macro: 1.106 nos 5 macros + 18 de Del Valle Frut): +17,1 KB
+(6,89 → 6,91 MB); a consulta nova levou 10-19 s em paralelo com as do mês e o `gerar.py` ficou em 71-97 s,
+a mesma faixa da main nas mesmas condições (limite de atenção: 120 s).
 
 **E12** do `conferir_tendencia.py`, em duas partes (só totais, contagens e códigos de rota e gerência):
 - com rede (no relatório, depois da E10): a consulta nova pela rota da curva, com o tempo, e por gerência e BAND nos 5

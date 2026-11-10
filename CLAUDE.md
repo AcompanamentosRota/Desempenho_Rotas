@@ -250,7 +250,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   SEM_META_ROTA = bruto; CURVA = Meta x bruto / META_NEG do mês (o fator do restante); SEM_CURVA = Meta / dias úteis do mês;
   SEM_META e EV* = 0. 0 <= negHoje <= negRestante (`validacao._neg_hoje`, `TOL_NEG_HOJE` 0,1: só aviso). Espelho:
   `modelo.agrega_volume` e `NUCLEO.agrega` (`volAgg.nh`) somam as rotas com o campo (null se nenhuma; null no fechamento);
-  `TestEspelhoNucleo` roda o nucleo.js no node. Tempo em `Fontes.tempos['neg_hoje_s']`. Payload real: ~+18 KB.
+  `TestEspelhoNucleo` roda o nucleo.js no node. Tempo em `Fontes.tempos['neg_hoje_s']`. Medido no payload real de
+  10/11/2026 (1.124 rotas x macro: 1.106 nos 5 macros + 18 de Del Valle Frut): +17,1 KB (6,89 -> 6,91 MB);
+  `neg_hoje_s` 10-19 s, em paralelo com as do mês (gerar.py 71-97 s, igual à main nas mesmas condições).
   **`DATA_MOVIMENTO` só no `$filter`, nunca no groupby**: por rota × agrupador × dia são ~25 mil linhas e ~150 s
   por medida (17/10); `META_NEG` do mês e restante são duas consultas por rota × agrupador. Literal de data pelo
   tipo do `$metadata` (`fontes.literal_data`). Todas as consultas do mês rodam em paralelo (meta: gerar.py < 60 s).
