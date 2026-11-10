@@ -108,7 +108,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`), 'exec' (o 'inc' com clientes sem compra no
   mês, `montaSemCompra`: o sintético compra tudo; Parte W) e 'dias'/'diasscm' (o 'exec' com dias de visita "Seg - Qui",
   "Ter" e "Qua - Sex" por rota, `montaDias`; o 2º sem SEM_COMPRA_MES; Parte X e o cenário "barra de dias" da Parte N) e
-  'vol5'/'vol5fech' (o 'exec'/'incfech' com os 5 macros de volume com dado, `montaVolume5`, + `montaMesAnterior`; Parte AA). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
+  'vol5'/'vol5fech' (o 'exec'/'incfech' com os 5 macros de volume com dado, `montaVolume5`, + `montaMesAnterior`; Parte AA) e 'sab'/'dom'/'fer'/'semdsem'/'util0' (o 'vol5' com a meta do dia 0 em todas as rotas e
+  DIA_ONTEM = DIA_HOJE, DIA_SEMANA Sábado/Domingo/Quarta-feira/sem a chave; 'util0' = dia útil; Parte AL). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
   `require.resolve` (local, `NODE_PATH` ou global); sem eles, pulado. `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
   a Parte N serve o CSS e o app.js do 0a59eb4 assim).
 - Conferência da Executiva com DADO REAL (sob demanda, fora do CI): `PAYLOAD_REAL=/tmp/real/payload.json
@@ -144,6 +145,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Resumo, bloco Todos a Bordo: Diretoria, cada gerência, cada grupo no Total e uma supervisão, em 1440 e 390 px
   (`frontend/tests/resumo_tab_invariantes.js`, as mesmas da Parte AF; tabela por escopo com bloco / card / online de cada item);
   e o antes x depois contra o front do `9f82f15` com o mesmo payload (Resumo sem o bloco, Executiva, cards e cascata iguais).
+  "Faltam" do medidor com o online (30/10/2026): a conta, o online (= `.gDia` = caixa Online do card) e o Faltam do total da
+  gaveta em `confereExecutiva` (Diretoria, cada gerência, cada grupo, uma supervisão; tabela Meta | Real | Online | faltam
+  antigo | novo); antes x depois contra `1af3c6d` (`REF_PRE_FALTA`: só a `.gFalta` muda; gavetas da categoria, abas, cascata e
+  Resumo iguais); 360/390/1000/1440 px nos dois fundos sem rolagem lateral nem `.gFalta` cortada.
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -413,6 +418,26 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   coberturas ICS GC/Novos Negócios (`coberturaBatida`, pedido da Karen em 20/10/2026) com Real >= Meta do mês do nível
   (Meta > 0; a "meta do dia" da cobertura, gap ou fatia, nunca chega a 0 com meta). O número do online e todos os
   valores seguem iguais; metaDia > 0/null, meta 0, Venda Zero, fechamento e o Resumo de vendas como antes.
+  **"Sem meta do dia" em dia não útil (31/10/2026, decisão da Karen; README, "Sem meta do dia em dia não útil"; só front)**:
+  meta do dia <= 0 em dia ÚTIL = "Meta batida!"; em dia NÃO útil (`semDiaUtil()` = `!P.FECHAMENTO && P.DIA_HOJE ===
+  P.DIA_ONTEM`: o calendário só iguala os dois com `eh_dia_util=False`, `calendario.montar`; o SAP não tem o dia e a meta do
+  dia vem 0) o volume mostra `rotuloSemMetaDia()` ("sem meta do dia · sábado|domingo|feriado" por `diaNaoUtil()` sobre o
+  `DIA_SEMANA` sem acento; sem ele, "sem meta do dia"; `rotuloSemMetaDia(true)` = forma curta) com a cor NEUTRA (`nd`) em cinco
+  lugares, só com metaDia não nula: caixa Online do card (`caixaOnline`) e da cascata (`meioLinha`), `.gDia` do medidor
+  ("… · online X"), `linhaCtHtml` (Online sem cor, tooltip "· sem meta do dia") e `textoMetaDia` ("hoje não é dia útil
+  (sábado); não há meta do dia. Online de hoje: X."). `metaBatida`/`coberturaBatida` não mudam; nenhum número muda.
+  **Medidor com o online em dia não útil (31/10/2026, decisão da Karen; README, "Categorias" da Executiva; só `pintaMedidores`)**:
+  com `semDiaUtil()` e online (`ro != null`), arco e `.gPct` = (Real + online) ÷ Meta com o `small` "real + online",
+  `.gTend` = Real + online + `negRestante` (a Neg de hoje é zero em dia não útil; com a Neg Restante 0, Real + online) e o
+  `.pill`/`data-desvio` sobre ela; `.gMR` continua Meta | Real faturado; `data-tend` (novo) = a Tendência mostrada (dia útil
+  `b.tendencia`, vazio no fechamento). O card de Volume e a coluna "% Real" da gaveta ficam no faturado (aceito). Sem online, dia
+  útil e fechamento: como antes. Os antes x depois que comparam o `#exec` com fronts antigos tiram o `data-tend` (`desfazFalta`,
+  `desfazAE`). Testes: Parte AM (sobre 'sab'/'util0'/'vol5fech'; antes x depois contra `3647363`, `REF_PRE_MED`), invariantes do
+  medidor em `executiva_invariantes.js` e o "% do medidor" em `categoria_invariantes.js`; com dado real, o bloco "Medidor da
+  Executiva com o online em dia não útil" do `conferencia_real.test.js` (sábado: (a) recontagem; dia útil: (b) `#exec` igual).
+  Testes: Parte AL (variantes 'sab', 'dom', 'fer', 'semdsem', 'util0'; `semdia_teste.js`), as invariantes de executiva/
+  cascata/categoria e, com dado real, o bloco "Sem meta do dia" do `conferencia_real.test.js` (payload de sábado `1f72a2b`:
+  (a) e (b) contra `97a19db`, `REF_PRE_SEMDIA`; payload de dia útil `efb4f3a`: (c) idêntico).
   **Cascata com Dif (Real + Online) e cards com Real + online (Etapa 3 do pacote v3, 29/10/2026; README, "Cascata" e
   "Cards"; só front)**: `realOnline(k, rotas, b, onl)` é a conta ÚNICA (cards, cascata, selo): volume = `b.real` + online de
   hoje (`onl` já somado ou `onlineVol`); coberturas = `realMaisOnline` (clientes distintos no Real ou no online); null no
@@ -566,7 +591,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   lido no escopo do botão); nos antes x depois contra fronts antigos no PC (Partes AG e AI) `semTam` tira só o `style="font-size"`
   que o `encaixa()` grava; na conferência com dado real, o `abre()` acrescenta ao CSS de todo front antigo (`troca`) o trecho do
   app.css entre "PC mais compacto" e "fim do PC mais compacto" (`ESCALA_PC_CSS`; não tirar esses dois comentários), para os
-  dois fronts terem os mesmos tamanhos e o HTML continuar comparado inteiro; novos na Parte AK.
+  dois fronts terem os mesmos tamanhos e o HTML continuar comparado inteiro. No front.test.js, o mesmo trecho
+  (`ESCALA_PC_CSS`, `comEscalaPc`) vai no CSS dos fronts antigos dos antes x depois de HTML das Partes X (`FRONT_ETAPA5`), Z
+  (`FRONT_PRE_EVO`) e AC (`FRONT_PRE_CAT`), e o teste das notas menores da Parte AA serve o app.css atual sem ele
+  (`semEscalaPc`: mede só a redução da AA); antes disso esses 4 falhavam desde a Etapa 7. Novos na Parte AK.
   **Cabeçalho das abas (Etapa 4, 21/10/2026; README, "Cabeçalho das abas")**: `section#abaTopo` no lugar do `.topoGrid`:
   `.abCab` (h2 `#abTit` = `title` da aba ativa; `button#pilDia` = etiqueta do dia, `pintaEtiquetaDia`: `.pdL` "Dia útil
   DIA_HOJE de T · Semana N" no PC, `.pdC` "DIA_SEMANA · Sem. N" abaixo de 1000 px, `.pdI` "i"; `data-dica` com o dia,
@@ -610,9 +638,16 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   (`.dupla.so1`). Evolução: ver abaixo (Etapa 8c).
   Ajustes visuais (29/10/2026; Parte AE): `#exCob` zebrado (`tbody tr:nth-child(even)` = `--zebra` #f6f6f8, também o `th.un`
   sticky; `tr.tot` = `--zebra-tot` #e4e4e8 e negrito; hover #ececef / total #d9d9de; o painel não tem tema escuro: os dois
-  fundos são só da entrada); medidor com `.gFalta` entre `.gPct` e `.gMR` ("faltam X para a meta", X = `fmt0(meta − real)`,
-  `--vermelho2`; Real >= Meta: `.gFalta.ok` "meta batida · +X", `--verdeE`; `--fs-ex-mini`, 700; sem a linha no `.off`) e
-  `data-meta`/`data-real` exatos no `.gCard`; rótulo `label.buscaRot` "Busca por cliente" (`--fs-busca-rot`, caixa alta,
+  fundos são só da entrada); medidor com `.gFalta` entre `.gPct` e `.gMR` ("faltam X para a meta", X = `fmt0(meta − base)`,
+  `--vermelho2`; base >= Meta: `.gFalta.ok` "meta batida · +X", `--verdeE`; `--fs-ex-mini`, 700; sem a linha no `.off`) e
+  `data-meta`/`data-real` exatos no `.gCard`. **Correção de 30/10/2026 (decisão da Karen)**: base = Real + online de hoje (X =
+  Meta − (Real + online)), como a Diferença dos cards e o Faltam da gaveta da categoria (`pintaMedidores`: `onl` = `onlineVol(rotas, c)` uma vez
+  por cartão, null no fechamento e sem ONLINE, reaproveitado na `.gDia`; `realOnline(c, rotas, b, onl)`; null = Meta − Real);
+  `data-online` no `.gCard` (vazio sem online); o `.gPct` e o arco continuam Real ÷ Meta, sem o online. Testes: Parte AE
+  ("medidor: ... Meta - (Real + online)"), `executiva_invariantes.js` (recontagem pelo online.json, = `.gDia`, = caixa Online do
+  card de Volume, = Faltam da linha de total da gaveta) e, com dado real, o antes x depois contra `1af3c6d` (`REF_PRE_FALTA`); os
+  antes x depois que comparam o `#exec` inteiro com fronts antigos normalizam só a `.gFalta` e o `data-online` (`desfazFalta`,
+  executiva_invariantes.js; o `desfazAE` também tira o `data-online`); rótulo `label.buscaRot` "Busca por cliente" (`--fs-busca-rot`, caixa alta,
   `--txt-apoio`) acima do `#q`, placeholder "Digite nome, código ou rede". Os "antes x depois" contra fronts antigos
   desfazem isso no atual com `desfazAE` (rotulos_invariantes.js; `igualRotulo`, `igualSemFalta`; em texto, só o "faltam X para
   a meta" do medidor: o "; faltam X para a meta." do quadro Foco já existia e fica). Na conferência com dado real, os antes x

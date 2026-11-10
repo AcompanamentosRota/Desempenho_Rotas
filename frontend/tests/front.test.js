@@ -207,6 +207,23 @@ before(async () => {
   fs.writeFileSync(path.join(dim, 'payload.json'), JSON.stringify(pdm));
   fs.copyFileSync(path.join(DADOS.vol5, 'online.json'), path.join(dim, 'online.json'));
   DADOS.dim = dim;
+  // Parte AL (dia não útil): o 'vol5' com a meta do dia 0 em todas as rotas e macros (o calendário do SAP não tem o dia, como
+  // em 31/10/2026) e DIA_ONTEM = DIA_HOJE (R-DIA-06); sábado, domingo, feriado (quarta-feira) e sem DIA_SEMANA; 'util0' = o
+  // mesmo zero num dia útil (DIA_ONTEM = DIA_HOJE - 1: continua "Meta batida!")
+  for(const [nome, dia, naoUtil] of [['sab', 'Sábado', true], ['dom', 'Domingo', true], ['fer', 'Quarta-feira', true],
+                                     ['semdsem', null, true], ['util0', 'Terça-feira', false]]){
+    const dir = path.join(tmp, nome);
+    fs.mkdirSync(dir);
+    const pz = JSON.parse(fs.readFileSync(path.join(DADOS.vol5, 'payload.json'), 'utf-8'));
+    for(const svs of Object.values(pz.DATA)) for(const rs of Object.values(svs)) for(const no of Object.values(rs))
+      for(const k of pz.GROUPS.VOLUME) if(no.indicators[k] && !no.indicators[k].unavailable && no.indicators[k].metaDia != null)
+        no.indicators[k].metaDia = 0;
+    if(naoUtil) pz.DIA_ONTEM = pz.DIA_HOJE;
+    if(dia == null) delete pz.DIA_SEMANA; else pz.DIA_SEMANA = dia;
+    fs.writeFileSync(path.join(dir, 'payload.json'), JSON.stringify(pz));
+    fs.copyFileSync(path.join(DADOS.vol5, 'online.json'), path.join(dir, 'online.json'));
+    DADOS[nome] = dir;
+  }
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -219,7 +236,7 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' | 'evcob' |
    'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm' | 'evo' | 'evogrupo' | 'evogrande' |
-   'evofech' | 'semevo' | 'vol5' | 'vol5fech' | 'dim');
+   'evofech' | 'semevo' | 'vol5' | 'vol5fech' | 'dim' | 'sab' | 'dom' | 'fer' | 'semdsem' | 'util0');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
@@ -2967,6 +2984,17 @@ const INSTALA_MEDIDAS = () => {
 /* tira o font-size que o encaixa() grava nos [data-fit] (o tamanho de partida é o da escala): nos "antes x depois" no PC contra
    fronts de antes da Etapa 7 do pacote v3 (PC ~90%), só o tamanho muda de propósito; texto e estrutura continuam comparados */
 const semTam = h => String(h).replace(/ style="font-size: [\d.]+px;"/g, '');
+/* Etapa 7 do pacote v3 (PC ~90%/~85% por variáveis): o trecho do app.css atual entre "PC mais compacto" e "fim do PC mais
+   compacto" (o mesmo ESCALA_PC_CSS do conferencia_real.test.js). Os "antes x depois" de HTML contra fronts de antes dela o
+   acrescentam ao CSS do front antigo (comEscalaPc), para os dois fronts terem os mesmos tamanhos de partida (o encaixa()
+   grava o font-size no HTML) e o resto continuar comparado inteiro; semEscalaPc tira o trecho do CSS atual (teste que
+   mede a redução de uma etapa anterior). */
+const ESCALA_PC_CSS = (() => { const css = fs.readFileSync(path.join(FRONT, 'css', 'app.css'), 'utf-8');
+  const i = css.indexOf('/* ---------- PC mais compacto'), j = css.indexOf('/* fim do PC mais compacto');
+  return i >= 0 && j > i ? css.slice(i, j) : ''; })();
+const comEscalaPc = css => String(css) + '\n' + ESCALA_PC_CSS;
+const semEscalaPc = () => { const css = fs.readFileSync(path.join(FRONT, 'css', 'app.css'), 'utf-8');
+  return ESCALA_PC_CSS ? css.replace(ESCALA_PC_CSS, '') : css; };
 const medidas = page => page.evaluate(INSTALA_MEDIDAS);
 const semRolagemLateral = page => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
@@ -5635,7 +5663,7 @@ describe('Parte R — Painel de Ritmo: PDF real (html2canvas + jsPDF)', {skip: p
    layout (1440, 1000, 390 e 360 px) e, comparando com o front da main antes da Etapa 5 (REF_ETAPA5, servido por `troca`),
    cards, cascata, Resumo e Painel de Ritmo iguais. Cenário 'exec' = o do Todos a Bordo com clientes sem compra no mês
    (montaSemCompra; o sintético compra tudo). */
-const {confereExecutiva} = require('./executiva_invariantes.js');
+const {confereExecutiva, desfazFalta} = require('./executiva_invariantes.js');
 const REF_ETAPA5 = '321b0ea';
 const FRONT_ETAPA4 = (() => {
   try {
@@ -5683,7 +5711,8 @@ const VOL_EXEC = ['VOL REFRIGERANTES', 'VOL CERVEJAS', 'VOL STILL', 'VOL AGUA MI
 /* Ajuste de rótulos (Parte AA): onde o front antigo mostra "Dest+Art+Cnd" o atual mostra "Novos Negócios" (no card de Volume,
    com a 2ª linha .tsub "Dest+Art+Cnd"). As comparações com fronts antigos tiram a 2ª linha do atual e trocam o nome no antigo;
    o resto continua igual, byte a byte. Desde os ajustes visuais da Executiva (Parte AE) o atual também perde a linha
-   "faltam X para a meta" / "meta batida · +X" do medidor (.gFalta) e os data-meta/data-real do .gCard. */
+   "faltam X para a meta" / "meta batida · +X" do medidor (.gFalta) e os data-meta/data-real do .gCard (e o data-online, desde
+   que o "faltam" conta o online de hoje). */
 /* Desde a Etapa 3 do pacote v3 o atual também desfaz a linha "Real + online" dos cards e a cascata nova (linha .cLin.v3,
    cabeçalho/chips de ordenação, lista de clientes com Online): CASC_INV.desfazCasc. */
 const igualSemFalta = (novo, velho) => [require('./cascata_invariantes.js').desfazCasc(require('./rotulos_invariantes.js').desfazAE(novo)), velho];
@@ -6174,7 +6203,7 @@ const FRONT_ETAPA5 = (() => {
   try {
     const arq = f => execSync(`git show ${REF_ETAPA6}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
     const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
-    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+    return {'/index.html': () => html, '/css/app.css': () => comEscalaPc(css), '/js/app.js': () => js};
   } catch(e) { return null; }
 })();
 /* Dias de visita variados (no sintético todos são "Seg - Qui"): em cada rota, os clientes na ordem do roster ficam "Seg -
@@ -6532,7 +6561,7 @@ const FRONT_PRE_EVO = (() => {
   try {
     const arq = f => execSync(`git show ${REF_PRE_EVO}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
     const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
-    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+    return {'/index.html': () => html, '/css/app.css': () => comEscalaPc(css), '/js/app.js': () => js};
   } catch(e) { return null; }
 })();
 const linhasEvo = (page, k) => page.evaluate(k => {
@@ -7168,7 +7197,8 @@ describe('Parte AA — rótulo "Novos Negócios" do volume, aba por perfil e not
 
   for(const largura of [1440, 390]){
     test(`notas menores que as da main (rodapé, crédito, legendas da visão executiva), com contraste AA; notas da gaveta iguais (${largura} px)`, {skip: !FRONT_PRE_ROTULOS && `sem o commit ${REF_ROTULOS}`}, async () => {
-      const [novo, velho] = [await abre('evo', {entrar: 'dir', largura, aba: null}),
+      // o atual sem a escala do PC (Etapa 7, que reduz de novo as notas no PC): aqui só a redução da Parte AA
+      const [novo, velho] = [await abre('evo', {entrar: 'dir', largura, aba: null, troca: {'/css/app.css': semEscalaPc}}),
                              await abre('evo', {entrar: 'dir', largura, aba: null, troca: FRONT_PRE_ROTULOS})];
       const [a, b] = [await novo.page.evaluate(ROT.NOTAS_PAGINA), await velho.page.evaluate(ROT.NOTAS_PAGINA)];
       const esperadas = largura >= 1000 ? ['rodape', 'creditos', 'legenda', 'ladoCred'] : ['rodape', 'creditos', 'legenda'];
@@ -7468,7 +7498,7 @@ const FRONT_PRE_CAT = (() => {
   try {
     const arq = f => execSync(`git show ${REF_PRE_CAT}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
     const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
-    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+    return {'/index.html': () => html, '/css/app.css': () => comEscalaPc(css), '/js/app.js': () => js};
   } catch(e) { return null; }
 })();
 /* status por gerência (na ordem de GC_ATIVAS), em todas as categorias de volume: [Real, Tendência] em fração da meta, com um
@@ -8132,25 +8162,68 @@ describe('Parte AE — zebra das coberturas, Evolução hachurada, rótulo da bu
     await ctx.close();
   });
 
-  test('medidor: "faltam X para a meta" = Meta - Real; "meta batida · +X" com Real >= Meta; sem meta, sem a linha; fechamento', async () => {
+  test('medidor: "faltam X para a meta" = Meta - (Real + online); "meta batida · +X" com Real + online >= Meta; sem online, Meta - Real; sem meta, sem a linha; fechamento', async () => {
     const f0 = v => Math.round(v).toLocaleString('pt-BR');
     const le = page => page.$$eval('#exGauges .gCard', gs => gs.map(g => { const f = g.querySelector('.gFalta');
       return {k: g.dataset.k, off: g.classList.contains('off'), meta: Number(g.dataset.meta), real: Number(g.dataset.real),
+        online: g.dataset.online, pct: (g.querySelector('.gPct') || {}).textContent || null,
+        arco: (g.querySelector('.gSvg .vl') || {getAttribute: () => null}).getAttribute('stroke-dasharray'),
+        dia: (g.querySelector('.gDia') || {}).textContent || null,
         txt: f && f.textContent, ok: !!(f && f.classList.contains('ok')), cor: f && getComputedStyle(f).color,
         peso: f && getComputedStyle(f).fontWeight, fs: f && getComputedStyle(f).fontSize,
         ordem: f ? [...g.children].map(c => c.className.baseVal != null ? 'svg' : c.className) : []}; }));
+    // texto esperado pela base (Real + online, ou só o Real)
+    const esperado = (g, base) => base >= g.meta ? `meta batida · +${f0(base - g.meta)}` : `faltam ${f0(g.meta - base)} para a meta`;
+    // põe o online de hoje da categoria k (total `v`) na 1ª rota da G1, zerando as outras
+    const poeOnline = (page, k, v) => page.evaluate(([k, v]) => { const rs = rotasDe('G1', '');
+      ONLINE.volume = ONLINE.volume || {};
+      rs.forEach((r, i) => { ONLINE.volume[r] = {...(ONLINE.volume[r] || {}), [k]: i ? 0 : v}; }); render(); }, [k, v]);
     for(const nome of ['evo', 'evofech']){
+      const fech = nome === 'evofech';
       const {page, ctx, erros} = await abre(nome, {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
       let gs = await le(page);
       assert.ok(gs.some(g => g.off) && gs.some(g => !g.off), `${nome}: medidores com e sem meta`);
+      const vivos = gs.filter(g => !g.off);
       for(const g of gs){
         if(g.off){ assert.equal(g.txt, null, `${nome} ${g.k}: sem meta, sem linha`); continue; }
         assert.ok(g.real < g.meta, `${nome} ${g.k}: o sintético fica abaixo da meta`);
-        assert.equal(g.txt, `faltam ${f0(g.meta - g.real)} para a meta`);
+        // fechamento: sem online (data-online vazio), volta a Meta - Real
+        if(fech) assert.equal(g.online, '', `${nome} ${g.k}: sem online no fechamento`);
+        const base = g.online === '' ? g.real : g.real + Number(g.online);
+        assert.equal(g.txt, esperado(g, base), `${nome} ${g.k}`);
         // --fs-ex-mini: 10,5 px (no PC, ~90% desde a Etapa 7 do pacote v3: 9,5 px)
         const mini = (await page.evaluate(() => innerWidth)) >= 1000 ? '9.5px' : '10.5px';
-        assert.deepEqual([g.ok, g.cor, g.peso, g.fs], [false, 'rgb(198, 40, 40)', '700', mini]);
+        assert.deepEqual([g.ok, g.cor, g.peso, g.fs], base >= g.meta ? [true, 'rgb(20, 107, 79)', '700', mini]
+          : [false, 'rgb(198, 40, 40)', '700', mini]);
         assert.deepEqual(g.ordem.slice(0, 5), ['gTit', 'svg', 'gPct', 'gFalta', 'gMR'], 'entre o % e Meta | Real');
+      }
+      // online que NÃO fecha a meta (metade do que falta) e online que FECHA (o que falta + 7)
+      const [a, b] = vivos;
+      await poeOnline(page, a.k, (a.meta - a.real) / 2);
+      await poeOnline(page, b.k, b.meta - b.real + 7);
+      gs = await le(page);
+      for(const [g0, onl] of [[a, (a.meta - a.real) / 2], [b, b.meta - b.real + 7]]){
+        const g = gs.find(x => x.k === g0.k);
+        // % grande, arco e Meta | Real não mudam com o online
+        assert.deepEqual([g.pct, g.arco, g.meta, g.real], [g0.pct, g0.arco, g0.meta, g0.real], `${nome} ${g.k}: % e arco sem o online`);
+        if(fech){ assert.equal(g.online, '', `${nome} ${g.k}`); assert.equal(g.txt, esperado(g, g.real), `${nome} ${g.k}: fechamento`); continue; }
+        assert.ok(Math.abs(Number(g.online) - onl) < 1e-9, `${nome} ${g.k}: data-online`);
+        if(/online/.test(g.dia || '')) assert.equal(g.dia.replace(/^.* · online /, ''), f0(onl), `${nome} ${g.k}: online da meta do dia`);
+        assert.equal(g.txt, esperado(g, g.real + onl), `${nome} ${g.k}`);
+      }
+      if(!fech){
+        assert.equal(gs.find(x => x.k === a.k).txt, `faltam ${f0((a.meta - a.real) / 2)} para a meta`, 'online que não fecha: faltam menor');
+        assert.ok((a.meta - a.real) / 2 < a.meta - a.real);
+        assert.equal(gs.find(x => x.k === b.k).txt, 'meta batida · +7', 'online que fecha: meta batida · +X');
+        assert.equal(gs.find(x => x.k === b.k).ok, true);
+      }
+      // sem online.json: data-online vazio e Meta - Real (a linha da meta do dia continua "online 0", como antes)
+      await page.evaluate(() => { ONLINE = null; render(); });
+      gs = await le(page);
+      for(const g of gs.filter(x => !x.off)){
+        assert.equal(g.online, '', `${nome} ${g.k}: sem online.json`);
+        assert.equal(g.txt, `faltam ${f0(g.meta - g.real)} para a meta`, `${nome} ${g.k}: sem online.json`);
+        if(/online/.test(g.dia || '')) assert.match(g.dia, / · online 0$/);
       }
       await ritmo(page, 'G1', await page.evaluate(() => rotasDe('G1', '')), 1.25);
       await page.evaluate(() => render());
@@ -8687,7 +8760,8 @@ describe('Parte AG — cascata com Dif (Real + Online), selo e cards com Diferen
       const [novo, velho] = [await abre(dados, {entrar, aba: null, largura: 1280}),
                              await abre(dados, {entrar, aba: null, largura: 1280, troca: FRONT_PRE_CASC})];
       const quem = `${dados} ${JSON.stringify(entrar)}`;
-      const lerExec = p => p.evaluate(() => document.getElementById('exec').innerHTML).then(semTam);
+      // (a linha .gFalta do medidor conta o online de hoje desde a correção de 30/10/2026: desfazFalta nos dois)
+      const lerExec = p => p.evaluate(() => document.getElementById('exec').innerHTML).then(semTam).then(desfazFalta);
       assert.equal(await lerExec(novo.page), await lerExec(velho.page), `${quem}: Executiva`);
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         for(const {page} of [novo, velho]) await filtra(page, {aba});
@@ -9189,11 +9263,11 @@ describe('Parte AI — Executiva: cabeçalho fixo, "Abrir por" e busca', {skip: 
         const onde = `${largura} ${JSON.stringify(e)}`;
         const exec = async p => { await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click()));
           const h = semTam(await p.innerHTML('#exec')); await p.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(el => el.click())); return h; };
-        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva`);
+        assert.equal(desfazFalta(await exec(novo.page)), desfazFalta(await exec(velho.page)), `${onde}: Executiva`);
         assert.equal(await novo.page.textContent('#abTit'), await velho.page.textContent('#abTit'), `${onde}: título`);
         // passa pelos modos e volta: igual de novo
         for(const ab of ['canal', 'cli', 'ka', 'nivel']) await DIMI.clicaAbrir(novo.page, ab);
-        assert.equal(await exec(novo.page), await exec(velho.page), `${onde}: Executiva depois dos modos`);
+        assert.equal(desfazFalta(await exec(novo.page)), desfazFalta(await exec(velho.page)), `${onde}: Executiva depois dos modos`);
         const k = await novo.page.$eval('#exGauges .gCard[role="button"]', g => g.dataset.k);
         // a gaveta virou tabela na Etapa 6 do pacote v3 (de propósito): os números de cada unidade (cartão de lá, linha daqui), o
         // título e o subtítulo (sem a ordem) iguais
@@ -9753,4 +9827,249 @@ describe('Parte AK — PC mais compacto e cabeçalho das abas travado (Etapa 7 d
       }
     });
   }
+});
+
+/* ---------- Parte AL: "sem meta do dia" em dia não útil (sábado, domingo, feriado; decisão da Karen, 31/10/2026) ----------
+   Dia não útil = DIA_HOJE === DIA_ONTEM fora do fechamento: a meta do dia do volume (0 do SAP) não vira "Meta batida!";
+   caixa Online do card e da cascata, .gDia do medidor, tooltip da gaveta da categoria e texto da Executiva mostram "sem meta
+   do dia · sábado|domingo|feriado" (forma curta sem DIA_SEMANA e no tooltip), com a cor neutra. Nenhum número muda. */
+const SEMDIA = require('./semdia_teste.js');
+// os cinco lugares, no escopo atual (aba Executiva aberta no início): rótulos e classes; números à parte
+async function leSemDia(page, k){
+  await vaiAba(page, 'EXEC');
+  await page.evaluate(k => { if(catAtual() !== k){ catExec = k; render(); } }, k);
+  const ex = await page.evaluate(k => ({gDia: (document.querySelector(`#exGauges .gCard[data-k="${k}"] .gDia`) || {}).textContent || null,
+    texto: document.getElementById('exDiaTxt').textContent,
+    gFalta: (document.querySelector(`#exGauges .gCard[data-k="${k}"] .gFalta`) || {}).textContent || null}), k);
+  await abreCat(page, k);
+  const gav = await page.$$eval('#dCorpo tr.ctLin', trs => trs.map(tr => ({onl: tr.querySelector('.ctOnl').className,
+    falt: tr.querySelector('.ctFalt').textContent, dica: tr.dataset.dica.replace(/<[^>]*>/g, ' ')})));
+  await page.keyboard.press('Escape');
+  await vaiAba(page, 'VOLUME');
+  const card = await page.$eval(`#lista .ind[data-k="${k}"]`, el => ({cls: el.querySelector('.obox').className,
+    rot: el.querySelector('.obox span').textContent.trim(), num: el.querySelector('.obox b').textContent,
+    big: el.querySelector('.big').textContent, dif: el.querySelector('.dif').textContent, cl: el.querySelector('.cl').innerText}));
+  await page.click(`#lista .ind[data-k="${k}"]`);
+  const casc = await page.$$eval('#dCorpo .cLin:not(.off)', ls => ls.map(l => ({cls: l.querySelector('.cOn').className,
+    num: l.querySelector('.cOn').textContent, rot: l.querySelector('.cMeio small').textContent,
+    dif: (l.querySelector('.cDif') || {}).textContent, pct: (l.querySelector('.cPct') || {}).textContent})));
+  await page.keyboard.press('Escape');
+  return {ex, gav, card, casc};
+}
+
+describe('Parte AL — "sem meta do dia" em dia não útil', {skip: pular}, () => {
+  const k = 'VOL REFRIGERANTES';
+  for(const [dados, dia, rot] of [['sab', 'sábado', 'sem meta do dia · sábado'], ['dom', 'domingo', 'sem meta do dia · domingo'],
+                                  ['fer', 'feriado', 'sem meta do dia · feriado'], ['semdsem', '', 'sem meta do dia']]){
+    test(`${dados}: os cinco lugares com "${rot}" e a cor neutra; números iguais aos do dia útil com a mesma meta do dia 0`, async () => {
+      const {page, ctx, erros} = await abre(dados, {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+      assert.equal(await page.evaluate(() => [semDiaUtil(), diaNaoUtil(), rotuloSemMetaDia(), rotuloSemMetaDia(true)].join('|')),
+        `true|${dia}|${rot}|sem meta do dia`);
+      const r = await leSemDia(page, k);
+      assert.equal(r.card.rot, rot, 'caixa Online do card');
+      assert.equal(r.card.cls, 'obox nd', 'caixa do card neutra');
+      assert.ok(r.casc.length > 0);
+      for(const l of r.casc) assert.deepEqual([l.cls, l.rot], ['cOn nd', rot], 'caixa Online da cascata');
+      assert.ok(r.ex.gDia.startsWith(`${rot} · online `), `medidor: ${r.ex.gDia}`);
+      assert.equal(r.ex.texto, `Refrigerantes: hoje não é dia útil${dia ? ` (${dia})` : ''}; não há meta do dia. Online de hoje: ` +
+        `${r.card.num}.`, 'texto da Executiva');
+      assert.ok(r.gav.length > 0);
+      for(const l of r.gav){
+        assert.equal(l.onl, 'ctOnl', 'Online da gaveta sem cor');
+        assert.ok(l.dica.includes(' · sem meta do dia') && !/meta do dia (batida|\d)/.test(l.dica), l.dica);
+      }
+      // nada de "Meta batida!" pela meta do dia em lugar nenhum da aba Volume, nem de "meta do dia batida" na Executiva
+      assert.ok(!(await page.$$eval('#lista .ind.vol .obox span', ss => ss.map(s => s.textContent))).includes('Meta batida!'));
+      // os números = os do dia útil (util0: o mesmo payload com DIA_ONTEM = DIA_HOJE - 1) sem os rótulos e as classes;
+      // a tendência e o % não mudam com DIA_ONTEM (vêm do payload)
+      const {page: p2, ctx: c2} = await abre('util0', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+      const u = await leSemDia(p2, k);
+      assert.equal(u.card.rot, 'Meta batida!');
+      assert.equal(u.card.cls, 'obox ok');
+      const sem = x => ({...x, card: {...x.card, rot: '', cls: ''}, casc: x.casc.map(l => ({...l, rot: '', cls: ''})),
+        ex: {...x.ex, gDia: x.ex.gDia.replace(/^.* · online /, ''), texto: ''}, gav: x.gav.map(l => ({falt: l.falt}))});
+      assert.deepEqual(sem(r), sem({...u, ex: {...u.ex, gDia: `x · online ${r.ex.gDia.replace(/^.* · online /, '')}`}}));
+      assert.equal(u.ex.gDia, 'meta do dia batida');
+      // as invariantes da Executiva, da cascata e da gaveta da categoria
+      await confereExecutiva(page, dados);
+      await vaiAba(page, 'VOLUME');
+      await page.click(`#lista .ind[data-k="${k}"]`);
+      await CASC_INV.confereNivel(page, dados);
+      await page.keyboard.press('Escape');
+      await vaiAba(page, 'EXEC');
+      await CAT.confereCategoria(page, dados, {ordena: false});
+      assert.deepEqual(erros, []);
+      await ctx.close(); await c2.close();
+    });
+  }
+
+  test('coberturas (ICS GC): "Meta batida!" pela meta do mês continua em dia não útil', async () => {
+    const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}});
+    // uma rota com Real >= Meta no CCTM 2L Pet (ICS GC): a caixa do card fica "Meta batida!" verde, como em dia útil
+    const k = await page.$eval('#lista .ind[data-k]', el => el.dataset.k);
+    await page.evaluate(k => { for(const r of rotasAtuais()){ const b = nodo('', r).indicators[k]; if(b && !b.unavailable && b.meta > 0) b.real = b.meta; }
+      render(); }, k);
+    const c = await page.$eval(`#lista .ind[data-k="${k}"] .obox`, el => [el.className, el.querySelector('span').textContent.trim()]);
+    assert.deepEqual(c, ['obox ok', 'Meta batida!'], k);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('fechamento (DIA_HOJE = DIA_ONTEM com FECHAMENTO): o rótulo novo nunca aparece', async () => {
+    const {page, ctx, erros} = await abre('vol5fech', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    assert.deepEqual(await page.evaluate(() => [P.DIA_HOJE === P.DIA_ONTEM, semDiaUtil()]), [true, false]);
+    const html = await page.evaluate(() => document.body.innerHTML);
+    await vaiAba(page, 'VOLUME');
+    const vol = await page.evaluate(() => document.body.innerHTML);
+    await page.click('#lista .ind.vol');
+    const casc = await page.evaluate(() => document.getElementById('dCorpo').innerHTML);
+    for(const h of [html, vol, casc]) assert.ok(!/sem meta do dia|não é dia útil/.test(h));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('dia útil com a meta do dia 0: continua "Meta batida!" e verde nos cinco lugares', async () => {
+    const {page, ctx, erros} = await abre('util0', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    assert.equal(await page.evaluate(() => semDiaUtil()), false);
+    const r = await leSemDia(page, k);
+    assert.deepEqual([r.card.cls, r.card.rot], ['obox ok', 'Meta batida!']);
+    for(const l of r.casc) assert.deepEqual([l.cls, l.rot], ['cOn ok', 'Meta batida!']);
+    assert.equal(r.ex.texto.startsWith('Refrigerantes: meta do dia já batida neste escopo.'), true, r.ex.texto);
+    for(const l of r.gav){ assert.equal(l.onl, 'ctOnl ok'); assert.ok(l.dica.includes(' · meta do dia batida')); }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('rótulo novo sem corte nem rolagem lateral: 360, 390, 1000 e 1440 px (card e cascata)', async () => {
+    for(const largura of [360, 390, 1000, 1440]){
+      const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, largura, altura: 900});
+      await filtra(page, {aba: 'VOLUME'});
+      const corte = el => { const s = el; return s.scrollWidth > s.clientWidth + 1 || s.getBoundingClientRect().right > innerWidth + 1; };
+      const card = await page.$$eval('#lista .ind.vol .obox span', (ss, f) => ss.map(s => ({t: s.textContent.trim(), c: eval(f)(s)})), String(corte));
+      assert.ok(card.length && card.every(c => c.t.startsWith('sem meta do dia') && !c.c), `${largura} card: ${JSON.stringify(card)}`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${largura}: rolagem lateral`);
+      await page.click('#lista .ind.vol');
+      const casc = await page.$$eval('#dCorpo .cLin:not(.off) .cMeio small', (ss, f) => ss.map(s => ({t: s.textContent, c: eval(f)(s)})), String(corte));
+      assert.ok(casc.length && casc.every(c => c.t.startsWith('sem meta do dia') && !c.c), `${largura} cascata: ${JSON.stringify(casc)}`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${largura}: rolagem lateral na gaveta`);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
+});
+
+/* ---------- Parte AM: medidor da Executiva com o online em dia não útil (decisão da Karen, 31/10/2026) ----------
+   Em dia não útil (DIA_HOJE = DIA_ONTEM fora do fechamento) e com online, o arco e o % do medidor ficam sobre Real + online
+   (rótulo "real + online"), a Tendência = Real + online + Neg Restante (a Neg de hoje é zero) e o desvio sobre ela; data-tend
+   = a Tendência mostrada. Sem online, em dia útil e no fechamento: como antes (antes x depois contra a main 3647363). */
+const REF_PRE_MED = '3647363';
+const FRONT_PRE_MED = (() => {
+  try { const js = execSync(`git show ${REF_PRE_MED}:frontend/js/app.js`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return {'/js/app.js': () => js}; } catch(e) { return null; }
+})();
+// o medidor de k: arco, %, rótulo, Tendência mostrada e data-*
+const leMedidor = (page, k) => page.$eval(`#exGauges .gCard[data-k="${k}"]`, g => ({off: g.classList.contains('off'),
+  arco: (g.querySelector('.gSvg .vl') || {getAttribute: () => null}).getAttribute('stroke-dasharray'),
+  pct: g.querySelector('.gPct') ? g.querySelector('.gPct').firstChild.textContent : null,
+  rot: (g.querySelector('.gPct small') || {}).textContent || null, tendTxt: (g.querySelector('.gTend b') || {}).textContent || null,
+  pill: (g.querySelector('.gTend .pill') || {}).textContent || null, pillCls: (g.querySelector('.gTend .pill') || {}).className || null,
+  tend: g.dataset.tend, desvio: g.dataset.desvio, mr: [...g.querySelectorAll('.gMR b')].map(b => b.textContent)}));
+// recontagem independente do payload e do online, nas rotas do escopo
+const somaMed = (page, k) => page.evaluate(k => rotasAtuais().reduce((a, r) => { const b = nodo('', r).indicators[k];
+  a.onl += ONLINE ? (((ONLINE.volume || {})[r] || {})[k] || 0) : 0;
+  if(b && !b.unavailable){ a.meta += b.meta || 0; a.real += b.real || 0; a.neg += b.negRestante || 0; }
+  return a; }, {meta: 0, real: 0, neg: 0, onl: 0}), k);
+const pctBr = v => `${Math.abs(v).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}%`;
+// HTML dos medidores sem o .gDia (o rótulo do PR #51, que já difere em dia não útil) e sem o data-tend novo
+const medSemDia = page => page.innerHTML('#exGauges').then(h => h.replace(/<div class="gDia">[^<]*<\/div>/g, '').replace(/ data-tend="[^"]*"/g, ''));
+
+describe('Parte AM — medidor da Executiva com o online em dia não útil', {skip: pular}, () => {
+  test('(a) meio do mês (Neg Restante > 0): arco e % sobre Real + online ("real + online"), Tendência = Real + online + Neg Restante, desvio sobre ela; Meta | Real no faturado', async () => {
+    const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    let comOnline = 0;
+    for(const k of VOL_AA){
+      const m = await leMedidor(page, k), s = await somaMed(page, k);
+      if(!(s.meta > 0)){ assert.ok(m.off, k); continue; }
+      const base = s.real + s.onl, tend = base + s.neg, d = tend / s.meta - 1;
+      assert.ok(s.neg > 0, `${k}: o cenário tem Neg Restante`);
+      assert.equal(m.arco, `${Math.max(0, Math.min(100, base / s.meta * 100)).toFixed(2)} 100`, `${k}: arco`);
+      assert.deepEqual([m.pct, m.rot], [`${Math.round(base / s.meta * 100)}%`, 'real + online'], `${k}: %`);
+      assert.ok(Math.abs(Number(m.tend) - tend) < 1e-6, `${k}: data-tend ${m.tend} x ${tend}`);
+      assert.equal(m.tendTxt, fmtPt(tend), `${k}: Tendência`);
+      assert.ok(Math.abs(Number(m.desvio) - d) < 1e-12, `${k}: data-desvio`);
+      assert.deepEqual([m.pill, m.pillCls], [`${d >= 0 ? '↑' : '↓'} ${pctBr(d * 100)}`, `pill ${d >= 0 ? 'pos' : 'neg'}`], `${k}: desvio`);
+      assert.deepEqual(m.mr, [fmtPt(s.meta), fmtPt(s.real)], `${k}: Meta | Real faturado, sem o online`);
+      if(s.onl > 0) comOnline++;
+    }
+    assert.ok(comOnline > 0, 'pelo menos uma categoria com online');
+    // o card da aba Volume continua no % real faturado (consequência aceita)
+    const s = await somaMed(page, 'VOL REFRIGERANTES');
+    await vaiAba(page, 'VOLUME');
+    assert.equal(await page.$eval('#lista .ind[data-k="VOL REFRIGERANTES"] .opo', e => e.textContent), `${Math.round(s.real / s.meta * 100)}% real`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(b) fim do mês (Neg Restante = 0): Tendência = Real + online', async () => {
+    const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    const k = 'VOL REFRIGERANTES';
+    await page.evaluate(k => { for(const r of rotasAtuais()){ const b = nodo('', r).indicators[k];
+      if(b && !b.unavailable){ b.tendencia -= b.negRestante || 0; b.negRestante = 0; } } render(); }, k);
+    const m = await leMedidor(page, k), s = await somaMed(page, k);
+    assert.equal(s.neg, 0);
+    assert.ok(Math.abs(Number(m.tend) - (s.real + s.onl)) < 1e-6, `data-tend ${m.tend}`);
+    assert.equal(m.tendTxt, fmtPt(s.real + s.onl));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(c) dia não útil sem online.json: medidores como no dia útil (só o rótulo do .gDia do PR #51 muda)', async () => {
+    const [sab, util] = [await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440}),
+                         await abre('util0', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440})];
+    for(const {page} of [sab, util]) await page.evaluate(() => { ONLINE = null; render(); });
+    assert.equal(await medSemDia(sab.page), await medSemDia(util.page));
+    assert.equal((await leMedidor(sab.page, 'VOL REFRIGERANTES')).rot, 'real');
+    assert.deepEqual([...sab.erros, ...util.erros], []);
+    for(const {ctx} of [sab, util]) await ctx.close();
+  });
+
+  for(const [dados, nome] of [['util0', 'd) dia útil'], ['vol5fech', 'e) fechamento']])
+  test(`(${nome}: medidores idênticos aos da main antes da etapa (fora o data-tend novo)`, {skip: !FRONT_PRE_MED && `sem o commit ${REF_PRE_MED}`}, async () => {
+    for(const entrar of ['dir', {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G2', sv: '1'}]){
+      const [novo, velho] = [await abre(dados, {entrar, aba: null, largura: 1440}), await abre(dados, {entrar, aba: null, largura: 1440, troca: FRONT_PRE_MED})];
+      const h = p => p.innerHTML('#exec').then(x => x.replace(/ data-tend="[^"]*"/g, ''));
+      for(const k of VOL_AA){
+        for(const {page} of [novo, velho]) await page.evaluate(k => { catExec = k; render(); }, k);
+        assert.equal(await h(novo.page), await h(velho.page), `${JSON.stringify(entrar)} ${k}: #exec`);
+      }
+      const t = await novo.page.$$eval('#exGauges .gCard:not(.off)', gs => gs.map(g => g.dataset.tend));
+      if(dados === 'util0') assert.ok(t.every(x => x !== ''), 'data-tend = b.tendencia no dia útil');
+      else assert.ok(t.every(x => x === ''), 'sem data-tend no fechamento');
+      assert.deepEqual([...novo.erros, ...velho.erros], []);
+      for(const {ctx} of [novo, velho]) await ctx.close();
+    }
+  });
+
+  test('(f) categoria sem meta no escopo: o cartão off de sempre', async () => {
+    const {page, ctx, erros} = await abre('sab', {entrar: {perfil: 'gc', gc: 'G1'}, aba: null, largura: 1440});
+    await page.evaluate(() => { for(const r of rotasAtuais()){ const b = nodo('', r).indicators['VOL STILL']; if(b) b.unavailable = true; } render(); });
+    assert.equal(await page.$eval('#exGauges .gCard[data-k="VOL STILL"]', g => g.outerHTML),
+      '<div class="gCard off" data-k="VOL STILL"><div class="gTit">Still</div><div class="gDia gSem">sem meta neste escopo</div></div>');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('rótulo "real + online" sem corte nem rolagem lateral: 360, 390, 1000 e 1440 px', async () => {
+    for(const largura of [360, 390, 1000, 1440]){
+      const {page, ctx, erros} = await abre('sab', {entrar: 'dir', aba: null, largura, altura: 900});
+      const r = await page.$$eval('#exGauges .gCard:not(.off) .gPct', gs => gs.map(g => { const s = g.querySelector('small');
+        const cg = g.closest('.gCard').getBoundingClientRect(), rs = s.getBoundingClientRect();
+        return {t: s.textContent, corta: s.scrollWidth > s.clientWidth + 0.5 || rs.right > cg.right + 0.5 || rs.left < cg.left - 0.5,
+          g: g.scrollWidth > g.clientWidth + 0.5}; }));
+      assert.ok(r.length && r.every(x => x.t === 'real + online' && !x.corta && !x.g), `${largura}: ${JSON.stringify(r)}`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${largura}: rolagem lateral`);
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    }
+  });
 });
