@@ -1162,11 +1162,12 @@ describe('Botão "Clientes" por agrupador com dado real', {skip: pular}, () => {
           for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
           // todos os níveis pelo 1º caminho, até a lista de clientes (dia "Todos" também)
           for(let nivel = 0; nivel < 5; nivel++){
-            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
+            // a coluna "Real + Online" (10/11/2026) sai antes da comparação; o resto da gaveta é byte a byte
+            assert.equal(CASC_INV.desfazRo(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata nível ${nivel}`);
             telas++;
             if(await novo.page.$('#dLista .dchip[data-d="Todos"]:not(.on)')){
               for(const {page} of [novo, velho]) await page.click('#dLista .dchip[data-d="Todos"]');
-              assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: lista no Todos`);
+              assert.equal(CASC_INV.desfazRo(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: lista no Todos`);
               telas++;
             }
             if(!(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
@@ -1461,7 +1462,8 @@ describe('Tabela da categoria e escopo do nível acima com dado real', {skip: pu
         assert.deepEqual(await novo.page.evaluate(TELA_CANON), await velho.page.evaluate(TELA_CANON), `${onde} ${ab}: cabeçalho e cards`);
         const k = await novo.page.$eval('#lista .ind[data-k]', x => x.dataset.k);
         for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
-        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
+        // a coluna "Real + Online" (10/11/2026) sai antes da comparação
+        assert.equal(CASC_INV.desfazRo(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
         for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
       }
       if(e.perfil !== 'rota'){
@@ -1530,7 +1532,8 @@ describe('"Faltam" do medidor com o online de hoje: dado real', {skip: pular}, (
         assert.deepEqual(await novo.page.evaluate(TELA_CANON), await velho.page.evaluate(TELA_CANON), `${onde} ${ab}: cabeçalho e cards`);
         const k = await novo.page.$eval('#lista .ind[data-k]', x => x.dataset.k);
         for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
-        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
+        // a coluna "Real + Online" (10/11/2026) sai antes da comparação
+        assert.equal(CASC_INV.desfazRo(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${onde} ${ab} ${k}: cascata`);
         for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
         comp.push(ab);
       }
@@ -1689,13 +1692,14 @@ describe('"Sem meta do dia" em dia não útil, com dado real', {skip: pular}, ()
         assert.equal(ta, tb, `${s.onde} ${ab}`);
         if(!ta) continue;
         // volume: normalizado em dia não útil; as coberturas e o Todos a Bordo, sempre idênticos
+        // a coluna "Real + Online" (10/11/2026) sai antes da comparação da gaveta (no volume, depois do NORMALIZA_SEMDIA)
         const hh = ab === 'VOLUME' ? h : (p, x) => p.innerHTML(x);
         assert.equal(await hh(novo.page, '#lista'), await hh(velho.page, '#lista'), `${s.onde} ${ab}: cards`);
         assert.equal(await novo.page.innerHTML('#abaTopo'), await velho.page.innerHTML('#abaTopo'), `${s.onde} ${ab}: cabeçalho`);
         const ks = await novo.page.$$eval('#lista .ind[data-k]', xs => xs.map(x => x.dataset.k));
         for(const k of ab === 'VOLUME' ? ks : ks.slice(0, 1)){
           for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
-          assert.equal(await hh(novo.page, '#drw'), await hh(velho.page, '#drw'), `${s.onde} ${ab} ${k}: cascata`);
+          assert.equal(CASC_INV.desfazRo(await hh(novo.page, '#drw')), await hh(velho.page, '#drw'), `${s.onde} ${ab} ${k}: cascata`);
           for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
         }
         comp.push(ab);
