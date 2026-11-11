@@ -9810,8 +9810,14 @@ describe('Parte AJ — Executiva: tabela da categoria e escopo do nível acima',
    a section#abaTopo fica sem caixa (display:contents) e continua o landmark "região" com o nome da aba. Abaixo de 1000 px,
    a gaveta, o Resumo e a entrada: nada muda (estilos computados iguais aos do front de antes, REF_PRE_PC). */
 const REF_PRE_PC = 'b83a341';
+/* O quadro Meta | Real | Online do medidor (10/11/2026) muda de propósito o layout do medidor em qualquer largura: o CSS de antes
+   recebe o trecho dele do app.css atual (do comentário "Quadro Meta | Real | Online do medidor" ao "fim do quadro"), para esta
+   comparação continuar medindo só a Etapa 7 (o resto da página, inclusive o medidor fora do quadro, comparado inteiro). */
+const QUADRO_MED_CSS = (() => { const css = fs.readFileSync(path.join(FRONT, 'css', 'app.css'), 'utf-8');
+  const i = css.indexOf('/* ---------- Quadro Meta | Real | Online do medidor'), j = css.indexOf('/* fim do quadro Meta | Real | Online */');
+  return i >= 0 && j > i ? css.slice(i, j) : ''; })();
 const CSS_PRE_PC = (() => {
-  try { return execSync(`git show ${REF_PRE_PC}:frontend/css/app.css`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString(); }
+  try { return execSync(`git show ${REF_PRE_PC}:frontend/css/app.css`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString() + '\n' + QUADRO_MED_CSS; }
   catch(e){ return null; }
 })();
 // variáveis de :root e do escopo .wrap / .wrap .ind em cada faixa (antes -> 90% -> 85%)

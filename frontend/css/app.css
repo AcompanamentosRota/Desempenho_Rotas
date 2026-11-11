@@ -366,6 +366,8 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .gPct small{display:block;font-family:var(--sans);font-size:var(--fs-ex-mini);font-weight:400;color:var(--txt-apoio);margin-top:2px}
 .gFalta{font-size:var(--fs-ex-mini);font-weight:700;color:var(--vermelho2);margin-top:6px;line-height:1.25}
 .gFalta.ok{color:var(--verdeE)}
+/* ---------- Quadro Meta | Real | Online do medidor (10/11/2026; os testes que comparam com o CSS de fronts antigos acrescentam
+   este trecho ao CSS deles: não tirar este comentário nem o "fim do quadro" abaixo) ---------- */
 /* Meta | Real | Online (desde 10/11/2026: o Real faturado e o online de hoje separados, "—" sem online) */
 .gMR{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:12px;border-top:1px solid var(--linha);
   border-bottom:1px solid var(--linha)}
@@ -384,6 +386,7 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
   .gMR small{flex:none}
   .gMR b{flex:1 1 auto;min-width:0;text-align:right}
 }
+/* fim do quadro Meta | Real | Online */
 .gTend{padding:8px 0 2px}
 .gTend b{display:block;font-size:var(--fs-ex-tend);color:var(--txt);white-space:nowrap;overflow:hidden}
 .pill{display:inline-block;margin-top:4px;border-radius:999px;padding:1px 8px;font-size:var(--fs-ex-pill);font-weight:700}
