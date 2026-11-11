@@ -221,13 +221,14 @@ def montar_payload(f: Fontes) -> dict:
 
                 for k in M.INDICADORES_VOLUME:
                     ind[k] = volume_ind(k)
-                # incentivo (chaves INC): como o ICS, mas rota sem meta do item (ou com meta 0) fica indisponível
-                # com meta e real null (a oculta das EV*: só o Real, na gerência com meta do item); o volume extra
-                # continua no fim do nó
+                # incentivo (chaves INC): como o ICS. Meta AUSENTE (rota sem linha de meta do item na fonte) = indisponível
+                # com meta e real null; meta 0 (linha com META_COBERTURA 0) = meta 0 e o Real, como os itens do ICS
+                # (PN-50, 11/11/2026; antes o `if meta` jogava o Real dessas rotas fora). A oculta das EV*: só o Real,
+                # na gerência com meta do item. O volume extra continua no fim do nó
                 for k in M.INDICADORES_INCENTIVO:
                     meta, n = metas_rota.get(k), len(cob.get(k, ()))
                     ind[k] = (modelo.cobertura_eventuais(n if k in inc_da_gc[gc] else 0, cal) if eventual else
-                              modelo.indicador_cobertura(meta, n, cal) if meta else modelo.cobertura_indisponivel())
+                              modelo.cobertura_indisponivel() if meta is None else modelo.indicador_cobertura(meta, n, cal))
                 for k in extras:
                     ind[k] = volume_ind(k)
                 inc_com_meta = [k for k in M.INDICADORES_INCENTIVO if not ind[k]["unavailable"]]
@@ -241,7 +242,7 @@ def montar_payload(f: Fontes) -> dict:
                     "indicators": ind,
                 }
 
-                # incentivo: Real e oportunidades só nas rotas com meta do item
+                # incentivo: Real e oportunidades só nas rotas com o item disponível (meta > 0 ou meta 0)
                 cobertos_out[r] = {k: sorted(cob[k]) for k in M.INDICADORES_COBERTURA + inc_com_meta if cob.get(k)}
                 op = {}
                 for k in M.INDICADORES_COBERTURA + inc_com_meta:

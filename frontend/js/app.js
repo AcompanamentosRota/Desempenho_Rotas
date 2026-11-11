@@ -1842,7 +1842,7 @@ function notaVirtuais(k, gc, inc){
     if(!b || b.unavailable) return '';
     return `<div class="cNota" data-meta="${b.meta}" data-real="${b.real}">${texto(b)}</div>`;
   };
-  const todas = rotasDe(gc, '').filter(r=>ehVirtual(r) && (!inc || temMetaInc(k, r) || ehEventual(r)));
+  const todas = rotasDe(gc, '').filter(r=>ehVirtual(r) && (!inc || temItemInc(k, r) || ehEventual(r)));
   return nota(todas.filter(r=>!ehEventual(r)), b => `Inclui rotas virtuais: Meta ${f(b.meta)} · Real ${f(b.real)}`)
     + nota(todas.filter(ehEventual), b => `Inclui clientes de rotas eventuais (EV*): Real ${f(b.real)}`);
 }
@@ -1954,15 +1954,17 @@ function resumoInd(k, b){
 
 function pintaCascata(){
   const {k, pilha, inc} = CASC, ctx = pilha[pilha.length-1];
-  // aba Todos a Bordo (inc): os números são os do ICS GC, só com as rotas com meta do item
-  const doItem = rotas => inc ? rotasInc(k, rotas) : rotas;
+  // aba Todos a Bordo (inc): os números são os do ICS GC, só com as rotas que somam no item no escopo aberto
+  // (rotasInc do contexto: cada linha soma a parte dela, inclusive a rota de meta 0 com o Real; PN-50)
+  const somaInc = inc ? new Set(rotasInc(k, ctx.rotas)) : null;
+  const doItem = rotas => inc ? rotas.filter(r=>somaInc.has(r)) : rotas;
   $('dTit').textContent = `${rotuloInd(k)} · ${ctx.nome}`;
   $('dSub').textContent = resumoInd(k, agrega(doItem(ctx.rotas)).ind[k]);
   const volta = pilha.length>1 ? `<button class="cVolta" id="cVolta">${VOLTAR[pilha[pilha.length-2].nivel]}</button>` : '';
   if(ctx.nivel==='cli'){
     $('dCorpo').innerHTML = volta + '<div id="dLista"></div>';
-    // listas de clientes: sem virtuais e sem ocultas (na AT, tudo); no Todos a Bordo, só as rotas com meta do item
-    const rotas = ctx.rotas.filter(r=>!ehVirtual(r) && !ehOculta(rotaSv(ctx.gc, r)) && (!inc || temMetaInc(k, r)));
+    // listas de clientes: sem virtuais e sem ocultas (na AT, tudo); no Todos a Bordo, só as rotas com o item disponível
+    const rotas = ctx.rotas.filter(r=>!ehVirtual(r) && !ehOculta(rotaSv(ctx.gc, r)) && (!inc || temItemInc(k, r)));
     if(ehVolume(k)) listaVolume(k, rotas);
     else if(k==='VENDAZERO') listaVendaZero(rotas);
     else listaCobertura(k, rotas);
@@ -1970,9 +1972,9 @@ function pintaCascata(){
     // na ordem de gruposDo (pelo código; a "Neutraliza" por último), sem reordenar pelos números. No Todos a Bordo,
     // só os grupos com rota com meta do item
     let gs = gruposDo(ctx, k, true);
-    if(inc) gs = gs.filter(g=>!g.off && rotasInc(k, g.rotas).length).map(g=>{
-      // escopo misto: quantas rotas do grupo têm meta (só elas somam)
-      const vis = g.rotas.filter(r=>!ehVirtual(r)), n = rotasInc(k, vis).length;
+    if(inc) gs = gs.filter(g=>!g.off && doItem(g.rotas).length).map(g=>{
+      // escopo misto: quantas rotas do grupo têm meta > 0 (as de meta 0 somam só o Real)
+      const vis = g.rotas.filter(r=>!ehVirtual(r)), n = vis.filter(r=>temMetaInc(k, r)).length;
       return {...g, info: vis.length>1 && n<vis.length ? `${g.info} · ${n} com meta` : g.info};
     });
     const grupos = gs.map((g, i)=>({g, i, m: g.off ? null : metricas(k, doItem(g.rotas))}));
@@ -2091,10 +2093,11 @@ const aoDia = (op, chip) => { if(op && op.aoDia) op.aoDia(chip); };
 
 /* ---------- aba Todos a Bordo (chave INCENTIVO): campanha "Todos a Bordo 3.0" (cobertura de cervejas) ----------
    Itens = GROUPS.INCENTIVO do payload, na ordem da aba (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS; INC
-   HEINEKEN, INC EISENBAHN 600ML e INC HEINEKEN 600ML só existem aqui). Cada item soma só as rotas do escopo com meta do
-   item (indicador disponível e meta > 0; as BARRACUDA não têm meta de Heineken); as demais ficam fora de todas as somas
-   e listas dele. Junto delas soma também a rota oculta dos clientes em rotas EV* com cliente coberto no item (meta 0,
-   só o Real; decisão de 26/10/2026). Card, números e cascata são os do ICS GC (linha(), agrega(), metricas(),
+   HEINEKEN, INC EISENBAHN 600ML e INC HEINEKEN 600ML só existem aqui). O escopo tem o item se alguma rota dele tem meta
+   (indicador disponível e meta > 0; as BARRACUDA não têm meta de Heineken). Aí o item soma, como o ICS, todas as rotas
+   do escopo com o item disponível: as de meta > 0, as de meta 0 com o Real (linha de meta com META_COBERTURA 0; PN-50,
+   11/11/2026) e a rota oculta dos clientes em rotas EV* com cliente coberto no item (meta 0, só o Real; decisão de
+   26/10/2026). Rota sem linha de meta do item fica fora de todas as somas e listas dele. Card, números e cascata são os do ICS GC (linha(), agrega(), metricas(),
    listaCobertura()): Meta, Real, Diferença, % = Real / Meta com a régua do ritmo, oportunidades do dia e a caixa do
    Online.
    Escopo sem meta do item: "Exclusivo portfólio Full" (Heineken e Heineken - 600ml) ou "Sem meta".
@@ -2109,10 +2112,12 @@ function temMetaInc(k, r){
   const b = indInc(k, r);
   return !!b && !b.unavailable && b.meta > 0;
 }
-// rotas que somam no item: as com meta dele e, só junto delas, a oculta das EV* com cliente coberto no item (escopo
-// sem rota com meta continua "Sem meta")
-const rotasInc = (k, rotas) => !rotas.some(r=>temMetaInc(k, r)) ? []
-  : rotas.filter(r=>temMetaInc(k, r) || (ehEventual(r) && !(indInc(k, r) || {unavailable:true}).unavailable));
+// item disponível na rota: meta > 0, meta 0 com o Real (linha de meta com META_COBERTURA 0, como no ICS; PN-50) ou a
+// oculta das EV* com cliente coberto no item. Rota sem linha de meta do item: indisponível
+const temItemInc = (k, r) => !(indInc(k, r) || {unavailable:true}).unavailable;
+// rotas que somam no item: o escopo precisa de alguma rota com meta > 0 (temMetaInc; sem nenhuma, "Exclusivo portfólio
+// Full" / "Sem meta"); com ela, somam todas as rotas com o item disponível (as de meta 0 com o Real e a oculta das EV*)
+const rotasInc = (k, rotas) => !rotas.some(r=>temMetaInc(k, r)) ? [] : rotas.filter(r=>temItemInc(k, r));
 
 // card do item: o mesmo do ICS GC, só com as rotas com meta dele
 function cardIncItem(k, rotas){
@@ -2137,8 +2142,8 @@ function abreIncentivo(k){
    aba que abrem a cascata (cardsDaAba sem os indisponíveis; Todos a Bordo: os itens com rota com meta no escopo).
    Rotas = rotasListas() (sem virtuais/EV* e sem ocultas) e só as com o agrupador disponível nelas (temItemCli; decisão da
    Karen de 30/10/2026: como a cascata da Gerência e da Supervisão, que não entra na rota "indisponível"; na Diretoria a
-   cascata abre a gerência direto nos clientes e mostra também os dessas rotas); no Todos a Bordo, só as com meta do item
-   (temMetaInc).
+   cascata abre a gerência direto nos clientes e mostra também os dessas rotas); no Todos a Bordo, as com o item
+   disponível (temItemInc: meta > 0 ou meta 0 com o Real, o mesmo critério do rotasInc; PN-50).
    A busca e o dia escolhido continuam ao trocar de agrupador; reabrir a gaveta começa do zero. */
 let CLI = null;      // {k, q, chip}: agrupador, busca e dia escolhido (null = o padrão da lista)
 function agrupadoresCli(indAtual){       // indAtual = agrega(rotasAtuais()).ind, se já calculado
@@ -2148,9 +2153,9 @@ function agrupadoresCli(indAtual){       // indAtual = agrega(rotasAtuais()).ind
   const ind = indAtual || agrega(rotas).ind;
   return cardsDaAba(rotas, ind).filter(k=>ind[k] && !ind[k].unavailable);
 }
-// rota com o agrupador disponível (o indicador da rota existe e não é "indisponível"); no Todos a Bordo, com meta do item
+// rota com o agrupador disponível (o indicador da rota existe e não é "indisponível"); no Todos a Bordo, o do rotasInc
 function temItemCli(k, r){
-  if(aba==='INCENTIVO') return temMetaInc(k, r);
+  if(aba==='INCENTIVO') return temItemInc(k, r);
   const b = ((nodo(sel.gc, r) || {}).indicators || {})[k];
   return !!b && !b.unavailable;
 }
