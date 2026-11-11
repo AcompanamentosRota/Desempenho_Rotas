@@ -779,6 +779,13 @@ function pintaMedidores(rotas, ind, k){
     abreCategoria(k);
   }));
 }
+/* O quadro Meta | Real | Online muda de forma com a largura do medidor (container query: três caixas ou três linhas), e a
+   largura muda sem resize da janela (recolher ou abrir o painel lateral no PC): os números do quadro medem de novo (encaixa)
+   quando a largura do bloco dos medidores muda. Só a largura conta e a medida espera o próximo quadro (sem laço do observador). */
+{ const g = $('exGauges');
+  if(g && window.ResizeObserver){ let w = 0, q = 0;
+    new ResizeObserver(es => { const nw = Math.round(es[0].contentRect.width);
+      if(nw === w) return; w = nw; cancelAnimationFrame(q); q = requestAnimationFrame(() => encaixa(g)); }).observe(g); } }
 
 /* Gaveta "[Categoria] por gerência / supervisão / rota" (tocar num medidor): um cartão de total e um por unidade, as mesmas
    da Tendência x Meta (os grupos da cascata no 1º nível do filtro: gerências; supervisões + "Neutraliza"; rotas; virtuais e

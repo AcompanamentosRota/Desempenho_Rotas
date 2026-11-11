@@ -447,7 +447,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `data-tend`) = `base / b.meta` exato. `.gMR` com três caixas Meta | Real (faturado) | Online (`onl`; "—" sem online), cada `b`
   com `data-fit` mín. 9; `.gCard{container-type:inline-size}` e `@container (max-width:179.98px)` empilha as três em linhas
   (rótulo à esquerda, número à direita): três lado a lado não cabem "5.949.999" (Meta de Refrigerantes da BAND em 10/11) em 390 px
-  nem a 1200-1366 px com o painel aberto. A casa decimal é só do medidor (cards, cascata, gaveta, Resumo, Ritmo inteiros). Os
+  nem a 1200-1366 px com o painel aberto; a largura do medidor também muda ao recolher/abrir o painel (sem resize da janela), então
+  um `ResizeObserver` no `#exGauges` (só a largura, `encaixa` no próximo quadro) mede de novo os números. O trecho do quadro no
+  app.css fica entre "Quadro Meta | Real | Online do medidor" e "fim do quadro Meta | Real | Online" (não tirar esses comentários):
+  a Parte AK o acrescenta ao CSS do `b83a341` (`QUADRO_MED_CSS`). A casa decimal é só do medidor (cards, cascata, gaveta, Resumo, Ritmo inteiros). Os
   antes x depois contra a main anterior desfazem só isso com `desfazMed` (executiva_invariantes.js: arco, `.gPct`, `data-pct`, 3ª
   caixa e a coluna `.ctRo` da gaveta, pelos `data-*` do próprio `.gCard`; e o `font-size` que o `encaixa()` grava nos
   `b[data-fit-min="9"]` do quadro, a única coisa que ela faz no HTML de antes: a largura dos números mudou, então o lado de antes

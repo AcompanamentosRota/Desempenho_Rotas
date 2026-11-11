@@ -10452,6 +10452,30 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
     await ctx.close();
   });
 
+  // recolher e abrir o painel com a página aberta: o medidor muda de forma (linhas <-> três caixas) sem resize da janela, e os
+  // números do quadro medem de novo (ResizeObserver do bloco dos medidores)
+  for(const largura of [1200, 1280, 1440])
+  test(`(h) ${largura} px: recolher e abrir o painel com a página aberta: quadro sem corte nos dois sentidos`, async () => {
+    const {page, ctx, erros} = await abre('vol5', {entrar: 'dir', aba: null, largura, altura: 1000});
+    await page.addStyleTag({content: '*{transition:none!important}'});
+    await page.evaluate(() => { const f = 5949999 / agrega(rotasAtuais()).ind['VOL REFRIGERANTES'].meta;
+      for(const r of rotasAtuais()) for(const k of GROUPS.VOLUME){ const b = nodo('', r).indicators[k];
+        if(b && !b.unavailable){ b.meta *= f; b.real *= f; b.tendencia *= f; } }
+      for(const r of Object.keys(ONLINE.volume || {})) for(const k of GROUPS.VOLUME) if(ONLINE.volume[r][k]) ONLINE.volume[r][k] *= f;
+      render(); });
+    const corte = () => page.$$eval('#exGauges .gCard:not(.off) .gMR b', bs => bs.filter(b => b.scrollWidth > b.clientWidth + 0.5).map(b => b.textContent));
+    await page.waitForTimeout(200);
+    assert.deepEqual(await corte(), [], `${largura}: aberto`);
+    for(const lado of ['recolhido', 'aberto', 'recolhido']){
+      await page.click('#ladoMenu');
+      await page.waitForTimeout(300);
+      assert.equal(await page.evaluate(() => document.body.classList.contains('recolhido')), lado === 'recolhido');
+      assert.deepEqual(await corte(), [], `${largura}: depois de ${lado === 'recolhido' ? 'recolher' : 'abrir'} o painel`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
   // (h) larguras, painel lateral aberto e recolhido: sem rolagem lateral, sem corte e sem erro
   for(const [largura, altura] of [[360, 800], [390, 844], [1000, 800], [1280, 720], [1440, 900]])
   for(const lado of largura >= 1000 ? ['aberto', 'recolhido'] : ['aberto'])

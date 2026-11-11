@@ -777,7 +777,8 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   faturado e o online de hoje, separados, não somados; "—" sem online). Num medidor estreito (conteúdo com menos de 180 px:
   dois por linha no celular e cinco por linha no PC até ~1400 px com o painel aberto) três caixas lado a lado não cabem um
   número de 7 dígitos ("5.949.999", a Meta de Refrigerantes da BAND em 10/11/2026), então as três viram linhas (rótulo à
-  esquerda, número à direita), na mesma ordem (container query pela largura do `.gCard`);
+  esquerda, número à direita), na mesma ordem (container query pela largura do `.gCard`; ao recolher ou abrir o painel lateral
+  a largura muda sem resize da janela, e os números do quadro medem de novo);
   Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
   valor exato, como o SAC: −0,03% é vermelho mesmo com o card do Volume verde em 100%); "meta do dia N · online N" (ou
   "meta do dia batida" / "meta do dia —"; em dia não útil, "sem meta do dia · sábado · online N"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os
