@@ -535,7 +535,16 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   n - x, depois o menor código; sem linha se nenhuma coluna tem cobertura ou se todas têm x = n; travado na Parte R;
   caso real: SV.PA.1 com P11 8/8, P12 8/10, P15 8/10 aponta a P12). Página 1280x720,
   html2canvas escala 1.5, JPEG 0.85, uma por vez fora da tela (`.rt-palco`), progresso no botão ("Gerando i/n");
-  bibliotecas e entrega por `RS.carregaScript`/`RS.salvaPdf`; arquivo `Painel_Ritmo_<BAND|G1|IT+MO|SV.G1.1>_AAAAMMDD.pdf`.
+  bibliotecas e entrega por `RS.carregaScript`/`RS.salvaPdf`; arquivo `Painel_Ritmo_<BAND|G1|IT+MO|SV.G1.1>_AAAAMMDD.pdf`,
+  com a data do **PAYLOAD**, nunca a do relógio (11/11/2026; README, "Painel de Ritmo em PDF"): `diaArq()` = `P.DATA_ONTEM`
+  (o último dia útil fechado, até onde vão os dados reais da página) em AAAAMMDD; sem a chave, nula ou fora do formato
+  'AAAA-MM-DD', volta ao `hojeArq()` (`agoraSP`), o comportamento de antes, e nunca devolve vazio. Motivo (achado de
+  10/11/2026, dado real): o painel aberto antes da 1ª rodada do dia ainda está com o payload da véspera e o PDF saía
+  datado de hoje com os números de ontem. `pdf.setProperties({title})` = 'Painel de Ritmo · <nome> · dia útil
+  DIA_ONTEM/TOTAL_DIAS_UTEIS' + ' · dados até dd/mm' quando há `DATA_ONTEM` (`dataCurta`, agora no escopo do arquivo,
+  a MESMA do subtítulo; `montaRitmo` continua pura). `RT.diaArq` é exposto só para os testes. O subtítulo `.rt-sub`, o
+  layout e todos os números ficam byte a byte (Parte R: `diaArq()` caso a caso, nome e propriedades nos quatro escopos,
+  payload sem `DATA_ONTEM` e o HTML das páginas igual ao da main `342fef3`).
   Fechamento: botão desabilitado ("Indisponível durante o fechamento"). ~165 KB por página.
   **PDF do Resumo**: páginas = `RS.paginas(atomos, H0, altTotal)` (função pura; átomos = [cabeçalho, blocos...]
   medidos no clone do html2canvas). O cabeçalho (`.rs-cab` + `.rs-atencao`) nunca fica sozinho: é um átomo só com o
