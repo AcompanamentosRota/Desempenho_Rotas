@@ -82,6 +82,7 @@ const LE_GAV = () => ({aberta: document.getElementById('drw').classList.contains
   cards: [...document.querySelectorAll('#dCorpo .ctLin')].map(c => ({u: c.dataset.u, tot: c.classList.contains('ctTot'), meta: Number(c.dataset.meta),
     real: Number(c.dataset.real), onl: c.dataset.onl === '' ? null : Number(c.dataset.onl), tend: c.dataset.tend, st: c.dataset.st,
     tendTxt: (c.querySelector('.ctTend') || {}).textContent, onlCls: c.querySelector('.ctOnl').className,
+    ro: c.dataset.ro === '' ? null : Number(c.dataset.ro), roTxt: (c.querySelector('.ctRo') || {}).textContent,
     vals: `Meta NEG ${c.querySelector('.ctMeta').textContent} Real ${c.querySelector('.ctReal').textContent}`}))});
 const LE_EVO = k => { const d = document.querySelector(`#exEvLinhas .evDet[data-k="${k}"]`);
   return d ? {nota: (d.querySelector('.evNota') || {}).textContent || '', aviso: !!d.querySelector('.exAviso'),
@@ -160,8 +161,10 @@ async function confereDimensoes(page, onde, {gaveta = true, evolucao = true} = {
         const [gt, ...gu] = g.cards;
         assert.ok(g.cards.every(c => c.tend === '' && c.st !== 'tend' && (c.tendTxt == null || c.tendTxt === '—')), `${oc}: gaveta sem tendência`);
         // tabela (Etapa 6 do pacote v3): as colunas da unidade, com "Meta NEG"; Online sem cor (não há meta do dia por cliente)
-        assert.deepEqual(g.cab, ['#', DIM[ab][0].toUpperCase() + DIM[ab].slice(1), 'Meta NEG', 'Real', '% Real',
+        // (a coluna "Real + Online", desde 10/11/2026, entre Real e % Real: fmt0 do data-ro da linha; sem online, o Real)
+        assert.deepEqual(g.cab, ['#', DIM[ab][0].toUpperCase() + DIM[ab].slice(1), 'Meta NEG', 'Real', 'Real + Online', '% Real',
           ...(e.fech ? ['Online hoje', 'Faltam'] : ['Online', 'Faltam', 'Tendência'])], `${oc}: colunas da gaveta`);
+        assert.ok(g.cards.every(c => c.roTxt === Math.round(c.ro == null ? c.real : c.ro).toLocaleString('pt-BR')), `${oc}: Real + Online = fmt0(data-ro)`);
         assert.ok(g.cards.every(c => c.onlCls === 'ctOnl'), `${oc}: Online sem cor`);
         // Online: Σ do online de hoje dos clientes de cada linha; Σ das linhas = total no Canal (todos os clientes)
         if(e.temOnline){

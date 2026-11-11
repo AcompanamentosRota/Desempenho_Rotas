@@ -730,12 +730,14 @@ function escolheCat(k, caixa){
   if(el) el.focus({preventScroll:true});
 }
 
-/* Medidores: meia-lua com Real / Meta (até 100%); no centro o % real (sem o online; em dia não útil, com online, arco e %
-   sobre Real + online e Tendência = Real + online + Neg Restante: ver abaixo); "faltam X para a meta" (X = Meta -
-   (Real + online de hoje), como a Diferença dos cards e o Faltam da gaveta; sem online, fechamento ou sem online.json, Meta -
-   Real) ou, com Real + online >= Meta, "meta batida · +X" (X = Real + online - Meta); Meta | Real; Tendência e o desvio com
-   2 casas (↓ rosa abaixo de 0, ↑ verde a partir de 0, pelo valor exato); a linha da meta do dia do card. O online da
-   categoria é calculado uma vez (data-online no .gCard; vazio no fechamento e sem online.json). */
+/* Medidores: meia-lua com (Real + online de hoje) / Meta (até 100%) e, no centro, esse % com 1 casa ("Real + Online"; decisão
+   da Karen, 10/11/2026, em qualquer dia; sem online, fechamento ou sem online.json, Real / Meta e "real"); "faltam X para a
+   meta" (X = Meta - (Real + online de hoje), como a Diferença dos cards e o Faltam da gaveta; sem online, Meta - Real) ou, com
+   Real + online >= Meta, "meta batida · +X" (X = Real + online - Meta); Meta | Real | Online (o Real faturado e o online de
+   hoje separados, "—" sem online); Tendência e o desvio com 2 casas (↓ rosa abaixo de 0, ↑ verde a partir de 0, pelo valor
+   exato; em dia não útil com online, Real + online + Neg Restante: ver abaixo); a linha da meta do dia do card. O online da
+   categoria é calculado uma vez (data-online no .gCard; vazio no fechamento e sem online.json); data-pct = o % mostrado, exato
+   (base / Meta, sem formatar). */
 function pintaMedidores(rotas, ind, k){
   const fech = !!P.FECHAMENTO;
   $('exSCat').textContent = fech ? 'Real do mês fechado contra a meta do mês'
@@ -746,25 +748,26 @@ function pintaMedidores(rotas, ind, k){
       `<div class="gDia gSem">sem meta neste escopo</div></div>`;
     const onl = fech || !ONLINE ? null : onlineVol(rotas, c), ro = realOnline(c, rotas, b, onl), base = ro == null ? b.real : ro;
     /* dia não útil (decisão da Karen, 31/10/2026): a Neg de hoje é zero (o SAP não tem o dia), então a venda de hoje entra
-       por cima do plano: arco e % sobre Real + online ("real + online"), Tendência = Real + online + Neg Restante e o desvio
-       sobre ela. Sem online (sem online.json), tudo como no dia útil. Dia útil e fechamento: como antes. */
+       por cima do plano: Tendência = Real + online + Neg Restante e o desvio sobre ela. Sem online (sem online.json), tudo
+       como no dia útil. Dia útil e fechamento: a Tendência e o desvio de sempre. O arco e o % contam o online em qualquer dia. */
     const sdu = semDiaUtil() && ro != null, tend = sdu ? base + (b.negRestante || 0) : b.tendencia;
-    const v = Math.max(0, Math.min(100, (sdu ? base : b.real)/b.meta*100)), d = sdu ? tend / b.meta - 1 : desvioVol(b), on = c===k;
+    const v = Math.max(0, Math.min(100, base/b.meta*100)), d = sdu ? tend / b.meta - 1 : desvioVol(b), on = c===k;
     const dia = fech ? '' : `<div class="gDia">${b.metaDia==null ? 'meta do dia —' : semDiaUtil() ? `${rotuloSemMetaDia()} · online ${fmt0(onl || 0)}`
       : metaBatida(b.metaDia) ? 'meta do dia batida'
       : `meta do dia ${fmt0(b.metaDia)} · online ${fmt0(onl || 0)}`}</div>`;
     const dif = b.real - b.meta;
     return `<div class="gCard${on ? ' sel' : ''}" role="button" tabindex="0" aria-pressed="${on}" data-k="${esc(c)}" data-desvio="${d}"`+
-      ` data-meta="${b.meta}" data-real="${b.real}" data-online="${onl == null ? '' : onl}" data-tend="${tend == null ? '' : tend}">`+
+      ` data-meta="${b.meta}" data-real="${b.real}" data-online="${onl == null ? '' : onl}" data-pct="${base / b.meta}" data-tend="${tend == null ? '' : tend}">`+
       `<div class="gTit">${nome}</div>`+
       `<svg class="gSvg" viewBox="0 0 120 66" aria-hidden="true"><path class="tr" d="M10 60 A50 50 0 0 1 110 60"/>`+
       `<path class="vl" d="M10 60 A50 50 0 0 1 110 60" style="stroke:${COR_CAT[c] || 'var(--cinza-escuro)'}" pathLength="100"`+
       ` stroke-dasharray="${v.toFixed(2)} 100"/></svg>`+
-      `<div class="gPct">${sdu ? Math.round(base / b.meta * 100) : b.pctReal}%<small>${sdu ? 'real + online' : 'real'}</small></div>`+
+      `<div class="gPct">${pctBR(base / b.meta * 100, 1)}%<small>${ro != null ? 'Real + Online' : 'real'}</small></div>`+
       (base >= b.meta ? `<div class="gFalta ok">meta batida · +${fmt0(base - b.meta)}</div>`
                       : `<div class="gFalta">faltam ${fmt0(b.meta - base)} para a meta</div>`)+
       `<div class="gMR"><div><small>Meta</small><b data-fit="" data-fit-min="9">${fmt0(b.meta)}</b></div>`+
-      `<div><small>Real</small><b data-fit="" data-fit-min="9">${fmt0(b.real)}</b></div></div>`+
+      `<div><small>Real</small><b data-fit="" data-fit-min="9">${fmt0(b.real)}</b></div>`+
+      `<div><small>Online</small><b data-fit="" data-fit-min="9">${onl == null ? '—' : fmt0(onl)}</b></div></div>`+
       `<div class="gTend"><small>${fech ? 'Realizado x Meta' : 'Tendência'}</small>`+
       `<b data-fit="" data-fit-min="10">${fech ? (dif>0 ? '+' : '') + fmt0(dif) : fmt0(tend)}</b>`+
       `<span class="pill ${d>=0 ? 'pos' : 'neg'}">${d>=0 ? '↑' : '↓'} ${pctBR(Math.abs(d*100), 2)}%</span></div>${dia}</div>`;
@@ -776,6 +779,13 @@ function pintaMedidores(rotas, ind, k){
     abreCategoria(k);
   }));
 }
+/* O quadro Meta | Real | Online muda de forma com a largura do medidor (container query: três caixas ou três linhas), e a
+   largura muda sem resize da janela (recolher ou abrir o painel lateral no PC): os números do quadro medem de novo (encaixa)
+   quando a largura do bloco dos medidores muda. Só a largura conta e a medida espera o próximo quadro (sem laço do observador). */
+{ const g = $('exGauges');
+  if(g && window.ResizeObserver){ let w = 0, q = 0;
+    new ResizeObserver(es => { const nw = Math.round(es[0].contentRect.width);
+      if(nw === w) return; w = nw; cancelAnimationFrame(q); q = requestAnimationFrame(() => encaixa(g)); }).observe(g); } }
 
 /* Gaveta "[Categoria] por gerência / supervisão / rota" (tocar num medidor): um cartão de total e um por unidade, as mesmas
    da Tendência x Meta (os grupos da cascata no 1º nível do filtro: gerências; supervisões + "Neutraliza"; rotas; virtuais e
@@ -818,8 +828,9 @@ function cartaoCat(nome, x, info, tot, op){
       `<span class="cuVal">${b.pctTendencia}%</span></div>`) + '</div>';
 }
 
-/* Tabela da gaveta (Etapa 6 do pacote v3; classes .ct*, dentro do .cuGav): # | unidade | Meta | Real | % Real | Online | Faltam |
-   Tendência (sem a Tendência no fechamento, com "Online hoje"). Os números são os de sempre (agrega(), statusCat); Online = o
+/* Tabela da gaveta (Etapa 6 do pacote v3; classes .ct*, dentro do .cuGav): # | unidade | Meta | Real | Real + Online | % Real |
+   Online | Faltam | Tendência (sem a Tendência no fechamento, com "Online hoje"). Real + Online (decisão da Karen, 10/11/2026) =
+   o mesmo ro do data-ro, do selo e do Faltam (roCt); sem online (fechamento, sem ONLINE), o Real; não ordena. Os números são os de sempre (agrega(), statusCat); Online = o
    volume online de hoje (unidade: onlineVol, o do card; canal/cliente/Key Account: Σ ONLINE.volumeCliente dos clientes). Linha
    de total no topo, fixa ao reordenar; "Neutraliza" sempre no fim. Faixa de 4 px e % Real na cor do status (ST_CAT); selo
    "✓ Meta batida" com Real + Online >= Meta (fechamento: Real >= Meta, linhaBatida). Faltam = Meta − (Real + Online), como a
@@ -851,6 +862,7 @@ function linhaCtHtml(x, n, tot){
   const rotM = CT.dim ? 'Meta NEG' : 'Meta', t = x.nome + (x.info ? ` · ${x.info}` : '');
   const dica = `<div class="t">${esc(rotuloInd(CT.k))} · ${esc(x.cod)}</div>${rotM} <b>${fmt0(x.meta)}</b><br>`+
     `${fech ? 'Realizado' : 'Real até ontem'} <b>${fmt0(x.real)}</b> (${x.pct}%)<br>`+
+    `Real + Online <b>${fmt0(base)}</b><br>`+
     `${fech ? 'Online hoje' : 'Online'} <b>${x.onl==null ? '—' : fmt0(x.onl)}</b>${x.md==null ? '' : semDia ? ` · ${rotuloSemMetaDia(true)}` : ` · meta do dia ${metaBatida(x.md) ? 'batida' : fmt0(x.md)}`}<br>`+
     (fech ? '' : x.tend==null ? 'Tendência —' : `Tendência <b>${fmt0(x.tend)}</b> (${x.pctTend}%)`);
   return `<tr class="ctLin ${ST_CAT[x.st]}${tot ? ' ctTot' : ''}${bat ? ' ctBat' : ''}" tabindex="0" data-u="${esc(x.cod)}" data-st="${x.st}"`+
@@ -860,7 +872,7 @@ function linhaCtHtml(x, n, tot){
     `<th scope="row" class="ctU"><span class="ctCod">${esc(tot ? x.rot || x.cod : x.cod)}</span>`+
     `${bat ? ' <span class="cSelo ctSelo">✓<span class="ctSeloT"> Meta batida</span></span>' : ''}`+
     `${x.info ? ` <span class="ctInfo">${esc(x.info)}</span>` : ''}</th>`+
-    `<td class="ctMeta">${fmt0(x.meta)}</td><td class="ctReal">${fmt0(x.real)}</td><td class="ctPct">${x.pct}%</td>`+
+    `<td class="ctMeta">${fmt0(x.meta)}</td><td class="ctReal">${fmt0(x.real)}</td><td class="ctRo">${fmt0(base)}</td><td class="ctPct">${x.pct}%</td>`+
     `<td class="ctOnl${corO}">${x.onl==null ? '—' : fmt0(x.onl)}</td>`+
     `<td class="ctFalt ${ok ? 'ok' : 'no'}">${ok ? `+${fmt0(base - x.meta)}` : fmt0(x.meta - base)}</td>`+
     (fech ? '' : `<td class="ctTend">${x.pctTend==null ? '—' : `${x.pctTend}%`}</td>`) + '</tr>';
@@ -868,7 +880,7 @@ function linhaCtHtml(x, n, tot){
 // cabeçalho, linhas e subtítulo na ordem escolhida (abrir e cada clique num título)
 function pintaTabCat(){
   const c = CT, cols = [['ctN', '#'], ['ctU', c.nivel[2]], ['ctMeta', c.dim ? 'Meta NEG' : 'Meta'], ['ctReal', 'Real'],
-    ['ctPct', '% Real', 'pct'], ['ctOnl', c.fech ? 'Online hoje' : 'Online', 'onl'], ['ctFalt', 'Faltam', 'falt'],
+    ['ctRo', 'Real + Online'], ['ctPct', '% Real', 'pct'], ['ctOnl', c.fech ? 'Online hoje' : 'Online', 'onl'], ['ctFalt', 'Faltam', 'falt'],
     ...(c.fech ? [] : [['ctTend', 'Tendência', 'tend']])];
   const head = cols.map(([cl, t, o])=>{
     if(!o) return `<th scope="col" class="${cl}">${esc(t)}</th>`;

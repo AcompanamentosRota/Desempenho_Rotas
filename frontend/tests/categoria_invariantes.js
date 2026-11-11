@@ -1,12 +1,14 @@
 /* Invariantes da gaveta "Categoria por unidade" da aba Executiva (tocar num medidor do bloco "Categorias"), conferidas no
    navegador com o filtro atual. Usadas pela Parte AC de front.test.js (dado sintético) e por conferencia_real.test.js (dado
    real). Não é um arquivo de teste: só exporta as funções. Desde a Etapa 6 do pacote v3 a gaveta é uma TABELA (.ctTab: # |
-   unidade | Meta | Real | % Real | Online | Faltam | Tendência; sem a Tendência no fechamento); as invariantes de soma e de
+   unidade | Meta | Real | Real + Online (10/11/2026) | % Real | Online | Faltam | Tendência; sem a Tendência no fechamento); as
+   invariantes de soma e de
    status são as mesmas dos cartões de antes, mais o Online. O esperado é recontado direto do payload e do online (meta, real e
    tendência de cada rota em P.DATA; ONLINE.volume), sem agrega() nem as funções da gaveta; as unidades são os grupos da
    cascata no 1º nível do escopo da Executiva (gcsComDados/rotasDe; svsEmOrdem/rotasNormais + rotasNeutraliza; as rotas normais
    da supervisão), também com o escopo do nível acima (Gerência em BAND, Supervisão na GC):
-   (a) linha de total (a 1ª): Meta, Real e % real = os do medidor da categoria; Online = o "online" do medidor (quando ele
+   (a) linha de total (a 1ª): Meta, Real = os do medidor da categoria (o % do medidor = (Real + Online) / Meta com 1 casa,
+       "Real + Online"; sem online, Real / Meta e "real"; a % Real da gaveta continua Real / Meta); Online = o do medidor (quando ele
        mostra) e = a soma direta do online das rotas do escopo; Meta, Real, % real e pctTendencia = os do card da aba Volume
        com o mesmo escopo (no fechamento, o % do card é o realizado); e = a soma direta das rotas;
    (b) Σ Meta, Real, Online e Tendência das linhas de unidade + as unidades sem meta na categoria + as rotas fora das unidades
@@ -15,7 +17,9 @@
    (d) status (data-st, faixa de 4 px, cor do % Real e da Tendência) pela regra: Real >= Meta verde;
        Math.round(Tendência / Meta * 100) >= 100 âmbar (fora do fechamento); o resto vermelho; selo "✓ Meta batida" (e fundo
        verde-claro) <=> Real + Online >= Meta (fechamento: Real >= Meta);
-   (e) Faltam = Meta − (Real + Online) (arredondado, vermelho) ou "+X" verde com Real + Online >= Meta (X = Real + Online −
+   (e) Real + Online (.ctRo, não ordena) = fmt0 do data-ro da linha (sem online e no fechamento, o Real), "Real + Online" na
+       dica logo abaixo do Real; no celular (< 700 px) a coluna fica oculta, como Meta e Real;
+       Faltam = Meta − (Real + Online) (arredondado, vermelho) ou "+X" verde com Real + Online >= Meta (X = Real + Online −
        Meta; sem online e no fechamento, pelo Real; pedido da Karen de 30/10/2026); Tendência = pctTendencia
        ("Y%"); Online verde com meta do dia batida ou online >= meta do dia, vermelho abaixo, sem cor sem meta do dia; no
        fechamento, sem a coluna Tendência e o título "Online hoje";
@@ -51,7 +55,7 @@ const LE_GAVETA = () => {
       tend: n(tr.dataset.tend), pct: n(tr.dataset.pct), pctTend: n(tr.dataset.pctTend), ro: n(tr.dataset.ro), bat: tr.dataset.bat === 'true', title: tr.title,
       selo: tr.querySelector('.ctSelo') ? tr.querySelector('.ctSelo').textContent : null, nCel: [...tr.children].filter(vis).length,
       n: txt(tr, 'ctN'), cod: txt(tr, 'ctCod'), info: txt(tr, 'ctInfo'), metaTxt: txt(tr, 'ctMeta'), realTxt: txt(tr, 'ctReal'),
-      pctTxt: txt(tr, 'ctPct'), onlTxt: txt(tr, 'ctOnl'), faltTxt: txt(tr, 'ctFalt'), tendTxt: txt(tr, 'ctTend'),
+      pctTxt: txt(tr, 'ctPct'), roTxt: txt(tr, 'ctRo'), roVis: vis(tr.querySelector('.ctRo')), onlTxt: txt(tr, 'ctOnl'), faltTxt: txt(tr, 'ctFalt'), tendTxt: txt(tr, 'ctTend'),
       onlCls: tr.querySelector('.ctOnl').className, faltCls: tr.querySelector('.ctFalt').className,
       faixa: faixa(tr), corPct: cor(tr, 'ctPct'), corTend: cor(tr, 'ctTend'), corOnl: cor(tr, 'ctOnl'), corFalt: cor(tr, 'ctFalt'),
       bg: cs(tr.children[1]).backgroundColor, dica: tr.dataset.dica}))};
@@ -93,7 +97,7 @@ const ESPERADO = k => {
 // o medidor da categoria (Meta, Real, % real) e o card de Volume (lidos antes, na aba Volume)
 const LE_MEDIDOR = k => { const g = document.querySelector(`#exGauges .gCard[data-k="${k}"]`);
   return {off: g.classList.contains('off'), role: g.getAttribute('role'), pct: (g.querySelector('.gPct') || {}).firstChild ? g.querySelector('.gPct').firstChild.textContent : null,
-    pctRot: (g.querySelector('.gPct small') || {}).textContent || null,
+    pctRot: (g.querySelector('.gPct small') || {}).textContent || null, dataPct: g.dataset.pct == null ? null : Number(g.dataset.pct),
     mr: [...g.querySelectorAll('.gMR b')].map(b => b.textContent), sel: g.classList.contains('sel'),
     dia: (g.querySelector('.gDia') || {}).textContent || ''}; };
 const LE_VOLUME = () => Object.fromEntries([...document.querySelectorAll('#lista .ind.vol[data-k]')].map(el => {
@@ -147,9 +151,11 @@ async function confereCategoria(page, onde, {ordena = true} = {}){
     assert.equal(await page.evaluate(() => catAtual()), k, `${o}: categoria em análise`);
     assert.equal(g.tit, `${esp.nome} por ${esp.nivel}`, `${o}: título`);
     // tabela: as colunas (7 no fechamento, sem a Tendência), sem barras nem Desvio
-    const cabEsp = ['#', esp.nivel[0].toUpperCase() + esp.nivel.slice(1), 'Meta', 'Real', '% Real', esp.fech ? 'Online hoje' : 'Online', 'Faltam',
+    const cabEsp = ['#', esp.nivel[0].toUpperCase() + esp.nivel.slice(1), 'Meta', 'Real', 'Real + Online', '% Real', esp.fech ? 'Online hoje' : 'Online', 'Faltam',
       ...(esp.fech ? [] : ['Tendência'])];
     assert.deepEqual(g.cab.map(c => c.t.replace(/[↓↑]/g, '')), cabEsp, `${o}: colunas`);
+    // a coluna nova (Real + Online) é um título simples, sem botão de ordenar
+    assert.deepEqual(g.cab.filter(c => c.cls === 'ctRo').map(c => [c.t, c.ord]), [['Real + Online', null]], `${o}: Real + Online não ordena`);
     assert.deepEqual(g.cab.filter(c => c.ord).map(c => c.ord), ['pct', 'onl', 'falt', ...(esp.fech ? [] : ['tend'])], `${o}: títulos que ordenam`);
     assert.equal(g.barras, 0, `${o}: sem barras nem cartões`);
     assert.ok(!g.cab.some(c => /desvio/i.test(c.t)), `${o}: sem Desvio`);
@@ -160,17 +166,16 @@ async function confereCategoria(page, onde, {ordena = true} = {}){
     for(const c of ['meta', 'real']) quase(tot[c], esp.tot[c], `${o}: total ${c}`);
     if(!esp.fech) quase(tot.tend, esp.tot.tend, `${o}: total tendência`);
     assert.deepEqual([tot.metaTxt, tot.realTxt], [f0(tot.meta), f0(tot.real)], `${o}: Meta e Real do total`);
-    assert.deepEqual(med.mr, [f0(tot.meta), f0(tot.real)], `${o}: total x medidor (Meta, Real)`);
-    // % do medidor: em dia útil e no fechamento = % Real do total; em dia não útil (decisão da Karen, 31/10/2026) o medidor
-    // mostra (Real + online) / Meta com o rótulo "real + online" e a coluna % Real da gaveta continua no faturado
-    if(esp.semDia && esp.temOnline){
-      assert.equal(med.pct, `${Math.round((esp.tot.real + esp.tot.onl) / esp.tot.meta * 100)}%`, `${o}: % do medidor com o online (dia não útil)`);
-      assert.equal(med.pctRot, 'real + online', `${o}: rótulo do % do medidor (dia não útil)`);
-      assert.equal(tot.pctTxt, `${Math.round(tot.real / tot.meta * 100)}%`, `${o}: % Real do total continua no faturado`);
-    } else {
-      assert.equal(tot.pctTxt, med.pct, `${o}: % real do total x medidor`);
-      assert.equal(med.pctRot, 'real', `${o}: rótulo do % do medidor`);
-    }
+    // a 3ª caixa do medidor = o Online da linha de total; no fechamento o medidor não soma o online (de outro mês): "—"
+    assert.deepEqual(med.mr, [f0(tot.meta), f0(tot.real), esp.fech || tot.onl == null ? '—' : f0(tot.onl)], `${o}: total x medidor (Meta, Real, Online)`);
+    // % do medidor (decisão da Karen, 10/11/2026): em qualquer dia, (Real + online) / Meta com 1 casa e "Real + Online" (sem
+    // online, fechamento ou sem online.json, Real / Meta e "real") = o Real + Online da linha de total / Meta; a coluna % Real da
+    // gaveta continua no faturado, inteiro
+    const baseTot = tot.ro == null ? tot.real : tot.ro, br1 = v => v.toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+    quase(med.dataPct, baseTot / tot.meta, `${o}: data-pct do medidor x Real + Online do total / Meta`);
+    assert.equal(med.pct, `${br1(med.dataPct * 100)}%`, `${o}: % do medidor com 1 casa`);
+    assert.equal(med.pctRot, tot.ro == null ? 'real' : 'Real + Online', `${o}: rótulo do % do medidor`);
+    assert.equal(tot.pctTxt, `${Math.round(tot.real / tot.meta * 100)}%`, `${o}: % Real do total continua no faturado`);
     if(esp.temOnline){
       quase(tot.onl, esp.tot.onl, `${o}: online do total`);
       const mo = med.dia.match(/online ([\d.]+)$/);
@@ -218,6 +223,12 @@ async function confereCategoria(page, onde, {ordena = true} = {}){
       assert.equal(c.faltTxt, base >= c.meta ? `+${f0(base - c.meta)}` : f0(c.meta - base), `${oc}: Faltam`);
       assert.equal(c.corFalt, base >= c.meta ? cores.verdeE : cores.vermelho2, `${oc}: cor do Faltam`);
       assert.equal(c.onlTxt, c.onl == null ? '—' : f0(c.onl), `${oc}: Online`);
+      // Real + Online: fmt0 do MESMO ro do data-ro (sem ele, o Real); oculta abaixo de 700 px; a dica traz a linha logo abaixo do Real
+      assert.equal(c.roTxt, f0(c.ro == null ? c.real : c.ro), `${oc}: Real + Online = fmt0(data-ro)`);
+      assert.equal(c.roVis, g.cab.find(h => h.cls === 'ctMeta').vis, `${oc}: Real + Online visível junto da Meta (oculta < 700 px)`);
+      const linhasDica = String(c.dica).split(/<br>/).map(t => t.replace(/<[^>]*>/g, ''));
+      const iReal = linhasDica.findIndex(t => /^(Realizado|Real até ontem) /.test(t));
+      assert.equal(linhasDica[iReal + 1], `Real + Online ${f0(c.ro == null ? c.real : c.ro)}`, `${oc}: dica com Real + Online abaixo do Real`);
       // Online: verde com a meta do dia batida ou online >= meta do dia; vermelho abaixo; sem cor sem meta do dia
       const md = esp.fech || !e.mdN ? null : e.md;
       // dia não útil (DIA_HOJE = DIA_ONTEM fora do fechamento): sem cor e "sem meta do dia" no tooltip

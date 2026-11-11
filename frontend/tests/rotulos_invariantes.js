@@ -81,6 +81,13 @@ const TEXTOS_TELA_PAGINA = () => {
   const limpa = el => { const c = el.cloneNode(true); c.querySelectorAll('.tsub, #exEvo').forEach(s => s.remove());
     c.querySelectorAll('.dif[data-ro]').forEach(x => { const d = Number(x.dataset.real) - Number(x.dataset.meta);
       x.textContent = `Diferença ${d > 0 ? '+' : ''}${(x.hasAttribute('data-vol') ? Math.round(d) : d).toLocaleString('pt-BR')}`; });
+    // (o medidor com Real + Online, 10/11/2026, volta ao de antes pelos data-* exatos do .gCard: o % inteiro de Real / Meta com
+    // "real" (em dia não útil com online, (Real + online) / Meta e "real + online") e sem a 3ª caixa, Online; o desfazMed em texto)
+    c.querySelectorAll('.gCard[data-pct]').forEach(g => { const meta = Number(g.dataset.meta), real = Number(g.dataset.real), on = g.dataset.online;
+      const sdu = !P.FECHAMENTO && P.DIA_HOJE === P.DIA_ONTEM && on !== '', pc = g.querySelector('.gPct');
+      pc.firstChild.textContent = `${Math.round((sdu ? real + Number(on) : real) / meta * 100)}%`;
+      pc.querySelector('small').textContent = sdu ? 'real + online' : 'real';
+      const mr = g.querySelectorAll('.gMR > div'); if(mr[2]) mr[2].remove(); });
     return c.textContent.replace(/\s+/g, ' ').trim(); };
   const topo = document.getElementById('abaTopo').cloneNode(true);
   topo.querySelector('#abTit').remove();
@@ -104,7 +111,8 @@ const desfazAE = x => {
   if(Array.isArray(x)) return x.map(desfazAE);
   if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazAE(v)]));
   if(typeof x !== 'string') return x;
-  return x.replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '')
+  // antes, o medidor com Real + Online (10/11/2026; desfazMed de executiva_invariantes.js), com os data-* do .gCard no HTML
+  return require('./executiva_invariantes.js').desfazMed(x).replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '')
     .replace(/( data-desvio="[^"]*") data-meta="[^"]*" data-real="[^"]*"( data-online="[^"]*")?( data-tend="[^"]*")?>/g, '$1>')
     .replace(/<label class="buscaRot" for="q">Busca por cliente<\/label>(\s*)<div class="buscaWrap">(\s*)<input/g,
              '<div class="buscaWrap">$2<label class="sr-only" for="q">Buscar cliente ou rede</label>$2<input')
