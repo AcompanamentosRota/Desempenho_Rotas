@@ -5068,6 +5068,11 @@ const codigos = m => m.paginas.map(pg => pg.titulo.replace('Painel de Ritmo — 
 const REF_RITMO = '73a215e';
 const RITMO_ANTES = (() => { try { return execSync(`git show ${REF_RITMO}:frontend/js/ritmo.js`, {cwd: RAIZ,
   stdio: ['ignore', 'pipe', 'ignore']}).toString(); } catch(e) { return null; } })();
+// ritmo.js da main de 11/11/2026, antes de o PDF ser datado pelo payload: só o nome do arquivo e as propriedades
+// mudam nesta etapa, então o HTML das páginas (os números do PDF) tem de sair caractere a caractere igual ao de lá
+const REF_PRE_DATA = '342fef3';
+const RITMO_PRE_DATA = (() => { try { return execSync(`git show ${REF_PRE_DATA}:frontend/js/ritmo.js`, {cwd: RAIZ,
+  stdio: ['ignore', 'pipe', 'ignore']}).toString(); } catch(e) { return null; } })();
 // esperado no sintético: GC + SV.X.1 + SV.X.2; AT com a SV.AT.3 (sem vendedor, rotas normais AT31/AT32); fora: SV.G1.5,
 // SV.G2.5, SV.IT.3, SV.MO.3 (só Neutraliza), SV.AN.4 e SV.RV.3 (Neutraliza + virtuais), SV.G3.3 (oculta), SV.SL.EV ('-EV')
 // escopo do filtro atual (ou o dado) -> nome e códigos das páginas, no navegador
@@ -5497,7 +5502,13 @@ describe('Parte R — Painel de Ritmo no navegador', {skip: pular}, () => {
 
   test('PDF (bibliotecas simuladas): nº de páginas = escopo, progresso, confirmação na Diretoria, nome e propriedades, sem online', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'}});
-    const hoje = await page.evaluate(() => { const a = agoraSP(); return `${a.ano}${String(a.mes).padStart(2, '0')}${String(a.dia).padStart(2, '0')}`; });
+    // o PDF é datado pelo PAYLOAD (DATA_ONTEM), nunca pelo relógio: o sintético é de 09/10/2026, hoje é outro dia
+    const {hoje, dia, props} = await page.evaluate(() => ({
+      hoje: (() => { const a = agoraSP(); return `${a.ano}${String(a.mes).padStart(2, '0')}${String(a.dia).padStart(2, '0')}`; })(),
+      dia: P.DATA_ONTEM.replace(/-/g, ''),
+      props: ` · dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS} · dados até ${P.DATA_ONTEM.slice(8)}/${P.DATA_ONTEM.slice(5, 7)}`}));
+    assert.equal(dia, '20261009');
+    assert.notEqual(dia, hoje, 'o sintético precisa estar num dia diferente do relógio para a conferência valer');
     let r = await exportaSimulado(page);
     assert.equal(r.dialogo, null, 'gerência: sem confirmação');
     assert.equal(r.rt.paginas.length, 3);
@@ -5507,20 +5518,21 @@ describe('Parte R — Painel de Ritmo no navegador', {skip: pular}, () => {
     assert.ok(r.rt.capturas.every(c => c.w === 1280 && c.h === 720 && c.escala === 1.5 && !c.assinatura), JSON.stringify(r.rt.capturas));
     assert.deepEqual(r.rt.capturas.map(c => c.titulo), ['Painel de Ritmo — GC.G1 · Goiânia 01',
       'Painel de Ritmo — SV.G1.1 · Supervisor', 'Painel de Ritmo — SV.G1.2 · Supervisor']);
-    assert.equal(r.arquivo, `Painel_Ritmo_G1_${hoje}.pdf`);
-    assert.deepEqual(r.rt.props, {title: 'Painel de Ritmo · G1', author: 'Comercial Bandeirantes'});
-    assert.equal(r.aviso, `PDF salvo: Painel_Ritmo_G1_${hoje}.pdf`);
+    assert.equal(r.arquivo, `Painel_Ritmo_G1_${dia}.pdf`);
+    assert.deepEqual(r.rt.props, {title: 'Painel de Ritmo · G1' + props, author: 'Comercial Bandeirantes'});
+    assert.equal(r.rt.props.title, 'Painel de Ritmo · G1 · dia útil 7/21 · dados até 09/10');
+    assert.equal(r.aviso, `PDF salvo: Painel_Ritmo_G1_${dia}.pdf`);
     assert.equal(r.botao, 'PDF salvo');
     assert.equal(await page.isDisabled('#btnRitmo'), false);
     assert.equal(await page.$('.rt-palco'), null, 'a página fora da tela é removida');
     // supervisão: uma página, arquivo com o código dela
     await page.selectOption('#fsv', 'SV.G1.2');
     r = await exportaSimulado(page);
-    assert.deepEqual([r.rt.paginas.length, r.arquivo], [1, `Painel_Ritmo_SV.G1.2_${hoje}.pdf`]);
-    // grupo
+    assert.deepEqual([r.rt.paginas.length, r.arquivo], [1, `Painel_Ritmo_SV.G1.2_${dia}.pdf`]);
+    // grupo: o '+' sobrevive à sanitização (está na classe [\w.+-]) e a data continua a do payload
     await vaiPara(page, {perfil: 'gc', gc: 'IT+MO'});
     r = await exportaSimulado(page);
-    assert.deepEqual([r.rt.paginas.length, r.arquivo, r.rt.props.title], [6, `Painel_Ritmo_IT+MO_${hoje}.pdf`, 'Painel de Ritmo · IT+MO']);
+    assert.deepEqual([r.rt.paginas.length, r.arquivo, r.rt.props.title], [6, `Painel_Ritmo_IT+MO_${dia}.pdf`, 'Painel de Ritmo · IT+MO' + props]);
     // Diretoria "Todas": confirmação "Exportar N páginas?"; cancelar não gera nada
     await vaiPara(page, 'dir');
     const n = (await modelo(page)).codigos.length;
@@ -5531,9 +5543,77 @@ describe('Parte R — Painel de Ritmo no navegador', {skip: pular}, () => {
     assert.equal(r.dialogo, `Exportar ${n} páginas?`);
     assert.equal(r.rt.paginas.length, n);
     assert.equal(r.rt.botao.at(-1), `Gerando ${n}/${n}`);
-    assert.equal(r.arquivo, `Painel_Ritmo_BAND_${hoje}.pdf`);
+    assert.equal(r.arquivo, `Painel_Ritmo_BAND_${dia}.pdf`);
+    assert.equal(r.rt.props.title, 'Painel de Ritmo · BAND' + props);
     assert.deepEqual(erros, []);
     await ctx.close();
+  });
+
+  /* O PDF é datado pelo payload, não pelo relógio (achado de 10/11/2026: painel aberto antes da 1ª rodada do dia
+     gerava "..._20261110.pdf" com os números de 09/11). diaArq() = DATA_ONTEM em AAAAMMDD; sem a chave, nula ou mal
+     formada, a data de hoje em Brasília, como era antes. Nenhum caso devolve vazio. */
+  test('diaArq(): a data do payload (DATA_ONTEM); sem a chave, nula ou mal formada, o relógio', async () => {
+    // relógio preso em 10/11/2026 09:00 de Brasília: a reserva tem de ser esse dia, não o do payload (09/10)
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'},
+      antes: p => p.clock.install({time: new Date('2026-11-10T12:00:00Z')})});
+    const r = await page.evaluate(() => {
+      const relogio = (() => { const a = agoraSP(); return `${a.ano}${String(a.mes).padStart(2, '0')}${String(a.dia).padStart(2, '0')}`; })();
+      const guardado = P.DATA_ONTEM, saida = {relogio, payload: P.DATA_ONTEM, casos: {}};
+      const caso = (rot, v) => { if(v === undefined) delete P.DATA_ONTEM; else P.DATA_ONTEM = v; saida.casos[rot] = RT.diaArq(); };
+      caso('doPayload', guardado);
+      caso('pedida', '2026-11-09');
+      caso('semAChave', undefined);
+      caso('nula', null);
+      caso('vazia', '');
+      caso('malFormada', '09/11/2026');
+      caso('incompleta', '2026-11');
+      caso('numero', 20261109);
+      P.DATA_ONTEM = guardado;
+      return saida;
+    });
+    assert.equal(r.payload, '2026-10-09');
+    assert.deepEqual(r.casos, {doPayload: '20261009', pedida: '20261109', semAChave: '20261110', nula: '20261110',
+      vazia: '20261110', malFormada: '20261110', incompleta: '20261110', numero: '20261110'});
+    assert.equal(r.relogio, '20261110', 'o relógio simulado é a reserva');
+    assert.ok(Object.values(r.casos).every(v => /^\d{8}$/.test(v)), 'nenhum caso devolve vazio: ' + JSON.stringify(r.casos));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('o nome do arquivo cai para o relógio no payload sem DATA_ONTEM (payload antigo)', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: {perfil: 'gc', gc: 'G1'},
+      antes: p => p.clock.install({time: new Date('2026-11-10T12:00:00Z')})});
+    await page.evaluate(() => { delete P.DATA_ONTEM; });
+    const r = await exportaSimulado(page);
+    assert.equal(r.arquivo, 'Painel_Ritmo_G1_20261110.pdf');
+    // sem DATA_ONTEM o título fica só com o dia útil (sem " · dados até dd/mm")
+    assert.equal(r.rt.props.title, 'Painel de Ritmo · G1 · dia útil 7/21');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* Nenhum número do PDF muda: o HTML de todas as páginas sai idêntico ao da main de antes da etapa (mesmo payload,
+     mesmo escopo). Se divergir num caractere, alguma conta mudou. */
+  test(`páginas idênticas às da main (${REF_PRE_DATA}): nenhum número do PDF muda`,
+    {skip: !RITMO_PRE_DATA && `sem o commit ${REF_PRE_DATA}`}, async () => {
+    const htmlPaginas = (page, escopo) => page.evaluate(e => {
+      const m = montaRitmo(P, e || RT.escopoRitmo());
+      return {nome: m.nome, html: m.paginas.map(pg => RT.desenhaPagina(pg)).join('\n<!--pág-->\n')};
+    }, escopo);
+    const ESCOPOS = [{tipo: 'band', nome: 'BAND'}, {tipo: 'gc', gcs: ['G1'], nome: 'G1'},
+                     {tipo: 'gc', gcs: ['IT', 'MO'], nome: 'IT+MO'}, {tipo: 'sv', gcs: ['G2'], sv: 'SV.G2.1', nome: 'SV.G2.1'}];
+    for(const dados of ['normal', 'ritmo9']){
+      const atual = await abre(dados, {entrar: 'dir'});
+      const velho = await abre(dados, {entrar: 'dir', troca: {'/js/ritmo.js': () => RITMO_PRE_DATA}});
+      for(const e of ESCOPOS){
+        const a = await htmlPaginas(atual.page, e), v = await htmlPaginas(velho.page, e);
+        assert.ok(a.html.length > 0 && a.html.includes('rt-pag'), `${dados}/${e.nome}: sem páginas`);
+        assert.equal(a.nome, v.nome);
+        assert.equal(a.html, v.html, `${dados}/${e.nome}: o HTML das páginas mudou`);
+      }
+      assert.deepEqual([atual.erros, velho.erros], [[], []]);
+      await atual.ctx.close(); await velho.ctx.close();
+    }
   });
 
   test('sem conexão para as bibliotecas: mensagem clara, botão volta, nada trava', async () => {

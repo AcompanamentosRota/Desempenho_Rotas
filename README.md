@@ -440,6 +440,13 @@ Rota, que não tem a Executiva, abre no **Volume**.
   PDF é gerado no navegador página a página (progresso no botão "Gerando 12/64"); sem conexão para as bibliotecas,
   o botão avisa "Sem conexão para gerar o PDF". Arquivo `Painel_Ritmo_<BAND|G1|IT+MO|SV.G1.1>_AAAAMMDD.pdf`, baixado
   ou compartilhado como o do Resumo. Tamanho típico: ~165 KB por página (uma gerência com 2 supervisões ≈ 0,5 MB).
+  **A data do arquivo é a do PAYLOAD, não a do relógio** (11/11/2026): `AAAAMMDD` é o `DATA_ONTEM` do payload aberto —
+  o último dia útil fechado, até onde vão os dados reais da página. Quem gera o painel de manhã, antes da primeira
+  rodada de dados do dia, ainda está com o payload da véspera: o PDF sai com os números dela e agora o nome diz isso
+  (`Painel_Ritmo_G2_20261109.pdf`, não `..._20261110.pdf`). Payload sem `DATA_ONTEM` (antigo) ou com a chave nula: a
+  data de hoje em Brasília, como era antes. O **título do PDF** (o que o leitor mostra na aba) carrega a mesma
+  informação: "Painel de Ritmo · G2 · dia útil 5/19 · dados até 09/11" (sem `DATA_ONTEM`, só o dia útil). O subtítulo
+  da página não mudou.
 - **PDF do Resumo**: sempre a tabela do PC, em páginas deitadas (16:9) na largura da folha. A quebra é só entre
   blocos (Volume, ICS GC, Novos Negócios) e o cabeçalho (com a placa ATENÇÃO, quando houver) **nunca fica sozinho**:
   vai sempre junto do 1º bloco; se os dois não couberem numa página, a 1ª página fica mais alta (o mesmo vale para

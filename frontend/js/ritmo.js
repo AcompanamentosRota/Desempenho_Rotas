@@ -13,6 +13,9 @@
    ===================================================================== */
 
 /* ---------- parte pura ---------- */
+// 'AAAA-MM-DD' -> 'dd/mm' (vazio sem a data ou fora do formato): o subtítulo das páginas e as propriedades do PDF
+const dataCurta = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? `${m[3]}/${m[2]}` : ''; };
+
 function montaRitmo(P, escopo){
   const N = NUCLEO, D = P.DATA || {};
   const VOL = ['VOL REFRIGERANTES','VOL CERVEJAS','VOL STILL','VOL AGUA MINERAL','VOL DEST+ART+CND'];
@@ -47,7 +50,6 @@ function montaRitmo(P, escopo){
 
   // subtítulo: dados reais até o último dia útil fechado; as faltas miram o dia útil de hoje
   const pctDe = d => T ? Math.round(d / T * 100) : 0;
-  const dataCurta = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? `${m[3]}/${m[2]}` : ''; };
   const ate = P.DIA_ONTEM_NOME
     ? `dados reais até ${P.DIA_ONTEM_NOME}${dataCurta(P.DATA_ONTEM) ? ' ' + dataCurta(P.DATA_ONTEM) : ''} (dia útil ${P.DIA_ONTEM}/${T}, ${P.PACE_ONTEM_PCT}%)`
     : `dados reais até o dia útil ${P.DIA_ONTEM}/${T} (${P.PACE_ONTEM_PCT}%)`;
@@ -164,8 +166,12 @@ const RT = (()=>{
       </table></div>`;
   }
 
-  // AAAAMMDD de hoje em Brasília (nome do arquivo)
+  // AAAAMMDD de hoje em Brasília (só como reserva do diaArq)
   const hojeArq = () => { const a = agoraSP(); return `${a.ano}${String(a.mes).padStart(2,'0')}${String(a.dia).padStart(2,'0')}`; };
+  // AAAAMMDD que DATA o PDF: o dia do PAYLOAD (DATA_ONTEM, o último dia útil fechado, até onde vão os dados reais da
+  // página), nunca o relógio — o painel aberto antes da 1ª rodada do dia ainda está com o payload de ontem e o arquivo
+  // precisa dizer isso. Sem a chave (payload antigo), null ou fora do formato: a data de hoje, como era antes.
+  const diaArq = () => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(P && P.DATA_ONTEM || ''); return m ? m[1]+m[2]+m[3] : hojeArq(); };
   const espera = () => new Promise(r => setTimeout(r, 0));
   let ocupado = false;
   const btn = () => document.getElementById('btnRitmo');
@@ -216,8 +222,11 @@ const RT = (()=>{
         await espera();                                      // cede ao navegador: a interface não trava
       }
       palco.remove(); palco = null;
-      pdf.setProperties({title:'Painel de Ritmo · ' + modelo.nome, author:'Comercial Bandeirantes'});
-      const nomeArq = `Painel_Ritmo_${modelo.nome.replace(/[^\w.+-]+/g,'_')}_${hojeArq()}.pdf`;
+      // título do PDF (aba do leitor): o dia útil do payload e, com DATA_ONTEM, até quando vão os dados reais
+      const curta = dataCurta(P.DATA_ONTEM);
+      pdf.setProperties({title:'Painel de Ritmo · ' + modelo.nome + ' · dia útil ' + P.DIA_ONTEM + '/' + P.TOTAL_DIAS_UTEIS +
+        (curta ? ' · dados até ' + curta : ''), author:'Comercial Bandeirantes'});
+      const nomeArq = `Painel_Ritmo_${modelo.nome.replace(/[^\w.+-]+/g,'_')}_${diaArq()}.pdf`;
       const r = await RS.salvaPdf(pdf.output('blob'), nomeArq);
       if(r==='salvo'){ msg = 'PDF salvo'; longa = 'PDF salvo: ' + nomeArq; }
     }catch(err){ msg = TXT.erro; }
@@ -234,5 +243,5 @@ const RT = (()=>{
     b.onclick = exporta;
     estado();
   }
-  return {liga, estado, escopoRitmo, desenhaPagina, exporta};
+  return {liga, estado, escopoRitmo, desenhaPagina, exporta, diaArq};
 })();
