@@ -787,11 +787,15 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   "faltam X para a meta" (X = Meta − (Real + online de hoje) do próprio medidor, como a Diferença dos cards e o Faltam da
   gaveta da categoria, em vermelho e negrito; com Real + online ≥ Meta, "meta batida · +X", X = Real + online − Meta, em
   verde; sem online, Meta − Real; sem a linha no medidor sem meta); quadro com **três caixas: Meta | Real | Online** (o Real
-  faturado e o online de hoje, separados, não somados; "—" sem online). Num medidor estreito (conteúdo com menos de 180 px:
-  dois por linha no celular e cinco por linha no PC até ~1400 px com o painel aberto) três caixas lado a lado não cabem um
-  número de 7 dígitos ("5.949.999", a Meta de Refrigerantes da BAND em 10/11/2026), então as três viram linhas (rótulo à
-  esquerda, número à direita), na mesma ordem (container query pela largura do `.gCard`; ao recolher ou abrir o painel lateral
-  a largura muda sem resize da janela, e os números do quadro medem de novo);
+  faturado e o online de hoje, separados, não somados; "—" sem online). As três caixas ficam **lado a lado em qualquer
+  largura**, inclusive 360 px no celular e 1200 px com o painel lateral aberto (decisão da Karen de 10/11/2026; entre 10 e
+  12/11/2026 um medidor estreito empilhava as três em linhas, o que não tinha sido pedido e saiu). Para o maior número
+  caber, as caixas **não têm padding lateral**: "5.949.999" (a Meta de Refrigerantes da BAND, o maior número de hoje, com 9
+  caracteres) mede 40,5 px na fonte 8 e a caixa mais estreita, a 360 px de janela, tem 42,0 px — com 1 px de padding de cada
+  lado o número já cortava. Os três números têm `data-fit-min` **7** (era 9), que é um **piso de segurança** para um número
+  de 10 caracteres: no painel real a fonte nunca chega lá — o menor valor efetivamente aplicado é **8 px, a 360 px na
+  Diretoria**. Ao recolher ou abrir o painel lateral a largura das caixas muda sem resize da
+  janela, e os números do quadro medem de novo (`ResizeObserver` no bloco dos medidores);
   Tendência e o desvio **↓/↑ X,XX%** = |Tendência ÷ Meta − 1| (rosa abaixo de 0, verde a partir de 0, pelo
   valor exato, como o SAC: −0,03% é vermelho mesmo com o card do Volume verde em 100%); "meta do dia N · online N" (ou
   "meta do dia batida" / "meta do dia —"; em dia não útil, "sem meta do dia · sábado · online N"). Tocar num medidor escolhe a **categoria em análise** (borda preta), que muda os

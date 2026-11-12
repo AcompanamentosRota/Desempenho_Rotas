@@ -11,7 +11,8 @@
      online.json; sem online (fechamento, sem online.json) Meta - Real; sem a linha no medidor sem meta. O online do medidor
      (data-online) = o da linha da meta do dia dele = o da caixa Online do card de Volume; o "faltam" = o Faltam da linha de
      total da gaveta "Categoria por unidade" da mesma categoria; arco e % do medidor (10/11/2026) = (Real + online) / Meta em
-     qualquer dia (data-pct exato; % com 1 casa; "Real + Online", sem online "real" e Real / Meta) e o quadro Meta | Real | Online;
+     qualquer dia (data-pct exato; % com 1 casa; "Real + Online", sem online "real" e Real / Meta) e o quadro Meta | Real | Online,
+     com as TRÊS CAIXAS LADO A LADO em qualquer largura (12/11/2026), sem número nem rótulo cortado;
    - coberturas: % da linha de total = % dos cards do ICS GC, Novos Negócios e Todos a Bordo ("—" = card sem meta); Status =
      "x / n itens em 100%" da aba Todos a Bordo;
    - Sem compra: soma das unidades = total = KPI; % = sem compra / base;
@@ -21,6 +22,13 @@
 'use strict';
 const assert = require('node:assert/strict');
 const {rotuloSemMetaDiaDe} = require('./semdia_teste');
+
+/* mínimo do data-fit dos três números do quadro Meta | Real | Online (pintaMedidores): era 9 e passou a 7 em 12/11/2026,
+   quando as três caixas ficaram lado a lado em qualquer largura e o padding lateral delas foi a 0. É PISO DE SEGURANÇA, para
+   um número de 10 caracteres: no payload real a fonte que o encaixa() aplica nunca desce abaixo de 8 px (o maior número real
+   tem 9 caracteres, "5.949.999", a Meta de Refrigerantes da BAND), e os 7 px só aparecem na variante sintética 'grande',
+   que multiplica os volumes por 600. */
+const MIN_QUADRO = '7';
 
 // lê a Executiva do filtro atual (aba ativa: Executiva)
 const LE_EXEC = () => {
@@ -40,6 +48,12 @@ const LE_EXEC = () => {
       // o % exato (data-pct) e o quadro Meta | Real | Online (rótulo e número de cada caixa)
       dataPct: g.dataset.pct == null ? null : Number(g.dataset.pct),
       mr: [...g.querySelectorAll('.gMR > div')].map(d => [(d.querySelector('small') || {}).textContent, (d.querySelector('b') || {}).textContent]),
+      /* quadro: TRÊS CAIXAS LADO A LADO em qualquer largura (12/11/2026) e nenhum número ou rótulo cortado; o data-fit-min
+         dos três números é o do quadro (8 desde essa etapa) */
+      mrCols: g.querySelector('.gMR') ? getComputedStyle(g.querySelector('.gMR')).gridTemplateColumns.trim().split(/\s+/).length : null,
+      mrFlex: [...g.querySelectorAll('.gMR > div')].some(d => getComputedStyle(d).display === 'flex'),
+      mrCorte: [...g.querySelectorAll('.gMR b, .gMR small')].filter(e => e.scrollWidth > e.clientWidth + 0.5).map(e => e.textContent),
+      mrMin: [...g.querySelectorAll('.gMR b')].map(b => b.getAttribute('data-fit-min')),
       tendTxt: (g.querySelector('.gTend b') || {}).textContent || null,
       tend: g.dataset.tend == null || g.dataset.tend === '' ? null : Number(g.dataset.tend),
       desvio: g.dataset.desvio == null ? null : Number(g.dataset.desvio),
@@ -172,6 +186,12 @@ async function confereExecutiva(page, onde){
     assert.equal(g.pctRot, p.onl != null ? 'Real + Online' : 'real', `${onde} ${g.k}: rótulo do %`);
     assert.deepEqual(g.mr, [['Meta', f0(p.meta)], ['Real', f0(p.real)], ['Online', p.onl == null ? '—' : f0(p.onl)]],
       `${onde} ${g.k}: quadro Meta | Real | Online`);
+    /* três caixas lado a lado em QUALQUER largura (12/11/2026): nunca empilhadas (uma coluna / caixas flex), nenhum número
+       nem rótulo cortado e o mínimo do data-fit dos três números igual ao do quadro */
+    assert.equal(g.mrCols, 3, `${onde} ${g.k}: o quadro tem três colunas`);
+    assert.equal(g.mrFlex, false, `${onde} ${g.k}: as caixas do quadro não viram linhas`);
+    assert.deepEqual(g.mrCorte, [], `${onde} ${g.k}: número ou rótulo cortado no quadro`);
+    assert.deepEqual(g.mrMin, [MIN_QUADRO, MIN_QUADRO, MIN_QUADRO], `${onde} ${g.k}: data-fit-min dos três números do quadro`);
     if(!ex.fech){
       assert.ok(tEsp != null && Math.abs(g.tend - tEsp) <= 1e-6 * Math.max(1, Math.abs(tEsp)), `${onde} ${g.k}: data-tend ${g.tend} x ${tEsp}`);
       assert.equal(g.tendTxt, f0(tEsp), `${onde} ${g.k}: Tendência mostrada`);
@@ -243,19 +263,24 @@ async function confereExecutiva(page, onde){
      no mesmo HTML (o .gDia do medidor ou o quadro da meta do dia);
    - o data-pct novo do .gCard e a 3ª caixa (Online) do .gMR saem;
    - na gaveta "Categoria por unidade", a célula .ctRo, o título "Real + Online" e a linha "Real + Online" da dica saem;
-   - o font-size que o encaixa() grava nos números do quadro (b[data-fit-min="9"], só o .gMR usa esse mínimo) sai: com três
-     caixas (ou as três em linhas, no medidor estreito) a largura de cada número mudou, e um número de 7 dígitos encolhe numa
-     largura e não na outra. Isto vale também no HTML de antes, onde é a ÚNICA coisa que a função faz: nos antes x depois em que
-     o lado de antes é comparado cru, ele passa por desfazMed também.
+   - o font-size que o encaixa() grava nos números do quadro sai, e o data-fit-min deles volta a "9": com três caixas a largura
+     de cada número mudou, e um número de 7 dígitos encolhe numa largura e não na outra. Em 12/11/2026 (três caixas em qualquer
+     largura, sem padding lateral) o mínimo dos três passou de 9 para 7, e o atributo é a ÚNICA diferença de HTML dessa etapa:
+     a normalização pega só os `<b data-fit="" data-fit-min="7|8|9">` do quadro (nenhum outro elemento do front usa essa forma;
+     o .gTend usa 10 e os `div.nums` com mínimo 8 não são `<b data-fit="">`). Isto vale também no HTML de antes, onde é a ÚNICA
+     coisa que a função faz: nos antes x depois em que o lado de antes é comparado cru, ele passa por desfazMed também.
    A conta nova (data-pct, % com 1 casa, rótulo, 3ª caixa, coluna da gaveta) é conferida à parte (confereExecutiva e
    categoria_invariantes.js). */
 const DIA_NAO_UTIL_HTML = /sem meta do dia(?! do SAP)|hoje não é dia útil/;
+/* os três números do quadro: o font-size do encaixa() sai e o data-fit-min volta ao "9" de antes de 12/11/2026 (hoje "7").
+   Só esta forma de `<b>` existe no quadro; o resto do front não a usa (ver o comentário acima). */
+const B_QUADRO = /<b data-fit="" data-fit-min="[789]"(?: style="font-size: [^"]*")?>/g;
 const desfazMed = x => {
   if(Array.isArray(x)) return x.map(desfazMed);
   if(x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, desfazMed(v)]));
   if(typeof x !== 'string') return x;
   const sdu = DIA_NAO_UTIL_HTML.test(x);
-  return x.replace(/(<b data-fit="" data-fit-min="9") style="font-size: [^"]*"/g, '$1').split(/(?=<div class="gCard)/).map(c => {
+  return x.replace(B_QUADRO, '<b data-fit="" data-fit-min="9">').split(/(?=<div class="gCard)/).map(c => {
     const tag = c.match(/^<div class="gCard[^>]*? data-pct="[^"]*"[^>]*>/);
     if(!tag) return c;
     const at = n => (tag[0].match(new RegExp(` data-${n}="([^"]*)"`)) || [])[1];
@@ -284,4 +309,4 @@ const desfazFalta = x => {
   return desfazMed(x).replace(/ data-online="[^"]*"/g, '').replace(/ data-tend="[^"]*"/g, '').replace(/<div class="gFalta( ok)?">[^<]*<\/div>/g, '<div class="gFalta">·</div>');
 };
 
-module.exports = {confereExecutiva, LE_EXEC, LE_ABA, desfazFalta, desfazMed};
+module.exports = {confereExecutiva, LE_EXEC, LE_ABA, desfazFalta, desfazMed, B_QUADRO, MIN_QUADRO};
