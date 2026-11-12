@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Versão do CÓDIGO do site: hash curto (12 caracteres) do conteúdo de frontend/, sem frontend/data/** (os JSONs gerados
-# a cada 15 min) e sem o próprio versao.json. Mudança só de dados não muda a versão (e não dispara o aviso de versão
-# nova no painel). Determinístico: lista ordenada em LC_ALL=C, caminhos relativos à pasta (uma cópia dá o mesmo hash).
+# a cada 15 min), sem frontend/tests/** (os testes não vão para o Pages: PR que mexe só em teste não pode disparar o
+# aviso de versão nova) e sem o próprio versao.json. Mudança só de dados, ou só de teste, não muda a versão.
+# Determinístico: lista ordenada em LC_ALL=C, caminhos relativos à pasta (uma cópia dá o mesmo hash).
 #
 #   versao-front.sh DIR            imprime a versão
 #   versao-front.sh --gravar DIR   calcula, grava DIR/versao.json e troca o marcador do DIR/index.html
@@ -14,7 +15,7 @@ if [ "${1:-}" = "--gravar" ]; then gravar=1; shift; fi
 dir="${1:?uso: versao-front.sh [--gravar] DIR}"
 cd "$dir"
 
-versao=$(find . -type f ! -path './data/*' ! -path './versao.json' -print0 \
+versao=$(find . -type f ! -path './data/*' ! -path './tests/*' ! -path './versao.json' -print0 \
   | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)
 
 if [ "$gravar" = 1 ]; then

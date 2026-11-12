@@ -52,10 +52,12 @@ desempenho/
 Quem deixa o painel aberto (ou instalado na tela inicial do celular, onde não dá para puxar a tela para
 atualizar) vê quando há versão nova do **código** e atualiza com um toque.
 
-- **Versão** = hash curto (12 caracteres) do conteúdo de `frontend/` **sem `frontend/data/**`**
-  (`.github/scripts/versao-front.sh`: arquivos em ordem `LC_ALL=C`, `sha256sum` de cada um com o caminho relativo,
-  `sha256sum` da lista). Não é o SHA do commit: a atualização automática de dados faz commit a cada 15 min, mas
-  **mudança só de dados não muda a versão e não dispara o aviso**.
+- **Versão** = hash curto (12 caracteres) do conteúdo de `frontend/` **sem `frontend/data/**` e sem
+  `frontend/tests/**`** (`.github/scripts/versao-front.sh`: arquivos em ordem `LC_ALL=C`, `sha256sum` de cada um com o
+  caminho relativo, `sha256sum` da lista). Não é o SHA do commit: a atualização automática de dados faz commit a cada
+  15 min, mas **mudança só de dados não muda a versão e não dispara o aviso**. Os testes também ficam de fora (desde
+  12/11/2026): eles não vão para o Pages, então um PR que mexe só em teste não faz a faixa "Nova versão disponível"
+  aparecer para quem está com o painel aberto.
 - O `deploy-pages.yml` (push em `frontend/**` e `workflow_call` do "Atualizar dados", o mesmo passo) roda
   `versao-front.sh --gravar frontend` antes de enviar o artefato do Pages: grava `frontend/versao.json`
   (`{"versao": "<hash>", "gerado": "<UTC ISO>"}`) e troca o marcador do `index.html`
@@ -177,6 +179,16 @@ senha, calcule o hash dela da mesma forma e troque a linha (ex.: no console do n
 "Abra o painel pelo endereço seguro (https)" e a Diretoria não abre. **Não é segurança**: só organiza quem abre a
 visão Diretoria; os dados continuam públicos em `frontend/data/*.json`. Os testes usam senhas fictícias
 (`frontend/tests/senha_teste.js`), servindo o `config.js` com os hashes delas.
+
+**As senhas não podem estar em texto em NENHUM arquivo** (desde 12/11/2026). O repositório é público, e um teste antigo
+da entrada tinha, dentro de uma expressão regular, uma palavra que era uma das senhas. Como conferir isso lendo o código
+não serve (ler já seria ver a senha), a conferência é feita pelo hash: o **teste-guarda** da Parte AO
+(`frontend/tests/guarda_senha.js`, sem navegador, ~2 s) varre `frontend/js/` e `frontend/tests/`, calcula o hash de cada
+literal de string e de cada sequência de até 4 palavras e **falha dizendo só o arquivo e a linha**, nunca o texto
+encontrado. Isso não expõe nada: os hashes já estão no `config.js`, que vai para o Pages. Se o teste acusar algo, abra a
+linha indicada e tire a palavra — sem escrevê-la em nenhum outro lugar (log, comentário, mensagem de commit ou PR). Nos
+testes, toda senha vem de `SENHAS_TESTE` (as válidas), `TEXTOS_HASH` (amostras da normalização) ou `SENHAS_ERRADAS` (as
+inválidas de propósito, derivadas das de teste); nenhum teste escreve uma senha por extenso.
 
 **Nome de quem entra na Diretoria** (desde 29/10/2026): `CONFIG.DIRETORIA_NOMES` liga cada hash de
 `DIRETORIA_SENHAS_HASH` a um nome (mapa hash → nome; a senha nunca aparece em texto). `confereSenha` usa o hash que já
@@ -1530,3 +1542,6 @@ Diferenças em relação ao arquivo que era montado à mão:
 - A entrada com perfis (Diretoria, Gerência, Supervisão e Rota, por seleção, sem usuário; a senha da Diretoria só
   com os hashes em `config.js`) é só organização interna, não protege os dados:
   quem tiver o endereço de `frontend/data/*.json` lê tudo.
+- As senhas da Diretoria não podem aparecer em texto em nenhum arquivo (nem em teste, comentário ou expressão regular).
+  Quem confere é o teste-guarda da Parte AO (`node --test frontend/tests/front.test.js`, roda sem navegador): ele varre
+  `frontend/js/` e `frontend/tests/` pelo hash e aponta só o arquivo e a linha. Ver "Senha da Diretoria".

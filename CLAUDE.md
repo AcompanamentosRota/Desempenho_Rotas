@@ -86,8 +86,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   metas iguais. Testes: `test_incentivo_meta_zero.py`.
 - Front local: `cd frontend && python -m http.server 8765`.
 - **Versão do código e aviso de versão nova** (README, "Versão do código e aviso de versão nova"): versão = hash de 12
-  caracteres de `frontend/` sem `frontend/data/**` (`.github/scripts/versao-front.sh`; nunca o SHA do commit: com só os
-  dados mudando, a versão não muda e o aviso não aparece). O `deploy-pages.yml` (push e `workflow_call`, mesmo passo)
+  caracteres de `frontend/` sem `frontend/data/**` e sem `frontend/tests/**` (`.github/scripts/versao-front.sh`; nunca o
+  SHA do commit: com só os
+  dados mudando, a versão não muda e o aviso não aparece; os testes não vão para o Pages, então PR que mexe só em teste
+  também não dispara o aviso — R-QLD-19, consertada em 12/11/2026). O `deploy-pages.yml` (push e `workflow_call`, mesmo passo)
   roda `versao-front.sh --gravar frontend` antes do upload: grava `versao.json` e troca `<meta name="versao"
   content="dev">` do index.html (nada commitado; local e testes = "dev" = aviso desligado, sem pedir o versao.json).
   Front (`app.js`, seção "versão nova do código"; `aoVoltar` em main.js): `confereVersao` (no-store + `?t=`; falha/404
@@ -121,6 +123,12 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   DIA_ONTEM = DIA_HOJE, DIA_SEMANA Sábado/Domingo/Quarta-feira/sem a chave; 'util0' = dia útil; Parte AL). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
   `require.resolve` (local, `NODE_PATH` ou global); sem eles, pulado. `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
   a Parte N serve o CSS e o app.js do 0a59eb4 assim).
+  **Antes x depois que percorrem gavetas** (Partes AN (g) e (j); PN-45, 12/11/2026, R-QLD-22): `fecha()` não limpa o
+  `#dCorpo` (o HTML da gaveta anterior fica lá, e a `.drw` segue visível pelos 220 ms da transição de saída), então um
+  clique perdido deixava um lado na gaveta ANTERIOR e a comparação punha lado a lado duas gavetas diferentes. Cada passo
+  espera o ESTADO (`drwOn`/`abreDrw`/`fechaDrw` pela classe `.on`; `desceCasc` pelo `#dTit`, que é "indicador · nível"),
+  nunca tempo nem contagem de eventos, e `mesmaGaveta` falha antes da comparação dizendo os dois títulos. Mesma regra na
+  Parte Q: nenhum avanço do relógio simulado cai na borda do adiamento (30 min) e a espera é pelo `hidden` do `#aviso`.
 - Conferência da Executiva com DADO REAL (sob demanda, fora do CI): `PAYLOAD_REAL=/tmp/real/payload.json
   ONLINE_REAL=/tmp/real/online.json node --test frontend/tests/conferencia_real.test.js` (os JSONs = `git show
   origin/main:frontend/data/...` copiados FORA do repo; sem as variáveis, pula). Diretoria, cada gerência, cada grupo no
@@ -383,6 +391,14 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Supervisão e Rota antigas valem. Recarregar no mesmo dia não pede a senha; casa e virada das 05:00 pedem. Testes:
   senhas FICTÍCIAS em `frontend/tests/senha_teste.js` (`trocaHash` troca os hashes no config.js servido, em `abre()` dos
   dois arquivos de teste; `digitaSenha` no `entra()`; front antigo sem senha passa direto); Parte AB.
+  **Nenhum literal de senha em teste** (PN-45, 12/11/2026; R-QLD-21): todo teste que precisa de senha usa `SENHAS_TESTE`,
+  `TEXTOS_HASH` (amostras da normalização do hash) e `SENHAS_ERRADAS` (as inválidas de propósito, DERIVADAS das de teste,
+  nunca palavras inventadas) do `senha_teste.js`. Quem prova isso é o **teste-guarda** da **Parte AO**
+  (`frontend/tests/guarda_senha.js`, sem navegador, ~2 s): varre `frontend/js/` e `frontend/tests/`, aplica a conta do
+  painel a cada literal de string e a cada sequência de até 4 palavras (`N_GRAMAS`) e falha dizendo só ARQUIVO:LINHA —
+  **nunca o texto encontrado** (os hashes já são públicos no config.js; a palavra não pode ser escrita em lugar nenhum,
+  nem em log, comentário, commit ou PR). Em 12/11/2026 ele achou uma palavra numa expressão regular de um teste antigo da
+  entrada; ela saiu e a Parte I passou a conferir a tela por `senhasNoTexto` (nenhuma palavra da entrada é uma senha).
   **Nome na Diretoria (29/10/2026)**: `CONFIG.DIRETORIA_NOMES` = mapa hash → nome (os mesmos hashes; nunca a senha).
   `confereSenha` acha o nome pelo hash já calculado → `entraCom({perfil:'dir', quem})`; `validaAcesso` devolve `quem` só se
   for um nome do mapa (`nomeDiretoria`); `gravaSessao` guarda `quem` (só o nome). `#sub`: "Diretoria · nome" (a gerência do

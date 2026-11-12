@@ -13,8 +13,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, execSync} = require('node:child_process');
-const {SENHAS_TESTE, hashTeste, HASHES_TESTE, trocaHash, trocaLiberadas, digitaSenha, NOMES_TESTE, trocaNomes} =
-  require('./senha_teste.js');
+const {SENHAS_TESTE, TEXTOS_HASH, SENHAS_ERRADAS, hashTeste, HASHES_TESTE, trocaHash, trocaLiberadas, digitaSenha,
+  NOMES_TESTE, trocaNomes} = require('./senha_teste.js');
+// guarda das senhas (Parte AO e Parte I): nenhum texto do repositório, nem da tela, pode ser uma senha da Diretoria
+const {senhasNoTexto, varre: varreSenhas, DIRS: DIRS_GUARDA, N_GRAMAS: N_GRAMAS_GUARDA} = require('./guarda_senha.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const FRONT = path.join(RAIZ, 'frontend');
@@ -1463,7 +1465,12 @@ describe('Parte I — entrada por seleção', {skip: pular}, () => {
     let e = await estado(page);
     assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, '', null, null]);
     assert.equal((await caixa(page)).campos, 0, 'sem campo de texto');
-    assert.doesNotMatch(await page.textContent('#entrada'), /usu[aá]rio|senha|DICOM/i);
+    // nenhum vocabulário de login na entrada; a 3ª alternativa que este teste conferia saiu do repositório
+    // (PN-45, item 1: ela batia com uma das senhas reais). No lugar do texto, a tela passa pelo hash do
+    // teste-guarda: nenhuma palavra dela pode ser uma senha da Diretoria.
+    const txtEntrada = await page.textContent('#entrada');
+    assert.doesNotMatch(txtEntrada, /usu[aá]rio|senha/i);
+    assert.equal(senhasNoTexto(txtEntrada), 0, 'nenhuma palavra da entrada é uma senha da Diretoria');
     await page.click('#entrada [data-perfil="dir"]');
     assert.equal((await caixa(page)).campos, 2, 'só o formulário e o campo da senha');
     await digitaSenha(page);
@@ -4085,9 +4092,9 @@ describe('Parte O — PDF real (html2canvas + jsPDF)', {skip: pular || (!LIBS_PD
 /* ---------- Parte P — versão do código (script do deploy-pages.yml, sem navegador) ---------- */
 const SCRIPT_VERSAO = path.join(RAIZ, '.github', 'scripts', 'versao-front.sh');
 const temBash = (() => { try { execFileSync('bash', ['-c', 'command -v sha256sum >/dev/null']); return true; } catch(e) { return false; } })();
-describe('Parte P — versão do código (hash de frontend/ sem data/)', {skip: !temBash && 'sem bash/sha256sum'}, () => {
+describe('Parte P — versão do código (hash de frontend/ sem data/ e sem tests/)', {skip: !temBash && 'sem bash/sha256sum'}, () => {
   const versao = (...args) => execFileSync('bash', [SCRIPT_VERSAO, ...args]).toString().trim();
-  test('cópia de frontend/: mesmo hash duas vezes; mudar só data/ não muda; mudar um .js muda; --gravar', () => {
+  test('cópia de frontend/: mesmo hash duas vezes; mudar só data/ ou só tests/ não muda; mudar um .js ou .css muda; --gravar', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drotas-versao-'));
     try {
       const copia = path.join(dir, 'frontend');
@@ -4102,17 +4109,25 @@ describe('Parte P — versão do código (hash de frontend/ sem data/)', {skip: 
       fs.writeFileSync(path.join(copia, 'data', 'payload.json'), '{"outro":"payload"}');
       fs.writeFileSync(path.join(copia, 'data', 'online.json'), '{"outro":"online"}');
       assert.equal(versao(copia), v1, 'dados mudaram, código igual');
-      // código: muda
+      // só testes: frontend/tests/ não vai para o Pages, então PR que mexe só em teste não pode disparar o aviso
+      // de versão nova para quem está com o painel aberto (PN-45, item 4)
+      fs.appendFileSync(path.join(copia, 'tests', 'front.test.js'), '\n// mudança de teste\n');
+      fs.writeFileSync(path.join(copia, 'tests', 'teste_novo.js'), '// arquivo de teste novo\n');
+      assert.equal(versao(copia), v1, 'testes mudaram, código igual');
+      // código: muda (js e css)
       fs.appendFileSync(path.join(copia, 'js', 'app.js'), '\n// mudança\n');
       const v3 = versao(copia);
       assert.notEqual(v3, v1, 'um .js mudou');
+      fs.appendFileSync(path.join(copia, 'css', 'app.css'), '\n/* mudança */\n');
+      const v4 = versao(copia);
+      assert.notEqual(v4, v3, 'um .css mudou');
       // --gravar: versao.json e a meta do index.html (o próprio versao.json não entra no hash)
-      assert.equal(versao('--gravar', copia), v3);
+      assert.equal(versao('--gravar', copia), v4);
       const vj = JSON.parse(fs.readFileSync(path.join(copia, 'versao.json'), 'utf-8'));
-      assert.equal(vj.versao, v3);
+      assert.equal(vj.versao, v4);
       assert.match(vj.gerado, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
       const html = fs.readFileSync(path.join(copia, 'index.html'), 'utf-8');
-      assert.ok(html.includes(`<meta name="versao" content="${v3}">`) && !html.includes('content="dev"'));
+      assert.ok(html.includes(`<meta name="versao" content="${v4}">`) && !html.includes('content="dev"'));
       // sem o marcador (já gravado): falha em vez de publicar sem versão
       assert.throws(() => execFileSync('bash', [SCRIPT_VERSAO, '--gravar', copia], {stdio: 'pipe'}));
     } finally { fs.rmSync(dir, {recursive: true, force: true}); }
@@ -4177,6 +4192,17 @@ const esperaPedido = (page, conta, nome, n) => page.waitForFunction(() => true).
   for(let i = 0; i < 100 && conta(nome) < n; i++) await page.waitForTimeout(20);
   assert.ok(conta(nome) >= n, `${nome}: ${conta(nome)} pedidos (esperado ${n})`);
 });
+/* Avança o relógio simulado e espera o painel conferir a versão AO MENOS uma vez (nunca um número exato de
+   verificações na janela: quantas cabem ali não é o que o teste quer provar); dentro do adiamento do "Depois" a faixa
+   tem de seguir escondida, e o que se espera é o ESTADO (o hidden da faixa), não um tempo (PN-45, item 2). */
+async function segueEscondida(page, conta, tempo){
+  const n = conta('/versao.json');
+  await page.clock.runFor(tempo);
+  await esperaPedido(page, conta, '/versao.json', n + 1);
+  await page.waitForFunction(() => document.getElementById('aviso').hidden);
+  const falta = await page.evaluate(() => versaoAdiada && versaoAdiada.ate - Date.now());
+  assert.ok(falta > 0, `o adiamento ainda tem de estar valendo (faltam ${falta} ms)`);
+}
 // erros de rede que o próprio Chromium registra no console (404 e fetch abortado de propósito); o resto é erro
 const semErrosDeRede = erros => erros.filter(e => !/Failed to load resource/.test(e));
 
@@ -4237,15 +4263,13 @@ describe('Parte Q — aviso de versão nova', {skip: pular}, () => {
       antes: p => p.clock.install({time: new Date('2026-10-21T13:00:00Z')})});
     await page.waitForFunction(() => !document.getElementById('aviso').hidden);
     await page.click('#avisoDepois');
-    assert.equal((await faixa(page)).visivel, false);
-    const n = conta('/versao.json');
-    await page.clock.runFor('20:00');                  // 4 verificações (online a cada 5 min): continua escondida
-    await esperaPedido(page, conta, '/versao.json', n + 4);
-    assert.equal((await faixa(page)).visivel, false, 'antes dos 30 min');
-    await page.clock.runFor('10:00');                  // verificação dos 30 min (um pouco antes do fim do adiamento)
-    await esperaPedido(page, conta, '/versao.json', n + 6);
-    assert.equal((await faixa(page)).visivel, false, 'aos 30 min');
-    await page.clock.runFor('05:00');                  // a 1ª verificação depois dos 30 min mostra de novo
+    await page.waitForFunction(() => document.getElementById('aviso').hidden);
+    /* Longe das bordas do adiamento (CONFIG.VERSAO_ADIA_MS = 30 min): 19:00 e 29:00 continuam escondidas, 35:00
+       mostra de novo. Nenhum avanço de relógio pode somar 30:00 cravados — com 20:00 + 10:00 a verificação caía
+       exatamente na borda e este subteste falhava de vez em quando, inclusive na main (PN-45, item 2). */
+    await segueEscondida(page, conta, '19:00');        // bem antes dos 30 min
+    await segueEscondida(page, conta, '10:00');        // 29:00 no total: ainda dentro do adiamento
+    await page.clock.runFor('06:00');                  // 35:00: a 1ª verificação depois dos 30 min mostra de novo
     await page.waitForFunction(() => !document.getElementById('aviso').hidden);
     // "Depois" de novo e o servidor publica OUTRA versão: aparece já na próxima verificação
     await page.click('#avisoDepois');
@@ -7424,7 +7448,7 @@ describe('Parte AB — senha da Diretoria', {skip: pular}, () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
     // o front servido leva os hashes de teste; a função dele dá o mesmo hash que o teste (normalização inclusive)
     assert.deepEqual(await page.evaluate(() => CONFIG.DIRETORIA_SENHAS_HASH), HASHES_TESTE);
-    for(const s of [...SENHAS_TESTE, '  ' + SENHAS_TESTE[0].toLowerCase() + ' ', 'Ação ÚNICA'])
+    for(const s of TEXTOS_HASH)
       assert.equal(await page.evaluate(s => hashSenha(s), s), hashTeste(s), s);
     assert.equal(hashTeste(' abc '), hashTeste('ABC'));
     assert.deepEqual(erros, []);
@@ -7468,8 +7492,9 @@ describe('Parte AB — senha da Diretoria', {skip: pular}, () => {
   test('incorreta, vazia e só espaços: "Senha incorreta" (alert), campo limpo, foco nele, fica na entrada', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
     await page.click('#entrada [data-perfil="dir"]');
-    for(const [senha, como] of [['errada', 'enter'], ['', 'enter'], ['   ', 'botao'], [SENHAS_TESTE[0] + 'x', 'botao'],
-                                ['Teste Painel', 'enter']]){
+    // senhas erradas DERIVADAS das de teste (SENHAS_ERRADAS), nunca palavras inventadas (PN-45, item 1)
+    for(const [senha, como] of [[SENHAS_ERRADAS[0], 'enter'], ['', 'enter'], ['   ', 'botao'], [SENHAS_ERRADAS[1], 'botao'],
+                                [SENHAS_ERRADAS[2], 'enter']]){
       await tentaSenha(page, senha, como);
       const c = await caixaSenha(page);
       assert.deepEqual([c.vis, c.msg, c.papel, c.valor, c.foco], [true, 'Senha incorreta', 'alert', '', 'entSenha'], JSON.stringify(senha));
@@ -7507,7 +7532,7 @@ describe('Parte AB — senha da Diretoria', {skip: pular}, () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
     for(const fecha of [p => p.keyboard.press('Escape'), p => p.click('#entFechar'), p => p.click('#entVoltar')]){
       await page.click('#entrada [data-perfil="dir"]');
-      await page.fill('#entSenha', 'qualquer');
+      await page.fill('#entSenha', SENHAS_TESTE[0]);      // digita algo e fecha: o campo é descartado
       await fecha(page);
       assert.equal(await page.isVisible('#entCaixa'), false);
       assert.equal(await page.evaluate(() => document.activeElement.dataset.perfil), 'dir');
@@ -7634,7 +7659,7 @@ describe('Parte AB — senha da Diretoria', {skip: pular}, () => {
     for(const tema of ['preta', 'branca']){
       if(await page.evaluate(() => temaEntrada()) !== tema) await page.click('#btnTema');
       await page.click('#entrada [data-perfil="dir"]');
-      await tentaSenha(page, 'errada');
+      await tentaSenha(page, SENHAS_ERRADAS[0]);
       const m = await page.evaluate(() => {
         const r = el => el.getBoundingClientRect(), d = document.documentElement;
         const ids = ['entSenha', 'entEntrar', 'entSenhaMsg', 'entVoltar', 'entFechar'];
@@ -10568,6 +10593,29 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
     }
   });
 
+  /* Sincronização dos antes x depois de gaveta (vale para o (g) e o (j); PN-45, item 3).
+     A gaveta abre e fecha pela classe .on do #drw, e `fecha()` NÃO limpa o #dCorpo: o HTML da gaveta anterior fica lá
+     (e a .drw segue visível pelos 220 ms da transição de saída, por cima do conteúdo). Estes testes percorrem muitas
+     gavetas seguidas nos dois fronts; sem esperar o estado mudar de fato, um clique cai no fundo da gaveta anterior,
+     aquele lado devolve a gaveta ANTERIOR no nível em que ela parou e a comparação põe lado a lado duas gavetas
+     DIFERENTES (aconteceu uma vez na validação do PR #58). Daí: espera por ESTADO observável (classe .on e título),
+     nunca por tempo nem por contagem de eventos, e `mesmaGaveta` antes de comparar. */
+  const drwOn = (p, on) => p.waitForFunction(on => document.getElementById('drw').classList.contains('on') === on, on);
+  const fechaDrw = async p => { await p.keyboard.press('Escape'); await drwOn(p, false); };
+  const abreDrw = async (p, f) => { await f(p); await drwOn(p, true); };
+  // desce um nível da cascata: o título (indicador · nível) muda quando o novo nível é pintado
+  const desceCasc = async p => { const t = await p.$eval('#dTit', e => e.textContent);
+    await p.click('#dCorpo .cLin[data-i]');
+    await p.waitForFunction(t => document.getElementById('dTit').textContent !== t, t); };
+  /* Guarda da comparação: os dois lados têm de estar na MESMA gaveta (o #dTit da cascata é "indicador · nível", então
+     ele identifica a gaveta e o nível). Falha dizendo os dois títulos, em vez de um diff gigante de HTML. */
+  const ondeDrw = p => p.evaluate(() => (document.getElementById('drw').classList.contains('on') ? '' : '(fechada) ') +
+    document.getElementById('dTit').textContent);
+  const mesmaGaveta = async (a, b, onde) => {
+    const [x, y] = [await ondeDrw(a), await ondeDrw(b)];
+    assert.equal(x, y, `${onde}: os dois lados em gavetas diferentes — depois "${x}", antes "${y}"`);
+    assert.ok(!x.startsWith('(fechada)'), `${onde}: gaveta fechada nos dois lados ("${x}")`);
+  };
   test(`(g) antes x depois (${REF_PRE_MEDRO}): só o medidor e a coluna da gaveta mudam (desfazMed); cards, cascata, gavetas, Resumo, Ritmo e Evolução idênticos`,
        {skip: !FRONT_PRE_MEDRO && `sem o commit ${REF_PRE_MEDRO}`}, async () => {
     for(const [dados, entrar] of [['vol5', 'dir'], ['vol5', {perfil: 'gc', gc: 'G1'}], ['grupo', {perfil: 'gc', gc: 'IT+MO'}],
@@ -10580,9 +10628,10 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
       assert.equal(desfazMed(await exec(novo.page)), desfazMed(await exec(velho.page)), `${quem}: Executiva fora do medidor`);
       // a gaveta da categoria de cada medidor com meta: só a coluna nova (e a linha da dica)
       for(const k of await novo.page.$$eval('#exGauges .gCard[role="button"]', gs => gs.map(g => g.dataset.k))){
-        for(const {page} of [novo, velho]) await abreCat(page, k);
+        for(const {page} of [novo, velho]) await abreDrw(page, p => abreCat(p, k));
+        await mesmaGaveta(novo.page, velho.page, `${quem} ${k}: gaveta da categoria`);
         assert.equal(desfazMed(await novo.page.innerHTML('#drw')), await velho.page.innerHTML('#drw'), `${quem} ${k}: gaveta da categoria`);
-        for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        for(const {page} of [novo, velho]) await fechaDrw(page);
       }
       // Evolução com as categorias abertas: idêntica
       if(await novo.page.$('#exEvo:not([hidden])')){
@@ -10591,9 +10640,10 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
       }
       // KPIs e quadros (gavetas Base e Sem compra pela Executiva): idênticos
       for(const id of ['exBase', 'exSem']){
-        for(const {page} of [novo, velho]) await abreCardTopo(page, id);
+        for(const {page} of [novo, velho]) await abreDrw(page, p => abreCardTopo(p, id));
+        await mesmaGaveta(novo.page, velho.page, `${quem} #${id}: gaveta`);
         assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} #${id}: gaveta`);
-        for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        for(const {page} of [novo, velho]) await fechaDrw(page);
       }
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         if(await novo.page.isHidden(`.tab[data-g="${aba}"]`)) continue;
@@ -10601,19 +10651,21 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
         assert.equal(await novo.page.innerHTML('#abaTopo'), await velho.page.innerHTML('#abaTopo'), `${quem} ${aba}: cabeçalho`);
         assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${quem} ${aba}: cards`);
         for(const k of await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))){
-          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          for(const {page} of [novo, velho]) await abreDrw(page, p => p.click(`#lista .ind[data-k="${k}"]`));
           for(let nivel = 0; nivel < 5; nivel++){
+            await mesmaGaveta(novo.page, velho.page, `${quem} ${aba} ${k}: cascata nível ${nivel}`);
             assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} ${aba} ${k}: cascata nível ${nivel}`);
             if(entrar === 'dir' || !(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
-            for(const {page} of [novo, velho]) await page.click('#dCorpo .cLin[data-i]');
+            for(const {page} of [novo, velho]) await desceCasc(page);
           }
-          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+          for(const {page} of [novo, velho]) await fechaDrw(page);
         }
         for(const id of ['cBase', 'cSem', 'btnClientes']){
           if(!(await novo.page.$(`#${id}`)) || (id === 'btnClientes' && await novo.page.isHidden('#btnClientes'))) continue;
-          for(const {page} of [novo, velho]) await abreCardTopo(page, id);
+          for(const {page} of [novo, velho]) await abreDrw(page, p => abreCardTopo(p, id));
+          await mesmaGaveta(novo.page, velho.page, `${quem} ${aba} #${id}: gaveta`);
           assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} ${aba} #${id}: gaveta`);
-          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+          for(const {page} of [novo, velho]) await fechaDrw(page);
         }
       }
       // Painel de Ritmo (só payload) e Resumo de vendas: idênticos
@@ -10767,16 +10819,6 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
     assert.equal(r.split(`<b data-fit="" data-fit-min="${MIN_QUADRO_ANTES}">`).length - 1, 3, 'três números no quadro');
     return r;
   });
-  /* a gaveta abre e fecha com a classe .on do #drw: este teste percorre muitas gavetas seguidas nos dois fronts, então
-     cada passo espera o estado mudar de fato (sem isso, um clique cai no fundo da gaveta anterior e os dois lados saem
-     de sincronia) */
-  const drwOn = (p, on) => p.waitForFunction(on => document.getElementById('drw').classList.contains('on') === on, on);
-  const fechaDrw = async p => { await p.keyboard.press('Escape'); await drwOn(p, false); };
-  const abreDrw = async (p, f) => { await f(p); await drwOn(p, true); };
-  // desce um nível da cascata: o título muda quando o novo nível é pintado
-  const desceCasc = async p => { const t = await p.$eval('#dTit', e => e.textContent);
-    await p.click('#dCorpo .cLin[data-i]');
-    await p.waitForFunction(t => document.getElementById('dTit').textContent !== t, t); };
   test(`(j) antes x depois (${REF_PRE_3CX}): no #exec só o data-fit-min dos três números do quadro muda; o resto da página idêntico`,
        {skip: !FRONT_PRE_3CX && `sem o commit ${REF_PRE_3CX}`}, async () => {
     for(const [dados, entrar] of [['vol5', 'dir'], ['vol5', {perfil: 'gc', gc: 'G1'}], ['grupo', {perfil: 'gc', gc: 'IT+MO'}],
@@ -10792,6 +10834,7 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
       // gaveta da categoria de cada medidor com meta, Evolução, gavetas da Executiva, cards/cascata/gavetas das abas: iguais
       for(const k of await novo.page.$$eval('#exGauges .gCard[role="button"]', gs => gs.map(g => g.dataset.k))){
         for(const {page} of [novo, velho]) await abreDrw(page, p => abreCat(p, k));
+        await mesmaGaveta(novo.page, velho.page, `${quem} ${k}: gaveta da categoria`);
         assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} ${k}: gaveta da categoria`);
         for(const {page} of [novo, velho]) await fechaDrw(page);
       }
@@ -10801,6 +10844,7 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
       }
       for(const id of ['exBase', 'exSem']){
         for(const {page} of [novo, velho]) await abreDrw(page, p => abreCardTopo(p, id));
+        await mesmaGaveta(novo.page, velho.page, `${quem} #${id}: gaveta`);
         assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} #${id}: gaveta`);
         for(const {page} of [novo, velho]) await fechaDrw(page);
       }
@@ -10812,6 +10856,7 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
         for(const k of await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))){
           for(const {page} of [novo, velho]) await abreDrw(page, p => p.click(`#lista .ind[data-k="${k}"]`));
           for(let nivel = 0; nivel < 5; nivel++){
+            await mesmaGaveta(novo.page, velho.page, `${quem} ${aba} ${k}: cascata nível ${nivel}`);
             assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} ${aba} ${k}: cascata nível ${nivel}`);
             if(entrar === 'dir' || !(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
             for(const {page} of [novo, velho]) await desceCasc(page);
@@ -10821,6 +10866,7 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
         for(const id of ['cBase', 'cSem', 'btnClientes']){
           if(!(await novo.page.$(`#${id}`)) || (id === 'btnClientes' && await novo.page.isHidden('#btnClientes'))) continue;
           for(const {page} of [novo, velho]) await abreDrw(page, p => abreCardTopo(p, id));
+          await mesmaGaveta(novo.page, velho.page, `${quem} ${aba} #${id}: gaveta`);
           assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} ${aba} #${id}: gaveta`);
           for(const {page} of [novo, velho]) await fechaDrw(page);
         }
@@ -10834,5 +10880,58 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
       assert.deepEqual([...novo.erros, ...velho.erros], []);
       await novo.ctx.close(); await velho.ctx.close();
     }
+  });
+});
+
+/* ---------- Parte AO — nenhuma senha de verdade em texto no repositório (PN-45, item 1) ---------- */
+/* O repositório é PÚBLICO: as senhas da Diretoria só podem existir aqui como HASH, em CONFIG.DIRETORIA_SENHAS_HASH.
+   Conferir isso lendo o código não serve (ler já seria ver a senha), então a conferência é pelo hash: guarda_senha.js
+   varre frontend/js/ e frontend/tests/, aplica a MESMA conta do painel (hashSenha: SHA-256 de "drotas:" + o texto sem
+   espaços nas pontas e em MAIÚSCULAS) a cada literal de string e a cada sequência de até 4 palavras, e aponta o
+   ARQUIVO e a LINHA em que algum texto bateu com um dos hashes reais. A mensagem de falha traz só arquivo e linha, e
+   NUNCA o texto: quem for consertar olha a linha, ninguém precisa publicar a palavra. Isso não expõe nada que já não
+   seja público — os hashes estão no config.js, que vai para o Pages.
+   Em 12/11/2026 a varredura achou um texto (numa expressão regular de um teste antigo da entrada) e o conserto foi
+   tirá-lo; a Parte I passou a conferir a tela de entrada por hash, no lugar do texto.
+   Não usa navegador nem Python: vale mesmo sem Playwright, e leva ~1,5 s. */
+describe('Parte AO — nenhuma senha de verdade em texto no repositório', () => {
+  test('frontend/js/ e frontend/tests/: nenhum literal nem sequência de palavras é uma das senhas da Diretoria', () => {
+    const r = varreSenhas();
+    assert.deepEqual(DIRS_GUARDA, ['js', 'tests'], 'só estes dois diretórios (a varredura tem de ser rápida)');
+    assert.equal(N_GRAMAS_GUARDA, 4, 'senha de até 4 palavras');
+    assert.ok(r.arquivos >= 15 && r.linhas > 10000 && r.candidatos > 10000,
+      `varredura pequena demais: ${r.arquivos} arquivos, ${r.linhas} linhas, ${r.candidatos} candidatos`);
+    // a mensagem diz SÓ arquivo e linha (o texto encontrado nunca sai daqui)
+    assert.deepEqual(r.achados, [], `texto igual a uma das senhas da Diretoria em (arquivo:linha): ${r.achados.join(', ')}`);
+  });
+
+  test('a varredura acha de verdade: literal, comentário e regex, com arquivo e linha e sem o texto', () => {
+    // prova do guarda num diretório temporário: os "hashes reais" são de textos FICTÍCIOS plantados de três formas
+    const plantadas = ['Senha Plantada Um', 'segunda-plantada', 'TerceiraPlantada'];
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drotas-guarda-'));
+    try {
+      for(const d of ['js', 'tests']) fs.mkdirSync(path.join(dir, d), {recursive: true});
+      fs.writeFileSync(path.join(dir, 'js', 'config.js'), '// nada aqui\n');
+      fs.writeFileSync(path.join(dir, 'tests', 'um.js'), `const x = 1;\n// nota: ${plantadas[0]} no comentário\n`);
+      fs.writeFileSync(path.join(dir, 'tests', 'dois.js'), `const y = '${plantadas[1]}';\n`);
+      fs.writeFileSync(path.join(dir, 'tests', 'tres.js'), `const re = /abc|${plantadas[2]}/i;\n`);
+      fs.writeFileSync(path.join(dir, 'tests', 'quatro.js'), 'const z = 2;\n');
+      const base = path.basename(dir);
+      const r = varreSenhas({front: dir, hashes: plantadas.map(hashTeste)});
+      assert.deepEqual(r.achados, [`${base}/tests/dois.js:1`, `${base}/tests/tres.js:1`, `${base}/tests/um.js:2`]);
+      assert.ok(r.achados.every(a => /^[^\s]+:\d+$/.test(a)), 'o achado é só arquivo:linha');
+      for(const p of plantadas) assert.ok(!r.achados.join(' ').includes(p), 'o texto achado não aparece');
+      // sem os hashes certos, nada é achado (a varredura não acusa texto qualquer)
+      assert.deepEqual(varreSenhas({front: dir, hashes: HASHES_TESTE}).achados, []);
+    } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+  });
+
+  test('senhasNoTexto (usado na Parte I): conta quantas senhas aparecem num texto, sem devolver o texto', () => {
+    assert.equal(senhasNoTexto('DIRETORIA GERÊNCIA SUPERVISÃO ROTA', HASHES_TESTE), 0);
+    assert.equal(senhasNoTexto(`abre com ${SENHAS_TESTE[0]} no meio`, HASHES_TESTE), 1);
+    assert.equal(senhasNoTexto(`  ${SENHAS_TESTE[1].toUpperCase()}  `, HASHES_TESTE), 1, 'caixa e espaços normalizados');
+    assert.equal(senhasNoTexto(`${SENHAS_TESTE[0]} e ${SENHAS_TESTE[1]}`, HASHES_TESTE), 2);
+    // a tela de entrada de verdade é conferida contra os hashes REAIS na Parte I
+    assert.equal(senhasNoTexto('DIRETORIA GERÊNCIA SUPERVISÃO ROTA Desempenho de Rotas'), 0);
   });
 });
