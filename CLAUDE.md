@@ -76,6 +76,14 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   traz): por gerência e BAND nos 5 macros, Σ negHoje x Σ negRestante, %, casos (DIRETO/CURVA/SEM_CURVA/SEM_META_ROTA/
   SEM_META/EV*/null), violações (fora de 0..negRestante, `TOL_E12` 0,1 cx), diferença contra o ARQ_E12 e tamanho com x sem
   o campo. Só totais, contagens e códigos de rota. Testes: `test_neg_hoje.py`.
+- E13 do conferir (PN-50, Todos a Bordo com o Real como o ICS GC; do payload gravado, sem rede: `--e13 DIR/payload.json`
+  ou junto da `--e11`, então o workflow já a traz; inserida no relatório ANTES da seção 9; lê o online.json ao lado): por
+  gerência e BAND, nos 5 itens, meta, Real antes (só rotas com meta > 0 e a oculta das EV*, a regra de antes no mesmo
+  payload) x depois (regra do `rotasInc`), %, rotas com o item, rotas com meta 0 e Real > 0 (códigos), o Real e o online
+  de hoje que entram por elas, gerências sem o item (atenção se uma delas tiver rota de meta 0 com Real: a BAND soma, a
+  gerência mostra "Exclusivo portfólio Full"), BAND x Σ das gerências e a invariante Cervejas / Cervejas 600ml Retornável =
+  ICS GC. Aceite: por gerência, Real da branch − Real da main (mesmo payload) = o Real que entra pelas rotas de meta 0;
+  metas iguais. Testes: `test_incentivo_meta_zero.py`.
 - Front local: `cd frontend && python -m http.server 8765`.
 - **Versão do código e aviso de versão nova** (README, "Versão do código e aviso de versão nova"): versão = hash de 12
   caracteres de `frontend/` sem `frontend/data/**` (`.github/scripts/versao-front.sh`; nunca o SHA do commit: com só os
@@ -104,7 +112,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   Variantes do payload montadas no próprio teste: 'grupo' (IT+MO com a virtual I32 e a eventual MO-EV), 'evcob'
   (o 'inc' com cobertura na SL-EV e uma AP-EV só com Heineken; Parte B), 'semdados'
   (G3 e PA sem dados), 'semsv', 'antigo', 'inc'/'incfech' (cenários da aba Todos a Bordo, `montaIncentivo`), 'seminc'
-  (payload sem o grupo INCENTIVO), 'semscm' (payload sem SEM_COMPRA_MES; Parte S), 'grande' (16 gerências, a DI
+  (payload sem o grupo INCENTIVO), 'incz' (o 'inc' com Heineken de meta 0 e Real na G212 e na 1ª rota da AP; PN-50,
+  Parte L), 'semscm' (payload sem SEM_COMPRA_MES; Parte S), 'grande' (16 gerências, a DI
   copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`), 'exec' (o 'inc' com clientes sem compra no
   mês, `montaSemCompra`: o sintético compra tudo; Parte W) e 'dias'/'diasscm' (o 'exec' com dias de visita "Seg - Qui",
   "Ter" e "Qua - Sex" por rota, `montaDias`; o 2º sem SEM_COMPRA_MES; Parte X e o cenário "barra de dias" da Parte N) e
@@ -396,18 +405,27 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   "rota tem meta" do ICS (`payload`: `tem_meta_cob`). Meta delas numa consulta À PARTE (`fontes.carregar_metas_incentivo`,
   só rota, agrupador e META_COBERTURA; `M.AGRUPADORES_METAS_INCENTIVO`): na consulta de metas de sempre (com META_VOLUME e
   META_NEG) o Datasphere dá HTTP 500 depois de ~150 s (20/10/2026); se só ela falhar, os itens ficam sem meta e o resto
-  segue. Rota sem meta (ou meta 0) = `cobertura_indisponivel()` (meta e real null); COBERTOS, OPORTUNIDADES_DIA e
-  online.json (`online_ks_tt` pelo payload) só nas rotas com meta; QUALQUER sem o incentivo (`payload.sem_incentivo`).
+  segue. **Meta AUSENTE x meta 0 (PN-50, 11/11/2026; R-INC-01, o Real segue o ICS em todos os itens de cobertura)**: rota
+  SEM LINHA de meta do item na fonte = `cobertura_indisponivel()` (meta e real null); linha com META_COBERTURA 0 =
+  `modelo.indicador_cobertura(0, n, cal)` (meta 0 e o Real, `unavailable` false), como os itens do ICS (antes o `if meta`
+  jogava esse Real fora: em 11/11, Heineken −63 e Heineken 600ml −19 contra o SAC, A32/A35/112/121/234/R11/C28). Sem
+  `rota_tem_meta` no incentivo. COBERTOS, OPORTUNIDADES_DIA e online.json (`online_ks_tt` pelo payload) nas rotas com o
+  item disponível (meta > 0 ou 0); QUALQUER sem o incentivo (`payload.sem_incentivo`); `inc_da_gc` (a oculta das EV*)
+  continua pedindo meta > 0.
   No nó, as 3 chaves INC vêm depois dos 5 macros (`M.ORDEM_INDICADORES`) e o volume extra continua no fim.
   `validacao._incentivo`: aviso só para item sem meta em nenhuma rota da BAND (gerência BARRACUDA não avisa).
   Front (`app.js`, seção "aba Todos a Bordo"; só o texto exibido mudou, chaves INCENTIVO/INC*/INCENTIVO_ATIVO iguais):
-  os 5 cards SÃO os do ICS GC (`cardIncItem` = `linha(k, agrega(rs).ind[k], rs)` com `rs = rotasInc(k, rotas)`, só as
-  rotas com meta, `temMetaInc`, e junto delas a oculta das EV* com cliente coberto; `agrega()` soma também as chaves
-  de `GROUPS.INCENTIVO`, mesma conta das coberturas):
+  os 5 cards SÃO os do ICS GC (`cardIncItem` = `linha(k, agrega(rs).ind[k], rs)` com `rs = rotasInc(k, rotas)`: o
+  escopo tem o item só com alguma rota com meta > 0 (`temMetaInc`, que não mudou); aí somam TODAS as rotas com o item
+  disponível (`temItemInc`: meta > 0, meta 0 com o Real e a oculta das EV* com cliente coberto; PN-50); `agrega()` soma
+  também as chaves de `GROUPS.INCENTIVO`, mesma conta das coberturas):
   % = Real/Meta com a régua do ritmo, "faltam X hoje", oportunidades, caixa Online e "Meta batida!" do ICS; sem EF nem
   "real + hoje". Sem meta no escopo: "Exclusivo portfólio Full" (INC HEINEKEN/INC HEINEKEN 600ML) ou "Sem meta".
-  Cascata = a do ICS com `CASC.inc` (`abreIncentivo` → `pintaCascata`, `metricas`/`notaVirtuais(k, gc, inc)` só nas
-  rotas com meta; grupos sem meta fora; "· n com meta"). Não há card "Status" (removido em 21/10/2026). Card do topo
+  Cascata = a do ICS com `CASC.inc` (`abreIncentivo` → `pintaCascata`: cada linha soma as rotas dela que estão no
+  `rotasInc` do escopo aberto, então a rota de meta 0 aparece com Meta 0 e o Real e linhas + nota = card; `notaVirtuais(k,
+  gc, inc)` e a lista de clientes por `temItemInc`; grupos sem rota que some fora; "· n com meta" conta só meta > 0).
+  Botão Clientes: `temItemCli` = `temItemInc` no Todos a Bordo. A ficha da busca (quadrinho "sem meta"/"só Full") e as
+  lojas da rede continuam por `temMetaInc`. Não há card "Status" (removido em 21/10/2026). Card do topo
   "x / n itens em 100%" + linha "Status" (`itensEm100`/`linhaStatus`, `#stRitmo`): "-" com x < n, "✓" verde com
   x = n > 0, sem a linha com n = 0; item em 100% = Real >= Meta; `CONFIG.STATUS_INCLUI_ONLINE` (false) = também pela
   união Real ou online de hoje (`realMaisOnline`; nunca no fechamento). A mesma linha em Novos Negócios (contagem e

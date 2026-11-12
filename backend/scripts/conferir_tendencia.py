@@ -43,6 +43,11 @@ nomes ou códigos de clientes) com:
      (modelo.neg_hoje) por gerência e macro, com o caso de cada rota x macro, as violações e o tempo (grava
      e12_neg_hoje.json); do payload gravado (`--e12 PAYLOAD`, ou junto da `--e11`; sem rede): Σ negHoje x Σ negRestante,
      nulls, violações, diferença contra a parte com rede e o tamanho antes x depois. Só totais e códigos de rota.
+  E13. Todos a Bordo com o Real como o ICS GC (PN-50): do payload gravado (`--e13 PAYLOAD`, ou junto da `--e11`; sem
+     rede; inserida antes da seção 9): por gerência e BAND, nos 5 itens, meta, Real antes (só rotas com meta > 0) x
+     depois (todas as rotas com o item disponível, meta 0 inclusive), %, rotas com o item, rotas com meta 0 e Real > 0
+     (códigos), o Real e o online de hoje que entram por elas, gerências sem o item e a invariante Cervejas / Cervejas
+     600ml Retornável = ICS GC. Só totais e códigos de rota e gerência.
 """
 from __future__ import annotations
 
@@ -1652,6 +1657,146 @@ def secao_neg_hoje_payload(rel: Relatorio, payload: dict | None, ref: dict | Non
                                                                             else "") + ")"
              if duracao_gerar else "ver a seção 10") + ".")
 
+# ------------------------------------------------------------------ E13: Todos a Bordo com o Real como o ICS (PN-50)
+# Roda depois do gerar.py (workflow: junto da --e11, ou --e13 PAYLOAD; sem rede), sobre o payload que ele gravou e o
+# online.json ao lado. Regra do front (rotasInc): o escopo tem o item se alguma rota dele tem meta > 0; aí soma todas as
+# rotas com o item disponível (meta > 0, meta 0 com o Real e a oculta das EV*). "Antes" = a regra de antes da PN-50 no
+# mesmo payload (só as rotas com meta > 0 e a oculta das EV*). Só contagens, totais e códigos de rota e gerência.
+E13_ITENS = list(M.GROUPS["INCENTIVO"])
+E13_ICS = [k for k in E13_ITENS if k in M.INDICADORES_COBERTURA]   # Cervejas e Cervejas 600ml Retornável (os do ICS)
+E13_MAX_ROTAS = 40
+
+
+def _disp(b: dict | None) -> bool:
+    return bool(b) and not b.get("unavailable")
+
+
+def _meta_pos(b: dict | None) -> bool:
+    return _disp(b) and (b.get("meta") or 0) > 0
+
+
+def conta_incentivo(payload: dict, online: dict | None = None) -> dict:
+    """{(escopo, item): {...}} por gerência (ordem do GC_ATIVAS) e 'BAND': meta, Real depois (regra nova), Real antes
+    (só meta > 0 e a oculta das EV*), Σ linhas das gerências (BAND), rotas com o item disponível, rotas com meta 0 e Real
+    > 0 (códigos), o Real e o online de hoje que entram por elas, o Real do ICS (todas as rotas disponíveis) nos itens do
+    ICS e se o escopo tem o item (alguma rota com meta > 0)."""
+    ev = set(payload.get("EVENTUAIS_ROTAS") or [])
+    on_rotas = (online or {}).get("rotas") or {}
+    rotas_gc: dict[str, list[tuple[str, dict]]] = defaultdict(list)
+    for gc, svs in (payload.get("DATA") or {}).items():
+        for rotas in svs.values():
+            for r, d in rotas.items():
+                rotas_gc[gc].append((r, d.get("indicators") or {}))
+    ordem = [g for g in payload.get("GC_ATIVAS") or [] if g in rotas_gc] + sorted(set(rotas_gc) - set(payload.get("GC_ATIVAS") or []))
+
+    def escopo(rs, k):
+        tem = any(_meta_pos(ind.get(k)) for _, ind in rs)
+        disp = [(r, ind[k]) for r, ind in rs if _disp(ind.get(k))]
+        depois = [(r, b) for r, b in disp] if tem else []
+        antes = [(r, b) for r, b in disp if (b.get("meta") or 0) > 0 or r in ev] if tem else []
+        zero = sorted([r for r, b in disp if r not in ev and not (b.get("meta") or 0) > 0 and (b.get("real") or 0) > 0],
+                      key=_ordem_rota)
+        return {
+            "tem": tem,
+            "meta": sum(b.get("meta") or 0 for _, b in depois),
+            "real": sum(b.get("real") or 0 for _, b in depois),
+            "real_antes": sum(b.get("real") or 0 for _, b in antes),
+            "rotas_disp": len(disp), "rotas_meta": sum(1 for _, b in disp if (b.get("meta") or 0) > 0),
+            "zero": zero,
+            "real_zero": sum(b.get("real") or 0 for r, b in disp if r in zero),
+            "online_zero": sum((on_rotas.get(r) or {}).get(k, 0) or 0 for r in zero),
+            "rotas_online_zero": sum(1 for r in zero if (on_rotas.get(r) or {}).get(k)),
+            "real_disp": sum(b.get("real") or 0 for _, b in disp),   # o ICS soma todas as rotas disponíveis
+            "zero_sem_item": [] if tem else zero,                    # meta 0 com Real num escopo sem meta > 0
+        }
+
+    out = {}
+    for k in E13_ITENS:
+        for gc in ordem:
+            out[(gc, k)] = escopo(rotas_gc[gc], k)
+        band = escopo([x for gc in ordem for x in rotas_gc[gc]], k)
+        band["soma_gcs"] = sum(out[(gc, k)]["real"] for gc in ordem)
+        out[("BAND", k)] = band
+    return {"ordem": ordem, "itens": out}
+
+
+def _pct_e13(real: float, meta: float) -> str | None:
+    return f"{real / meta * 100:.0f}%" if meta else None
+
+
+def secao_incentivo_payload(rel: Relatorio, payload: dict | None, online: dict | None = None) -> None:
+    """Seção E13: Todos a Bordo com o Real como o ICS (PN-50), do payload que o gerar.py gravou."""
+    if payload is None:
+        rel.p("payload.json não gerado (o gerar.py falhou ou reprovou na validação): E13 sem dados.")
+        return
+    if not (payload.get("GROUPS") or {}).get("INCENTIVO"):
+        rel.p("payload sem GROUPS.INCENTIVO (aba Todos a Bordo desligada): E13 sem dados.")
+        return
+    if payload.get("FECHAMENTO"):
+        rel.p(f"Fechamento do mês: Real e meta de {payload.get('MES_LABEL')} (mês fechado); o online é o de hoje.")
+    c = conta_incentivo(payload, online)
+    rel.p("Regra (front, `rotasInc`): o escopo tem o item se alguma rota dele tem meta > 0; aí somam todas as rotas com o "
+          "item disponível (meta > 0, meta 0 com o Real e a oculta das EV*). Antes = só as rotas com meta > 0 e a oculta "
+          "das EV*. Sem rota com meta > 0: \"Exclusivo portfólio Full\"/\"Sem meta\" (sem soma). "
+          + ("Online de hoje: do online.json ao lado do payload." if online is not None else "Sem online.json ao lado do payload."))
+    for k in E13_ITENS:
+        rel.h3(f"E13 · {M.LABELS.get(k, k)} ({k})")
+        linhas = []
+        for g in c["ordem"] + ["BAND"]:
+            a = c["itens"][(g, k)]
+            if not a["tem"]:
+                linhas.append([g, "sem item", None, None, None, None, None, a["rotas_disp"], 0, len(a["zero"]),
+                               _n(a["real_zero"], 0), None, ", ".join(a["zero"][:E13_MAX_ROTAS]) or None])
+                continue
+            linhas.append([g, "sim", _n(a["meta"], 0), _n(a["real_antes"], 0), _n(a["real"], 0),
+                           _pct_e13(a["real_antes"], a["meta"]), _pct_e13(a["real"], a["meta"]), a["rotas_disp"],
+                           a["rotas_meta"], len(a["zero"]), _n(a["real_zero"], 0),
+                           f"{a['online_zero']} em {a['rotas_online_zero']} rota(s)" if online is not None else None,
+                           ", ".join(a["zero"][:E13_MAX_ROTAS]) + (" …" if len(a["zero"]) > E13_MAX_ROTAS else "")
+                           or None])
+        rel.tabela(["escopo", "tem o item", "meta", "Real antes", "Real depois", "% antes", "% depois",
+                    "rotas com o item", "rotas com meta > 0", "rotas meta 0 e Real > 0", "Real que entra por elas",
+                    "online hoje nelas", "rotas (meta 0 e Real > 0)"], linhas)
+        b = c["itens"][("BAND", k)]
+        sem_item = [g for g in c["ordem"] if not c["itens"][(g, k)]["tem"]]
+        rel.p(f"\nGerências sem o item (nenhuma rota com meta > 0): {len(sem_item)}"
+              + (f" ({', '.join(sem_item)})" if sem_item else "") + ".")
+        vaz = [(g, c["itens"][(g, k)]) for g in sem_item if c["itens"][(g, k)]["zero"]]
+        if vaz:
+            rel.p("**Atenção**: gerência sem o item com rota de meta 0 e Real > 0 (a BAND soma esse Real, a gerência mostra "
+                  "\"Exclusivo portfólio Full\"/\"Sem meta\"): "
+                  + "; ".join(f"{g} {_n(a['real_zero'], 0)} ({', '.join(a['zero'][:E13_MAX_ROTAS])})" for g, a in vaz) + ".")
+        if b["tem"]:
+            dif = b["real"] - b["soma_gcs"]
+            rel.p(f"BAND: Real depois {_n(b['real'], 0)} x Σ das gerências {_n(b['soma_gcs'], 0)}"
+                  + (" (iguais)." if abs(dif) < 1e-9 else f" (**diferença {_n(dif, 0)}**: Real de gerências sem o item)."))
+        if k in E13_ICS:
+            difs = [g for g in c["ordem"] + ["BAND"]
+                    if c["itens"][(g, k)]["tem"] and c["itens"][(g, k)]["real"] != c["itens"][(g, k)]["real_disp"]]
+            sem = [g for g in c["ordem"] if not c["itens"][(g, k)]["tem"] and c["itens"][(g, k)]["real_disp"]]
+            rel.p("Invariante (item do ICS GC): Real do Todos a Bordo = Real do ICS GC no mesmo escopo: "
+                  + ("igual em todos os escopos com o item." if not difs else f"**diferente em {', '.join(difs)}**.")
+                  + (f" Escopos sem meta > 0 do item (o ICS mostra o Real, a aba \"Sem meta\"): {', '.join(sem)}." if sem
+                     else ""))
+
+
+def main_e13(caminho: Path, pasta: Path) -> int:
+    """Acrescenta a seção E13 ao relatório da pasta, antes da seção 9 (se ela existir; senão no fim)."""
+    payload = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else None
+    arq_on = caminho.parent / "online.json"
+    online = json.loads(arq_on.read_text(encoding="utf-8")) if arq_on.exists() else None
+    rel = Relatorio()
+    rel.h("E13. Todos a Bordo com o Real como o ICS GC (PN-50, do payload gerado)")
+    secao_incentivo_payload(rel, payload, online)
+    pasta.mkdir(parents=True, exist_ok=True)
+    destino = pasta / "relatorio_tendencia.md"
+    novo = "\n".join(rel.linhas) + "\n"
+    atual = destino.read_text(encoding="utf-8") if destino.exists() else ""
+    marca = "\n## 9. Tempo das consultas"
+    i = atual.find(marca)
+    destino.write_text(atual[:i] + novo + atual[i:] if i >= 0 else atual + novo, encoding="utf-8")
+    return 0
+
 # ------------------------------------------------------------------ E10: mês anterior no mesmo dia útil
 # Descoberta da Etapa 8 da visão executiva (bloco "Evolução contra o mês anterior"): dá para comparar onde estamos com
 # onde estávamos no MESMO dia útil do mês anterior (calendário de vendas)? Quanto custa? Só relata: nada muda no gerador
@@ -3007,8 +3152,11 @@ def main() -> int:
                     help="a seção E12 (negHoje) deste payload.json, acrescentada ao relatório (sem rede); usa o "
                          f"{ARQ_E12} da pasta do relatório. Com --e11 e sem --e12, roda sobre o mesmo payload")
     ap.add_argument("--e12-tempo", type=float, help="segundos da consulta da META_NEG de hoje no gerar.py (neg_hoje_s)")
+    ap.add_argument("--e13", type=Path, metavar="PAYLOAD",
+                    help="a seção E13 (Todos a Bordo x ICS GC) deste payload.json, inserida no relatório antes da seção 9 "
+                         "(sem rede; lê o online.json ao lado). Com --e11 e sem --e13, roda sobre o mesmo payload")
     args = ap.parse_args()
-    if args.e9 or args.e11 or args.e12:
+    if args.e9 or args.e11 or args.e12 or args.e13:
         if args.e9:
             main_e9(args.e9, args.saida, args.e9_duracao)
         if args.e11:
@@ -3016,6 +3164,8 @@ def main() -> int:
                      args.e9_duracao)
         if args.e12 or args.e11:
             main_e12(args.e12 or args.e11, args.saida, args.e12_tempo, args.e9_duracao)
+        if args.e13 or args.e11:
+            main_e13(args.e13 or args.e11, args.saida)
         return 0
     configurar_log("conferir")
     cfg = carregar_config()

@@ -1,8 +1,9 @@
 """
 Aba Incentivo ("Todos a Bordo 3.0", cobertura de cervejas): as 3 chaves INC (Heineken, Eisenbahn - 600ml, Heineken -
 600ml) entram pelo mesmo caminho da cobertura do ICS (consulta de vendas, metas e online por indicador), por
-igualdade exata do agrupador, fora do ICS e dos Novos Negócios; rota sem meta do item = indisponível (meta e real
-null) e sem Real/online no payload e no online.json. Nomes e códigos fictícios.
+igualdade exata do agrupador, fora do ICS e dos Novos Negócios; rota SEM LINHA de meta do item = indisponível (meta e
+real null) e sem Real/online no payload e no online.json; rota com META_COBERTURA 0 = meta 0 e o Real, como os itens do
+ICS (PN-50, 11/11/2026). Nomes e códigos fictícios.
 """
 import copy
 import re
@@ -53,7 +54,7 @@ def _dados():
         _cli(2001, "151", "Gc. G1", "Sv. G1.5"), _cli(2003, "A42", "Gc. An", "Sv. An. 4"),
         _cli(2004, "A11", "Gc. An", "Sv. An. 1")]
     d["vendas"] = DADOS["vendas"] + [
-        _v(1007382, "Heineken", "111", "Gc. G1", cob=1, on=1),          # 111 sem meta de Heineken: não entra
+        _v(1007382, "Heineken", "111", "Gc. G1", cob=1, on=1),          # 111 com meta 0 de Heineken: entra (PN-50)
         _v(1011537, "Eisenbahn - 600ml", "111", "Gc. G1", cob=1, on=1),
         _v(1015300, "Eisenbahn - 600ml Vr", "111", "Gc. G1", cob=1, on=1),
         _v(3001, "Heineken", "211", cob=1, on=1),                       # só Heineken hoje: não é "qualquer compra"
@@ -153,9 +154,12 @@ class TestPayloadIncentivo(unittest.TestCase):
 
     def test_rota_sem_meta_indisponivel_com_meta_e_real_null(self):
         ind = self._ind("G1", "SV.G1.1", "111")
-        for k in ["INC HEINEKEN", "INC HEINEKEN 600ML"]:      # meta 0 e sem linha de meta
-            self.assertEqual(ind[k], {"meta": None, "real": None, "pct": None, "onPace": None, "gap": None,
-                                      "unavailable": True}, k)
+        # sem linha de meta do item: indisponível, meta e real null
+        self.assertEqual(ind["INC HEINEKEN 600ML"], {"meta": None, "real": None, "pct": None, "onPace": None,
+                                                     "gap": None, "unavailable": True})
+        # linha com META_COBERTURA 0 (PN-50): meta 0 e o Real, como os itens do ICS
+        self.assertEqual(ind["INC HEINEKEN"], {"meta": 0, "real": 1, "pct": None, "onPace": False, "gap": 0,
+                                               "unavailable": False})
         self.assertEqual((ind["INC EISENBAHN 600ML"]["meta"], ind["INC EISENBAHN 600ML"]["real"],
                           ind["INC EISENBAHN 600ML"]["unavailable"]), (2, 1, False))   # a variante 'Vr' não conta
 
@@ -168,11 +172,16 @@ class TestPayloadIncentivo(unittest.TestCase):
         self.assertEqual(self.p["OPORTUNIDADES_DIA"]["211"]["INC HEINEKEN"], 3)    # 3002, 3003 e 3004 (visita hoje)
 
     def test_real_e_online_so_de_rotas_com_meta(self):
-        self.assertNotIn("INC HEINEKEN", self.p["COBERTOS"]["111"])                # comprou, mas a 111 não tem meta
-        self.assertNotIn("INC HEINEKEN", self.p["OPORTUNIDADES_DIA"]["111"])
+        # 111 com meta 0 de Heineken (PN-50): COBERTOS, oportunidades e online do item entram, como no ICS
+        self.assertEqual(self.p["COBERTOS"]["111"]["INC HEINEKEN"], [1007382])
+        self.assertIn("INC HEINEKEN", self.p["OPORTUNIDADES_DIA"]["111"])
+        self.assertEqual(self.o["rotas"]["111"]["INC HEINEKEN"], 1)
+        self.assertEqual(self.o["clientes"]["111"]["INC HEINEKEN"], [1007382])
+        # sem linha de meta (Heineken - 600ml): nada
+        self.assertNotIn("INC HEINEKEN 600ML", self.p["COBERTOS"]["111"])
+        self.assertNotIn("INC HEINEKEN 600ML", self.p["OPORTUNIDADES_DIA"]["111"])
+        self.assertNotIn("INC HEINEKEN 600ML", self.o["rotas"]["111"])
         self.assertEqual(self.p["COBERTOS"]["111"]["INC EISENBAHN 600ML"], [1011537])
-        self.assertNotIn("INC HEINEKEN", self.o["rotas"]["111"])
-        self.assertNotIn("INC HEINEKEN", self.o["clientes"]["111"])
         self.assertEqual(self.o["rotas"]["111"]["INC EISENBAHN 600ML"], 1)
         self.assertEqual(self.o["rotas"]["211"], {"INC HEINEKEN": 1})
         self.assertEqual(self.o["clientes"]["211"]["INC HEINEKEN"], [3001])

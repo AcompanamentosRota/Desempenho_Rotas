@@ -121,6 +121,25 @@ before(async () => {
   fs.writeFileSync(path.join(evcob, 'payload.json'), JSON.stringify(pe));
   fs.copyFileSync(path.join(DADOS.inc, 'online.json'), path.join(evcob, 'online.json'));
   DADOS.evcob = evcob;
+  // PN-50 (Real do Todos a Bordo como o ICS): o 'inc' com rotas de meta 0 e Real no Heineken, como o gerador grava a linha
+  // de meta com META_COBERTURA 0: a G212 na G2 mista (a G211 tem meta) e a 1ª rota da AP (BARRACUDA, nenhuma rota com meta)
+  const incz = path.join(tmp, 'incz');
+  fs.mkdirSync(incz);
+  const pz = JSON.parse(fs.readFileSync(path.join(DADOS.inc, 'payload.json'), 'utf-8'));
+  const oz = JSON.parse(fs.readFileSync(path.join(DADOS.inc, 'online.json'), 'utf-8'));
+  const metaZero = (gc, r, k, pvs, onl = []) => {
+    const no = Object.values(pz.DATA[gc]).find(svs => svs[r])[r];
+    no.indicators[k] = {meta: 0, real: pvs.length, pct: null, onPace: false, gap: 0, unavailable: false};
+    (pz.COBERTOS[r] = pz.COBERTOS[r] || {})[k] = pvs;
+    if(onl.length){ (oz.clientes[r] = oz.clientes[r] || {})[k] = onl; (oz.rotas[r] = oz.rotas[r] || {})[k] = onl.length; }
+  };
+  const rosterZ = r => pz.CLIENT_ROSTER[r].map(c => c[0]);
+  metaZero('G2', 'G212', 'INC HEINEKEN', rosterZ('G212').slice(0, 2), [rosterZ('G212')[2]]);
+  const apZ = Object.keys(Object.values(pz.DATA.AP)[0]).sort()[0];
+  metaZero('AP', apZ, 'INC HEINEKEN', rosterZ(apZ).slice(0, 1));
+  fs.writeFileSync(path.join(incz, 'payload.json'), JSON.stringify(pz));
+  fs.writeFileSync(path.join(incz, 'online.json'), JSON.stringify(oz));
+  DADOS.incz = incz;
   const seminc = path.join(tmp, 'seminc');
   fs.mkdirSync(seminc);
   const si = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
@@ -2942,6 +2961,71 @@ describe('Parte L — aba Todos a Bordo', {skip: pular}, () => {
     assert.deepEqual(t.filter(x => x[1] === 'na').map(x => [x[0], x[2]]), [['Heineken', 'só Full'], ['Heineken - 600ml', 'só Full']]);
     assert.deepEqual(erros, []);
     await ctx.close();
+  });
+
+  test('PN-50: rota com meta 0 e Real soma como no ICS (card = linhas da cascata, Clientes, "x / n"); escopo sem meta > 0 continua "Exclusivo portfólio Full"', async () => {
+    const {page, ctx, erros} = await abre('incz', {entrar: {perfil: 'gc', gc: 'G2'}, aba: 'INCENTIVO'});
+    const k = 'INC HEINEKEN';
+    const [b1, b2] = await page.evaluate(k => ['G211', 'G212'].map(r => nodo('', r).indicators[k]), k);
+    assert.deepEqual([b2.meta, b2.real, b2.unavailable], [0, 2, false]);
+    assert.ok(b1.meta > 0);
+    assert.deepEqual(await page.evaluate(k => [temMetaInc(k, 'G212'), temItemInc(k, 'G212'), rotasInc(k, rotasDe('G2', ''))], k),
+                     [false, true, ['G211', 'G212']]);
+    // card da G2: meta só da G211, Real das duas
+    let c = await cardsInc(page);
+    assert.deepEqual([c[k].off, ...metaReal(c[k])], [false, b1.meta, b1.real + 2]);
+    // "x / n itens em 100%" = os cards com meta e Real >= Meta
+    const em100 = cs => Object.values(cs).filter(x => { const [m, r] = metaReal(x); return !x.off && m > 0 && r >= m; }).length;
+    const n100 = Object.values(c).filter(x => !x.off).length;
+    assert.equal((await terceiroCard(page))[1], `${em100(c)} / ${n100}`);
+    // cascata: SV.G2.1 (2 rotas, 1 com meta > 0); soma das linhas = card; a G212 com Meta 0 e o Real dela
+    await page.click(`.ind[data-k="${k}"]`);
+    let g = await linhasInc(page);
+    assert.deepEqual(g.map(l => [l.nome.split(' ·')[0], l.info]), [['SV.G2.1', '2 rotas · 1 com meta']]);
+    assert.deepEqual(somaLinhas(g), metaReal(c[k]));
+    await page.click('#dCorpo .cLin[data-i="0"]');
+    g = await linhasInc(page);
+    assert.deepEqual(g.map(l => [l.nome, l.meta, l.real]), [['Rota G211', b1.meta, b1.real], ['Rota G212', 0, 2]]);
+    assert.deepEqual(somaLinhas(g), metaReal(c[k]));
+    // e desce até os clientes da G212
+    await page.click('#dCorpo .cLin[data-i="1"]');
+    assert.equal(await page.textContent('#dTit'), 'Heineken · Rota G212');
+    assert.ok(await page.$('#dLista .chips'));
+    await page.keyboard.press('Escape');
+    // botão Clientes: o item e as duas rotas
+    await page.click('#btnClientes');
+    assert.ok(await page.$(`#cliKs .dchip[data-k="${k}"]`));
+    assert.deepEqual(await page.evaluate(k => rotasListas().filter(r => temItemCli(k, r)), k), ['G211', 'G212']);
+    await page.keyboard.press('Escape');
+    // a rota sozinha (só meta 0, nenhuma com meta > 0): "Exclusivo portfólio Full", como antes
+    await vaiPara(page, {perfil: 'rota', gc: 'G2', rota: 'G212'}, 'INCENTIVO');
+    c = await cardsInc(page);
+    assert.deepEqual([c[k].off, c[k].semdado], [true, 'Exclusivo portfólio Full']);
+    // gerência BARRACUDA (AP) com uma rota de meta 0 e Real: continua "Exclusivo portfólio Full", sem cascata nem Clientes
+    await vaiPara(page, {perfil: 'gc', gc: 'AP'}, 'INCENTIVO');
+    c = await cardsInc(page);
+    assert.deepEqual([c[k].off, c[k].semdado, c[k].abre], [true, 'Exclusivo portfólio Full', false]);
+    assert.equal(await page.evaluate(k => agrupadoresCli().includes(k), k), false);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('PN-50: com o mesmo payload sem rotas de meta 0, os cards das 4 abas não mudam; com elas, só o item Heineken da G2', async () => {
+    const pega = async nome => {
+      const {page, ctx, erros} = await abre(nome, {entrar: {perfil: 'gc', gc: 'G2'}});
+      const out = {};
+      for(const a of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        await filtra(page, {aba: a});
+        out[a] = Object.fromEntries(Object.entries(await cardsInc(page)).map(([kk, v]) => [kk, v.html.replace(/ style="[^"]*"/g, '')]));
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+      return out;
+    };
+    const [a, b] = [await pega('inc'), await pega('incz')];
+    for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG']) assert.deepEqual(b[aba], a[aba], aba);
+    const muda = Object.keys(a.INCENTIVO).filter(kk => a.INCENTIVO[kk] !== b.INCENTIVO[kk]);
+    assert.deepEqual(muda, ['INC HEINEKEN']);
   });
 });
 
