@@ -734,7 +734,9 @@ function escolheCat(k, caixa){
    da Karen, 10/11/2026, em qualquer dia; sem online, fechamento ou sem online.json, Real / Meta e "real"); "faltam X para a
    meta" (X = Meta - (Real + online de hoje), como a Diferença dos cards e o Faltam da gaveta; sem online, Meta - Real) ou, com
    Real + online >= Meta, "meta batida · +X" (X = Real + online - Meta); Meta | Real | Online (o Real faturado e o online de
-   hoje separados, "—" sem online); Tendência e o desvio com 2 casas (↓ rosa abaixo de 0, ↑ verde a partir de 0, pelo valor
+   hoje separados, "—" sem online; três caixas lado a lado em qualquer largura, com data-fit-min 7 nos três números: no dado
+   real a fonte nunca desce abaixo de 8 px — "5.949.999", o maior número de hoje, cabe em 8 px na caixa mais estreita, de
+   42 px —, e o 7 é piso de segurança para um número de 10 caracteres); Tendência e o desvio com 2 casas (↓ rosa abaixo de 0, ↑ verde a partir de 0, pelo valor
    exato; em dia não útil com online, Real + online + Neg Restante: ver abaixo); a linha da meta do dia do card. O online da
    categoria é calculado uma vez (data-online no .gCard; vazio no fechamento e sem online.json); data-pct = o % mostrado, exato
    (base / Meta, sem formatar). */
@@ -765,9 +767,9 @@ function pintaMedidores(rotas, ind, k){
       `<div class="gPct">${pctBR(base / b.meta * 100, 1)}%<small>${ro != null ? 'Real + Online' : 'real'}</small></div>`+
       (base >= b.meta ? `<div class="gFalta ok">meta batida · +${fmt0(base - b.meta)}</div>`
                       : `<div class="gFalta">faltam ${fmt0(b.meta - base)} para a meta</div>`)+
-      `<div class="gMR"><div><small>Meta</small><b data-fit="" data-fit-min="9">${fmt0(b.meta)}</b></div>`+
-      `<div><small>Real</small><b data-fit="" data-fit-min="9">${fmt0(b.real)}</b></div>`+
-      `<div><small>Online</small><b data-fit="" data-fit-min="9">${onl == null ? '—' : fmt0(onl)}</b></div></div>`+
+      `<div class="gMR"><div><small>Meta</small><b data-fit="" data-fit-min="7">${fmt0(b.meta)}</b></div>`+
+      `<div><small>Real</small><b data-fit="" data-fit-min="7">${fmt0(b.real)}</b></div>`+
+      `<div><small>Online</small><b data-fit="" data-fit-min="7">${onl == null ? '—' : fmt0(onl)}</b></div></div>`+
       `<div class="gTend"><small>${fech ? 'Realizado x Meta' : 'Tendência'}</small>`+
       `<b data-fit="" data-fit-min="10">${fech ? (dif>0 ? '+' : '') + fmt0(dif) : fmt0(tend)}</b>`+
       `<span class="pill ${d>=0 ? 'pos' : 'neg'}">${d>=0 ? '↑' : '↓'} ${pctBR(Math.abs(d*100), 2)}%</span></div>${dia}</div>`;
@@ -779,9 +781,9 @@ function pintaMedidores(rotas, ind, k){
     abreCategoria(k);
   }));
 }
-/* O quadro Meta | Real | Online muda de forma com a largura do medidor (container query: três caixas ou três linhas), e a
-   largura muda sem resize da janela (recolher ou abrir o painel lateral no PC): os números do quadro medem de novo (encaixa)
-   quando a largura do bloco dos medidores muda. Só a largura conta e a medida espera o próximo quadro (sem laço do observador). */
+/* A largura de cada caixa do quadro Meta | Real | Online muda sem resize da janela (recolher ou abrir o painel lateral no PC),
+   e com ela a fonte que cabe em cada número: os números do quadro medem de novo (encaixa) quando a largura do bloco dos
+   medidores muda. Só a largura conta e a medida espera o próximo quadro (sem laço do observador). */
 { const g = $('exGauges');
   if(g && window.ResizeObserver){ let w = 0, q = 0;
     new ResizeObserver(es => { const nw = Math.round(es[0].contentRect.width);

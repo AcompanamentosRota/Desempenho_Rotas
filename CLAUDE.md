@@ -163,7 +163,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   do medidor, rótulo, arco, quadro Meta | Real | Online e a `.ctRo` de cada linha (= fmt0 do `data-ro`; total e gerências = Real +
   online recontado); tabela só com totais e códigos; antes x depois contra `ac94f8b` (`REF_PRE_MEDRO`: só o medidor e a coluna,
   `desfazMed`; Executiva com a Evolução aberta, gavetas, cards, 1º nível da cascata, Clientes, Ritmo e Resumo iguais);
-  360/390/1000/1280/1440 px, painel aberto e recolhido, nos dois fundos.
+  360/390/1000/1200/1280/1440 px, painel aberto e recolhido, nos dois fundos. Três caixas lado a lado (12/11/2026): as
+  checagens (a) três faixas no grid, caixas em `block`, e (b) nenhum número cortado, na Diretoria e em cada gerência, nas 15
+  larguras da medição (1920 a 360) com o painel aberto e recolhido, mais o veredito do piso (`PISO_REAL` = 8: a fonte
+  aplicada nunca desce abaixo de 8 px com dado real), com a tabela de menor fonte e menor folga por largura e escopo.
 - Nesta máquina o Python do sistema não tem `python-dotenv`/`pytest`; use
   `C:\Users\luan.arantes\Documents\Teste_ODATA\.venv\Scripts\python.exe` para rodar o back-end.
   Chamadas de rede exigem desabilitar o sandbox.
@@ -463,19 +466,41 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   pt-BR; nunca `toFixed`) com o `small` "Real + Online" (`ro != null`) ou "real" (sem online: fechamento ou sem online.json, base =
   Real); `b.pctReal` não é mais usado ali e o `sdu` só decide `tend`/`d`. `data-pct` no `.gCard` (entre `data-online` e
   `data-tend`) = `base / b.meta` exato. `.gMR` com três caixas Meta | Real (faturado) | Online (`onl`; "—" sem online), cada `b`
-  com `data-fit` mín. 9; `.gCard{container-type:inline-size}` e `@container (max-width:179.98px)` empilha as três em linhas
-  (rótulo à esquerda, número à direita): três lado a lado não cabem "5.949.999" (Meta de Refrigerantes da BAND em 10/11) em 390 px
-  nem a 1200-1366 px com o painel aberto; a largura do medidor também muda ao recolher/abrir o painel (sem resize da janela), então
-  um `ResizeObserver` no `#exGauges` (só a largura, `encaixa` no próximo quadro) mede de novo os números. O trecho do quadro no
+  com `data-fit`.
+  **TRÊS CAIXAS LADO A LADO EM QUALQUER LARGURA** (12/11/2026; a decisão da Karen de 10/11 era "quadro com três caixas", e o
+  `@container (max-width:179.98px)` que entre 10 e 12/11 virava as três em linhas no medidor estreito não tinha sido pedido:
+  saiu inteiro, com o `.gCard{container-type:inline-size}`; o único `@container` que fica no app.css é o do `.rsBox` do Resumo).
+  Para o maior número caber: `.gMR>div{padding:7px 0}` (sem padding lateral) e `data-fit-min="7"` nos TRÊS `<b>` do quadro
+  (era 9; o `.gTend` segue em 10, e os `div.nums` com mínimo 8 não são `<b data-fit="">`: a forma
+  `<b data-fit="" data-fit-min="7|8|9">` é exclusiva do quadro). Medido em 12/11/2026 com o payload real, 15 larguras
+  (1920 a 360) x painel aberto e recolhido x Diretoria e G1 x 5 categorias: "5.949.999" (Meta de Refrigerantes da BAND) mede
+  45,6 px na fonte 9 e 40,5 px na 8; a caixa mais estreita tem 42,0 px (janela de 360 px) e a seguinte 47,3 px (1200 px com o
+  painel aberto). Com padding 4 ou mínimo 9 o número corta; só padding 0 + mínimo <= 8 passa.
+  **O mínimo 7 é PISO DE SEGURANÇA, não a fonte de trabalho** (decisão da Karen, 12/11/2026): serve para um número de 10
+  caracteres, que só aparece na variante sintética 'grande' (volumes x600: "58.620.000" = 46 px na fonte 8 contra uma caixa
+  de 41-42 px a 360 px; precisa de 7 px). O maior número REAL de hoje tem 9 caracteres ("5.949.999") e, no payload real, o
+  menor valor que o `encaixa()` chega a aplicar nas 60 combinações (15 larguras x painel aberto/recolhido x Diretoria e G1)
+  é **8 px, a 360 px na Diretoria** — nunca 7. O `conferencia_real.test.js` trava isso (`PISO_REAL` = 8) e imprime a tabela
+  de menor fonte por largura, painel e escopo; se um dia aparecer 7 px com dado real, a decisão tem de ser revista.
+  A largura das caixas também muda ao
+  recolher/abrir o painel (sem resize da janela), então um `ResizeObserver` no `#exGauges` (só a largura, `encaixa` no próximo
+  quadro) mede de novo os números. O trecho do quadro no
   app.css fica entre "Quadro Meta | Real | Online do medidor" e "fim do quadro Meta | Real | Online" (não tirar esses comentários):
   a Parte AK o acrescenta ao CSS do `b83a341` (`QUADRO_MED_CSS`). A casa decimal é só do medidor (cards, cascata, gaveta, Resumo, Ritmo inteiros). Os
   antes x depois contra a main anterior desfazem só isso com `desfazMed` (executiva_invariantes.js: arco, `.gPct`, `data-pct`, 3ª
-  caixa e a coluna `.ctRo` da gaveta, pelos `data-*` do próprio `.gCard`; e o `font-size` que o `encaixa()` grava nos
-  `b[data-fit-min="9"]` do quadro, a única coisa que ela faz no HTML de antes: a largura dos números mudou, então o lado de antes
+  caixa e a coluna `.ctRo` da gaveta, pelos `data-*` do próprio `.gCard`; e, nos `<b data-fit="" data-fit-min="8|9">` do quadro
+  — só o quadro usa essa forma —, o `font-size` que o `encaixa()` grava e o próprio mínimo, normalizado para o "9" de antes
+  (`B_QUADRO`/`MIN_QUADRO`): a largura dos números mudou, então o lado de antes
   comparado cru passa por ela também), chamada no início do `desfazFalta` e do `desfazAE` (rotulos_invariantes.js); em texto, o
   `TEXTOS_TELA_PAGINA` faz o mesmo no DOM; `confereEvolucao` lê só as duas primeiras caixas (Meta, Real); `REF_PRE_MEDRO` =
   `ac94f8b`. Os antes x depois que comparam o `#exec` com fronts antigos tiram o `data-tend` (`desfazFalta`,
-  `desfazAE`). Testes: Parte AM (sobre 'sab'/'util0'/'vol5fech'; antes x depois contra `3647363`, `REF_PRE_MED`), invariantes do
+  `desfazAE`). As três caixas lado a lado: Parte AN (i) (360, 390, 1200 e 1280 px, painel aberto e recolhido, sobre 'vol5' e
+  'grande', com os números da variante e com tudo escalado para "5.949.999": três faixas no grid, caixas em `block`, ordem
+  Meta · Real · Online, nenhum `<b>` cortado, sem rolagem lateral) e (j) (antes x depois contra `388d6e8`, `REF_PRE_3CX`: no
+  `#exec` só o `data-fit-min` dos três `<b>` muda — trocado caixa por caixa dentro do `<div class="gMR">`, nunca com um
+  `replace` genérico — e o resto da página byte a byte); as mesmas checagens nas invariantes de `executiva_invariantes.js`
+  (`mrCols`/`mrFlex`/`mrCorte`/`mrMin`), que rodam na Parte W e, com dado real, na Diretoria e em cada gerência.
+  Testes: Parte AM (sobre 'sab'/'util0'/'vol5fech'; antes x depois contra `3647363`, `REF_PRE_MED`), invariantes do
   medidor em `executiva_invariantes.js` e o "% do medidor" em `categoria_invariantes.js`; com dado real, o bloco "Medidor da
   Executiva com o online em dia não útil" do `conferencia_real.test.js` (sábado: (a) recontagem; dia útil: (b) `#exec` igual).
   Testes: Parte AL (variantes 'sab', 'dom', 'fer', 'semdsem', 'util0'; `semdia_teste.js`), as invariantes de executiva/

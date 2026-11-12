@@ -1855,8 +1855,11 @@ describe('Medidor da Executiva com o online em dia não útil, com dado real', {
    (Diretoria, cada gerência pelo filtro, cada grupo no Total e uma supervisão) e categoria: data-pct x (Real + online) ÷ Meta,
    texto do % = data-pct com 1 casa, rótulo, quadro Meta | Real | Online; na gaveta, a coluna nova = fmt0 do data-ro de cada
    linha e, no total (e em cada gerência na Diretoria), = Real + online recontado. Antes x depois contra a main antes da etapa
-   (REF_PRE_MEDRO, mesmo payload): só o medidor e a coluna mudam (desfazMed). Larguras 360/390/1000/1280/1440, painel aberto e
-   recolhido, nos dois fundos. Imprime só totais e códigos de gerência/supervisão. */
+   (REF_PRE_MEDRO, mesmo payload): só o medidor e a coluna mudam (desfazMed). Larguras 360/390/1000/1200/1280/1440, painel aberto e
+   recolhido, nos dois fundos. Imprime só totais e códigos de gerência/supervisão.
+   Três caixas lado a lado em QUALQUER largura (12/11/2026): checagens (a) e (b) da etapa — grid com três faixas, caixas em
+   `block` e nenhum número cortado — na Diretoria e em cada gerência, nas 15 larguras da medição (1920 a 360) com o painel
+   aberto e recolhido; a tabela impressa traz a menor fonte aplicada pelo encaixa() e a menor folga por largura. */
 const REF_PRE_MEDRO = 'ac94f8b';
 const FRONT_PRE_MEDRO = (() => {
   try {
@@ -2010,7 +2013,67 @@ describe('Medidor com Real + Online e coluna "Real + Online" da gaveta, com dado
     for(const l of linhas) console.log(`#   ${l}`);
   });
 
-  for(const largura of [360, 390, 1000, 1280, 1440])
+  /* Três caixas lado a lado em QUALQUER largura (12/11/2026): checagens (a) e (b) da etapa, na Diretoria e em cada gerência,
+     nas larguras da medição, com o painel aberto e recolhido. (a) o grid do .gMR tem três faixas e as caixas não viram linhas;
+     (b) nenhum número é cortado. Também o veredito do data-fit-min 7 (decisão da Karen de 12/11/2026): ele é PISO DE
+     SEGURANÇA para um número de 10 caracteres, e com DADO REAL a fonte que o encaixa() aplica nunca desce abaixo de
+     PISO_REAL (8 px) em nenhuma combinação de largura, painel e escopo — os 7 px só aparecem na variante sintética
+     'grande'. Imprime só larguras, fontes e códigos de gerência. */
+  const PISO_REAL = 8;
+  // as 15 larguras da medição na Diretoria (onde está o maior número) e, em cada gerência, as larguras críticas
+  const LARG_MED = [1920, 1680, 1440, 1366, 1280, 1200, 1100, 1000, 900, 700, 600, 500, 430, 390, 360];
+  const LARG_GC = new Set([1440, 1280, 1200, 390, 360]);
+  /* com o painel recolhido o seletor de gerência fica fora de vista (só ícones), então o filtro é trocado pelo próprio
+     select, sem clique: aqui o que importa é o escopo desenhado, não a interação do seletor (essa é conferida à parte) */
+  const poeGc = (page, g) => page.evaluate(g => { const s = document.getElementById('fgc');
+    s.value = g; s.dispatchEvent(new Event('change', {bubbles: true})); }, g);
+  for(const lado of ['aberto', 'recolhido'])
+  test(`(a) e (b) com dado real, painel ${lado}: três caixas lado a lado e nenhum número cortado, de 1920 a 360 px`, {timeout: 900000}, async () => {
+    const tab = [];
+    let menor = Infinity;
+    for(const largura of LARG_MED){
+      const {page, ctx, erros} = await abre(largura);
+      // entra uma vez na Diretoria e percorre as gerências pelo filtro (o painel é recolhido/aberto uma vez só)
+      await entra(page, {perfil: 'dir'});
+      await vaiAba(page, 'EXEC');
+      if(largura >= 1000 && (lado === 'recolhido') !== (await page.evaluate(() => document.body.classList.contains('recolhido')))) await page.click('#ladoMenu');
+      await page.waitForTimeout(200);
+      for(const dgc of ['', ...(LARG_GC.has(largura) ? await page.evaluate(() => gcsComDados()) : [])]){
+        await poeGc(page, dgc);
+        await page.waitForTimeout(120);
+        const onde = `${largura} ${lado} ${dgc ? 'GC.' + dgc : 'BAND'}`;
+        const gs = await page.$$eval('#exGauges .gCard:not(.off)', gs => gs.map(g => { const mr = g.querySelector('.gMR');
+          const divs = [...mr.querySelectorAll(':scope > div')];
+          return {k: g.dataset.k, cols: getComputedStyle(mr).gridTemplateColumns.trim().split(/\s+/).length,
+            display: divs.map(d => getComputedStyle(d).display), rot: divs.map(d => d.querySelector('small').textContent),
+            corte: divs.map(d => d.querySelector('b')).filter(b => b.scrollWidth > b.clientWidth + 0.5).map(b => b.textContent),
+            fs: Math.min(...divs.map(d => parseFloat(getComputedStyle(d.querySelector('b')).fontSize))),
+            folga: Math.min(...divs.map(d => { const b = d.querySelector('b'), r = document.createRange(); r.selectNodeContents(b);
+              return b.getBoundingClientRect().width - r.getBoundingClientRect().width; }))}; }));
+        assert.ok(gs.length > 0, `${onde}: medidores com meta`);
+        for(const g of gs){
+          assert.equal(g.cols, 3, `${onde} ${g.k}: (a) três faixas no grid, não ${g.cols}`);
+          assert.deepEqual(g.display, ['block', 'block', 'block'], `${onde} ${g.k}: (a) caixas não viram linhas`);
+          assert.deepEqual(g.rot, ['Meta', 'Real', 'Online'], `${onde} ${g.k}: ordem dos rótulos`);
+          assert.deepEqual(g.corte, [], `${onde} ${g.k}: (b) número cortado`);
+          // veredito do piso: com dado real a fonte aplicada nunca chega ao mínimo 7
+          assert.ok(g.fs >= PISO_REAL, `${onde} ${g.k}: fonte ${g.fs} px abaixo do piso real de ${PISO_REAL} px`);
+        }
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${onde}: rolagem lateral`);
+        menor = Math.min(menor, ...gs.map(g => g.fs));
+        tab.push([largura, lado, dgc ? 'GC.' + dgc : 'BAND', Math.min(...gs.map(g => g.fs)), Math.min(...gs.map(g => g.folga)).toFixed(2)]);
+      }
+      assert.deepEqual(erros, [], `${largura} ${lado}`);
+      await ctx.close();
+    }
+    console.log(`# Quadro do medidor (dado real), painel ${lado}: menor fonte aplicada pelo encaixa() e menor folga, por largura e escopo`);
+    console.log(`# Veredito: menor fonte em TODAS as combinações = ${menor} px (piso real exigido: >= ${PISO_REAL} px; o data-fit-min 7 é só piso de segurança)`);
+    console.log('# | Largura | Painel | Escopo | Menor fonte (px) | Menor folga (px) |');
+    console.log('# |---|---|---|---|---|');
+    for(const l of tab) console.log(`# | ${l.join(' | ')} |`);
+  });
+
+  for(const largura of [360, 390, 1000, 1200, 1280, 1440])
   test(`${largura} px, fundos preto e branco${largura >= 1000 ? ', painel aberto e recolhido' : ''}: medidores e gaveta sem corte, sem rolagem lateral nem erro`, async () => {
     for(const tema of ['preta', 'branca']) for(const lado of largura >= 1000 ? ['aberto', 'recolhido'] : ['aberto']){
       const {page, ctx, erros} = await abre(largura, tema);
@@ -2025,6 +2088,11 @@ describe('Medidor com Real + Online e coluna "Real + Online" da gaveta, com dado
           .filter(x => x.scrollWidth > x.clientWidth + 0.5 || x.getBoundingClientRect().right > g.getBoundingClientRect().right + 0.5)
           .map(x => `${g.dataset.k}: ${x.textContent}`)));
         assert.deepEqual(corta, [], `${onde}: medidor cortado`);
+        // três caixas lado a lado em qualquer largura (12/11/2026)
+        const empilhado = await page.$$eval('#exGauges .gCard:not(.off) .gMR', ms => ms.filter(m =>
+          getComputedStyle(m).gridTemplateColumns.trim().split(/\s+/).length !== 3
+          || [...m.querySelectorAll(':scope > div')].some(d => getComputedStyle(d).display !== 'block')).length);
+        assert.equal(empilhado, 0, `${onde}: quadro empilhado`);
         for(const k of await page.$$eval('#exGauges .gCard[role="button"]', gs => gs.map(g => g.dataset.k))){
           await page.click(`#exGauges .gCard[data-k="${k}"]`);
           await page.waitForTimeout(100);

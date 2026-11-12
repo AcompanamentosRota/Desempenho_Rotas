@@ -5828,7 +5828,7 @@ describe('Parte R — Painel de Ritmo: PDF real (html2canvas + jsPDF)', {skip: p
    layout (1440, 1000, 390 e 360 px) e, comparando com o front da main antes da Etapa 5 (REF_ETAPA5, servido por `troca`),
    cards, cascata, Resumo e Painel de Ritmo iguais. Cenário 'exec' = o do Todos a Bordo com clientes sem compra no mês
    (montaSemCompra; o sintético compra tudo). */
-const {confereExecutiva, desfazFalta, desfazMed} = require('./executiva_invariantes.js');
+const {confereExecutiva, desfazFalta, desfazMed, MIN_QUADRO} = require('./executiva_invariantes.js');
 const REF_ETAPA5 = '321b0ea';
 const FRONT_ETAPA4 = (() => {
   try {
@@ -10440,11 +10440,33 @@ describe('Parte AM — medidor da Executiva com o online em dia não útil', {sk
    o Real), sem ordenar, oculta abaixo de 700 px (como Meta e Real); a dica ganha a linha "Real + Online" logo abaixo do Real.
    As invariantes do medidor e da gaveta estão em executiva_invariantes.js e categoria_invariantes.js (também na conferência
    com dado real). Antes x depois contra a main antes da etapa (REF_PRE_MEDRO): o resto idêntico, com desfazMed só no
-   #exec e na gaveta da categoria. */
+   #exec e na gaveta da categoria.
+   Testes (i) e (j), de 12/11/2026 (decisão da Karen de 10/11: "quadro com três caixas"): as três caixas ficam LADO A LADO em
+   qualquer largura — o @container que as empilhava em medidor estreito saiu, o padding lateral delas foi a 0 e o data-fit-min
+   dos três números, de 9 a 7 (MIN_QUADRO), piso de segurança para um número de 10 caracteres (a variante 'grande', com os
+   volumes x600, chega a eles a 360 px; no payload real a fonte nunca desce abaixo de 8 px). (i) nas larguras em que o
+   empilhamento aparecia (360, 390 e, com o painel aberto,
+   1200 e 1280 px), com o painel aberto e recolhido: três faixas no grid, caixas em block, ordem Meta · Real · Online, nenhum
+   número cortado e nenhuma rolagem lateral, com os números da variante e com tudo escalado para "5.949.999". (j) antes x
+   depois contra REF_PRE_3CX: no #exec só esse atributo muda; o resto da página, byte a byte. */
 const REF_PRE_MEDRO = 'ac94f8b';
 const FRONT_PRE_MEDRO = (() => {
   try {
     const ler = a => execSync(`git show ${REF_PRE_MEDRO}:frontend/${a}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const out = {};
+    for(const a of ['js/app.js', 'css/app.css', 'js/config.js', 'js/nucleo.js', 'js/resumo.js', 'js/ritmo.js', 'js/main.js', 'index.html']){
+      const t = ler(a); out['/' + a] = () => t;
+    }
+    return out;
+  } catch(e) { return null; }
+})();
+/* Três caixas lado a lado em qualquer largura (12/11/2026): a main de antes da etapa, para o antes x depois do teste (j).
+   Só o CSS do quadro e o data-fit-min dos três números mudam, então o #exec de antes é comparado com o de hoje com a troca
+   declarada desse atributo (e o font-size do encaixa(), que muda de propósito). */
+const REF_PRE_3CX = '388d6e8';
+const FRONT_PRE_3CX = (() => {
+  try {
+    const ler = a => execSync(`git show ${REF_PRE_3CX}:frontend/${a}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
     const out = {};
     for(const a of ['js/app.js', 'css/app.css', 'js/config.js', 'js/nucleo.js', 'js/resumo.js', 'js/ritmo.js', 'js/main.js', 'index.html']){
       const t = ler(a); out['/' + a] = () => t;
@@ -10486,8 +10508,8 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
         assert.match(g.pct, /^\d{1,3}(\.\d{3})*,\d%$/, `${o}: vírgula decimal`);
         assert.equal(g.rot, semOn ? 'real' : 'Real + Online', `${o}: rótulo`);
         assert.equal(g.arco, `${Math.max(0, Math.min(100, g.dataPct * 100)).toFixed(2)} 100`, `${o}: arco = data-pct (até 100)`);
-        assert.deepEqual(g.mr, [['Meta', fmtPt(s.meta), true, '9'], ['Real', fmtPt(s.real), true, '9'],
-          ['Online', semOn ? '—' : fmtPt(s.onl), true, '9']], `${o}: quadro Meta | Real | Online`);
+        assert.deepEqual(g.mr, [['Meta', fmtPt(s.meta), true, MIN_QUADRO], ['Real', fmtPt(s.real), true, MIN_QUADRO],
+          ['Online', semOn ? '—' : fmtPt(s.onl), true, MIN_QUADRO]], `${o}: quadro Meta | Real | Online`);
         assert.equal(g.online, semOn ? null : g.online, o);
         if(!semOn && s.onl > 0){ comOnline++; assert.ok(g.dataPct > s.real / s.meta, `${o}: o online entra no %`); }
       }
@@ -10680,5 +10702,137 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
     }
     assert.deepEqual(erros, []);
     await ctx.close();
+  });
+
+  /* 12/11/2026 (decisão da Karen de 10/11): o quadro é "três caixas: Meta | Real | Online" em QUALQUER largura. O
+     @container que, abaixo de 180 px de cartão, virava as três em linhas (rótulo à esquerda, número à direita) saiu;
+     para os números caberem lado a lado, o padding lateral das caixas foi a 0 e o data-fit-min dos três números, de 9 a 8.
+     Larguras em que o empilhamento aparecia na main: 360 e 390 px e, com o painel aberto, 1200 e 1280 px. */
+  for(const dados of ['vol5', 'grande'])
+  for(const largura of [360, 390, 1200, 1280])
+  for(const lado of ['aberto', 'recolhido'])
+  test(`(i) ${dados} ${largura} px, painel ${lado}: três caixas lado a lado, sem número cortado`, async () => {
+    const {page, ctx, erros} = await abre(dados, {entrar: 'dir', aba: null, largura, altura: largura < 1000 ? 800 : 900,
+      armazenado: {drotas_lado: lado}});
+    await page.addStyleTag({content: '*{transition:none!important}'});
+    const quadro = () => page.$$eval('#exGauges .gCard:not(.off)', gs => gs.map(g => { const mr = g.querySelector('.gMR');
+      const divs = [...mr.querySelectorAll(':scope > div')];
+      return {k: g.dataset.k, cols: getComputedStyle(mr).gridTemplateColumns.trim().split(/\s+/).length,
+        display: divs.map(d => getComputedStyle(d).display), rot: divs.map(d => d.querySelector('small').textContent),
+        min: divs.map(d => d.querySelector('b').getAttribute('data-fit-min')),
+        corte: divs.map(d => d.querySelector('b')).filter(b => b.scrollWidth > b.clientWidth + 0.5).map(b => b.textContent),
+        max: Math.max(...divs.map(d => d.querySelector('b').textContent.length))}; }));
+    const confere = async caso => {
+      const gs = await quadro();
+      assert.ok(gs.length > 0, `${caso}: medidores com meta`);
+      for(const g of gs){
+        assert.equal(g.cols, 3, `${caso} ${g.k}: (a) três faixas no grid do quadro, não ${g.cols}`);
+        assert.deepEqual(g.display, ['block', 'block', 'block'], `${caso} ${g.k}: (a) caixas não viram linhas (flex)`);
+        assert.deepEqual(g.rot, ['Meta', 'Real', 'Online'], `${caso} ${g.k}: (c) ordem dos rótulos`);
+        assert.deepEqual(g.min, [MIN_QUADRO, MIN_QUADRO, MIN_QUADRO], `${caso} ${g.k}: data-fit-min dos três números`);
+        assert.deepEqual(g.corte, [], `${caso} ${g.k}: (b) número cortado`);
+      }
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+        `${caso}: (d) rolagem lateral`);
+      return gs;
+    };
+    const onde = `${dados} ${largura} ${lado}`;
+    await confere(onde);
+    /* e com o pior número do payload real ("5.949.999", 9 caracteres: a Meta de Refrigerantes da BAND em 10-12/11/2026)
+       em todas as categorias — a mesma escala do teste (h) */
+    const escalou = await page.evaluate(() => { const b = agrega(rotasAtuais()).ind['VOL REFRIGERANTES'];
+      if(!b || b.unavailable || !(b.meta > 0)) return false;
+      const f = 5949999 / b.meta;
+      for(const r of rotasAtuais()) for(const k of GROUPS.VOLUME){ const x = nodo('', r).indicators[k];
+        if(x && !x.unavailable){ x.meta *= f; x.real *= f; x.tendencia *= f; } }
+      if(ONLINE) for(const r of Object.keys(ONLINE.volume || {})) for(const k of GROUPS.VOLUME) if(ONLINE.volume[r][k]) ONLINE.volume[r][k] *= f;
+      render(); return true; });
+    if(escalou){
+      await page.waitForTimeout(250);
+      const gs = await confere(`${onde} com 5.949.999`);
+      assert.ok(gs.some(g => g.max >= 9), `${onde}: o cenário tem número de 9 caracteres`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* Antes x depois contra a main de antes da etapa: a ÚNICA diferença permitida no HTML do #exec é o data-fit-min dos três
+     <b> do quadro (9 -> 8), declarado aqui caixa por caixa (nunca um replace genérico), mais o font-size que o encaixa()
+     grava e que muda de propósito (semTam). O resto da página — cards das 4 abas, cascata, gavetas (categoria, Base, Sem
+     compra, Clientes), Evolução, Resumo e Painel de Ritmo — fica byte a byte. */
+  const MIN_QUADRO_ANTES = '9';
+  // troca o data-fit-min só dentro dos <div class="gMR">...</div> (os três <b> de cada quadro), e exige que sejam três
+  const minQuadroAntes = h => String(h).replace(/<div class="gMR">.*?<\/b><\/div><\/div>/g, q => {
+    const r = q.split(`<b data-fit="" data-fit-min="${MIN_QUADRO}">`).join(`<b data-fit="" data-fit-min="${MIN_QUADRO_ANTES}">`);
+    assert.equal(r.split(`<b data-fit="" data-fit-min="${MIN_QUADRO_ANTES}">`).length - 1, 3, 'três números no quadro');
+    return r;
+  });
+  /* a gaveta abre e fecha com a classe .on do #drw: este teste percorre muitas gavetas seguidas nos dois fronts, então
+     cada passo espera o estado mudar de fato (sem isso, um clique cai no fundo da gaveta anterior e os dois lados saem
+     de sincronia) */
+  const drwOn = (p, on) => p.waitForFunction(on => document.getElementById('drw').classList.contains('on') === on, on);
+  const fechaDrw = async p => { await p.keyboard.press('Escape'); await drwOn(p, false); };
+  const abreDrw = async (p, f) => { await f(p); await drwOn(p, true); };
+  // desce um nível da cascata: o título muda quando o novo nível é pintado
+  const desceCasc = async p => { const t = await p.$eval('#dTit', e => e.textContent);
+    await p.click('#dCorpo .cLin[data-i]');
+    await p.waitForFunction(t => document.getElementById('dTit').textContent !== t, t); };
+  test(`(j) antes x depois (${REF_PRE_3CX}): no #exec só o data-fit-min dos três números do quadro muda; o resto da página idêntico`,
+       {skip: !FRONT_PRE_3CX && `sem o commit ${REF_PRE_3CX}`}, async () => {
+    for(const [dados, entrar] of [['vol5', 'dir'], ['vol5', {perfil: 'gc', gc: 'G1'}], ['grupo', {perfil: 'gc', gc: 'IT+MO'}],
+                                  ['vol5fech', 'dir'], ['sab', {perfil: 'gc', gc: 'G1'}], ['exec', {perfil: 'sv', gc: 'G2', sv: '1'}]])
+    for(const largura of [1280, 390]){
+      const [novo, velho] = [await abre(dados, {entrar, aba: null, largura}),
+                             await abre(dados, {entrar, aba: null, largura, troca: FRONT_PRE_3CX})];
+      const quem = `${dados} ${JSON.stringify(entrar)} ${largura}px`;
+      const exec = p => p.innerHTML('#exec').then(semTam);
+      const [a, b] = [await exec(novo.page), await exec(velho.page)];
+      assert.equal(minQuadroAntes(a), b, `${quem}: #exec só muda no data-fit-min do quadro`);
+      if(/data-fit-min="9"/.test(b)) assert.notEqual(a, b, `${quem}: o atributo mudou de propósito`);
+      // gaveta da categoria de cada medidor com meta, Evolução, gavetas da Executiva, cards/cascata/gavetas das abas: iguais
+      for(const k of await novo.page.$$eval('#exGauges .gCard[role="button"]', gs => gs.map(g => g.dataset.k))){
+        for(const {page} of [novo, velho]) await abreDrw(page, p => abreCat(p, k));
+        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} ${k}: gaveta da categoria`);
+        for(const {page} of [novo, velho]) await fechaDrw(page);
+      }
+      if(await novo.page.$('#exEvo:not([hidden])')){
+        for(const {page} of [novo, velho]) await page.evaluate(() => document.querySelectorAll('#exEvLinhas .evLin.cat').forEach(e => e.click()));
+        assert.equal(await novo.page.innerHTML('#exEvo'), await velho.page.innerHTML('#exEvo'), `${quem}: Evolução aberta`);
+      }
+      for(const id of ['exBase', 'exSem']){
+        for(const {page} of [novo, velho]) await abreDrw(page, p => abreCardTopo(p, id));
+        assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} #${id}: gaveta`);
+        for(const {page} of [novo, velho]) await fechaDrw(page);
+      }
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        if(await novo.page.isHidden(`.tab[data-g="${aba}"]`)) continue;
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        assert.equal(await novo.page.innerHTML('#abaTopo'), await velho.page.innerHTML('#abaTopo'), `${quem} ${aba}: cabeçalho`);
+        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${quem} ${aba}: cards`);
+        for(const k of await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))){
+          for(const {page} of [novo, velho]) await abreDrw(page, p => p.click(`#lista .ind[data-k="${k}"]`));
+          for(let nivel = 0; nivel < 5; nivel++){
+            assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} ${aba} ${k}: cascata nível ${nivel}`);
+            if(entrar === 'dir' || !(await novo.page.$('#dCorpo .cLin[data-i]'))) break;
+            for(const {page} of [novo, velho]) await desceCasc(page);
+          }
+          for(const {page} of [novo, velho]) await fechaDrw(page);
+        }
+        for(const id of ['cBase', 'cSem', 'btnClientes']){
+          if(!(await novo.page.$(`#${id}`)) || (id === 'btnClientes' && await novo.page.isHidden('#btnClientes'))) continue;
+          for(const {page} of [novo, velho]) await abreDrw(page, p => abreCardTopo(p, id));
+          assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} ${aba} #${id}: gaveta`);
+          for(const {page} of [novo, velho]) await fechaDrw(page);
+        }
+      }
+      const rt = p => p.evaluate(() => { const e = RT.escopoRitmo(); return e ? JSON.stringify(montaRitmo(P, e)) : null; });
+      assert.equal(await rt(novo.page), await rt(velho.page), `${quem}: Painel de Ritmo`);
+      if(await novo.page.$('#btnResumo:not([hidden])')){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${quem}: Resumo`);
+      }
+      assert.deepEqual([...novo.erros, ...velho.erros], []);
+      await novo.ctx.close(); await velho.ctx.close();
+    }
   });
 });

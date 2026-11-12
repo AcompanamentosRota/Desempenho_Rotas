@@ -368,24 +368,18 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .gFalta.ok{color:var(--verdeE)}
 /* ---------- Quadro Meta | Real | Online do medidor (10/11/2026; os testes que comparam com o CSS de fronts antigos acrescentam
    este trecho ao CSS deles: não tirar este comentário nem o "fim do quadro" abaixo) ---------- */
-/* Meta | Real | Online (desde 10/11/2026: o Real faturado e o online de hoje separados, "—" sem online) */
+/* Meta | Real | Online (desde 10/11/2026: o Real faturado e o online de hoje separados, "—" sem online): TRÊS CAIXAS LADO A
+   LADO EM QUALQUER LARGURA (decisão da Karen de 10/11/2026; o empilhamento em medidor estreito que vinha com o quadro saiu
+   em 12/11/2026). Sem padding lateral: a caixa mais estreita tem 42,0 px (janela de 360 px, dois medidores por linha) e o
+   maior número real ("5.949.999", a Meta de Refrigerantes da BAND, 9 caracteres) mede 40,5 px na fonte 8 — com 1 px de
+   padding de cada lado ele já cortava. O data-fit-min dos três <b> (pintaMedidores) é 7, piso de segurança para um número
+   de 10 caracteres; no payload real a fonte aplicada nunca desce abaixo de 8 px. */
 .gMR{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:12px;border-top:1px solid var(--linha);
   border-bottom:1px solid var(--linha)}
-.gMR>div{padding:7px 4px;min-width:0}
+.gMR>div{padding:7px 0;min-width:0}
 .gMR>div+div{border-left:1px solid var(--linha)}
 .gMR small,.gTend small{display:block;font-size:var(--fs-ex-mini);color:var(--txt-apoio)}
 .gMR b{display:block;font-size:var(--fs-ex-valor);color:var(--txt);white-space:nowrap;overflow:hidden}
-/* medidor estreito (conteúdo < 180 px: dois por linha no celular, cinco por linha no PC até ~1400 px com o painel aberto): três caixas
-   lado a lado não cabem um número de 7 dígitos ("5.949.999") nem com a fonte mínima do data-fit; as três viram linhas (rótulo
-   à esquerda, número à direita), na mesma ordem Meta, Real, Online. Container query pela largura do próprio .gCard. */
-.gCard{container-type:inline-size}
-@container (max-width:179.98px){
-  .gMR{grid-template-columns:minmax(0,1fr)}
-  .gMR>div{display:flex;align-items:baseline;justify-content:space-between;gap:6px;padding:4px 2px}
-  .gMR>div+div{border-left:0;border-top:1px solid var(--linha)}
-  .gMR small{flex:none}
-  .gMR b{flex:1 1 auto;min-width:0;text-align:right}
-}
 /* fim do quadro Meta | Real | Online */
 .gTend{padding:8px 0 2px}
 .gTend b{display:block;font-size:var(--fs-ex-tend);color:var(--txt);white-space:nowrap;overflow:hidden}
