@@ -30,10 +30,15 @@ const PALAVRA = /[\p{L}\p{N}][\p{L}\p{N}_.'-]*/gu;
 const normaliza = s => String(s == null ? '' : s).trim().toUpperCase();
 const hashTexto = s => crypto.createHash('sha256').update('drotas:' + normaliza(s), 'utf8').digest('hex');
 
-// os hashes reais, lidos do config.js (nunca escritos aqui)
+/* Os hashes reais, lidos do config.js (nunca escritos aqui): as duas senhas da Diretoria e a do Back Office (Frente 1,
+   12/11/2026) — a regra vale para toda senha do painel, não só as da Diretoria. */
+const CHAVES_HASH = ['DIRETORIA_SENHAS_HASH', 'BACKOFFICE_SENHA_HASH'];
 function hashesReais(arquivo = path.join(FRONT, 'js', 'config.js')){
-  const m = fs.readFileSync(arquivo, 'utf-8').match(/DIRETORIA_SENHAS_HASH:\s*\[([^\]]*)\]/);
-  return (m && m[1].match(/[0-9a-f]{64}/g)) || [];
+  const txt = fs.readFileSync(arquivo, 'utf-8');
+  return CHAVES_HASH.flatMap(chave => {
+    const m = txt.match(new RegExp(`${chave}:\\s*\\[([^\\]]*)\\]`));
+    return (m && m[1].match(/[0-9a-f]{64}/g)) || [];
+  });
 }
 
 /* Candidatos de uma linha (ou de um texto qualquer): cada literal de string e cada sequência de 1 a N_GRAMAS
@@ -86,4 +91,4 @@ function varre({dirs = DIRS, front = FRONT, hashes = hashesReais()} = {}){
   return {achados, arquivos, linhas, candidatos: nCand};
 }
 
-module.exports = {hashTexto, hashesReais, candidatos, senhasNoTexto, varre, DIRS, N_GRAMAS, FRONT};
+module.exports = {hashTexto, hashesReais, candidatos, senhasNoTexto, varre, DIRS, N_GRAMAS, FRONT, CHAVES_HASH};

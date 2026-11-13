@@ -5,8 +5,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 
 ## Estrutura e comandos
 
-- `frontend/`: site publicado. JS clássico (sem build, sem módulos ES): `config.js` → `nucleo.js` → `app.js` → `resumo.js` → `ritmo.js` → `main.js`,
-  todos com `defer` e compartilhando globais (`P`, `DATA`, `sel`, `RS`, `RT`, `NUCLEO`...). Dados em `frontend/data/` (gerados, não editar à mão).
+- `frontend/`: site publicado. JS clássico (sem build, sem módulos ES): `config.js` → `nucleo.js` → `app.js` → `resumo.js` → `ritmo.js` → `backoffice.js` → `main.js`,
+  todos com `defer` e compartilhando globais (`P`, `DATA`, `sel`, `RS`, `RT`, `BO`, `NUCLEO`...). Dados em `frontend/data/` (gerados, não editar à mão).
 - `backend/`: `odata/` (cópia do kit `C:\Users\luan.arantes\Documents\Teste_ODATA`, sem pandas), `gerador/`, `scripts/`, `tests/`.
 - Testes (sem rede, stdlib `unittest`): `cd backend && python -m unittest discover -s tests -t .`
 - Gerar dados: `cd backend && python scripts/gerar.py --forcar` (fora de 07:00-18:59 BRT só roda com `--forcar`).
@@ -353,7 +353,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 - **Validação por gerência**: gerência sem rotas, metas ou Real = aviso; quedas (rotas, clientes, volume real) só contra
   a mesma gerência publicada (gerência nova não é comparada).
 - **Entrada com perfis, por seleção** (controle de acesso INTERNO, não é segurança: os dados estão em
-  `frontend/data/*.json`; aviso no README e em `config.js`; nada de usuário; senha só na Diretoria): DIRETORIA abre a
+  `frontend/data/*.json`; aviso no README e em `config.js`; nada de usuário; senha na Diretoria e no Back Office, que
+  tem perfil e página próprios — ver "Back Office" abaixo): DIRETORIA abre a
   mesma caixa (`pintaSenha`: campo `#entSenha` type=password, "Entrar", "← Voltar" fecha, `#entSenhaMsg` role=alert;
   `confereSenha`) e entra em "Todas as gerências" com uma das DUAS senhas; GERÊNCIA, SUPERVISÃO e ROTA abrem a caixa de seleção (`#entCaixa`: `abreCaixa` /
   `pintaCaixa`, diálogo com foco, Tab preso, setas, ESC, × e clique fora). 1ª etapa (`opcoesGc`): as 16 na ordem de
@@ -414,6 +415,47 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   coca em paleta de 256 cores, elmo sem perda). Aba inicial (Etapa 5): Executiva para Diretoria, Gerência e Supervisão;
   Volume para a Rota (`aplicaAcesso` → `marcaAba`, a cada entrada e ao reabrir o acesso guardado; payload novo não
   muda a aba). Testes: Parte Y.
+- **Back Office (Frente 1, 12/11/2026; `frontend/js/backoffice.js`, global `BO`; README, "Back Office")**: perfil NOVO na
+  entrada (5º botão), com senha e página próprias, no lugar do painel. **Nenhum número novo**: cada célula sai de
+  `metricas(k, rotas)` + `realOnline` (as mesmas da cascata) e tem o MESMO texto da linha da cascata; não há conta de
+  Meta, Real, Online, %, Dif ou meta do dia escrita no arquivo.
+  **Senha**: `CONFIG.BACKOFFICE_SENHA_HASH` (lista de um hash, a mesma conta do `hashSenha`; a senha NUNCA no
+  repositório). `PERFIL_SENHA` em app.js = {dir: 'DIRETORIA_SENHAS_HASH', bo: 'BACKOFFICE_SENHA_HASH'} generaliza
+  `confereSenha`/`pintaCaixa`/`fechaCaixa` sem mudar nada da Diretoria (que continua entrando direto depois da senha,
+  com os mesmos hashes e nomes). O Back Office tem 2ª etapa (`CAIXA.senhaOk`): as **16 gerências SEPARADAS**, sem grupos
+  e **todas habilitadas** (`gcBackOffice`; `GC_LIBERADAS` não vale). Acesso guardado com `v: SESSAO_VERSAO` como a
+  Diretoria (`MSG_ENTRADA.senhaBo` quando o guardado é antigo); a casa volta para a entrada.
+  **Gancho no painel**: `aplicaAcesso` desvia para `BO.entra(a)` e `render()` começa com `if(ACESSO.perfil==='bo')
+  return BO.render()`; `mostraEntrada` chama `BO.sai()`. `body.boAtivo` esconde `.lado` e `.wrap` (as duas únicas regras
+  do CSS novo que citam classes de fora; tudo o mais tem prefixo `.bo`). O `#bo` fica FORA da `<main>` e DEPOIS dela: o
+  seletor `.aviso:not([hidden])+.lado` exige que o `#aviso` continue grudado no `<aside>`.
+  **Regra da Karen (12/11/2026)**: MATRIZ = G1 + G2 + G3 (`CONFIG.BACKOFFICE_MATRIZ`); qualquer visão agrupada (a
+  MATRIZ e os pares de `GC_GRUPOS`) mostra as gerências **LADO A LADO, uma linha por gerência, SEM linha de total e SEM
+  soma** em lugar nenhum — tela e Excel (R-ESC-10). No Back Office esses pares NÃO têm "Total" (no painel continuam com
+  o de sempre). Não há linha BAND: a soma das 16 só existe nos testes, para reconciliar com o card da Diretoria.
+  **Tabelas**: uma por categoria (os 5 macros de Volume; ICS GC sem a Venda Zero e sem Imperdoáveis sem fonte, a regra
+  do `cardsDaAba`; Novos Negócios; Todos a Bordo com `incentivoAtivo()`), na ordem e com os rótulos do painel
+  (`rotuloInd`). A seção leva `data-g` (o grupo) + `data-k`: CERVEJAS está no ICS GC e no Todos a Bordo e ARTD KO no ICS
+  GC e em Novos Negócios, com contas diferentes. Linhas = `gruposDo` do nível (Gerência = a linha da gerência;
+  Supervisão = `gruposDo(ctxGerencia(gc))`, com a "Neutraliza" no fim; Rota = `gruposDo({nivel:'rota', rotas:rotasDe(gc,'')})`),
+  então Neutraliza, virtuais, EV* e SV.G3.3 entram exatamente como no painel. Todos a Bordo: `rotasInc` do escopo da
+  GERÊNCIA e cada linha filtrada por ele (a regra do `pintaCascata`), com "· n com meta"; escopo sem meta = uma linha com
+  `msgSemMetaInc(k)`. Cada linha publica `data-gc/meta/real/ro/dir/dif` exatos, como a cascata.
+  **Excel**: ExcelJS 4.4.0 por `RS.carregaScript(CONFIG.CDN.exceljs, 'ExcelJS')` (entrada nova no `CDN`, `integrity`
+  SHA-512 conferido contra o SRI do cdnjs). `BackOffice_<ESCOPO>_AAAAMMDD.xlsx` com o escopo sanitizado como no Painel
+  de Ritmo e a data do PAYLOAD (`RT.diaArq()`, exposto). Abas "Back Office" (uma linha por categoria x unidade, colunas
+  Painel · Categoria · [Gerência] · unidade · Meta · Real · Real + Online · % · Dif) e "Metadados". Números como NÚMERO,
+  já arredondados como a tela mostra (% inteiro); "—" = célula VAZIA; linha sem dado = o texto dela na coluna Meta;
+  nenhuma fórmula e nenhuma célula consolidada. Download direto (`baixa`), nada sai do navegador.
+  **Painel de ritmo**: `RT.exporta(escopo, alvo)` ganhou os dois parâmetros (escopo pronto e o botão que chamou,
+  `{el, rotulo, aviso}`); sem eles tudo segue no `#btnRitmo` como antes (`liga()` passou a usar `() => exporta()`: antes
+  o MouseEvent ia como 1º argumento). MATRIZ = `{tipo:'gc', gcs:['G1','G2','G3'], nome:'MATRIZ'}`, que o `montaRitmo`
+  já resolve como as páginas de G1, depois G2, depois G3 — **`montaRitmo` e o layout das páginas não mudaram**.
+  Testes: Parte AP do front.test.js (incluindo o antes x depois contra `8620727`), `backoffice_invariantes.js`
+  (recontagem INDEPENDENTE, sem nenhuma função do front) e o bloco "Back Office com dado real" do
+  `conferencia_real.test.js`. `senha_teste.js` ganhou `SENHA_BO`/`HASH_BO`/`trocaHashBo` (senha fictícia) e o
+  teste-guarda da Parte AO passou a ler os DOIS campos de hash do config.js (`CHAVES_HASH`).
+  Fora desta etapa: Venda Zero, Del Valle Frut, fechamento de M-1 a M-3 e Caderno em PDF (Frentes 2 e 3).
 - **Aba Todos a Bordo ("Todos a Bordo 3.0", cobertura de cervejas; chave interna INCENTIVO, era "Incentivo" até
   21/10/2026)**: `M.GROUPS['INCENTIVO']` = CERVEJAS, INC HEINEKEN,
   INC EISENBAHN 600ML, INC HEINEKEN 600ML, CERVEJAS 600ML RETORNAVEL (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS,
