@@ -8,11 +8,12 @@ desempenho/
 ├── frontend/                 site estático (GitHub Pages)
 │   ├── index.html
 │   ├── css/app.css
-│   ├── js/config.js          URLs dos dados, intervalos, aviso de versão, placa ATENÇÃO, aba Todos a Bordo, linha Status, entrada (grupos, virada), CDN
+│   ├── js/config.js          URLs dos dados, intervalos, aviso de versão, placa ATENÇÃO, aba Todos a Bordo, linha Status, entrada (grupos, virada, hashes das senhas), MATRIZ do Back Office, CDN
 │   ├── js/nucleo.js          agregação pura dos cards (sem DOM nem online; usada pelo painel e pelo Painel de Ritmo)
 │   ├── js/app.js             painel (entrada por seleção, filtros, aba Executiva, cards, cascata, busca, Desempenho GDM)
 │   ├── js/resumo.js          "Resumo de vendas" + PDF
 │   ├── js/ritmo.js           "Painel de ritmo": PDF matinal só com dados reais
+│   ├── js/backoffice.js      Back Office: visões consolidadas por gerência e exportação para Excel
 │   ├── js/main.js            carga e atualização periódica dos JSONs
 │   ├── assets/ (ícones, logos da entrada; fonts/ = Inter local + OFL), manifest.webmanifest
 │   ├── tests/                testes de front (Chromium headless, dado sintético; conferência da Executiva e das gavetas com dado real sob demanda)
@@ -160,13 +161,14 @@ nomes em `backend/gerador/mapeamento.py`, `GC_NOMES`, enviados no payload). Não
 
 ### Entrada com perfis
 
-> **Controle de acesso interno: a entrada só organiza o que cada perfil vê, sem usuário; só a Diretoria pede senha.
-> NÃO é segurança — os dados estão em frontend/data/*.json e qualquer um com o endereço lê tudo. O acesso fica
-> guardado no aparelho até a virada do dia (05:00, horário de Brasília) ou até clicar na casa.**
+> **Controle de acesso interno: a entrada só organiza o que cada perfil vê, sem usuário; pedem senha a Diretoria e o
+> Back Office. NÃO é segurança — os dados estão em frontend/data/*.json e qualquer um com o endereço lê tudo. O acesso
+> fica guardado no aparelho até a virada do dia (05:00, horário de Brasília) ou até clicar na casa.**
 
-O painel abre na **entrada**, com quatro botões (o sol/lua troca só o fundo da entrada, preto ou branco, e o
+O painel abre na **entrada**, com cinco botões (o sol/lua troca só o fundo da entrada, preto ou branco, e o
 aparelho guarda a escolha em `drotas_entrada`). Gerência, Supervisão e Rota abrem uma **caixa de seleção** (nada é
-digitado; fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa; funciona no celular).
+digitado; fecha no ×, no ESC ou clicando fora; a lista rola dentro da caixa; funciona no celular). O 5º,
+**BACK OFFICE**, pede senha e depois a gerência: ver "Back Office" abaixo.
 
 **Senha da Diretoria** (desde 22/10/2026): o botão DIRETORIA abre a mesma caixa com um campo **Senha** e o botão
 **Entrar** (foco no campo; Enter confirma; ESC, ×, clique fora e "← Voltar" fecham). Valem **duas senhas**, sem
@@ -268,6 +270,91 @@ Rota, que não tem a Executiva, abre no **Volume**.
 - **Links do Resumo** (`?resumo=...`, também do grupo: `gc=IT%2BMO`) abrem o Resumo direto, sem passar pela
   entrada e sem mexer no acesso guardado; ao fechar o Resumo, o painel segue como numa visita nova (o acesso
   guardado ou a entrada).
+
+### Back Office (visões consolidadas e exportação para Excel)
+
+> Frente 1, 12/11/2026. Pedido da Carol e do Helder (as duas pessoas estão cientes), para o back office acompanhar as
+> vendas em visões consolidadas e levar os números para o Excel. **Nenhum número do painel muda**: a tela só mostra e
+> exporta o que a cascata já calcula.
+
+**Como entra.** Na tela de entrada há um 5º botão, **BACK OFFICE**. Ele abre a mesma caixa da Diretoria, com o campo
+**Senha** (uma senha, própria; "Senha incorreta" com a mesma mensagem da Diretoria) e, depois dela, uma 2ª etapa que
+pede a **gerência**: as **16 separadas**, sem os grupos da entrada normal e **todas habilitadas** (a lista
+`CONFIG.GC_LIBERADAS`, que limita Gerência, Supervisão e Rota, não vale aqui). Escolhida a gerência, abre a **página do
+Back Office**, no lugar do painel. O acesso fica guardado no aparelho até a virada das 05:00 ou até a **casa**, como nos
+outros perfis (recarregar no mesmo dia não pede a senha de novo); o cabeçalho mostra **"Back Office"** e o escopo.
+A senha **não fica no repositório**: em `frontend/js/config.js` há só o hash (`CONFIG.BACKOFFICE_SENHA_HASH`), pela mesma
+conta das senhas da Diretoria (SHA-256 de `drotas:` + a senha sem espaços nas pontas e em MAIÚSCULAS). O **teste-guarda**
+da Parte AO confere os **dois** campos de hash do `config.js`, então a regra "nenhuma senha em texto em arquivo nenhum"
+passou a valer também para esta. Continua **não sendo segurança**: os dados estão em `frontend/data/*.json`.
+
+**A página.** No alto, "Back Office", o escopo ("GC.G2 · Goiânia 02 · Novembro/26 · dia útil 8/19"), **Atualizar** (↻) e
+**Entrada** (casa). Abaixo, dois filtros e dois botões:
+
+- **Gerência**: as 16 sozinhas e, num grupo "Agrupada", a **MATRIZ** (GC.G1 + GC.G2 + GC.G3) e os pares que já existem
+  no painel (PA+DI, GU+PO, IT+MO, UR+RI). A troca é feita **dentro da página**: dá para ir de uma gerência sozinha para
+  uma agrupada e voltar sem passar pela entrada.
+- **Nível**: Gerência, Supervisão ou Rota.
+- **Exportar Excel** e **Painel de ritmo**.
+
+**As tabelas.** Uma por categoria, agrupadas pelos painéis do site e na ordem e com os rótulos de sempre: **Volume** (os
+5 macros; Del Valle Frut fica fora, como nos demais lugares em que ele não é somado aos 5), **ICS GC** (os itens, sem a
+Venda Zero, que fica para outra frente), **Novos Negócios** e **Todos a Bordo**. As colunas são as da cascata: **Meta ·
+Real · Real + Online · % · Dif**, com os mesmos nomes ("% tendência", "% real da meta", "Dif") e o **mesmo texto** de
+cada célula — a conta é a da cascata (`NUCLEO.agrega` + `realOnline`), nada é recalculado aqui.
+
+- **Linhas**: uma por gerência, supervisão ou rota, na ordem do painel (supervisões e rotas em ordem natural, a linha
+  **"Neutraliza"** por último). Rotas virtuais e as ocultas das eventuais (EV*) nunca viram linha e continuam dentro do
+  total, como na cascata; a supervisão oculta (SV.G3.3) aparece, como aparece na cascata.
+- **Todos a Bordo**: a regra do painel. O escopo só tem o item se alguma rota dele tem meta; aí somam todas as rotas com
+  o item disponível (meta 0 com o Real e a oculta das EV*). Gerência sem nenhuma rota com meta: a linha mostra
+  **"Exclusivo portfólio Full"** (Heineken e Heineken - 600ml) ou **"Sem meta"**, como o card da aba. Indicador sem fonte
+  na gerência: **"indisponível"**; gerência sem dados: **"sem dados"**.
+- **Visão agrupada**: as gerências ficam **lado a lado**, uma linha por gerência, **sem linha de total e sem soma** em
+  lugar nenhum — na tela e no Excel (decisão da Karen, 12/11/2026). No nível Supervisão e no nível Rota entra a coluna
+  **Gerência**; no nível Gerência a unidade já é a gerência. Isso vale para a MATRIZ e também para PA+DI, GU+PO, IT+MO e
+  UR+RI, que no Back Office **não têm "Total"** (no painel o grupo continua com o Total de sempre).
+- Não há linha "BAND" nem total geral. A soma das 16 gerências existe só nos testes, para reconciliar com o card da
+  Diretoria.
+- A tela é de uso no PC; no celular **a tabela rola de lado dentro do próprio quadro** e a página nunca rola na
+  horizontal.
+
+**Excel.** O botão **Exportar Excel** baixa o que está na tela, em `BackOffice_<ESCOPO>_AAAAMMDD.xlsx`
+(`BackOffice_G2_20261112.xlsx`, `BackOffice_MATRIZ_20261112.xlsx`): o escopo é o mesmo nome curto do Painel de Ritmo
+(G2, MATRIZ, IT+MO) e a data é a do **PAYLOAD** (`DATA_ONTEM`, a mesma regra do Painel de Ritmo: quem abre o painel de
+manhã, antes da 1ª rodada do dia, leva no nome o dia dos números que está vendo), nunca a do relógio. Duas abas:
+
+- **"Back Office"**: uma linha por categoria × unidade, na ordem da tela, com as colunas **Painel · Categoria ·
+  [Gerência] · Gerência/Supervisão/Rota · Meta · Real · Real + Online · % · Dif**. "Painel" é o cabeçalho de grupo da
+  tela (Volume, ICS GC, Novos Negócios, Todos a Bordo): sem ele, *Cervejas* (ICS GC e Todos a Bordo) e *Artd KO* (ICS GC
+  e Novos Negócios) apareceriam duas vezes com contas diferentes e a mesma categoria.
+- **"Metadados"**: o filtro, o nível, o dia útil (`DIA_ONTEM`/`TOTAL_DIAS_UTEIS`), a data do payload, o `updatedAt` do
+  online e o mês de referência.
+- Os números vão como **número**, já arredondados como a tela os mostra (o % como inteiro: 93 = 93%). Onde a tela mostra
+  **"—"**, a célula fica **vazia** (nunca zero); numa linha sem dado, o texto da tela ("indisponível", "sem dados",
+  "Exclusivo portfólio Full", "Sem meta") vai na coluna Meta e as outras ficam vazias. **Nenhuma fórmula e nenhuma
+  célula consolidada**: o arquivo não soma nada.
+- A biblioteca é o **ExcelJS 4.4.0**, carregada sob demanda do cdnjs (`CONFIG.CDN.exceljs`, com `integrity` SHA-512),
+  do mesmo jeito que o html2canvas e o jsPDF do Resumo. Sem conexão, o botão avisa "Sem conexão para gerar o Excel". O
+  arquivo é montado no próprio navegador: nada é enviado para fora.
+
+**Painel de ritmo.** Com a **MATRIZ** escolhida, o botão vira **"Painel de ritmo (Matriz)"** e gera **um** PDF com as
+páginas do Painel de Ritmo de **G1, depois G2, depois G3** — cada gerência com a página dela e as das supervisões dela,
+calculada pelo `montaRitmo` do escopo dela, **sem consolidar nada**: o arquivo é `Painel_Ritmo_MATRIZ_AAAAMMDD.pdf`, com
+a data do payload, e cada página é byte a byte a do Painel de Ritmo daquela gerência sozinha. Para uma gerência sozinha
+e para os grupos de duas, o botão gera o mesmo PDF que o painel já gera para aquele escopo. O PDF continua só com dados
+reais do `payload.json` (nada do online). No fechamento do mês o botão fica desabilitado, como no painel.
+
+**Testes.** Parte AP do `front.test.js`: a entrada (senha errada e certa, acesso guardado, casa); **cada célula da tela
+igual à da cascata do painel** para o mesmo escopo, nas 4 categorias e nos 3 níveis, numa gerência e na MATRIZ; a visão
+agrupada (3 linhas na MATRIZ, 2 em IT+MO, sem total — o teste calcula a soma só para provar que ela não aparece); o
+`.xlsx` gerado e **lido de volta pela própria biblioteca**, célula a célula; o PDF da MATRIZ (ordem das páginas, HTML
+igual ao da gerência isolada e o nome com a data do payload); 360, 390, 1000 e 1440 px sem rolagem lateral nem erro; e o
+antes × depois contra a main, em que **nada fora do Back Office muda**. Com dado real, o
+`conferencia_real.test.js` recalcula Real, Real + Online e % de cada gerência e categoria **direto dos dois JSONs**
+(`backoffice_invariantes.js`, sem nenhuma função do front) e compara com a tela e com o Excel, reconcilia a soma das 16
+gerências com o card da Diretoria (no Todos a Bordo a diferença é exatamente o Real das rotas que entram no escopo da
+BAND e em nenhuma gerência) e confere as larguras e o PDF da MATRIZ.
 
 ### Telas
 
@@ -1539,9 +1626,10 @@ Diferenças em relação ao arquivo que era montado à mão:
 - O secret do OAuth Client circulou em texto: peça a rotação no Datasphere e
   atualize o Secret `DATASPHERE_CLIENT_SECRET`.
 - O repositório é público: `payload.json` contém nomes e códigos de clientes.
-- A entrada com perfis (Diretoria, Gerência, Supervisão e Rota, por seleção, sem usuário; a senha da Diretoria só
-  com os hashes em `config.js`) é só organização interna, não protege os dados:
+- A entrada com perfis (Diretoria, Gerência, Supervisão, Rota e Back Office, por seleção, sem usuário; as senhas da
+  Diretoria e a do Back Office só com os hashes em `config.js`) é só organização interna, não protege os dados:
   quem tiver o endereço de `frontend/data/*.json` lê tudo.
-- As senhas da Diretoria não podem aparecer em texto em nenhum arquivo (nem em teste, comentário ou expressão regular).
+- As senhas do painel (as duas da Diretoria e a do Back Office) não podem aparecer em texto em nenhum arquivo (nem em
+  teste, comentário ou expressão regular).
   Quem confere é o teste-guarda da Parte AO (`node --test frontend/tests/front.test.js`, roda sem navegador): ele varre
   `frontend/js/` e `frontend/tests/` pelo hash e aponta só o arquivo e a linha. Ver "Senha da Diretoria".

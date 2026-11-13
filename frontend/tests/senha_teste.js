@@ -22,6 +22,14 @@ const RE_HASHES = /DIRETORIA_SENHAS_HASH:\s*\[[^\]]*\]/;
 // config.js servido nos testes: os hashes de teste no lugar dos reais (config.js sem a chave, de um front antigo, fica igual)
 const trocaHash = (texto, hashes = HASHES_TESTE) =>
   String(texto).replace(RE_HASHES, `DIRETORIA_SENHAS_HASH: ${JSON.stringify(hashes)}`);
+/* Back Office (Frente 1, 12/11/2026): senha FICTÍCIA própria, com a mesma conta. O config.js servido nos testes leva o
+   hash dela em CONFIG.BACKOFFICE_SENHA_HASH, nunca o real. A regra da PN-45 vale igual: nenhum teste escreve a senha
+   de verdade, e quem prova é o teste-guarda da Parte AO, que agora confere os dois hashes do config.js. */
+const SENHA_BO = 'Entrada do Back Office em teste';
+const HASH_BO = hashTeste(SENHA_BO);
+const RE_HASH_BO = /BACKOFFICE_SENHA_HASH:\s*\[[^\]]*\]/;
+const trocaHashBo = (texto, hashes = [HASH_BO]) =>
+  String(texto).replace(RE_HASH_BO, `BACKOFFICE_SENHA_HASH: ${JSON.stringify(hashes)}`);
 /* Também no config.js servido: CONFIG.GC_LIBERADAS (gerências que abrem na entrada) = `lista` (padrão null = todas, para
    os testes entrarem por qualquer gerência); 'config' = a lista do config.js. */
 const RE_LIBERADAS = /GC_LIBERADAS:\s*(null|\[[^\]]*\])/;
@@ -44,4 +52,5 @@ async function digitaSenha(page, senha = SENHAS_TESTE[0]){
 }
 
 module.exports = {SENHAS_TESTE, TEXTOS_HASH, SENHAS_ERRADAS, hashTeste, HASHES_TESTE, RE_HASHES, trocaHash,
-  RE_LIBERADAS, trocaLiberadas, digitaSenha, NOMES_TESTE, RE_NOMES, trocaNomes};
+  RE_LIBERADAS, trocaLiberadas, digitaSenha, NOMES_TESTE, RE_NOMES, trocaNomes,
+  SENHA_BO, HASH_BO, RE_HASH_BO, trocaHashBo};

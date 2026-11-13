@@ -59,6 +59,15 @@ const CONFIG = Object.freeze({
     'b9d9818e4672b1f0d17c953a7dce40e58b06e06168e3aa2bda2bb7ca254d3d66': 'Ana Paula Naves',
     '912ab610b482ee34ffca833bfbb38dc64b9cd7fc04fe142dbcaaca9b038db34c': 'Alberto Batista',
   },
+  /* Back Office (Frente 1, 12/11/2026): perfil próprio na entrada, com página e senha próprias. Aqui fica SÓ o hash,
+     nunca a senha: a MESMA conta da Diretoria (SHA-256 hex minúsculo de "drotas:" + a senha sem espaços nas pontas e em
+     MAIÚSCULAS, UTF-8; hashSenha em app.js). Uma senha só, no mesmo formato de lista. Controle de acesso INTERNO, não é
+     segurança: os dados continuam em frontend/data/*.json. */
+  BACKOFFICE_SENHA_HASH: ['469292bd74874dae2c0869583d8a59f4efa7fef5cdf029bf6316f3c5cdc7f6e8'],
+  /* MATRIZ do Back Office: as três gerências da matinal, abertas JUNTAS e LADO A LADO (uma linha por gerência, sem
+     linha de total e sem soma em lugar nenhum, na tela e no Excel; decisão da Karen, 12/11/2026). Os grupos de
+     GC_GRUPOS (PA+DI, GU+PO, IT+MO, UR+RI) seguem a mesma regra no Back Office: lá eles não têm "Total". */
+  BACKOFFICE_MATRIZ: ['G1', 'G2', 'G3'],
   // Gerências agrupadas: os pares que o Datasphere junta numa gerência só (Pa_Di, Gu_Po, It_Mo, Ur_Ri; ver
   // GC_ORIGEM e GC_SIGLAS_ORIGEM em backend/gerador/mapeamento.py). Na entrada viram uma opção "GC.IT + GC.MO"
   // que abre o total das duas, com o seletor Total / uma delas no cabeçalho.
@@ -76,6 +85,12 @@ const CONFIG = Object.freeze({
     jspdf: {
       src: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
       integrity: 'sha512-qZvrmS2ekKPF2mSznTQsxqPgnpkI4DNTlrdUmTzrDgektczlKNRRhy5X5AAOnx5S09ydFYWWNSfcEqDTTHgtNA=='
+    },
+    // Excel do Back Office (backoffice.js), carregado sob demanda como as do PDF; integrity = SHA-512 do arquivo
+    // baixado do cdnjs (igual ao SRI publicado por eles para a versão 4.4.0)
+    exceljs: {
+      src: 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
+      integrity: 'sha512-dlPw+ytv/6JyepmelABrgeYgHI0O+frEwgfnPdXDTOIZz+eDgfW07QXG02/O8COfivBdGNINy+Vex+lYmJ5rxw=='
     }
   }
 });

@@ -43,7 +43,8 @@ const {confereEvolucao, ABRE_TODAS} = require('./evolucao_invariantes.js');
 const ROT = require('./rotulos_invariantes.js');
 const {confereResumoTab} = require('./resumo_tab_invariantes.js');
 const CASC_INV = require('./cascata_invariantes.js');
-const {trocaHash, trocaLiberadas, digitaSenha, trocaNomes} = require('./senha_teste.js');
+const {trocaHash, trocaLiberadas, digitaSenha, trocaNomes, SENHA_BO, trocaHashBo} = require('./senha_teste.js');
+const BO_INV = require('./backoffice_invariantes.js');
 
 const FRONT = path.resolve(__dirname, '..');
 const PAYLOAD = process.env.PAYLOAD_REAL, ONLINE = process.env.ONLINE_REAL;
@@ -86,7 +87,7 @@ async function abre(largura = 1440, tema, troca = {}){
     if(!troca[url.pathname] && !fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
     let body = troca[url.pathname] ? troca[url.pathname]() : fs.readFileSync(arq);
     // senha da Diretoria: hashes de teste; e todas as gerências liberadas na entrada (senha_teste.js)
-    if(url.pathname === '/js/config.js') body = trocaNomes(trocaLiberadas(trocaHash(body)));
+    if(url.pathname === '/js/config.js') body = trocaHashBo(trocaNomes(trocaLiberadas(trocaHash(body))));
     rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream', body});
   });
   await page.route(/cdnjs\.cloudflare\.com/, r => r.abort());
@@ -97,9 +98,18 @@ async function abre(largura = 1440, tema, troca = {}){
 // entra pela tela de entrada (a casa volta para ela): {perfil: 'dir'} | {perfil: 'gc', gc} | {perfil: 'sv', gc, sv} |
 // {perfil: 'rota', gc, rota}
 async function entra(page, {perfil, gc, sv, rota}){
-  if(await page.isHidden('#entrada')) await page.click('#btnCasa');
+  if(await page.isHidden('#entrada')) await page.click(await page.isHidden('#bo') ? '#btnCasa' : '#boCasa');
   await page.click(`#entrada [data-perfil="${perfil}"]`);
   if(perfil === 'dir') return digitaSenha(page);
+  // Back Office (Frente 1): senha própria e, depois dela, a gerência (as 16 separadas, sem grupos)
+  if(perfil === 'bo'){
+    await page.fill('#entSenha', SENHA_BO);
+    await page.press('#entSenha', 'Enter');
+    await page.waitForSelector('#entOpcoes [data-gc]');
+    await page.click(`#entOpcoes [data-gc="${gc}"]`);
+    return page.waitForFunction(() => !document.getElementById('bo').hidden &&
+      document.getElementById('boCorpo').innerHTML !== '');
+  }
   await page.click(`#entOpcoes [data-gc="${gc}"]`);
   if(perfil === 'sv') await page.click(`#entOpcoes [data-sv="${sv}"]`);
   if(perfil === 'rota') await page.click(`#entOpcoes [data-rota="${rota}"]`);
@@ -2104,5 +2114,176 @@ describe('Medidor com Real + Online e coluna "Real + Online" da gaveta, com dado
       assert.deepEqual(erros, [], `${largura} ${tema} ${lado}`);
       await ctx.close();
     }
+  });
+});
+
+/* ---------- Back Office (Frente 1) com DADO REAL ----------
+   Recontagem INDEPENDENTE (backoffice_invariantes.js: lê o payload.json e o online.json como objetos e soma na mão,
+   sem nenhuma função do front) do Real, do Real + Online e do % de cada gerência e de cada categoria, comparada com a
+   tela e com o Excel; e a reconciliação da soma das 16 gerências com o card da Diretoria (só aqui: o Back Office
+   nunca soma nada). Imprime tabelas-resumo só com totais e códigos de gerência e de rota. */
+const LIB_XLSX_REAL = (() => {
+  const busca = [path.resolve(FRONT, '..'), ...(process.env.NODE_PATH || '').split(path.delimiter).filter(Boolean)];
+  try { busca.push(execSync('npm root -g', {stdio: ['ignore', 'pipe', 'ignore']}).toString().trim()); } catch(e) { /* sem npm */ }
+  try {
+    return {arq: require.resolve('exceljs/dist/exceljs.min.js', {paths: busca}),
+            mod: require(require.resolve('exceljs', {paths: busca}))};
+  } catch(e) { return null; }
+})();
+// onde ficam os arquivos gerados na conferência (FORA do repositório); BO_SAIDA troca a pasta
+const SAIDA_BO = process.env.BO_SAIDA || path.join(require('node:os').tmpdir(), 'drotas-backoffice');
+
+describe('Back Office com dado real (Frente 1)', {skip: pular}, () => {
+  const P = JSON.parse(fs.readFileSync(PAYLOAD, 'utf-8'));
+  const O = JSON.parse(fs.readFileSync(ONLINE, 'utf-8'));
+  const GCS = (P.GC_ATIVAS || Object.keys(P.DATA)).filter(g => P.DATA[g]);
+  const MATRIZ = ['G1', 'G2', 'G3'].filter(g => P.DATA[g]);
+
+  test('(a) cada gerência e cada categoria: Meta, Real, Real + Online e % da tela = a recontagem independente', async () => {
+    const {page, ctx, erros} = await abre(1440);
+    const resumo = [];
+    // uma gerência sozinha (todas as 16), a MATRIZ e um grupo de duas
+    await entra(page, {perfil: 'bo', gc: GCS[0]});
+    for(const g of GCS){
+      await page.selectOption('#boGc', 'gc:' + g);
+      await page.waitForFunction(g => document.getElementById('boGc').value === g, 'gc:' + g);
+      resumo.push(...await BO_INV.confereBackOffice(page, P, O, [g], `GC.${g}`));
+    }
+    for(const [chave, gcs] of [['MATRIZ', MATRIZ], ['IT+MO', ['IT', 'MO'].filter(x => P.DATA[x])]]){
+      if(gcs.length < 2) continue;
+      await page.selectOption('#boGc', 'grp:' + chave);
+      await page.waitForFunction(v => document.getElementById('boGc').value === v, 'grp:' + chave);
+      await BO_INV.confereBackOffice(page, P, O, gcs, chave);
+    }
+    // tabela-resumo do PR: só totais e códigos de gerência
+    const porCat = {};
+    for(const r of resumo){
+      const c = porCat[r.cat] = porCat[r.cat] || {meta: 0, real: 0, ro: 0, gcs: 0};
+      c.meta += r.meta; c.real += r.real; c.ro += r.ro || 0; c.gcs++;
+    }
+    console.log('# Back Office (dado real): soma das gerências por categoria, recontada do payload e do online');
+    console.log('# | Categoria | Gerências | Meta | Real | Real + Online | % |');
+    console.log('# |---|---|---|---|---|---|');
+    for(const [k, c] of Object.entries(porCat))
+      console.log(`# | ${k} | ${c.gcs} | ${Math.round(c.meta)} | ${Math.round(c.real)} | ${Math.round(c.ro)} |`
+        + ` ${c.meta ? Math.round(c.real / c.meta * 100) : '—'}% |`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(b) a soma das gerências = o card da Diretoria (no Todos a Bordo, a diferença é o Real das rotas só da BAND)', async () => {
+    const linhas = BO_INV.reconcilia(P, O, GCS);
+    assert.ok(linhas.length >= 15, `categorias reconciliadas: ${linhas.length}`);
+    console.log('# Reconciliação (só no teste: o Back Office nunca soma): Σ das 16 gerências x o card da Diretoria');
+    console.log('# | Painel | Categoria | Σ gerências (Real) | BAND (Real) | Dif | Rotas só na BAND | Real delas |');
+    console.log('# |---|---|---|---|---|---|---|');
+    for(const l of linhas){
+      const dif = l.realBand - l.real;
+      console.log(`# | ${l.grupo} | ${l.cat} | ${Math.round(l.real)} | ${Math.round(l.realBand)} | ${Math.round(dif)}`
+        + ` | ${l.fora} | ${Math.round(l.realFora)} |`);
+      if(l.grupo === 'INCENTIVO'){
+        // a diferença esperada é exatamente o Real das rotas que entram no escopo da BAND e em nenhuma gerência
+        assert.ok(BO_INV.perto(dif, l.realFora, 0.05), `${l.cat}: dif ${dif} x Real das rotas só da BAND ${l.realFora}`
+          + (l.rotasFora.length ? ` (rotas ${l.rotasFora.join(', ')})` : ''));
+      } else {
+        assert.ok(BO_INV.perto(l.real, l.realBand, 0.05), `${l.cat}: Real Σ gerências x BAND`);
+        assert.ok(BO_INV.perto(l.meta, l.metaBand, 0.05), `${l.cat}: Meta Σ gerências x BAND`);
+        if(l.ro != null) assert.ok(BO_INV.perto(l.ro, l.roBand, 0.05), `${l.cat}: Real + Online Σ gerências x BAND`);
+      }
+    }
+  });
+
+  test('(c) Excel: as células do arquivo = a tela, com os números da recontagem',
+       {skip: !LIB_XLSX_REAL && 'exceljs não instalado (npm)'}, async () => {
+    fs.mkdirSync(SAIDA_BO, {recursive: true});
+    const {page, ctx, erros} = await abre(1440);
+    await page.route(/cdnjs\.cloudflare\.com/, r => r.fulfill({status: 200, contentType: 'text/javascript',
+      body: fs.readFileSync(LIB_XLSX_REAL.arq), headers: {'access-control-allow-origin': '*'}}));
+    await entra(page, {perfil: 'bo', gc: GCS[0]});
+    const feitos = [];
+    for(const [escopo, nivel, nome] of [['gc:' + GCS[0], 'sv', GCS[0]], ['grp:MATRIZ', 'gc', 'MATRIZ']]){
+      if(escopo === 'grp:MATRIZ' && MATRIZ.length < 3) continue;
+      await page.selectOption('#boGc', escopo);
+      await page.selectOption('#boNivel', nivel);
+      await page.waitForFunction(([e, n]) => document.getElementById('boGc').value === e &&
+        document.getElementById('boNivel').value === n, [escopo, nivel]);
+      const tela = await page.evaluate(BO_INV.LE_BO);
+      const [dl] = await Promise.all([page.waitForEvent('download', {timeout: 120000}), page.click('#boXlsx')]);
+      const arq = path.join(SAIDA_BO, dl.suggestedFilename());
+      await dl.saveAs(arq);
+      feitos.push(arq);
+      const dia = await page.evaluate(() => RT.diaArq());
+      assert.equal(dl.suggestedFilename(), `BackOffice_${nome}_${dia}.xlsx`);
+      const wb = new LIB_XLSX_REAL.mod.Workbook();
+      await wb.xlsx.readFile(arq);
+      const ws = wb.getWorksheet('Back Office');
+      const cab = ws.getRow(1).values.slice(1);
+      const esperado = tela.flatMap(t => t.linhas.map(l => ({t, l})));
+      assert.equal(ws.rowCount - 1, esperado.length, `${escopo}: uma linha por categoria x unidade`);
+      const cel = (i, j) => { const v = ws.getRow(i).getCell(j).value; return v === undefined ? null : v; };
+      esperado.forEach(({t, l}, i) => {
+        const onde = `${escopo} ${t.k} ${l.nome}`;
+        assert.equal(cel(i + 2, 2), t.tit, `${onde}: categoria`);
+        assert.equal(cel(i + 2, cab.length - 5), l.nome, `${onde}: unidade`);
+        if(l.off) return;
+        // Meta, Real e Real + Online do Excel = os valores exatos da linha, arredondados como a tela os mostra
+        const [m, re, ro, pct] = [cel(i + 2, cab.length - 4), cel(i + 2, cab.length - 3), cel(i + 2, cab.length - 2),
+                                  cel(i + 2, cab.length - 1)];
+        for(const [v, x, qual] of [[m, l.meta, 'Meta'], [re, l.real, 'Real'], [ro, l.ro == null ? l.real : l.ro, 'Real + Online']]){
+          assert.equal(typeof v, 'number', `${onde}: ${qual} tem de ser número`);
+          assert.ok(Math.abs(v - x) <= 0.5, `${onde}: ${qual} ${v} x ${x}`);
+        }
+        assert.equal(pct, l.dir, `${onde}: %`);
+      });
+    }
+    console.log(`# Arquivos da conferência (fora do repositório): ${feitos.join(' ')}`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  for(const largura of [360, 390, 1000, 1440])
+  test(`(d) ${largura} px, fundos preto e branco: sem rolagem lateral da página, sem corte e sem erro`, async () => {
+    for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre(largura, tema);
+      await entra(page, {perfil: 'bo', gc: GCS[0]});
+      for(const [escopo, nivel] of [['gc:' + GCS[0], 'gc'], ['gc:' + GCS[0], 'sv'], ['gc:' + GCS[0], 'rota'],
+                                    ['grp:MATRIZ', 'sv']]){
+        if(escopo === 'grp:MATRIZ' && MATRIZ.length < 3) continue;
+        await page.selectOption('#boGc', escopo);
+        await page.selectOption('#boNivel', nivel);
+        await page.waitForFunction(([e, n]) => document.getElementById('boGc').value === e &&
+          document.getElementById('boNivel').value === n && document.getElementById('boCorpo').innerHTML !== '', [escopo, nivel]);
+        const onde = `${largura} ${tema} ${escopo}/${nivel}`;
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 0.5),
+          `${onde}: rolagem lateral da página`);
+        assert.ok(await page.evaluate(() => [...document.querySelectorAll('.boCat')]
+          .every(c => c.scrollWidth <= c.clientWidth + 0.5)), `${onde}: a tabela rola dentro do quadro`);
+        const corta = await page.$$eval('#bo .boTab td, #bo .boTab th',
+          es => es.filter(e => e.scrollWidth > e.clientWidth + 0.5).length);
+        assert.equal(corta, 0, `${onde}: célula cortada`);
+      }
+      assert.deepEqual(erros, [], `${largura} ${tema}`);
+      await ctx.close();
+    }
+  });
+
+  test('(e) Painel de ritmo da MATRIZ: as páginas de G1, G2 e G3, idênticas às da gerência isolada', async () => {
+    if(MATRIZ.length < 3) return;
+    const {page, ctx, erros} = await abre(1440);
+    await entra(page, {perfil: 'bo', gc: GCS[0]});
+    await page.selectOption('#boGc', 'grp:MATRIZ');
+    await page.waitForFunction(() => document.getElementById('boGc').value === 'grp:MATRIZ');
+    const r = await page.evaluate(gcs => {
+      const m = montaRitmo(P, BO.escopoRitmo());
+      const sep = gcs.flatMap(g => montaRitmo(P, {tipo: 'gc', gcs: [g], nome: g}).paginas);
+      return {gcs: m.paginas.map(p => p.gc), n: m.paginas.length, nSep: sep.length,
+        iguais: m.paginas.every((p, i) => sep[i] && RT.desenhaPagina(p) === RT.desenhaPagina(sep[i]))};
+    }, MATRIZ);
+    assert.equal(r.n, r.nSep, 'o mesmo nº de páginas das três gerências isoladas');
+    assert.deepEqual([...new Set(r.gcs)], MATRIZ, 'G1, depois G2, depois G3');
+    assert.equal(r.iguais, true, 'cada página igual à do Painel de Ritmo da gerência isolada');
+    console.log(`# Painel de Ritmo da MATRIZ (dado real): ${r.n} páginas (${MATRIZ.join(' + ')})`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
   });
 });
