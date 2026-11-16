@@ -601,7 +601,7 @@ document.addEventListener('pointerdown', e => { _ponteiro = e.pointerType; if(_d
 document.addEventListener('keydown', e => { if(e.key==='Escape') escondeDica(); });
 addEventListener('scroll', () => { if(_dicaEl) escondeDica(); }, {passive:true});
 
-/* ---------- aba Executiva (Diretoria, Gerência e Supervisão; não existe com uma rota no filtro) ----------
+/* ---------- aba Executiva (Diretoria, Gerência, Supervisão e, desde a PN-60, uma rota no filtro) ----------
    Resumo do filtro: 4 KPIs, os quadros "Foco do fechamento" e "Meta do dia (SAP)" da categoria em análise, os medidores
    das 5 categorias de volume, Tendência x Meta, Sem compra e Agenda de hoje por unidade e a tabela de coberturas.
    Unidades = os grupos da cascata no 1º nível do filtro (gruposDo(ctxInicial())): Diretoria -> gerências; gerência (ou
@@ -622,11 +622,18 @@ const CURTO_COB = {'CCTM 2L PET':'CCTM 2L Pet', 'KS TT':'KS TT', 'REFRI SABORES 
   'POWERADE':'Powerade', 'ARTD KO':'Artd KO', 'CAMPARI':'Campari', 'DREHER':'Dreher', 'PERFETTI TT':'Perfetti TT',
   'APEROL':'Aperol', 'INC HEINEKEN':'Heineken', 'INC EISENBAHN 600ML':'Eisenb. 600ml', 'INC HEINEKEN 600ML':'Heinek. 600ml'};
 let catExec = '';      // categoria em análise (chave de GROUPS.VOLUME); '' = a primeira (Refrigerantes)
-const temExecutiva = () => !(sel.modo!=='dir' && sel.rota);
-// nome visível da aba EXEC pelo perfil (CONFIG.ABA_EXEC_NOME: Diretoria, Gerencial, Supervisão); sem acesso (link do
-// Resumo), pelo modo do filtro
+/* A aba existe em todos os escopos desde a PN-60 (16/11/2026): com uma rota no filtro ela passou a ser a tela de quem
+   roda a rota (abaixo, "Executiva no escopo de uma rota"). Não há mais nenhum caso em que a aba some, então a linha do
+   render que troca para o Volume quando ela está escondida nunca dispara (fica como rede de segurança). A aba INICIAL do
+   perfil Rota continua sendo o Volume (aplicaAcesso). */
+const temExecutiva = () => true;
+/* Escopo de uma rota: exatamente o caso em que ctxInicial() devolve nivel 'cli' (uma rota no filtro, fora da Diretoria e
+   do escopo do nível acima). Decide o que a Executiva mostra; nunca mexe no acesso, no sel nem na entrada. */
+const escopoRota = () => !acimaAtivo() && sel.modo!=='dir' && !!sel.rota;
+// nome visível da aba EXEC pelo perfil (CONFIG.ABA_EXEC_NOME: Diretoria, Gerencial, Supervisão, Rota); sem acesso (link
+// do Resumo), pelo modo do filtro e pela rota escolhida
 const nomeAbaExec = () => { const n = CONFIG.ABA_EXEC_NOME;
-  return n[ACESSO ? ACESSO.perfil : (sel.modo==='dir' ? 'dir' : 'gc')] || n.gc; };
+  return n[ACESSO ? ACESSO.perfil : (sel.modo==='dir' ? 'dir' : sel.rota ? 'rota' : 'gc')] || n.gc; };
 const catAtual = () => GROUPS.VOLUME.includes(catExec) ? catExec : GROUPS.VOLUME[0];
 const comMeta = b => !!b && !b.unavailable && b.meta > 0;
 // desvio da categoria: Tendência / Meta - 1 (no fechamento, Real / Meta - 1), sem arredondar
@@ -637,7 +644,7 @@ const fmtDesvio = (d, casas) => `${d>=0 ? '+' : '−'}${pctBR(Math.abs(d*100), c
 const onlineVol = (rotas, k) => rotas.reduce((a,r)=>a+((((ONLINE && ONLINE.volume) || {})[r] || {})[k] || 0), 0);
 // nível das unidades: [singular, plural, sujeito da frase] (o código da rota já diz "Rota 111")
 const NIVEL_EXEC = {gc:['gerência', 'gerências', 'A gerência'], sv:['supervisão', 'supervisões', 'A supervisão'],
-                    rota:['rota', 'rotas', 'A']};
+                    rota:['rota', 'rotas', 'A'], cli:['cliente', 'clientes', 'A rota']};
 
 // unidades do 1º nível do filtro, cada uma com o agrega() das próprias rotas (gerências sem dados ficam fora);
 // cod = o código sem o nome (GC.AT, SV.AP.1, Neutraliza, Rota 111); filho = o contexto da cascata dentro dela
@@ -655,22 +662,39 @@ function pintaExecutiva(rotas, a, visitas){
   if(_dicaEl && $('exec').contains(_dicaEl)) escondeDica();      // a linha com a dica aberta vai ser redesenhada
   const ctx = ctxInicial(), us = unidadesExec(ctx), tot = totalExec(ctx, rotas, a);
   const niv = NIVEL_EXEC[ctx.nivel] || NIVEL_EXEC.rota, k = catAtual(), fech = !!P.FECHAMENTO;
+  // PN-60: no escopo de uma rota os quatro blocos por unidade mostrariam a própria rota repetida; saem e entram os da rota
+  const soRota = ctx.nivel==='cli';
   pintaKpisExec(a, visitas);
-  $('exFocoTxt').innerHTML = textoFoco(k, a.ind[k], us, niv);
+  $('exFocoTxt').innerHTML = textoFoco(k, a.ind[k], us, niv, soRota ? a.tot : null, visitas);
   $('exDia').hidden = fech;
-  $('exDiaTxt').innerHTML = fech ? '' : textoMetaDia(k, a.ind[k], rotas, us, niv);
+  $('exDiaTxt').innerHTML = fech ? '' : textoMetaDia(k, a.ind[k], rotas, us, niv, soRota);
   pintaMedidores(rotas, a.ind, k);
   // "Abrir por" (cabeçalho fixo): o nível do filtro (padrão), canal, cliente, Key Account ou marca (só o aviso)
   const ab = modoAbrir();
-  if(ab==='nivel') pintaDesvios(us, tot, niv, k); else pintaDesviosDim(ab, tot, k);
-  pintaSemCompraExec(us, tot, niv);
-  $('exAg').hidden = fech;
+  blocoExec('exDivs').hidden = soRota;
+  blocoExec('exSemc').hidden = soRota;
+  $('exAg').hidden = fech || soRota;
+  blocoExec('exCob').hidden = soRota;
+  // a linha dupla (Sem compra | Agenda): com um só, uma coluna; no escopo de rota os dois saem e a linha some
   $('exAg').parentNode.classList.toggle('so1', fech);
-  $('exAgenda').innerHTML = fech ? '' : agendaHtml(us, tot, niv);
-  pintaCoberturasExec(us, tot, niv);
+  $('exAg').parentNode.classList.toggle('exrOff', soRota);
+  if(soRota){
+    // nada por unidade: o HTML antigo sai para não ficar escondido e desatualizado
+    $('exDivs').innerHTML = ''; $('exChips').innerHTML = ''; $('exSemc').innerHTML = '';
+    $('exAgenda').innerHTML = ''; $('exCob').innerHTML = '';
+    pintaRotaExec(ctx, rotas, a);
+  } else {
+    tiraRotaExec();
+    if(ab==='nivel') pintaDesvios(us, tot, niv, k); else pintaDesviosDim(ab, tot, k);
+    pintaSemCompraExec(us, tot, niv);
+    $('exAgenda').innerHTML = fech ? '' : agendaHtml(us, tot, niv);
+    pintaCoberturasExec(us, tot, niv);
+  }
   pintaEvolucao(us, tot, niv);
   $('exec').querySelectorAll('[data-dica]').forEach(ativaDica);
 }
+// a seção .bloco que embrulha um dos blocos da Executiva (o cabeçalho dele vem junto)
+const blocoExec = id => $(id).closest('.bloco');
 
 // KPIs: os mesmos números dos cards Base, Sem compra e "visitas hoje" e do card "Categorias na tendência" do Volume
 function pintaKpisExec({ind, tot}, visitas){
@@ -687,28 +711,41 @@ function pintaKpisExec({ind, tot}, visitas){
 }
 
 /* Foco do fechamento (categoria em análise): falta = Meta - Tendência; a maior falta entre as unidades fora da tendência
-   (pctTendencia < 100), em % da soma das faltas positivas delas. No fechamento do mês, pelo realizado (Meta - Real). */
-function textoFoco(k, b, us, niv){
+   (pctTendencia < 100), em % da soma das faltas positivas delas. No fechamento do mês, pelo realizado (Meta - Real).
+   PN-60, escopo de uma rota (totRota != null): não há o que comparar entre unidades (a única é a própria rota), então a
+   2ª frase vira a da rota — os dois números dos KPIs que já estão na tela (Sem compra e Visitas hoje), sem recontar. */
+function textoFoco(k, b, us, niv, totRota, visitas){
   const nome = esc(rotuloInd(k)), fech = !!P.FECHAMENTO;
   if(!comMeta(b)) return `${nome}: sem meta neste escopo.`;
   const pct = x => fech ? x.pctReal : x.pctTendencia, proj = x => fech ? x.real : x.tendencia;
-  if(b.onPace) return fech ? `${nome} fechou o mês em <b class="ok">${pct(b)}%</b> da meta: meta batida.`
-                           : `${nome} está em <b class="ok">${pct(b)}%</b> de tendência: no caminho da meta.`;
+  if(b.onPace){
+    const t0 = fech ? `${nome} fechou o mês em <b class="ok">${pct(b)}%</b> da meta: meta batida.`
+                    : `${nome} está em <b class="ok">${pct(b)}%</b> de tendência: no caminho da meta.`;
+    return totRota ? t0 + fraseRota(totRota, visitas) : t0;
+  }
   const fora = us.map(u=>({u, b:u.a.ind[k]})).filter(x=>comMeta(x.b) && pct(x.b) < 100)
     .map(x=>({...x, f:x.b.meta - proj(x.b)})).filter(x=>x.f > 0);
   const soma = fora.reduce((s,x)=>s+x.f, 0), top = fora.reduce((m,x)=>!m || x.f > m.f ? x : m, null);
   let t = fech ? `${nome} fechou o mês em <b class="no">${pct(b)}%</b> da meta; faltaram <b class="no">${fmt0(b.meta - proj(b))}</b>.`
     : `${nome} está em <b class="no">${pct(b)}%</b> de tendência; faltam <b class="no">${fmt0(b.meta - proj(b))}</b> para a meta.`;
+  if(totRota) return t + fraseRota(totRota, visitas);
   if(top){
     const quem = top.u.cod===SV_NEUTRA ? `A linha <b>${SV_NEUTRA}</b>` : `${niv[2]} <b>${esc(top.u.cod)}</b>`;
     t += ` ${quem} concentra <b class="no">${Math.round(top.f/soma*100)}%</b> dessa falta (${fmt0(top.f)}).`;
   }
   return t;
 }
+// 2ª frase do Foco no escopo de uma rota: os números dos KPIs "Sem compra" (tot.semCompra) e "Visitas hoje" (visitas)
+function fraseRota(tot, visitas){
+  const vis = ` <b>${(visitas || 0).toLocaleString('pt-BR')}</b> ${visitas===1 ? 'tem visita hoje' : 'têm visita hoje'}.`;
+  if(tot.semCompra==null) return ` Sem dado de compra no mês nesta rota;${vis}`;
+  return ` <b class="no">${tot.semCompra.toLocaleString('pt-BR')}</b> ${tot.semCompra===1 ? 'cliente da base ainda não comprou' : 'clientes da base ainda não compraram'}`+
+    ` no mês;${vis}`;
+}
 
 /* Meta do dia (SAP): online de hoje x meta do dia (META_RECUPERAVEL_ROTA somada, como no card); a unidade "alcançou" com a
    meta do dia batida (<= 0) ou com o online >= a meta do dia (a regra da caixa Online). */
-function textoMetaDia(k, b, rotas, us, niv){
+function textoMetaDia(k, b, rotas, us, niv, soRota){
   const nome = esc(rotuloInd(k)), md = b && !b.unavailable ? b.metaDia : null;
   if(md==null) return `${nome}: sem meta do dia do SAP neste escopo.`;
   const onl = onlineVol(rotas, k);
@@ -716,11 +753,17 @@ function textoMetaDia(k, b, rotas, us, niv){
     const q = diaNaoUtil();
     return `${nome}: hoje não é dia útil${q ? ` (${q})` : ''}; não há meta do dia. Online de hoje: <b>${fmt0(onl)}</b>.`;
   }
-  if(metaBatida(md)) return `${nome}: meta do dia já batida neste escopo. Online de hoje: <b class="ok">${fmt0(onl)}</b>.`;
+  /* Meta do dia <= 0 em dia útil: a mesma regra do painel (metaBatida, R-UI-11) — a frase de sempre nos outros escopos
+     e, no escopo de uma rota (PN-60), o "Meta batida!" do painel no lugar da contagem de unidades. */
+  if(metaBatida(md)) return `${nome}: ${soRota ? META_BATIDA : 'meta do dia já batida neste escopo.'}`+
+    ` Online de hoje: <b class="ok">${fmt0(onl)}</b>.`;
+  const frase = `${nome}: online de hoje <b class="${onl >= md ? 'ok' : 'no'}">${fmt0(onl)}</b> contra meta do dia de <b>${fmt0(md)}</b>`+
+    ` (${Math.round(onl/md*100)}%).`;
+  // PN-60, escopo de uma rota: sem a contagem de unidades (a única unidade é a própria rota)
+  if(soRota) return frase;
   const com = us.map(u=>({md:(u.a.ind[k] || {}).metaDia, onl:onlineVol(u.rotas, k)})).filter(x=>x.md!=null);
   const alc = com.filter(x=>metaBatida(x.md) || x.onl >= x.md).length;
-  return `${nome}: online de hoje <b class="${onl >= md ? 'ok' : 'no'}">${fmt0(onl)}</b> contra meta do dia de <b>${fmt0(md)}</b>`+
-    ` (${Math.round(onl/md*100)}%). ${alc} de ${com.length} ${com.length===1 ? niv[0] : niv[1]}`+
+  return `${frase} ${alc} de ${com.length} ${com.length===1 ? niv[0] : niv[1]}`+
     ` ${alc===1 ? 'já alcançou' : 'já alcançaram'} a meta do dia.`;
 }
 
@@ -1075,6 +1118,136 @@ function pintaCoberturasExec(us, tot, niv){
     `</tr></thead><tbody>${[tot, ...us].map(linha).join('')}</tbody>`;
 }
 
+/* ---------- Executiva no escopo de uma rota (PN-60, 16/11/2026) ----------
+   Com uma rota no filtro (ctxInicial().nivel === 'cli'; perfil Rota ou o filtro de outro perfil) os quatro blocos por
+   unidade mostrariam a própria rota repetida: "Tendência x Meta", "Sem compra", "Coberturas" e "Agenda de hoje" ficam
+   escondidos (o HTML deles continua na página, só com hidden) e entram, no lugar, os quatro blocos desta seção. Tudo o
+   mais da Executiva (os 4 KPIs, os dois quadros, os medidores, a Evolução, o "Abrir por" e a busca) continua igual.
+   NENHUM NÚMERO NOVO: cada valor sai de agrega() (o mesmo dos cards), de onlineVol (a caixa Online do card) ou do
+   payload (CLIENTES_HOJE, SEM_COMPRA_HOJE, VENDAZERO_CLIENTES, CLIENT_ROSTER, COBERTOS) e do QUALQUER do online; não há
+   conta nova de Meta, Real, %, Dif, tendência ou meta do dia aqui. Fora do escopo de rota a caixa é removida da página,
+   então o #exec continua byte a byte o de antes. */
+let _exrBox = null;
+// a caixa dos blocos da rota, logo depois dos medidores (antes do bloco "Tendência x Meta", que fica escondido)
+function caixaRotaExec(){
+  if(_exrBox && _exrBox.isConnected) return _exrBox;
+  _exrBox = document.createElement('div');
+  _exrBox.className = 'exr';
+  _exrBox.id = 'exRota';
+  $('exec').insertBefore(_exrBox, blocoExec('exDivs'));
+  return _exrBox;
+}
+function tiraRotaExec(){
+  if(_exrBox && _exrBox.isConnected) _exrBox.remove();
+  _exrBox = null;
+}
+function pintaRotaExec(ctx, rotas, a){
+  const r = ctx.rotas[0], fech = !!P.FECHAMENTO;
+  // no fechamento do mês não há "hoje": Clientes de hoje, O que falta hoje e Venda Zero (indisponível) não aparecem
+  caixaRotaExec().innerHTML = (fech ? '' : exrClientesHoje(r)) + (fech ? '' : exrFaltaHoje(rotas, a.ind))
+    + exrVendaZero(rotas, r, a.ind) + exrCobertura(r, a.ind);
+}
+
+/* "Clientes de hoje": os clientes com visita agendada hoje na rota (CLIENTES_HOJE, em nome, como as gavetas), cada um
+   com a situação. As três situações são as mesmas que a "Agenda de hoje" desenha em barra, pelo critério do agendaDe:
+   sem compra no mês = estar no SEM_COMPRA_HOJE da rota; desses, quem pediu online hoje está no QUALQUER do online
+   (onlineIds); os demais "restam". Rota sem dado de compra no mês (SEM_COMPRA_HOJE null): a lista aparece sem situação,
+   como a Agenda, que deixa a rota de fora. */
+const EXR_SIT = {ja:'comprou no mês', ped:'pediu online hoje', resta:'resta'};
+function exrClientesHoje(r){
+  const l = listaClientes([r]), sch = SEM_COMPRA_HOJE[r], sem = sch==null ? null : new Set(sch);
+  const on = new Set(onlineIds(r)), LIM = CONFIG.LIMITE_LISTA;
+  const sit = c => sem==null ? '' : !sem.has(c[0]) ? 'ja' : on.has(c[0]) ? 'ped' : 'resta';
+  const n = {ja:0, ped:0, resta:0};
+  l.forEach(([, c]) => { const s = sit(c); if(s) n[s]++; });
+  const linhas = l.slice(0, LIM).map(([rr, c]) => {
+    const s = sit(c);
+    return itemHtml(rr, c, (s ? `<span class="exrSit ${s}">${EXR_SIT[s]}</span> ` : '') + `<span class="exrPv">PV ${esc(c[0])}</span>`,
+                    on.has(c[0]));
+  }).join('') + (l.length > LIM ? `<div class="vazio">+ ${l.length - LIM} clientes</div>` : '');
+  const sub = sem==null ? `${qtd(l.length, 'cliente', 'clientes')} com visita agendada hoje · sem dado de compra no mês nesta rota`
+    : `${qtd(l.length, 'cliente', 'clientes')} com visita agendada hoje · ${n.ja} ${n.ja===1 ? 'já comprou' : 'já compraram'} no mês`+
+      ` · ${n.ped} ${n.ped===1 ? 'pediu' : 'pediram'} online hoje · restam ${n.resta}`;
+  return `<section class="bloco" aria-labelledby="exrTHoje"><div class="bCab"><h3 id="exrTHoje">Clientes de hoje</h3>`+
+    `<span class="s" id="exrSHoje">${esc(sub)}</span></div>`+
+    `<div class="exrLista" id="exrHoje" data-n="${l.length}" data-resta="${sem==null ? '' : n.resta}">`+
+    (linhas || '<div class="vazio">Nenhuma visita agendada.</div>') + '</div></section>';
+}
+
+/* "O que falta hoje": os 5 macros de volume, com a meta do dia do indicador (b.metaDia, o mesmo número do quadro "Meta
+   do dia"), o online de hoje (onlineVol, o mesmo da caixa Online do card) e o que falta (meta do dia menos online, nunca
+   abaixo de 0). Meta do dia <= 0 = "Meta batida!" (metaBatida, R-UI-11: o online continua exibido e nenhum valor muda);
+   em dia não útil, o rótulo "sem meta do dia" do painel (rotuloSemMetaDia), sem falta. Tudo com fmt0. */
+function exrFaltaHoje(rotas, ind){
+  const sdu = semDiaUtil();
+  const linhas = GROUPS.VOLUME.map(c => {
+    const b = ind[c], nome = esc(rotuloInd(c));
+    if(!b || b.unavailable)
+      return `<tr data-k="${esc(c)}" data-md=""><th scope="row">${nome}</th><td class="exrNd">—</td><td class="exrNd">—</td><td class="exrNd">—</td></tr>`;
+    const md = b.metaDia, onl = onlineVol(rotas, c), bat = md!=null && !sdu && metaBatida(md);
+    const falta = md==null || sdu || bat ? null : Math.max(0, md - onl);
+    const mdTxt = md==null ? 'meta do dia —' : sdu ? esc(rotuloSemMetaDia(true)) : fmt0(md);
+    const fTxt = falta==null ? (bat ? META_BATIDA : '—') : falta > 0 ? fmt0(falta) : '0';
+    const fCls = bat || falta===0 ? 'exrOk' : falta==null ? 'exrNd' : 'exrNo';
+    return `<tr data-k="${esc(c)}" data-md="${md==null ? '' : md}" data-onl="${onl}" data-falta="${falta==null ? '' : falta}"`+
+      ` data-bat="${bat}"><th scope="row">${nome}</th><td${md==null || sdu ? ' class="exrNd"' : ''}>${mdTxt}</td>`+
+      `<td>${fmt0(onl)}</td><td class="${fCls}">${esc(fTxt)}</td></tr>`;
+  }).join('');
+  return `<section class="bloco" aria-labelledby="exrTFalta"><div class="bCab"><h3 id="exrTFalta">O que falta hoje</h3>`+
+    `<span class="s">Meta do dia do SAP, o que já entrou online hoje e quanto falta em cada categoria.</span></div>`+
+    `<div class="rolaX"><table class="exrTab" id="exrFalta"><thead><tr><th scope="col">Categoria</th>`+
+    `<th scope="col">Meta do dia</th><th scope="col">Online hoje</th><th scope="col">Falta</th></tr></thead>`+
+    `<tbody>${linhas}</tbody></table></div></section>`;
+}
+
+/* "Venda Zero da rota": o número é o mesmo "reverter N" do Painel de Ritmo - o gap do indicador VENDAZERO que agrega()
+   devolve (saldo líquido Real menos Meta com piso em 0, R-VZ-11/R-RIT-01), nunca recontado do VENDAZERO_CLIENTES.
+   A Venda Zero é invertida (menor é melhor) e só vale para o Agrupador Equipamento "Total Ko" (R-VZ-01): sem medidor,
+   sem percentual e sem seta de tendência - só a seta do gap (verde com 0, vermelha acima), como no Painel de Ritmo.
+   Abaixo, os equipamentos ainda por reverter (os do VENDAZERO_CLIENTES sem revertido), no formato das outras listas.
+   Fora no fechamento do mês (indisponível, R-MES-08) e nas rotas Neutraliza (sem Venda Zero, como o card). */
+function exrVendaZero(rotas, r, ind){
+  const b = ind.VENDAZERO;
+  if(P.FECHAMENTO || !b || b.unavailable || rotas.every(ehNeutraliza)) return '';
+  const LIM = CONFIG.LIMITE_LISTA, gap = b.gap;
+  const eqs = (VENDAZERO_CLIENTES[r] || []).filter(e => !e.revertido).sort((x, y) => y.vdz - x.vdz);
+  const linhas = eqs.slice(0, LIM).map(e => `<div class="item"><div><div class="nm">${esc(e.nome)}</div>`+
+    `<div class="sb">${esc(e.tipo)} · rota ${esc(r)} · ${esc(e.dia || 'sem agenda')}</div></div>`+
+    `<div class="bd">${e.vdz} geladeira${e.vdz > 1 ? 's' : ''}</div></div>`).join('')
+    + (eqs.length > LIM ? `<div class="vazio">+ ${eqs.length - LIM} equipamentos</div>` : '');
+  return `<section class="bloco" aria-labelledby="exrTVz"><div class="bCab"><h3 id="exrTVz">Venda Zero da rota</h3>`+
+    `<span class="s">Geladeiras Total Ko em giro zero. O número é o mesmo “reverter” do Painel de Ritmo.</span></div>`+
+    `<div class="exrVz" id="exrVz" data-gap="${gap}"><span class="exrSeta ${gap > 0 ? 'no' : 'ok'}" aria-hidden="true">${gap > 0 ? '▼' : '▲'}</span>`+
+    `<b class="exrN" data-fit="" data-fit-min="16">${fmt0(gap)}</b><span class="exrRot">reverter</span></div>`+
+    `<div class="exrLista" id="exrVzLista" data-n="${eqs.length}">`+
+    (linhas || '<div class="vazio">Nenhum equipamento a reverter.</div>') + '</div></section>';
+}
+
+/* "Cobertura: quem falta": por item do ICS GC em que a ROTA tem meta (comMeta, o mesmo do medidor e dos cards), quantos
+   e quais clientes da base ainda não compraram o item. Base e cobertos são os conjuntos de sempre: CLIENT_ROSTER da rota
+   e COBERTOS[rota][item], com o mesmo filtro de listaCobertura (KS TT só nos 4 segmentos elegíveis; sem fonte de venda,
+   ninguém conta como coberto). O número de cada item É o tamanho da lista - nada é somado por fora. Item sem meta na
+   rota não entra (não vira "0"). Novos Negócios e Todos a Bordo ficam de fora desta etapa. */
+function exrCobertura(r, ind){
+  const itens = P.COV_GRUPO.ICS_GC.filter(k => comMeta(ind[k]));
+  const ros = CLIENT_ROSTER[r] || [];
+  const corpo = itens.map(k => {
+    const ja = new Set((COBERTOS[r] || {})[k] || []);
+    const falta = porNome(ros.filter(c => !(k==='KS TT' && !ehKstt(c)) && !(P.FONTES.venda && ja.has(c[0]))).map(c => [r, c]));
+    const on = onlineIds(r, k);
+    const lista = falta.length ? falta.map(([rr, c]) => itemHtml(rr, c, null, on.includes(c[0]))).join('')
+      : '<div class="vazio">Todos os clientes da base já compraram este item.</div>';
+    return `<details class="exrDet" data-k="${esc(k)}" data-falta="${falta.length}" data-base="${ros.length}">`+
+      `<summary class="exrSum"><span class="exrItem">${esc(rotuloInd(k))}</span>`+
+      `<span class="exrQt ${falta.length ? 'no' : 'ok'}">${fmt0(falta.length)}</span>`+
+      `<span class="exrRot">${falta.length===1 ? 'cliente falta' : 'clientes faltam'}</span></summary>`+
+      `<div class="exrLista">${lista}</div></details>`;
+  }).join('');
+  return `<section class="bloco" aria-labelledby="exrTCob"><div class="bCab"><h3 id="exrTCob">Cobertura: quem falta</h3>`+
+    `<span class="s">Clientes da base da rota que ainda não compraram cada item do ICS GC. Só os itens com meta na rota.</span></div>`+
+    `<div id="exrCob">${corpo || '<div class="exVazio">Nenhum item do ICS GC com meta nesta rota.</div>'}</div></section>`;
+}
+
 /* Evolução contra o mês anterior (só Volume; decisões da Karen de 21/10/2026): barras pareadas, uma linha por categoria
    (ordem fixa de GROUPS.VOLUME) no total do escopo (o mesmo total dos outros blocos: BAND, total do grupo, da supervisão).
    Mês de referência = Real / Meta de agrega() (o % real do medidor, sem arredondar); mês anterior = Real até o corte / Meta
@@ -1196,7 +1369,11 @@ const TOP_DIM = 15;
 const AVISO_MARCA = '<div class="exAviso">Marca: depende da descoberta no Datasphere</div>';
 let abrirPor = 'nivel';     // 'nivel' | 'canal' | 'marca' | 'cli' | 'ka'
 const ehDim = ab => ab==='canal' || ab==='cli' || ab==='ka';
-const modoAbrir = () => ehDim(abrirPor) || (abrirPor==='marca' && sel.modo==='dir') ? abrirPor : 'nivel';
+/* PN-60: no escopo de uma rota não existe o modo "por rota" (abrir a rota por rota é a própria rota), então o padrão
+   'nivel' cai em Clientes; os chips disponíveis são Canal, Clientes e Key Accounts (pintaAbrir). Fora da rota, nada muda:
+   o padrão continua 'nivel' e o chip do nível continua lá. */
+const modoAbrir = () => ehDim(abrirPor) || (abrirPor==='marca' && sel.modo==='dir') ? abrirPor
+  : escopoRota() ? 'cli' : 'nivel';
 const blocoNeg = (r, pv, i) => ((((P.VOLUME_CLIENTE || {})[r] || {})[pv]) || [])[i] || null;
 // clientes do roster das rotas com o bloco [Meta NEG, Real] da categoria i (sem bloco: fora)
 // (o: volume online de hoje do cliente na categoria, ONLINE.volumeCliente; 0 sem ele)
@@ -1354,8 +1531,8 @@ function pintaEscopo(){
 }
 function pintaAbrir(){
   const niv = NIVEL_EXEC[ctxInicial().nivel] || NIVEL_EXEC.rota, ab = modoAbrir();
-  const bts = [['nivel', niv[0][0].toUpperCase() + niv[0].slice(1)], ['canal', 'Canal'], ...(sel.modo==='dir' ? [['marca', 'Marca']] : []),
-               ['cli', 'Clientes'], ['ka', 'Key Accounts']];
+  const bts = [...(escopoRota() ? [] : [['nivel', niv[0][0].toUpperCase() + niv[0].slice(1)]]), ['canal', 'Canal'],
+               ...(sel.modo==='dir' ? [['marca', 'Marca']] : []), ['cli', 'Clientes'], ['ka', 'Key Accounts']];
   const box = _exFer.querySelector('#exAbrir');
   box.innerHTML = '<span class="exAbRot" aria-hidden="true">Abrir por</span>' + bts.map(([v, t])=>
     `<button type="button" class="fchip${v===ab ? ' on' : ''}" data-ab="${v}" aria-pressed="${v===ab}">${t}</button>`).join('');

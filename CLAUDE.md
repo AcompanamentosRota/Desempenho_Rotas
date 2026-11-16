@@ -119,8 +119,11 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   copiada da PA, e números de 6-7 dígitos; PDF do Resumo, `montaGrande`), 'exec' (o 'inc' com clientes sem compra no
   mês, `montaSemCompra`: o sintético compra tudo; Parte W) e 'dias'/'diasscm' (o 'exec' com dias de visita "Seg - Qui",
   "Ter" e "Qua - Sex" por rota, `montaDias`; o 2º sem SEM_COMPRA_MES; Parte X e o cenário "barra de dias" da Parte N) e
-  'vol5'/'vol5fech' (o 'exec'/'incfech' com os 5 macros de volume com dado, `montaVolume5`, + `montaMesAnterior`; Parte AA) e 'sab'/'dom'/'fer'/'semdsem'/'util0' (o 'vol5' com a meta do dia 0 em todas as rotas e
-  DIA_ONTEM = DIA_HOJE, DIA_SEMANA Sábado/Domingo/Quarta-feira/sem a chave; 'util0' = dia útil; Parte AL). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
+  'vol5'/'vol5fech' (o 'exec'/'incfech' com os 5 macros de volume com dado, `montaVolume5`, + `montaMesAnterior`; Parte AA), 'sab'/'dom'/'fer'/'semdsem'/'util0' (o 'vol5' com a meta do dia 0 em todas as rotas e
+  DIA_ONTEM = DIA_HOJE, DIA_SEMANA Sábado/Domingo/Quarta-feira/sem a chave; 'util0' = dia útil; Parte AL) e
+  'exrota'/'exrotafech' (o 'normal'/'fech' com a rota G111 preparada para a Executiva de rota, `montaRotaExec`:
+  as três situações de "Clientes de hoje", Água Mineral com a meta do dia 0, Kapo sem meta e Venda Zero com gap 3;
+  Parte AQ). PDF real (Parte O) só com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1` achados por
   `require.resolve` (local, `NODE_PATH` ou global); sem eles, pulado. `abre(nome, {troca})` troca o conteúdo de um arquivo servido (ex.: config.js;
   a Parte N serve o CSS e o app.js do 0a59eb4 assim).
   **Antes x depois que percorrem gavetas** (Partes AN (g) e (j); PN-45, 12/11/2026, R-QLD-22): `fecha()` não limpa o
@@ -414,7 +417,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   trocar `src` nem usar `filter` nas logos). PNG em `frontend/assets/` (do pacote, mesmas dimensões: 560x251 e 140x263;
   coca em paleta de 256 cores, elmo sem perda). Aba inicial (Etapa 5): Executiva para Diretoria, Gerência e Supervisão;
   Volume para a Rota (`aplicaAcesso` → `marcaAba`, a cada entrada e ao reabrir o acesso guardado; payload novo não
-  muda a aba). Testes: Parte Y.
+  muda a aba; desde a PN-60 a Rota TEM a aba Executiva, mas continua abrindo no Volume). Testes: Parte Y.
 - **Back Office (Frente 1, 12/11/2026; `frontend/js/backoffice.js`, global `BO`; README, "Back Office")**: perfil NOVO na
   entrada (5º botão), com senha e página próprias, no lugar do painel. **Nenhum número novo**: cada célula sai de
   `metricas(k, rotas)` + `realOnline` (as mesmas da cascata) e tem o MESMO texto da linha da cascata; não há conta de
@@ -772,8 +775,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   em 'EXEC'), `section#exec` (KPIs `.card.kpi` `#exBase/#exSem/#exVis/#exCat`, quadros `.foco` `#exFoco`/`#exDia`, blocos
   `.bloco`: `#exGauges`, `#exChips` + `#exDivs`, `.dupla` com `#exSemc` e `#exAg`/`#exAgenda`, `table#exCob` em `.rolaX`);
   no EXEC o `#abaTopo` fica só com `.abCab` (`.abaTopo.exec`, título = nome da aba pelo perfil; era "Resumo executivo") e, desde a Etapa 5 do pacote v3, sticky com o `#exFer` ("Abrir por" e busca; abaixo) e `#lista` vazio e `hidden`
-  (`linhaResumo`/`filtraCards` não rodam; `buscaCliente` sai cedo). `temExecutiva()` = sem rota no filtro (modo 'gc'): com
-  rota (perfil Rota) a aba some e `render` vai ao Volume. `pintaExecutiva(rotas, {ind, tot}, visitas)`: unidades =
+  (`linhaResumo`/`filtraCards` não rodam; `buscaCliente` sai cedo). `temExecutiva()` = `true` desde a PN-60 (16/11/2026):
+  a aba existe em todo escopo, inclusive com uma rota no filtro (bloco próprio abaixo). `pintaExecutiva(rotas, {ind, tot}, visitas)`: unidades =
   `gruposDo(ctxInicial(), null)` sem `off` (`unidadesExec`, cada uma com `agrega()` próprio; `cod` = nome sem " · ...");
   total = o `agrega()` do render (`totalExec`: 'BAND' / 'GC.AT' / 'GC.IT+MO' / 'SV.AP.1' / 'Neutraliza'). Categoria em
   análise `catExec` (GROUPS.VOLUME; padrão a 1ª; `escolheCat` re-renderiza e devolve o foco). Desvio `desvioVol` =
@@ -786,6 +789,44 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `rotasInc` + `itensEm100`; células com `data-g` (o mesmo item está em dois grupos: ARTD KO; CERVEJAS e CERVEJAS 600ML
   RETORNAVEL no INCENTIVO só com as rotas com meta). Fechamento: "Realizado x Meta", `#exDia` e `#exAg` hidden
   (`.dupla.so1`). Evolução: ver abaixo (Etapa 8c).
+  **Aba Executiva no escopo de uma rota (PN-60, 16/11/2026; README, "Aba Executiva"; só front)**: `temExecutiva()` = `true`
+  (não há mais nenhum caso em que a aba some; a linha do `render` que iria ao Volume fica como rede de segurança). A aba
+  INICIAL do perfil Rota continua o **Volume** (`aplicaAcesso`); o nome da aba passa a ter `CONFIG.ABA_EXEC_NOME.rota`
+  ("Rota"), usado com `ACESSO.perfil === 'rota'` ou, sem acesso (link do Resumo), com `sel.rota` preenchida. Quem decide a
+  tela é o ESCOPO, não o perfil: `escopoRota()` = `!acimaAtivo() && sel.modo!=='dir' && !!sel.rota`, exatamente o caso em
+  que `ctxInicial().nivel === 'cli'` (vale também pelo filtro da Diretoria, da Gerência e da Supervisão).
+  No escopo de rota, `pintaExecutiva` **esconde** (`hidden` na `.bloco` que embrulha cada um, via `blocoExec(id)`) os quatro
+  blocos por unidade, que mostrariam a própria rota repetida — `#exDivs`, `#exSemc`, `#exAg` e `#exCob` — e a `.dupla`
+  inteira (classe `.exrOff`, porque `.dupla` define `display` e o `[hidden]` não bastaria); `pintaDesvios`,
+  `pintaDesviosDim`, `pintaSemCompraExec`, `agendaHtml` e `pintaCoberturasExec` **não mudaram**: só deixam de ser chamadas,
+  e o HTML delas é limpo para não ficar escondido e velho. No lugar entram quatro blocos NOVOS, montados em JavaScript numa
+  caixa `div.exr#exRota` inserida entre os medidores e a Evolução (`caixaRotaExec`) e **removida** fora do escopo de rota
+  (`tiraRotaExec`): por isso, em Diretoria, gerência, grupo e supervisão o `#exec` continua **byte a byte** o de antes —
+  essa é a invariante da etapa (Parte AQ (j), antes x depois contra `f1565fe`).
+  **Nenhum número novo**: tudo sai de `agrega()` (o mesmo dos cards), de `onlineVol` (a caixa Online do card) e do payload.
+  Os quatro: (1) **Clientes de hoje** (`exrClientesHoje`) = `listaClientes([rota])` (CLIENTES_HOJE, em nome) com a situação
+  pelo MESMO critério do `agendaDe`/`agendaHtml` — no `SEM_COMPRA_HOJE` da rota e no `QUALQUER` do online (`onlineIds`):
+  "comprou no mês" / "pediu online hoje" / "resta"; linhas por `itemHtml`, limite `CONFIG.LIMITE_LISTA` com o rodapé
+  "+ N clientes"; rota com `SEM_COMPRA_HOJE` null = lista sem situação. (2) **O que falta hoje** (`exrFaltaHoje`) = os 5
+  macros com `b.metaDia` (o mesmo número do quadro "Meta do dia"), `onlineVol` e a falta = meta do dia − online (piso 0),
+  tudo em `fmt0`; meta do dia <= 0 = "Meta batida!" (`metaBatida`, R-UI-11) e dia não útil = `rotuloSemMetaDia`.
+  (3) **Venda Zero da rota** (`exrVendaZero`) = o `gap` do indicador VENDAZERO (o "reverter N" do Painel de Ritmo; nunca
+  recontado do `VENDAZERO_CLIENTES`), com a seta do gap e **sem percentual, sem medidor e sem tendência** (R-VZ-01,
+  R-RIT-01), mais os equipamentos sem `revertido`; fora no fechamento (R-MES-08) e nas rotas Neutraliza (como o card).
+  (4) **Cobertura: quem falta** (`exrCobertura`) = um `<details>` por item do **ICS GC** com meta na rota (`comMeta`; item
+  sem meta não entra e não vira "0"), com o `CLIENT_ROSTER` da rota menos os `COBERTOS[rota][item]`, pelo mesmo filtro do
+  `listaCobertura` (KS TT só nos 4 segmentos); o número É o tamanho da lista. Novos Negócios e Todos a Bordo ficam de fora.
+  No fechamento do mês, (1), (2) e (3) nem são montados; (4) continua.
+  **"Abrir por"**: no escopo de rota o chip do nível sai (`pintaAbrir`) e o padrão `'nivel'` cai em **Clientes**
+  (`modoAbrir()`), então os chips são Canal · Clientes · Key Accounts e o medidor abre a gaveta por cliente; fora da rota
+  nada muda (`abrirPor = 'nivel'` em `aplicaAcesso` continua igual). **Os dois quadros**: no escopo de rota o Foco troca a
+  frase de unidades pela da rota (`fraseRota`: os números dos KPIs Sem compra e Visitas hoje, sem recontar) e a Meta do dia
+  perde a contagem de unidades (com meta do dia <= 0, "Meta batida!"); em qualquer outro escopo as duas frases ficam
+  idênticas às de hoje. `NIVEL_EXEC` ganhou a chave `cli` (`['cliente', 'clientes', 'A rota']`), para o fallback não dizer
+  mais "0 de 1 rota". CSS: só classes `.exr*` (a caixa redefine `--cinza`/`--cinza-escuro` para as listas `.item` fora da
+  gaveta, que é onde esses cinzas vivem). A **Evolução** fica como está (o detalhe dela segue o "Abrir por", então na rota
+  abre por cliente). O **escopo do nível acima** (`temEscopoAcima`) continua só em Gerência e Supervisão. Testes: Parte AQ
+  (variantes 'exrota' e 'exrotafech', `montaRotaExec`).
   Ajustes visuais (29/10/2026; Parte AE): `#exCob` zebrado (`tbody tr:nth-child(even)` = `--zebra` #f6f6f8, também o `th.un`
   sticky; `tr.tot` = `--zebra-tot` #e4e4e8 e negrito; hover #ececef / total #d9d9de; o painel não tem tema escuro: os dois
   fundos são só da entrada); medidor com `.gFalta` entre `.gPct` e `.gMR` ("faltam X para a meta", X = `fmt0(meta − base)`,

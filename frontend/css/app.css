@@ -495,6 +495,58 @@ select{flex:1 1 0;min-width:0;background:var(--escuro-1);color:#fff;border:1px s
 .tCob .baixo{color:var(--vermelho2);font-weight:700} .tCob .bateu{color:var(--verdeE);font-weight:700}
 .tCob .nd{color:var(--txt-apoio)}
 .exec{font-variant-numeric:lining-nums tabular-nums}
+/* ---------- Executiva no escopo de uma rota (PN-60): só os blocos novos, todas as classes com prefixo .exr ----------
+   A caixa .exr é criada pelo app.js e removida fora do escopo de rota; os blocos dentro dela usam o .bloco/.bCab de
+   sempre. Os cinzas de .item/.vazio (listas de cliente) vivem no escopo .drw: aqui a caixa redefine os mesmos valores,
+   sem tocar na gaveta. */
+.exr{display:flex;flex-direction:column;gap:12px;--cinza:#8a8a8f;--cinza-escuro:#6c6c72}
+/* a .dupla define display (flex e, no PC, grid): o !important é o mesmo recurso do .bloco[hidden] acima */
+.exrOff{display:none!important}
+.exrLista{max-height:430px;overflow-y:auto;overscroll-behavior:contain}
+.exrSit{display:inline-block;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.02em;white-space:nowrap}
+.exrSit.ja{background:#ececef;color:var(--txt-apoio)}
+.exrSit.ped{background:rgba(29,158,117,.16);color:var(--verdeE)}
+.exrSit.resta{background:rgba(198,40,40,.12);color:var(--vermelho2)}
+.exrPv{white-space:nowrap}
+/* as listas de cliente (.item) ficam fora da gaveta: aqui o lado direito empilha a situação e o PV e o lado do nome
+   pode encolher, para nada passar da caixa a 360 px */
+.exr .item>div:first-child{min-width:0}
+.exr .item .nm,.exr .item .sb{overflow-wrap:anywhere}
+.exr .item .bd{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+/* "O que falta hoje": meta do dia | online de hoje | falta, nos 5 macros */
+.exrTab{width:100%;border-collapse:collapse;font-size:var(--fs-ex-cel);min-width:320px}
+.exrTab th,.exrTab td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--linha);white-space:nowrap}
+.exrTab thead th{font-size:var(--fs-ex-th);text-transform:uppercase;letter-spacing:.03em;color:var(--txt-apoio);
+  font-weight:700;border-bottom:1.5px solid var(--preto)}
+.exrTab thead th:first-child,.exrTab th[scope="row"]{text-align:left}
+.exrTab th[scope="row"]{font-weight:600;white-space:normal}
+.exrTab tbody tr:last-child th,.exrTab tbody tr:last-child td{border-bottom:0}
+.exrTab tbody tr:nth-child(even)>*{background:var(--zebra)}
+.exrNo{color:var(--vermelho2);font-weight:700}
+.exrOk{color:var(--verdeE);font-weight:700}
+.exrNd{color:var(--txt-apoio)}
+/* "Venda Zero da rota": o "reverter N" do Painel de Ritmo, sem percentual e sem medidor */
+.exrVz{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}
+.exrSeta{font-size:var(--fs-ex-valor);line-height:1;flex:none}
+.exrSeta.ok{color:var(--verdeE)} .exrSeta.no{color:var(--vermelho2)}
+.exrN{font-size:var(--fs-ex-gtit);font-weight:800;line-height:1;letter-spacing:-.01em}
+.exrRot{font-size:var(--fs-ex-mini);color:var(--txt-apoio)}
+/* "Cobertura: quem falta": um <details> por item do ICS GC com meta na rota */
+.exrDet{border-bottom:1px solid var(--linha)}
+.exrDet:last-child{border-bottom:0}
+.exrSum{display:flex;align-items:baseline;gap:8px;padding:9px 2px;cursor:pointer;list-style:none}
+.exrSum::-webkit-details-marker{display:none}
+.exrSum::before{content:'\25B8';flex:none;color:var(--txt-apoio);font-size:11px;line-height:1;
+  display:inline-block;transition:transform .15s ease}
+.exrDet[open]>.exrSum::before{transform:rotate(90deg)}
+.exrItem{flex:1 1 auto;min-width:0;font-size:var(--fs-ex-cel);font-weight:600}
+.exrQt{flex:none;font-size:var(--fs-ex-valor);font-weight:800}
+.exrQt.no{color:var(--vermelho2)} .exrQt.ok{color:var(--verdeE)}
+.exrDet>.exrLista{margin:0 0 10px}
+@media(prefers-reduced-motion:reduce){.exrSum::before{transition:none}}
+@media (hover:hover){.exrSum:hover{background:var(--zebra)}}
+@media (min-width:1000px){ .exr{gap:16px} }
 @media (min-width:700px){ .gauges{grid-template-columns:repeat(3,minmax(0,1fr))} }
 /* abaixo de 1000 px: Tendência x Meta mostra só a categoria em análise (os chips trocam) */
 @media (max-width:999px){ .divs .dv:not(.sel){display:none} }

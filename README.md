@@ -220,7 +220,7 @@ Executiva. Cada entrada (e reabrir a página) começa no escopo do acesso. Diret
 
 **Aba inicial** (desde a Etapa 5): ao entrar (e ao reabrir pelo acesso guardado), Diretoria, Gerência e Supervisão abrem na
 aba **Executiva** (visão executiva; o botão leva o nome do perfil: **Diretoria**, **Gerencial** ou **Supervisão**); a
-Rota, que não tem a Executiva, abre no **Volume**.
+Rota abre no **Volume** — desde a PN-60 ela TEM a aba Executiva (botão **Rota**), mas não é a aba de abertura.
 
 | Perfil | Escolhe | Abre |
 |---|---|---|
@@ -793,22 +793,63 @@ PAYLOAD_REAL=/tmp/real/payload.json ONLINE_REAL=/tmp/real/online.json node --tes
   (Gerência, Supervisão, Rota) ele continua, para o contexto não sumir. Com a Executiva, as cinco abas não cabem numa
   linha em 360-640 px: a faixa das abas rola de lado (como a dos seletores) e a aba ativa fica sempre à vista.
 
-### Aba Executiva: visão executiva (aba Diretoria, Gerencial ou Supervisão)
+### Aba Executiva: visão executiva (aba Diretoria, Gerencial, Supervisão ou Rota)
 
 A chave interna continua `EXEC`; o nome visível segue o perfil (`CONFIG.ABA_EXEC_NOME`, `nomeAbaExec()` em app.js):
 **Diretoria** no perfil Diretoria, **Gerencial** no perfil Gerência (inclusive nos grupos de gerências) e **Supervisão** no
-perfil Supervisão; o perfil Rota não tem a aba. O nome vale no botão da aba (barra do celular e painel lateral do PC), no
+perfil Supervisão e, desde a PN-60 (16/11/2026), **Rota** no perfil Rota (e sem acesso guardado, com uma rota no
+filtro). O nome vale no botão da aba (barra do celular e painel lateral do PC), no
 `title`/`aria-label` (o painel recolhido mostra só o ícone) e no título da aba (`#abTit`). Sem acesso guardado (link do
 Resumo), pelo modo do filtro.
 
-Desde a Etapa 5 (21/10/2026), a primeira aba da barra e a aba inicial de Diretoria, Gerência e Supervisão. A Rota não tem a
-Executiva (abre no Volume); com uma rota escolhida no filtro, a aba some e o painel vai para o Volume (volta a aparecer ao
-tirar a rota). Tudo segue o filtro, com os mesmos grupos da cascata: Diretoria → gerências (as com dados); uma gerência →
+Desde a Etapa 5 (21/10/2026), a primeira aba da barra e a aba inicial de Diretoria, Gerência e Supervisão; a Rota abre no
+Volume. Desde a PN-60 (16/11/2026) a aba **existe em todos os escopos**, inclusive com uma rota escolhida: ali ela vira a
+tela de quem roda a rota (bloco "A Executiva no escopo de uma rota", abaixo). Tudo segue o filtro, com os mesmos grupos da cascata: Diretoria → gerências (as com dados); uma gerência →
 supervisões + a linha "Neutraliza"; grupo no Total (ex.: GC.IT + GC.MO) → as supervisões das duas, com o total do grupo;
 uma supervisão → rotas; "Neutraliza" no filtro → as rotas Neutraliza. Rotas virtuais e clientes em rotas eventuais (EV*)
 ficam fora das listas de unidades e dentro dos totais. Linha de total: **BAND** na Diretoria; com filtro, o código (GC.AT,
 GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai da mesma agregação dos cards.
 
+- **A Executiva no escopo de uma rota** (PN-60, 16/11/2026; só front): com **uma rota escolhida** — no perfil Rota ou pelo
+  filtro da Diretoria, da gerência ou da supervisão — a aba passa a ser a tela de **quem roda a rota**. Quem decide é o
+  **escopo**, não o perfil. A aba **inicial** do perfil Rota continua sendo o **Volume**: a Executiva existe e é clicável,
+  mas não abre sozinha.
+  - **Fica tudo o que serve à rota**: os 4 KPIs, o quadro "Foco do fechamento", o quadro "Meta do dia (SAP)", os cinco
+    medidores, a "Evolução contra o mês anterior", o "Abrir por" e a busca.
+  - **Saem os quatro blocos por unidade** — "Tendência x Meta por rota", "Sem compra por rota", "Coberturas por rota" e
+    "Agenda de hoje por rota" —, porque com uma unidade só eles mostrariam a própria rota duas vezes (o total e a linha).
+    Eles continuam na página, apenas escondidos; nos outros escopos a tela é exatamente a de antes.
+  - **Entram quatro blocos da rota**, entre os medidores e a Evolução. Nenhum número novo: tudo sai da mesma agregação dos
+    cards (`agrega()`), do online de hoje (o mesmo da caixa Online do card) e do payload.
+    1. **Clientes de hoje** — a lista nominal de quem tem visita agendada hoje (`CLIENTES_HOJE` da rota, em ordem de nome),
+       cada um com a situação: **comprou no mês**, **pediu online hoje** (está no `SEM_COMPRA_HOJE` e no "qualquer compra
+       hoje" do online) ou **resta** (sem compra no mês e sem pedido hoje). São as mesmas três situações da barra "Agenda
+       de hoje", pelo mesmo critério. O cabeçalho traz o total, quantos já compraram, quantos pediram online e quantos
+       restam. Rota sem dado de compra no mês: a lista aparece sem situação. Acima de 400 clientes, o rodapé "+ N
+       clientes" das gavetas.
+    2. **O que falta hoje** — uma linha por categoria de volume, com a **meta do dia** (a mesma do quadro "Meta do dia" e
+       da caixa Online do card), o **online de hoje** e **quanto falta** (meta do dia − online, nunca abaixo de zero).
+       Meta do dia zerada = **"Meta batida!"** no lugar do número, pela regra do painel (o online continua exibido e
+       somado, e nenhum valor muda); em dia não útil, "sem meta do dia", como no resto do painel.
+    3. **Venda Zero da rota** — o número é o mesmo **"reverter N"** do Painel de Ritmo (o saldo Real − Meta do indicador,
+       com piso em zero), com a seta verde em 0 e vermelha acima. A Venda Zero é invertida (menor é melhor) e vale só para
+       o Agrupador Equipamento "Total Ko": **sem medidor, sem percentual e sem tendência**. Abaixo, os equipamentos ainda
+       por reverter (os já revertidos ficam fora). **Indisponível no fechamento do mês** e nas rotas "Neutraliza", que não
+       têm Venda Zero.
+    4. **Cobertura: quem falta** — por item do **ICS GC** em que a rota tem meta (item sem meta não entra e não vira "0"),
+       quantos clientes da base ainda não compraram o item e quais: a base é o `CLIENT_ROSTER` da rota menos os
+       `COBERTOS` dela (em KS TT, só os 4 segmentos elegíveis). Cada item abre e fecha a lista; todos começam fechados.
+       Novos Negócios e Todos a Bordo ficam de fora desta etapa.
+    No **fechamento do mês** os três primeiros somem (não há "hoje" e a Venda Zero é indisponível) e a cobertura fica.
+  - **"Abrir por" na rota**: o botão do nível sai (abrir a rota por rota é a própria rota) e o padrão passa a ser
+    **Clientes**; ficam Canal · Clientes · Key Accounts, com a busca igual. Fora da rota nada muda: o padrão continua o
+    nível do filtro. Com isso, tocar num medidor abre a gaveta da categoria **por cliente**, e o detalhe da Evolução
+    também.
+  - **Os dois quadros**: no "Foco do fechamento" a frase que comparava unidades ("A supervisão X concentra Y% dessa
+    falta") dá lugar à da rota — quantos clientes da base ainda não compraram no mês e quantos têm visita hoje, os dois
+    números dos KPIs que já estão na tela. Na "Meta do dia (SAP)" sai a contagem de unidades; o resto da frase é o mesmo.
+    Em qualquer outro escopo as duas frases ficam idênticas às de hoje.
+  - O botão de **escopo do nível acima** continua só em Gerência e Supervisão.
 - **Cabeçalho fixo** (Etapa 5 do pacote v3, 30/10/2026): o nome da aba (Diretoria, Gerencial ou Supervisão; até o ajuste de
   rótulos, "Resumo executivo"), o botão de **escopo** (Gerência e Supervisão; abaixo), os botões **"Abrir por"**, a **busca**
   e a etiqueta do dia (a das abas, com a caixa de comentário). Fica preso no alto durante a rolagem (sticky), com o fundo da página e uma sombra discreta embaixo, cobrindo a
@@ -914,7 +955,8 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   supervisões e a linha "Neutraliza"; grupo no Total → as supervisões das duas gerências; supervisão → rotas; "Neutraliza"
   no filtro → as rotas dela; com "Abrir por" canal, cliente ou Key Account, as linhas do modo). O nome da categoria é o
   central ("Novos Negócios", sem a 2ª linha do card). Fechar (ESC, ×, tocar fora) mantém a categoria em análise; os chips do
-  celular só escolhem a categoria, sem abrir a gaveta. A Rota não tem a Executiva.
+  celular só escolhem a categoria, sem abrir a gaveta. No escopo de uma rota (PN-60) o "Abrir por" começa em Clientes, então
+  o medidor abre a gaveta por cliente.
   - Colunas: **#** | **Gerência/Supervisão/Rota** (ou Canal, Cliente, Key Account) | **Meta** | **Real** | **Real + Online** |
     **% Real** | **Online** | **Faltam** | **Tendência**. Sem barras e sem Desvio: só os números, os mesmos de antes (`agrega()`,
     `statusCat`), mais o Online e o Real + Online. No fechamento do mês, sem a coluna Tendência e com o título **"Online hoje"**
@@ -984,8 +1026,8 @@ GC.IT+MO, SV.AP.1, Neutraliza). Nenhum número é recalculado por fora: tudo sai
   o último bloco, depois de "Coberturas por …".
   Compara onde estamos com onde estávamos **no mesmo dia útil do mês anterior**, pela chave `MES_ANTERIOR` do payload
   (ver "Chave `MES_ANTERIOR`"). Aparece com `CONFIG.EVOLUCAO_ATIVA = true` **e** a chave no payload; sem ela (payload
-  antigo, ou a consulta do mês anterior falhou ou passou de 60 s na rodada) o bloco fica oculto, sem erro. A Rota não tem
-  (não tem a Executiva).
+  antigo, ou a consulta do mês anterior falhou ou passou de 60 s na rodada) o bloco fica oculto, sem erro. No escopo de uma
+  rota (PN-60) o bloco continua, com o total da rota; o detalhe por clique segue o "Abrir por", que ali começa em Clientes.
   - Subtítulo: "% real até ontem: Outubro/26 (dia útil 14 de 21) contra Setembro/26 no mesmo dia útil (até 21/09)."
     (`MES_LABEL`, `DIA_ONTEM` e `TOTAL_DIAS_UTEIS` do payload; `MES_ANTERIOR.MES_LABEL` e `DATA_CORTE` em dd/mm; nada fixo).
     Mês anterior com menos dias úteis que o `DIA_ONTEM` (vale ele inteiro, decisão 1): "… contra Setembro/26 inteiro (21

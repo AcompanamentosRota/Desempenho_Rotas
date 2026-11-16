@@ -39,8 +39,9 @@ const CONFIG = Object.freeze({
      confundir com a aba/grupo de coberturas "Novos Negócios" (NOVOS_NEG), que não muda. */
   ROTULO_VOLUME_NOVOS: 'Novos Negócios',
   ROTULO_VOLUME_SUB: 'Dest+Art+Cnd',
-  // nome da aba EXEC (visão executiva) por perfil; o perfil Rota não tem a aba
-  ABA_EXEC_NOME: {dir: 'Diretoria', gc: 'Gerencial', sv: 'Supervisão'},
+  /* nome da aba EXEC (visão executiva) por perfil; 'rota' desde a PN-60 (16/11/2026): a Executiva passou a existir no
+     escopo de uma rota (a aba inicial do perfil Rota continua sendo o Volume). */
+  ABA_EXEC_NOME: {dir: 'Diretoria', gc: 'Gerencial', sv: 'Supervisão', rota: 'Rota'},
   /* Controle de acesso interno: a entrada só organiza o que cada perfil vê (sem usuário; senha só na Diretoria); NÃO
      é segurança — os dados estão em frontend/data/*.json. O acesso fica guardado no aparelho até a virada do dia
      (05:00, horário de Brasília) ou até clicar na casa. */

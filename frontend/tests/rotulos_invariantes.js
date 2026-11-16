@@ -3,7 +3,8 @@
    As funções *_PAGINA rodam no navegador (page.evaluate). */
 'use strict';
 const SUB = 'Dest+Art+Cnd', NOVOS = 'Novos Negócios', K_NOVOS = 'VOL DEST+ART+CND';
-const NOME_EXEC = {dir: 'Diretoria', gc: 'Gerencial', sv: 'Supervisão'};
+// 'rota' desde a PN-60 (16/11/2026): o perfil Rota passou a ter a aba Executiva (a aba inicial dele continua o Volume)
+const NOME_EXEC = {dir: 'Diretoria', gc: 'Gerencial', sv: 'Supervisão', rota: 'Rota'};
 
 /* ocorrências de "Dest+Art+Cnd" na página: texto VISÍVEL fora da 2ª linha do card de Volume (.ind .tsub) e atributos
    lidos por pessoas (title, aria-label, alt, placeholder, data-dica); devolve [onde, trecho] */
