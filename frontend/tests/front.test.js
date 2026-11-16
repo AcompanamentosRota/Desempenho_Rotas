@@ -246,6 +246,17 @@ before(async () => {
     fs.copyFileSync(path.join(DADOS.vol5, 'online.json'), path.join(dir, 'online.json'));
     DADOS[nome] = dir;
   }
+  // Parte AQ (PN-60): a Executiva no escopo de uma rota, em dia útil e no fechamento do mês (montaRotaExec)
+  for(const [nome, origem] of [['exrota', 'normal'], ['exrotafech', 'fech']]){
+    const dir = path.join(tmp, nome);
+    fs.mkdirSync(dir);
+    const pr = JSON.parse(fs.readFileSync(path.join(DADOS[origem], 'payload.json'), 'utf-8'));
+    const or = JSON.parse(fs.readFileSync(path.join(DADOS[origem], 'online.json'), 'utf-8'));
+    montaRotaExec(pr, or);
+    fs.writeFileSync(path.join(dir, 'payload.json'), JSON.stringify(pr));
+    fs.writeFileSync(path.join(dir, 'online.json'), JSON.stringify(or));
+    DADOS[nome] = dir;
+  }
   browser = await pw.chromium.launch(CHROMIUM ? {executablePath: CHROMIUM} : {});
 });
 after(async () => {
@@ -258,7 +269,8 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' | 'evcob' |
    'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm' | 'evo' | 'evogrupo' | 'evogrande' |
-   'evofech' | 'semevo' | 'vol5' | 'vol5fech' | 'dim' | 'sab' | 'dom' | 'fer' | 'semdsem' | 'util0');
+   'evofech' | 'semevo' | 'vol5' | 'vol5fech' | 'dim' | 'sab' | 'dom' | 'fer' | 'semdsem' | 'util0' |
+   'exrota' | 'exrotafech');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
@@ -5952,7 +5964,9 @@ describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
         assert.deepEqual([e.tit, e.pil, e.topo], [nomeExec, true, []], onde);
         assert.equal(await page.getAttribute('.tab[data-g="EXEC"]', 'title'), nomeExec);
       } else {
-        assert.ok(!e.tabs.includes('EXEC') && !e.exec && e.lista, `${onde}: sem a Executiva`);
+        // PN-60: a aba Executiva passou a existir também no perfil Rota (com o nome "Rota"), mas a aba INICIAL continua o Volume
+        assert.ok(e.tabs.includes('EXEC') && !e.exec && e.lista, `${onde}: a Executiva existe, mas não é a aba aberta`);
+        assert.equal(await page.getAttribute('.tab[data-g="EXEC"]', 'title'), 'Rota');
         assert.equal(e.tit, 'Volume');
       }
       // outra aba e recarregar (acesso guardado) ou a casa e entrar de novo: de volta à aba inicial do perfil
@@ -6824,7 +6838,13 @@ describe('Parte Z — Evolução contra o mês anterior em barras pareadas', {sk
       const onde = JSON.stringify(entrar);
       const {page, ctx, erros} = await abre(dados, {entrar, aba: null});
       assert.equal(await evoVisivel(page), vis, onde);
-      if(!vis) assert.ok(!(await telaExec(page)).tabs.includes('EXEC'), `${onde}: sem a Executiva`);
+      if(!vis){
+        // perfil Rota: abre no Volume, então a Evolução não está à vista; desde a PN-60 a aba Executiva existe e, nela, o bloco aparece
+        const e = await telaExec(page);
+        assert.ok(e.tabs.includes('EXEC') && e.aba === 'VOLUME', `${onde}: a Executiva existe e a aba inicial é o Volume`);
+        await vaiAba(page, 'EXEC');
+        assert.equal(await evoVisivel(page), true, `${onde}: a Evolução na Executiva da rota`);
+      }
       else assert.equal(await page.evaluate(() => [...document.querySelectorAll('#exec > .bloco, #exec > .dupla')].at(-1).id), 'exEvo', onde);
       assert.deepEqual(erros, [], onde);
       await ctx.close();
@@ -7965,7 +7985,7 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
     await ctx.close();
   });
 
-  test(`rótulo central: "${ROT.NOVOS} por gerência" (sem "${ROT.SUB}" na gaveta nem nas dicas); perfil Rota sem a Executiva`, async () => {
+  test(`rótulo central: "${ROT.NOVOS} por gerência" (sem "${ROT.SUB}" na gaveta nem nas dicas); perfil Rota abre no Volume`, async () => {
     let {page, ctx, erros} = await abre('vol5', {entrar: 'dir', aba: null});
     await abreCat(page, ROT.K_NOVOS);
     assert.equal(await page.textContent('#dTit'), `${ROT.NOVOS} por gerência`);
@@ -7974,8 +7994,9 @@ describe('Parte AC — gaveta "Categoria por unidade" na Executiva', {skip: pula
     assert.deepEqual(erros, []);
     await ctx.close();
     ({page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'rota', gc: 'G2', rota: 'G211'}, aba: null}));
+    // PN-60: a aba Executiva existe no perfil Rota (hidden false), mas a aba aberta continua o Volume
     assert.deepEqual(await page.evaluate(() => [document.querySelector('.tab[data-g="EXEC"]').hidden, document.getElementById('exec').hidden, aba]),
-      [true, true, 'VOLUME']);
+      [false, true, 'VOLUME']);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -9888,7 +9909,7 @@ describe('Parte AJ — Executiva: tabela da categoria e escopo do nível acima',
     await ctx.close();
   });
 
-  test('grupo: "GC.IT + GC.MO | BAND"; Supervisão: "SV.G2.1 | GC.G2" e GC = Gerência G2 (Executiva e gaveta iguais; outras abas na supervisão); Rota sem a Executiva', async () => {
+  test('grupo: "GC.IT + GC.MO | BAND"; Supervisão: "SV.G2.1 | GC.G2" e GC = Gerência G2 (Executiva e gaveta iguais; outras abas na supervisão); Rota sem o botão de escopo', async () => {
     let {page, ctx, erros} = await abre('grupo', {entrar: {perfil: 'gc', gc: 'IT+MO'}, aba: null, largura: 1440});
     assert.deepEqual((await page.evaluate(LE_ESC)).bts, [['GC.IT + GC.MO', 'true', true], ['BAND', 'false', false]]);
     await page.evaluate(() => { document.querySelector('.tab[data-g="EXEC"]').click(); });
@@ -9929,10 +9950,13 @@ describe('Parte AJ — Executiva: tabela da categoria e escopo do nível acima',
     // de volta para SV.G2.1: o de antes
     await clicaEsc(page, 0);
     assert.equal(await htmlExec(page), sv.exec);
-    // Rota: sem a Executiva (e sem o cabeçalho fixo)
+    // Rota: sem o botão de escopo do nível acima (desde a PN-60 ela TEM a aba Executiva, mas abre no Volume)
     await vaiPara(page, {perfil: 'rota', gc: 'G2', rota: 'G211'}, null);
     assert.deepEqual(await page.evaluate(() => [document.querySelector('.tab[data-g="EXEC"]').hidden, !!document.querySelector('#abaTopo #exEsc'), aba]),
-      [true, false, 'VOLUME']);
+      [false, false, 'VOLUME']);
+    await vaiAba(page, 'EXEC');
+    assert.equal(await page.evaluate(() => { const e = document.querySelector('#abaTopo #exEsc'); return !e || e.hidden; }),
+      true, 'Rota: sem o botão de escopo também na Executiva');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -11420,5 +11444,334 @@ describe('Parte AP — Back Office (Frente 1)', {skip: pular}, () => {
       assert.deepEqual([...novo.erros, ...velho.erros], []);
       await novo.ctx.close(); await velho.ctx.close();
     }
+  });
+});
+
+/* Parte AQ (PN-60): a rota G111 com as três situações de "Clientes de hoje", uma categoria com a meta do dia batida,
+   um item do ICS GC sem meta e Venda Zero com equipamento a reverter. Tudo fictício, como o resto do sintético
+   (nomes e PVs de teste). */
+function montaRotaExec(p, o){
+  const R = 'G111', no = p.DATA.G1['SV.G1.1'][R];
+  // 10003 passa a ter visita hoje; 10002 já comprou, 10001 pediu online (QUALQUER do online) e 10003 resta
+  for(const c of p.CLIENT_ROSTER[R]) if(c[0] === 10003) c[4] = 1;
+  p.CLIENTES_HOJE[R] = p.CLIENT_ROSTER[R].filter(c => c[4] === 1).map(c => c.slice());
+  p.SEM_COMPRA_HOJE[R] = [10001, 10003];
+  p.VISITAS_DIA.geral[R] = p.CLIENTES_HOJE[R].length;
+  p.VISITAS_DIA.semCompra[R] = 2;
+  no.semCompra = 2; no.compraram = 1;
+  // meta do dia 0 em Água Mineral: a linha de "O que falta hoje" diz "Meta batida!" (R-UI-11)
+  if(no.indicators['VOL AGUA MINERAL']) no.indicators['VOL AGUA MINERAL'].metaDia = 0;
+  // Kapo sem meta na rota: o item fica fora de "Cobertura: quem falta" (não vira "0")
+  if(no.indicators.KAPO) no.indicators.KAPO.meta = 0;
+  // Venda Zero: gap = teto(Real − Meta) = 3; dois equipamentos, um já revertido (a lista mostra só o outro)
+  if(no.indicators.VENDAZERO && !no.indicators.VENDAZERO.unavailable)
+    Object.assign(no.indicators.VENDAZERO, {meta: 1, real: 4});
+  p.VENDAZERO_CLIENTES[R] = [
+    {pv: 10001, nome: 'CLIENTE TESTE 10001', dia: 'Seg', hoje: 1, tipo: 'Geladeira', vdz: 2, metaComodato: 40, volume: 0, dif: 40, revertido: false},
+    {pv: 10002, nome: 'CLIENTE TESTE 10002', dia: 'Ter', hoje: 0, tipo: 'Geladeira', vdz: 1, metaComodato: 40, volume: 0, dif: 40, revertido: true}];
+  if(o){ o.clientes = o.clientes || {}; o.clientes[R] = o.clientes[R] || {}; o.clientes[R].QUALQUER = [10001]; }
+}
+
+/* ---------- Parte AQ — a aba Executiva no escopo de uma rota (PN-60) ----------
+   Com uma rota no filtro (perfil Rota ou o filtro de outro perfil) a Executiva passa a existir, com o nome "Rota", e
+   troca quatro blocos: saem "Tendência x Meta", "Sem compra", "Coberturas" e "Agenda de hoje" por unidade (que
+   mostrariam a própria rota repetida) e entram "Clientes de hoje", "O que falta hoje", "Venda Zero da rota" e
+   "Cobertura: quem falta". Fora do escopo de rota nada muda — é o que a última prova (antes x depois contra a main).
+   Variantes: 'exrota' (dia útil) e 'exrotafech' (fechamento do mês), montadas por montaRotaExec sobre o sintético. */
+const REF_PN60 = 'f1565fe';
+const FRONT_PRE_PN60 = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PN60}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const [html, css, js] = ['index.html', 'css/app.css', 'js/app.js'].map(arq);
+    return {'/index.html': () => html, '/css/app.css': () => css, '/js/app.js': () => js};
+  } catch(e) { return null; }
+})();
+
+const ROTA_AQ = 'G111', GC_AQ = 'G1', SV_AQ = 'SV.G1.1';
+const ENTRA_ROTA = {perfil: 'rota', gc: GC_AQ, rota: ROTA_AQ};
+// os quatro blocos por unidade (o id do conteúdo; o cabeçalho vem junto, na mesma <section class="bloco">)
+const ANTIGOS_AQ = ['exDivs', 'exSemc', 'exAg', 'exCob'];
+const escondido = (page, id) => page.evaluate(id => { const e = document.getElementById(id);
+  const s = e.closest('.bloco');
+  return e.hidden || !!(s && s.hidden) || e.getClientRects().length === 0; }, id);
+// títulos dos blocos novos, na ordem em que aparecem (vazio quando a caixa .exr nem existe)
+const blocosNovos = page => page.evaluate(() => { const c = document.getElementById('exRota');
+  return c ? [...c.querySelectorAll(':scope > .bloco > .bCab > h3')].map(h => h.textContent) : null; });
+const chipsAbrir = page => page.$$eval('#exAbrir .fchip',
+  bs => bs.map(b => b.dataset.ab + (b.classList.contains('on') ? '*' : '')));
+
+describe('Parte AQ — aba Executiva no escopo de uma rota (PN-60)', {skip: pular}, () => {
+
+  /* ---- (a) acesso e nome da aba ---- */
+  test('(a) perfil Rota: a aba Executiva existe, abre e se chama "Rota"; a aba inicial continua o Volume', async () => {
+    const {page, ctx, erros} = await abre('exrota', {entrar: ENTRA_ROTA, aba: null});
+    assert.equal(await page.$eval('.tab.on', e => e.dataset.g), 'VOLUME', 'aba inicial do perfil Rota');
+    const t = await page.$eval('.tab[data-g="EXEC"]', e => ({hidden: e.hidden, nome: e.querySelector('span').textContent,
+      titulo: e.title, aria: e.getAttribute('aria-label')}));
+    assert.deepEqual(t, {hidden: false, nome: 'Rota', titulo: 'Rota', aria: 'Rota'});
+    await vaiAba(page, 'EXEC');
+    assert.equal(await page.$eval('#exec', e => e.hidden), false, 'a Executiva abre');
+    assert.equal(await page.$eval('#abTit', e => e.textContent), 'Rota', 'título do cabeçalho da aba');
+    assert.equal(await page.$eval('#lista', e => e.hidden), true, 'sem os cards por trás');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(a) pelo filtro de outro perfil (Gerência -> uma rota) é o escopo que decide, não o perfil', async () => {
+    const {page, ctx, erros} = await abre('exrota', {entrar: {perfil: 'gc', gc: GC_AQ}, aba: 'EXEC'});
+    assert.equal(await blocosNovos(page), null, 'sem rota no filtro: nenhum bloco novo');
+    await filtra(page, {gc: GC_AQ, sv: SV_AQ, rota: ROTA_AQ, aba: 'EXEC'});
+    assert.deepEqual(await blocosNovos(page), ['Clientes de hoje', 'O que falta hoje', 'Venda Zero da rota', 'Cobertura: quem falta']);
+    // o nome da aba segue o PERFIL (Gerencial), não o escopo
+    assert.equal(await page.$eval('.tab[data-g="EXEC"] span', e => e.textContent), 'Gerencial');
+    // tirando a rota, tudo volta ao normal
+    await filtra(page, {gc: GC_AQ, sv: SV_AQ, rota: '', aba: 'EXEC'});
+    assert.equal(await blocosNovos(page), null);
+    for(const id of ANTIGOS_AQ) assert.equal(await escondido(page, id), false, id);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (b) o que sai e o que entra ---- */
+  test('(b) na rota: os 4 blocos por unidade escondidos e os 4 da rota à vista, na ordem', async () => {
+    const {page, ctx, erros} = await abre('exrota', {entrar: ENTRA_ROTA, aba: 'EXEC'});
+    for(const id of ANTIGOS_AQ) assert.equal(await escondido(page, id), true, `${id} escondido`);
+    assert.deepEqual(await blocosNovos(page), ['Clientes de hoje', 'O que falta hoje', 'Venda Zero da rota', 'Cobertura: quem falta']);
+    // a linha dupla (Sem compra | Agenda) some inteira: sem meia largura e sem buraco
+    assert.equal(await page.$eval('.dupla', e => e.getClientRects().length), 0, 'a linha dupla não ocupa espaço');
+    // a caixa dos blocos novos fica logo depois dos medidores e antes da Evolução
+    assert.deepEqual(await page.$$eval('#exec > *', es => es.map(e => e.id || e.className)
+      .filter(n => n === 'exRota' || n === 'exEvo' || n === 'exFocos')), ['exFocos', 'exRota', 'exEvo']);
+    // o resto da Executiva continua de pé
+    for(const id of ['exBase', 'exSem', 'exVis', 'exCat', 'exFoco', 'exDia', 'exGauges', 'exEvo'])
+      assert.equal(await page.$eval('#' + id, e => e.getClientRects().length > 0), true, id);
+    assert.equal((await page.$$('#exGauges .gCard')).length, 5, 'os 5 medidores');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(b) fora da rota (Diretoria, gerência, grupo e supervisão): os 4 antigos à vista e nenhum bloco novo', async () => {
+    for(const entrar of ['dir', {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G2', sv: '1'}]){
+      const {page, ctx, erros} = await abre('exrota', {entrar, aba: 'EXEC'});
+      const onde = JSON.stringify(entrar);
+      for(const id of ANTIGOS_AQ) assert.equal(await escondido(page, id), false, `${onde}: ${id} à vista`);
+      assert.equal(await blocosNovos(page), null, `${onde}: sem a caixa .exr`);
+      assert.equal(await page.$('#exRota'), null, `${onde}: o #exRota nem existe na página`);
+      assert.equal(await page.$eval('.dupla', e => e.className), 'dupla', `${onde}: a linha dupla sem classe nova`);
+      assert.deepEqual(erros, [], onde);
+      await ctx.close();
+    }
+  });
+
+  /* ---- (c) "Clientes de hoje" ---- */
+  test('(c) "Clientes de hoje": total = CLIENTES_HOJE da rota e as 3 situações pelo critério do agendaHtml', async () => {
+    const {page, ctx, erros} = await abre('exrota', {entrar: ENTRA_ROTA, aba: 'EXEC'});
+    // recontagem independente, do payload e do online, com o critério do agendaDe/agendaHtml
+    const conta = await page.evaluate(r => {
+      const hoje = (CLIENTES_HOJE[r] || []).map(c => c[0]);
+      const sem = new Set(SEM_COMPRA_HOJE[r] || []);
+      const on = new Set(((ONLINE.clientes || {})[r] || {}).QUALQUER || []);
+      const o = {n: hoje.length, ja: 0, ped: 0, resta: 0};
+      for(const pv of hoje){ if(!sem.has(pv)) o.ja++; else if(on.has(pv)) o.ped++; else o.resta++; }
+      return o;
+    }, ROTA_AQ);
+    assert.ok(conta.ja > 0 && conta.ped > 0 && conta.resta > 0, 'a variante tem as três situações: ' + JSON.stringify(conta));
+    const tela = await page.evaluate(() => {
+      const box = document.getElementById('exrHoje');
+      const sit = {ja: 0, ped: 0, resta: 0};
+      box.querySelectorAll('.exrSit').forEach(s => { sit[s.className.split(' ')[1]]++; });
+      return {linhas: box.querySelectorAll('.item').length, sit, n: Number(box.dataset.n),
+              resta: Number(box.dataset.resta), sub: document.getElementById('exrSHoje').textContent};
+    });
+    assert.equal(tela.n, conta.n, 'total');
+    assert.equal(tela.linhas, conta.n, 'uma linha por cliente de hoje');
+    assert.equal(tela.resta, conta.resta, 'restam');
+    assert.deepEqual(tela.sit, {ja: conta.ja, ped: conta.ped, resta: conta.resta}, 'situações');
+    assert.match(tela.sub, new RegExp(`^${conta.n} clientes com visita agendada hoje · ${conta.ja} j`), tela.sub);
+    assert.match(tela.sub, new RegExp(`restam ${conta.resta}$`), tela.sub);
+    // o total bate com o KPI "Visitas hoje" e com o card Base da aba Volume
+    assert.equal(await page.$eval('#exNVis', e => e.textContent), String(conta.n));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (d) "O que falta hoje" ---- */
+  test('(d) "O que falta hoje": a meta do dia de cada macro = metaDia do indicador e "Meta batida!" com <= 0', async () => {
+    const {page, ctx, erros} = await abre('exrota', {entrar: ENTRA_ROTA, aba: 'EXEC'});
+    const ind = await page.evaluate(r => Object.fromEntries(GROUPS.VOLUME.map(k => {
+      const b = agrega([r]).ind[k];
+      return [k, b && !b.unavailable ? {md: b.metaDia, onl: onlineVol([r], k)} : null];
+    })), ROTA_AQ);
+    const linhas = await page.$$eval('#exrFalta tbody tr', ts => ts.map(t => ({k: t.dataset.k,
+      md: t.dataset.md === '' ? null : Number(t.dataset.md), onl: t.dataset.onl === undefined ? null : Number(t.dataset.onl),
+      falta: t.dataset.falta === '' ? null : Number(t.dataset.falta), bat: t.dataset.bat,
+      cels: [...t.children].map(c => c.textContent)})));
+    assert.deepEqual(linhas.map(l => l.k), Object.keys(ind), 'os 5 macros, na ordem de GROUPS.VOLUME');
+    let batidas = 0, comFalta = 0;
+    for(const l of linhas){
+      const b = ind[l.k];
+      if(!b){ assert.deepEqual(l.cels.slice(1), ['—', '—', '—'], `${l.k}: sem dado`); continue; }
+      assert.equal(l.md, b.md, `${l.k}: meta do dia = metaDia do indicador`);
+      assert.equal(l.onl, b.onl, `${l.k}: online = onlineVol`);
+      if(b.md <= 1e-9){ batidas++; assert.equal(l.bat, 'true'); assert.equal(l.cels[3], 'Meta batida!', `${l.k}`); }
+      else { comFalta++; assert.equal(l.falta, Math.max(0, b.md - b.onl), `${l.k}: falta = meta do dia − online`);
+        assert.equal(l.cels[3], await page.evaluate(v => fmt0(v), Math.max(0, b.md - b.onl)), `${l.k}: fmt0`); }
+    }
+    assert.ok(batidas >= 1 && comFalta >= 1, `a variante tem "Meta batida!" e falta: ${batidas}/${comFalta}`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (e) "Venda Zero da rota" ---- */
+  test('(e) "Venda Zero da rota": o número é o gap do indicador e a lista traz só os não revertidos; sem percentual', async () => {
+    const {page, ctx, erros} = await abre('exrota', {entrar: ENTRA_ROTA, aba: 'EXEC'});
+    const gap = await page.evaluate(r => agrega([r]).ind.VENDAZERO.gap, ROTA_AQ);
+    const naFonte = await page.evaluate(r => (VENDAZERO_CLIENTES[r] || []).filter(e => !e.revertido).length, ROTA_AQ);
+    assert.ok(gap > 0, 'a variante tem o que reverter');
+    const vz = await page.evaluate(() => ({gap: Number(document.getElementById('exrVz').dataset.gap),
+      n: document.querySelector('#exrVz .exrN').textContent, seta: document.querySelector('#exrVz .exrSeta').textContent,
+      setaCls: document.querySelector('#exrVz .exrSeta').className, rot: document.querySelector('#exrVz .exrRot').textContent,
+      texto: document.getElementById('exrVz').textContent,
+      linhas: document.getElementById('exrVzLista').querySelectorAll('.item').length}));
+    assert.equal(vz.gap, gap, 'o número é o gap do indicador');
+    assert.equal(vz.n, await page.evaluate(v => fmt0(v), gap));
+    assert.equal(vz.rot, 'reverter');
+    assert.equal(vz.seta, '▼'); assert.equal(vz.setaCls, 'exrSeta no');
+    assert.ok(!/%/.test(vz.texto), 'sem percentual (R-RIT-01): ' + vz.texto);
+    assert.equal(await page.$('#exrVz .gSvg'), null, 'sem medidor');
+    assert.equal(vz.linhas, naFonte, 'só os equipamentos ainda por reverter');
+    assert.equal(naFonte < (await page.evaluate(r => (VENDAZERO_CLIENTES[r] || []).length, ROTA_AQ)), true, 'a variante tem um revertido de fora');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (f) "Cobertura: quem falta" ---- */
+  test('(f) "Cobertura: quem falta": por item com meta, o número = base − cobertos; item sem meta não aparece', async () => {
+    const {page, ctx, erros} = await abre('exrota', {entrar: ENTRA_ROTA, aba: 'EXEC'});
+    const conta = await page.evaluate(r => {
+      const ics = P.COV_GRUPO.ICS_GC, ind = agrega([r]).ind, out = [];
+      for(const k of ics){
+        const b = ind[k];
+        if(!b || b.unavailable || !(b.meta > 0)) continue;
+        const ja = new Set((COBERTOS[r] || {})[k] || []);
+        const base = (CLIENT_ROSTER[r] || []).filter(c => k !== 'KS TT' || ehKstt(c));
+        out.push({k, falta: base.filter(c => !ja.has(c[0])).length, base: (CLIENT_ROSTER[r] || []).length});
+      }
+      return {itens: out, semMeta: ics.filter(k => { const b = ind[k]; return b && !b.unavailable && !(b.meta > 0); })};
+    }, ROTA_AQ);
+    assert.ok(conta.semMeta.length >= 1, 'a variante tem um item do ICS sem meta na rota');
+    const tela = await page.$$eval('#exrCob .exrDet', ds => ds.map(d => ({k: d.dataset.k, falta: Number(d.dataset.falta),
+      base: Number(d.dataset.base), aberto: d.open, linhas: d.querySelectorAll('.item').length,
+      rot: d.querySelector('.exrQt').textContent})));
+    assert.deepEqual(tela.map(x => x.k), conta.itens.map(x => x.k), 'só os itens com meta, na ordem do ICS GC');
+    for(const k of conta.semMeta) assert.equal(tela.some(x => x.k === k), false, `${k}: item sem meta fora (não vira "0")`);
+    for(const x of tela){
+      const e = conta.itens.find(y => y.k === x.k);
+      assert.equal(x.falta, e.falta, `${x.k}: base − cobertos`);
+      assert.equal(x.rot, String(e.falta), `${x.k}: o número exibido`);
+      assert.equal(x.linhas, e.falta, `${x.k}: uma linha por cliente que falta`);
+      assert.equal(x.base, e.base, `${x.k}: base da rota`);
+      assert.equal(x.aberto, false, `${x.k}: fechado por padrão`);
+    }
+    // abre um item: a lista aparece
+    await page.click('#exrCob .exrDet .exrSum');
+    assert.equal(await page.$eval('#exrCob .exrDet', d => d.open), true);
+    // os rótulos são os do painel (rotuloInd)
+    assert.deepEqual(await page.$$eval('#exrCob .exrItem', es => es.map(e => e.textContent)),
+      await page.evaluate(ks => ks.map(k => rotuloInd(k)), tela.map(x => x.k)));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (g) fechamento do mês ---- */
+  test('(g) fechamento do mês: "Clientes de hoje", "O que falta hoje" e "Venda Zero" somem; o resto da rota fica', async () => {
+    const {page, ctx, erros} = await abre('exrotafech', {entrar: ENTRA_ROTA, aba: 'EXEC'});
+    assert.deepEqual(await blocosNovos(page), ['Cobertura: quem falta'], 'só a cobertura no fechamento');
+    for(const id of ['exrHoje', 'exrFalta', 'exrVz']) assert.equal(await page.$('#' + id), null, id);
+    assert.ok((await page.$$('#exrCob .exrDet')).length >= 1, 'a cobertura continua');
+    for(const id of ANTIGOS_AQ) assert.equal(await escondido(page, id), true, `${id} escondido`);
+    // o resto da Executiva no fechamento: sem o quadro "Meta do dia", com os KPIs e os medidores
+    assert.equal(await page.$eval('#exDia', e => e.hidden), true, 'sem "Meta do dia" no fechamento');
+    assert.equal(await page.$eval('#exGauges', e => e.children.length), 5);
+    assert.equal(await page.$eval('#exFocoTxt', e => e.textContent.length > 0), true);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (h) os dois textos dos quadros ---- */
+  test('(h) na rota, o Foco e a Meta do dia não falam de unidades; fora dela, as frases de sempre', async () => {
+    const {page, ctx, erros} = await abre('exrota', {entrar: ENTRA_ROTA, aba: 'EXEC'});
+    const foco = await page.$eval('#exFocoTxt', e => e.textContent);
+    const dia = await page.$eval('#exDiaTxt', e => e.textContent);
+    assert.ok(!/concentra/.test(foco), 'Foco sem a frase de unidades: ' + foco);
+    assert.match(foco, /clientes? da base ainda não compr\w+ no mês; .* (tem|têm) visita hoje\.$/, foco);
+    // os dois números do Foco são os dos KPIs já na tela
+    const sem = await page.$eval('#exNSem', e => e.textContent), vis = await page.$eval('#exNVis', e => e.textContent);
+    assert.ok(foco.includes(` ${sem} `), `Foco com o KPI Sem compra (${sem}): ${foco}`);
+    assert.ok(foco.includes(` ${vis} `), `Foco com o KPI Visitas hoje (${vis}): ${foco}`);
+    assert.ok(!/ de \d+ (rota|cliente|supervis)/.test(dia), 'Meta do dia sem a contagem de unidades: ' + dia);
+    assert.match(dia, /contra meta do dia de .*\(\d+%\)\.$/, dia);
+    await ctx.close();
+    // numa supervisão as duas frases continuam as de sempre
+    const b = await abre('exrota', {entrar: {perfil: 'sv', gc: 'G2', sv: '1'}, aba: 'EXEC'});
+    const diaSv = await b.page.$eval('#exDiaTxt', e => e.textContent);
+    assert.match(diaSv, / de \d+ rotas? já alcanç/, diaSv);
+    assert.deepEqual([...erros, ...b.erros], []);
+    await b.ctx.close();
+  });
+
+  /* ---- (i) "Abrir por" ---- */
+  test('(i) "Abrir por": na rota começa em Clientes e sem o chip do nível; fora dela, no nível, como hoje', async () => {
+    const {page, ctx, erros} = await abre('exrota', {entrar: ENTRA_ROTA, aba: 'EXEC'});
+    assert.deepEqual(await chipsAbrir(page), ['canal', 'cli*', 'ka'], 'sem o chip do nível, Clientes marcado');
+    // trocar de chip continua funcionando e volta ao padrão a cada entrada
+    await page.click('#exAbrir .fchip[data-ab="canal"]');
+    assert.deepEqual(await chipsAbrir(page), ['canal*', 'cli', 'ka']);
+    await vaiPara(page, ENTRA_ROTA, 'EXEC');
+    assert.deepEqual(await chipsAbrir(page), ['canal', 'cli*', 'ka'], 'cada entrada volta ao padrão');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    // fora da rota, o chip do nível e o padrão de sempre
+    for(const [entrar, rot] of [['dir', 'Gerência'], [{perfil: 'gc', gc: 'G1'}, 'Supervisão'],
+                                [{perfil: 'sv', gc: 'G2', sv: '1'}, 'Rota']]){
+      const b = await abre('exrota', {entrar, aba: 'EXEC'});
+      const chips = await chipsAbrir(b.page);
+      assert.equal(chips[0], 'nivel*', JSON.stringify(entrar) + ': ' + chips.join(' '));
+      assert.equal(await b.page.$eval('#exAbrir .fchip[data-ab="nivel"]', e => e.textContent), rot);
+      assert.deepEqual(b.erros, [], JSON.stringify(entrar));
+      await b.ctx.close();
+    }
+  });
+
+  /* ---- (j) antes x depois: fora do escopo de rota, nada mudou ---- */
+  test(`(j) antes x depois (main ${REF_PN60}, mesmo payload): Executiva, cabeçalho, cards, cascata e Resumo iguais fora da rota`,
+    {skip: !FRONT_PRE_PN60 && `sem o commit ${REF_PN60}`}, async () => {
+    const vistos = [];
+    for(const entrar of ['dir', {perfil: 'gc', gc: 'G1'}, {perfil: 'gc', gc: 'IT+MO'}, {perfil: 'sv', gc: 'G2', sv: '1'}]){
+      const onde = JSON.stringify(entrar);
+      const [novo, velho] = [await abre('exrota', {entrar, largura: 1280, aba: null}),
+                             await abre('exrota', {entrar, largura: 1280, aba: null, troca: FRONT_PRE_PN60})];
+      for(const {page} of [novo, velho]){ await vaiAba(page, 'VOLUME'); await vaiAba(page, 'EXEC'); }
+      assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+      vistos.push(`${onde} EXEC`);
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG']){
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        assert.deepEqual(await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO), `${onde} ${aba}: cabeçalho`);
+        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${onde} ${aba}: cards`);
+        const k = (await novo.page.$$eval('#lista .ind[data-k]', es => es.map(e => e.dataset.k)))[0];
+        if(k){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${aba} ${k}: cascata`);
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        vistos.push(`${onde} ${aba}`);
+      }
+      for(const {page} of [novo, velho]) await page.click('#btnResumo');
+      assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+      for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+      assert.deepEqual([...novo.erros, ...velho.erros], [], onde);
+      for(const {ctx} of [novo, velho]) await ctx.close();
+    }
+    assert.ok(vistos.length >= 16, vistos.join(', '));
   });
 });

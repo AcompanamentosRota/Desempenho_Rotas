@@ -357,7 +357,9 @@ describe('Ajuste de rótulos com dado real (Novos Negócios, aba por perfil, not
         await entra(page, e);
         const onde = `${largura} ${tema} ${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
         const a = await page.evaluate(ROT.ABA_EXEC_PAGINA);
-        if(e.perfil === 'rota') assert.equal(a.visivel, false, onde);
+        // PN-60: no perfil Rota a aba existe com o nome "Rota", mas a aba ABERTA continua o Volume (abTit = "Volume")
+        if(e.perfil === 'rota') assert.deepEqual([a.visivel, a.span, a.title, a.aria, a.on, a.abTit],
+          [true, ROT.NOME_EXEC.rota, ROT.NOME_EXEC.rota, ROT.NOME_EXEC.rota, false, 'Volume'], onde);
         else assert.deepEqual([a.visivel, a.span, a.title, a.aria, a.abTit], [true, ...Array(4).fill(ROT.NOME_EXEC[e.perfil])], onde);
         for(const ab of ABAS){
           if(!await vaiAba(page, ab)) continue;
@@ -410,7 +412,8 @@ describe('Ajuste de rótulos com dado real (Novos Negócios, aba por perfil, not
       for(const {page} of [novo, velho]) await entra(page, e);
       const onde = `${e.perfil}${e.gc ? ' ' + e.gc : ''}${e.sv ? ' ' + e.sv : ''}${e.rota ? ' ' + e.rota : ''}`;
       const comp = [];
-      for(const ab of ABAS){
+      // a Executiva do escopo de rota é nova (PN-60): o front antigo não tem a aba, então ela fica fora deste antes x depois
+      for(const ab of (e.perfil === 'rota' ? ABAS.filter(x => x !== 'EXEC') : ABAS)){
         const [ta, tb] = [await vaiAba(novo.page, ab), await vaiAba(velho.page, ab)];
         assert.equal(ta, tb, `${onde} ${ab}`);
         if(!ta) continue;
