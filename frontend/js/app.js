@@ -307,6 +307,8 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
 /* ---------- render ---------- */
 function render(){
   if(!P) return;
+  // Back Office: página própria (backoffice.js), no lugar do painel; nenhuma tela do painel é desenhada aqui
+  if(ACESSO && ACESSO.perfil==='bo') return BO.render();
   // aba Todos a Bordo (chave INCENTIVO): só com CONFIG.INCENTIVO_ATIVO e o grupo INCENTIVO no payload (payload antigo: oculta)
   const tabInc = document.querySelector('.tab[data-g="INCENTIVO"]');
   tabInc.hidden = !incentivoAtivo();
@@ -2227,10 +2229,13 @@ function linhaStatus(st){
   el.innerHTML = el.hidden ? '' : `Status <span class="stMarca ${ok?'ok':''}">${ok ? '✓' : '-'}</span>`;
 }
 
-/* ---------- entrada com perfis (Diretoria / Gerência / Supervisão / Rota), por seleção ----------
+/* ---------- entrada com perfis (Diretoria / Gerência / Supervisão / Rota / Back Office), por seleção ----------
    Controle de acesso INTERNO: a entrada só organiza o que cada perfil vê, sem usuário; NÃO é segurança (os dados
    estão em data/*.json). Diretoria ("Todas as gerências") pede senha na mesma caixa (campo "Senha", conferido pelo
-   hash contra CONFIG.DIRETORIA_SENHAS_HASH; duas senhas valem). Gerência, Supervisão e Rota abrem a
+   hash contra CONFIG.DIRETORIA_SENHAS_HASH; duas senhas valem). BACK OFFICE (Frente 1) usa a MESMA caixa de senha,
+   com o hash próprio (CONFIG.BACKOFFICE_SENHA_HASH; PERFIL_SENHA abaixo) e, depois dela, uma 2ª etapa com as 16
+   gerências SEPARADAS (sem grupos, todas habilitadas: CONFIG.GC_LIBERADAS não vale aqui); entra na página própria
+   do Back Office (js/backoffice.js), no lugar do painel. Gerência, Supervisão e Rota abrem a
    caixa de seleção com as gerências (cada grupo de CONFIG.GC_GRUPOS numa opção só, "GC.IT + GC.MO"; só abrem as de
    CONFIG.GC_LIBERADAS); na Supervisão e
    na Rota, a 2ª etapa lista as supervisões ou as rotas da gerência escolhida (no grupo, das duas). Todos abrem a visão
@@ -2242,12 +2247,17 @@ function linhaStatus(st){
    contexto (no grupo, no Total); sem armazenamento, a entrada aparece a cada visita. O sol/lua troca só o fundo da
    entrada (preto, padrão, ou branco), guardado à parte em 'drotas_entrada'. */
 const TEMA_ENTRADA = 'drotas_entrada', SESSAO = 'drotas_sessao';
-const PERFIS = {dir:'Diretoria', gc:'Gerência', sv:'Supervisão', rota:'Rota'};
+const PERFIS = {dir:'Diretoria', gc:'Gerência', sv:'Supervisão', rota:'Rota', bo:'Back Office'};
 const SESSAO_VERSAO = 2;  // 2 = desde a senha da Diretoria
+/* Perfis que pedem senha na entrada: a chave do config.js com os hashes (nunca a senha). A Diretoria entra direto
+   depois da senha; o Back Office vai para a 2ª etapa (a gerência) e abre a página própria (backoffice.js). */
+const PERFIL_SENHA = {dir:'DIRETORIA_SENHAS_HASH', bo:'BACKOFFICE_SENHA_HASH'};
+const hashesDoPerfil = p => CONFIG[PERFIL_SENHA[p]] || [];
 const MSG_ENTRADA = {
   reiniciado: 'Acesso reiniciado, entre novamente',
   indisponivel: 'O acesso anterior não está mais disponível',
   senha: 'Digite a senha para entrar na Diretoria',
+  senhaBo: 'Digite a senha para entrar no Back Office',
 };
 const MSG_SENHA = {incorreta: 'Senha incorreta', seguro: 'Abra o painel pelo endereço seguro (https)'};
 let ACESSO = null;        // acesso em uso; null = na entrada (ou no Resumo aberto por link, sem acesso)
@@ -2327,9 +2337,14 @@ const gcValida = u => typeof u==='string' && (ehGrupo(u) || todasGcs().includes(
    Devolve o acesso com os códigos do painel (na Supervisão e na Rota, a gerência delas) ou null. */
 // nome de quem entrou na Diretoria: um dos nomes de CONFIG.DIRETORIA_NOMES (outro valor guardado não vale); '' = sem nome
 const nomeDiretoria = q => typeof q==='string' && Object.values(CONFIG.DIRETORIA_NOMES || {}).includes(q) ? q : '';
+/* Back Office: as 16 gerências, sempre sozinhas (sem grupos) e todas habilitadas — CONFIG.GC_LIBERADAS não vale aqui e
+   gerência sem dados abre a página mesmo assim (as tabelas mostram "indisponível"). A visão agrupada (MATRIZ e os
+   grupos de duas) é escolhida DENTRO da página, nunca na entrada. */
+const gcBackOffice = g => typeof g==='string' && todasGcs().includes(g);
 function validaAcesso(a){
   const perfil = a && a.perfil;
   if(perfil==='dir') return {perfil, gc:'', sv:'', rota:'', quem:nomeDiretoria(a.quem)};
+  if(perfil==='bo') return gcBackOffice(a.gc) ? {perfil, gc:a.gc, sv:'', rota:''} : null;
   if(perfil==='gc') return opcaoValida(a.gc) ? {perfil, gc:a.gc, sv:'', rota:''} : null;
   if(!['sv', 'rota'].includes(perfil) || !gcValida(a.gc)) return null;
   const gcs = membrosGc(a.gc).filter(g => DATA[g]);
@@ -2354,12 +2369,15 @@ function aplicaAcesso(a){
   fecha();
   $('entrada').hidden = true;
   document.body.classList.remove('na-entrada');
+  // Back Office: página própria (backoffice.js), no lugar do painel; nenhuma tela do painel é desenhada
+  if(a.perfil==='bo') return BO.entra(a);
   render();
   mostraAbaAtiva();
   if($('q').value.trim()) buscaCliente();
 }
 function mostraEntrada(msg){
   fecha(); RS.fecha();
+  if(typeof BO!=='undefined') BO.sai();     // Back Office: fecha a página própria e devolve o painel
   fechaCaixa(false);
   $('entMsg').textContent = msg || '';
   $('entrada').hidden = false;
@@ -2377,7 +2395,10 @@ function saiDoAcesso(msg){
 function entradaOuAcesso(){
   const s = leSessao();
   if(!s) return mostraEntrada('');
-  if(s.perfil==='dir' && s.v!==SESSAO_VERSAO){ apagaSessao(); return mostraEntrada(MSG_ENTRADA.senha); }
+  // perfil com senha (Diretoria, Back Office) guardado antes dela (sem v): pede a senha de novo
+  if(PERFIL_SENHA[s.perfil] && s.v!==SESSAO_VERSAO){
+    apagaSessao(); return mostraEntrada(s.perfil==='bo' ? MSG_ENTRADA.senhaBo : MSG_ENTRADA.senha);
+  }
   if(!s.dia || s.dia!==diaTrabalho()){ apagaSessao(); return mostraEntrada(MSG_ENTRADA.reiniciado); }
   const v = validaAcesso(s);
   if(!v){ apagaSessao(); return mostraEntrada(MSG_ENTRADA.indisponivel); }
@@ -2400,6 +2421,7 @@ function confereAcesso(){
     sel = {...sel, gc:a.gc, sv:'', rota:''};
   if(a.perfil==='sv') sel = {...sel, gc:a.gc, sv:a.sv};
   if(a.perfil==='rota') sel = {...sel, gc:a.gc, sv:a.sv, rota:a.rota};
+  if(a.perfil==='bo') sel = {...sel, gc:a.gc, sv:'', rota:''};
   return true;
 }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') confereDia(); });
@@ -2418,18 +2440,20 @@ function entraCom(escolha){
    com "← Gerências". Na Diretoria, a mesma caixa com o campo "Senha" e "Entrar" (o único campo de texto da entrada) e
    "← Voltar" (fecha). Foco na primeira opção (no campo, na Diretoria), Tab preso na caixa, setas entre as opções, ESC,
    × e clique fora fecham (o foco volta ao botão do perfil); a lista rola dentro da caixa. */
-let CAIXA = null, _focoCaixa = null;     // {perfil, gc}: gc '' = 1ª etapa; senão a gerência (ou grupo) escolhida
+let CAIXA = null, _focoCaixa = null;     // {perfil, gc, senhaOk}: gc '' = 1ª etapa; senão a gerência (ou grupo) escolhida
 function abreCaixa(perfil){
   _focoCaixa = document.activeElement;
   $('entMsg').textContent = '';
-  CAIXA = {perfil, gc:''};
+  CAIXA = {perfil, gc:'', senhaOk:false};
   $('entCaixa').hidden = false;
   pintaCaixa();
 }
+// a caixa está no campo de senha (perfil com senha que ainda não acertou)
+const naSenha = () => !!CAIXA && !!PERFIL_SENHA[CAIXA.perfil] && !CAIXA.senhaOk;
 function fechaCaixa(devolveFoco = true){
   if($('entCaixa').hidden) return;
   $('entCaixa').hidden = true;
-  if(CAIXA && CAIXA.perfil==='dir') $('entOpcoes').innerHTML = '';    // descarta o campo (e o que foi digitado)
+  if(CAIXA && PERFIL_SENHA[CAIXA.perfil]) $('entOpcoes').innerHTML = '';    // descarta o campo (e o que foi digitado)
   CAIXA = null;
   if(devolveFoco && _focoCaixa && _focoCaixa.focus) _focoCaixa.focus({preventScroll:true});
 }
@@ -2438,11 +2462,17 @@ const opcaoCaixa = (attr, valor, rotulo, off) =>
 function pintaCaixa(){
   const {perfil, gc} = CAIXA, nome = perfil==='sv' ? 'supervisão' : 'rota';
   $('entCaixaTit').textContent = PERFIS[perfil].toUpperCase();
-  $('entVoltar').textContent = perfil==='dir' ? '← Voltar' : '← Gerências';
-  $('entVoltar').hidden = !gc && perfil!=='dir';
-  if(perfil==='dir') return pintaSenha();
+  // perfis com senha: "← Voltar" (fecha a caixa) nas duas etapas; nos outros, "← Gerências" só na 2ª
+  $('entVoltar').textContent = PERFIL_SENHA[perfil] ? '← Voltar' : '← Gerências';
+  $('entVoltar').hidden = !gc && !PERFIL_SENHA[perfil];
+  if(naSenha()) return pintaSenha();
   let html;
-  if(!gc){
+  /* Back Office: as 16 gerências SEPARADAS (sem os grupos de GC_GRUPOS) e todas habilitadas; a visão agrupada
+     (MATRIZ, PA+DI, GU+PO, IT+MO, UR+RI) fica dentro da página. */
+  if(perfil==='bo'){
+    $('entCaixaSub').textContent = 'Escolha a gerência';
+    html = todasGcs().map(g => opcaoCaixa('gc', g, rotuloGc(g))).join('');
+  } else if(!gc){
     $('entCaixaSub').textContent = 'Escolha a gerência';
     html = opcoesGc().map(o => opcaoCaixa('gc', o.chave, o.rotulo + (!o.livre ? ' · em breve' : o.ok ? '' : ' · sem dados'),
                                           !o.ok)).join('');
@@ -2461,7 +2491,7 @@ function pintaCaixa(){
   $('entOpcoes').scrollTop = 0;
   ($('entOpcoes').querySelector('button:not([disabled])') || $('entFechar')).focus({preventScroll:true});
 }
-// Diretoria: campo de senha (o Enter e o "Entrar" enviam o formulário)
+// Diretoria e Back Office: campo de senha (o Enter e o "Entrar" enviam o formulário)
 function pintaSenha(){
   $('entCaixaSub').textContent = 'Digite a senha';
   $('entOpcoes').innerHTML = `<form class="entSenha" id="entSenhaForm" novalidate>
@@ -2482,8 +2512,8 @@ async function hashSenha(s){
 const temCripto = () => !!(window.isSecureContext !== false && window.crypto && crypto.subtle && window.TextEncoder);
 let _conferindo = false;
 async function confereSenha(){
-  if(_conferindo || !CAIXA || CAIXA.perfil!=='dir') return;
-  const campo = $('entSenha'), msg = $('entSenhaMsg'), valor = campo.value;
+  if(_conferindo || !naSenha()) return;
+  const perfil = CAIXA.perfil, campo = $('entSenha'), msg = $('entSenhaMsg'), valor = campo.value;
   msg.textContent = '';
   const falha = texto => { campo.value = ''; msg.textContent = texto; campo.focus({preventScroll:true}); };
   if(!temCripto()) return falha(MSG_SENHA.seguro);
@@ -2491,28 +2521,31 @@ async function confereSenha(){
   _conferindo = true;
   try {
     const h = normalizaSenha(valor) ? await hashSenha(valor) : '';
-    ok = !!h && (CONFIG.DIRETORIA_SENHAS_HASH || []).includes(h);
-    // o nome ligado a esta senha (pelo mesmo hash); sem nome no mapa, só "Diretoria"
-    if(ok) quem = (CONFIG.DIRETORIA_NOMES || {})[h] || '';
+    ok = !!h && hashesDoPerfil(perfil).includes(h);
+    // Diretoria: o nome ligado a esta senha (pelo mesmo hash); sem nome no mapa, só "Diretoria"
+    if(ok && perfil==='dir') quem = (CONFIG.DIRETORIA_NOMES || {})[h] || '';
   }
   catch(e) { ok = false; }
   finally { _conferindo = false; }
-  if(!CAIXA || CAIXA.perfil!=='dir' || $('entSenha')!==campo) return;      // a caixa fechou enquanto conferia
-  if(ok) return entraCom({perfil:'dir', quem});
+  if(!CAIXA || CAIXA.perfil!==perfil || $('entSenha')!==campo) return;     // a caixa fechou enquanto conferia
+  // Diretoria entra direto; Back Office vai para a 2ª etapa, a gerência
+  if(ok && perfil==='bo'){ CAIXA = {...CAIXA, senhaOk:true}; return pintaCaixa(); }
+  if(ok) return entraCom({perfil, quem});
   falha(MSG_SENHA.incorreta);
 }
 $('entOpcoes').onclick = e => {
   const b = e.target.closest('button');
-  if(!b || b.disabled || !CAIXA || CAIXA.perfil==='dir') return;
+  if(!b || b.disabled || !CAIXA || naSenha()) return;
   const {perfil} = CAIXA;
   if(b.dataset.gc!=null){
-    if(perfil==='gc') return entraCom({perfil, gc:b.dataset.gc});
-    CAIXA = {perfil, gc:b.dataset.gc};
+    // Gerência e Back Office entram na gerência escolhida; Supervisão e Rota vão para a 2ª etapa
+    if(perfil==='gc' || perfil==='bo') return entraCom({perfil, gc:b.dataset.gc});
+    CAIXA = {...CAIXA, gc:b.dataset.gc};
     return pintaCaixa();
   }
   entraCom({perfil, gc:CAIXA.gc, sv:b.dataset.sv || '', rota:b.dataset.rota || ''});
 };
-$('entVoltar').onclick = () => { if(CAIXA && CAIXA.perfil==='dir') return fechaCaixa(); CAIXA = {...CAIXA, gc:''}; pintaCaixa(); };
+$('entVoltar').onclick = () => { if(CAIXA && PERFIL_SENHA[CAIXA.perfil]) return fechaCaixa(); CAIXA = {...CAIXA, gc:''}; pintaCaixa(); };
 $('entFechar').onclick = () => fechaCaixa();
 $('entCaixa').onclick = e => { if(e.target===$('entCaixa')) fechaCaixa(); };     // clique fora do painel
 $('entCaixa').addEventListener('keydown', e=>{

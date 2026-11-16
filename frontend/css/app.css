@@ -1420,3 +1420,55 @@ td.rt-vazio{background:#f7f7f8;color:#75757b}
 .rt-compacto .rt-v{font-size:13px}
 .rt-compacto .rt-s{font-size:9.5px}
 .rt-compacto .rt-tab td.rt-nome{font-size:12px}
+
+/* ============ BACK OFFICE (Frente 1) — página própria do perfil Back Office (js/backoffice.js) ============
+   Só classes novas com prefixo .bo. As duas únicas regras que citam classes de fora valem apenas com body.boAtivo
+   (que só existe nesta página): elas tiram o painel lateral e a .wrap da tela. Nada do painel, da gaveta, do Resumo
+   ou do Painel de Ritmo muda. A tabela rola DENTRO do quadro (.boRola): a página nunca rola na horizontal. */
+body.boAtivo .lado,body.boAtivo .wrap{display:none}
+body.boAtivo{padding-left:0}
+.bo{display:flex;flex-direction:column;gap:14px;padding:16px;max-width:100%;overflow-x:hidden}
+.bo[hidden]{display:none}
+.boTopo{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  background:var(--preto);color:#fff;border-radius:12px;padding:14px 16px}
+.boCab h1{font-size:var(--fs-titulo);font-weight:var(--fw-titulo);letter-spacing:-.02em;line-height:1.1;margin:0}
+.boEsc{margin-top:4px;font-size:var(--fs-legenda);color:var(--topo-sub)}
+.boBtns{display:flex;gap:8px;flex:none}
+.boBtn{font:inherit;font-size:var(--fs-legenda);font-weight:600;border-radius:9px;padding:8px 14px;cursor:pointer;
+  border:1px solid var(--linha-forte);background:var(--branco);color:var(--txt)}
+.boTopo .boBtn{border-color:var(--escuro-borda2);background:var(--escuro-2);color:#fff}
+.boBtn:hover{border-color:var(--preto)}
+.boBtn:disabled{cursor:default;opacity:.55}
+.boBtn.boPri{background:var(--vermelho);border-color:var(--vermelho);color:#fff}
+.boFiltros{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.boCampo{display:flex;flex-direction:column;gap:4px;min-width:0}
+.boRot{font-size:var(--fs-nota-mini);font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-apoio)}
+.boFiltros select{font:inherit;font-size:var(--fs-legenda);padding:8px 10px;border-radius:9px;max-width:100%;
+  border:1px solid var(--linha-forte);background:var(--branco);color:var(--txt)}
+.boAcoes{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.boNota{margin:0;font-size:var(--fs-nota);color:var(--txt-apoio)}
+.boCorpo{display:flex;flex-direction:column;gap:22px;min-width:0}
+.boGrupo{display:flex;flex-direction:column;gap:12px;min-width:0}
+.boGrupoTit{margin:0;font-size:var(--fs-card);font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--txt-apoio);border-bottom:1px solid var(--linha);padding-bottom:5px}
+.boCat{min-width:0;background:var(--branco);border:1px solid var(--linha);border-radius:12px;padding:12px}
+.boCatTit{margin:0 0 8px;font-size:var(--fs-valor);font-weight:700;color:var(--txt)}
+.boRola{overflow-x:auto;max-width:100%}
+.boTab{border-collapse:collapse;width:100%;font-size:var(--fs-legenda);
+  font-variant-numeric:lining-nums tabular-nums}
+.boTab th,.boTab td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--linha);white-space:nowrap}
+.boTab th{font-size:var(--fs-nota-mini);font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--txt-apoio);border-bottom:1px solid var(--linha-forte)}
+.boTab tbody tr:nth-child(even){background:#f7f7f9}
+.boTab td.boNum,.boTab th.boNum{text-align:right}
+.boTab td.boUn b{display:block;font-weight:600;color:var(--txt)}
+.boTab td.boUn small{display:block;font-size:var(--fs-nota-mini);color:var(--txt-apoio)}
+.boGcCel{font-weight:600;color:var(--txt-apoio)}
+.boOff{color:var(--txt-apoio);font-style:italic}
+.boNum.boOk{color:var(--verdeE);font-weight:600}
+.boNum.boNo{color:var(--vermelho2);font-weight:600}
+.boRod{font-size:var(--fs-nota);color:var(--txt-apoio)}
+@media (max-width:640px){
+  .bo{padding:12px}
+  .boAcoes{margin-left:0}
+}

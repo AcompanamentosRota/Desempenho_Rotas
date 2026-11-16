@@ -48,6 +48,8 @@
       <button type="button" data-perfil="gc" aria-haspopup="dialog">GERÊNCIA</button>
       <button type="button" data-perfil="sv" aria-haspopup="dialog">SUPERVISÃO</button>
       <button type="button" data-perfil="rota" aria-haspopup="dialog">ROTA</button>
+      <!-- Back Office (Frente 1): senha própria e, depois dela, a gerência (as 16 separadas); abre a página #bo -->
+      <button type="button" data-perfil="bo" aria-haspopup="dialog">BACK OFFICE</button>
     </div>
   </div>
   <div class="entRod" id="entRod">Karen Oliveira - Inteligência de Mercado</div>
@@ -242,6 +244,39 @@
   <footer class="rodape" id="rodape"></footer>
 </main>
 
+<!-- BACK OFFICE (Frente 1): página do perfil Back Office, no lugar do painel (js/backoffice.js). Uma tabela por
+     categoria, com as colunas da cascata; na visão agrupada (MATRIZ, PA+DI, GU+PO, IT+MO, UR+RI) as gerências ficam
+     lado a lado, uma linha por gerência, sem total e sem soma. Fica fora da <main> para não mexer no painel. -->
+<section class="bo" id="bo" aria-labelledby="boTit" hidden>
+  <header class="boTopo">
+    <div class="boCab">
+      <h1 id="boTit">Back Office</h1>
+      <div class="boEsc" id="boEsc"></div>
+    </div>
+    <div class="boBtns">
+      <button id="boRecarga" class="boBtn" type="button" title="Atualizar o painel">Atualizar</button>
+      <button id="boCasa" class="boBtn" type="button" title="Voltar para a entrada">Entrada</button>
+    </div>
+  </header>
+  <div class="boFiltros">
+    <div class="boCampo"><label class="boRot" for="boGc">Gerência</label><select id="boGc"></select></div>
+    <div class="boCampo"><label class="boRot" for="boNivel">Nível</label>
+      <select id="boNivel">
+        <option value="gc">Gerência</option>
+        <option value="sv">Supervisão</option>
+        <option value="rota">Rota</option>
+      </select></div>
+    <div class="boAcoes">
+      <button id="boXlsx" class="boBtn boPri" type="button">Exportar Excel</button>
+      <button id="boRitmo" class="boBtn" type="button">Painel de ritmo</button>
+    </div>
+    <span id="boAviso" class="sr-only" role="status" aria-live="polite"></span>
+  </div>
+  <p class="boNota" id="boNota"></p>
+  <div class="boCorpo" id="boCorpo"></div>
+  <footer class="boRod" id="boRod"></footer>
+</section>
+
 <div id="rsOverlay" hidden>
   <div class="rs-barra">
     <button class="rs-btn" id="rsVoltar">← Voltar</button>
@@ -272,6 +307,7 @@
 <script src="js/app.js" defer></script>
 <script src="js/resumo.js" defer></script>
 <script src="js/ritmo.js" defer></script>
+<script src="js/backoffice.js" defer></script>
 <script src="js/main.js" defer></script>
 </body>
 </html>

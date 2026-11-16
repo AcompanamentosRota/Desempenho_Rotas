@@ -14,9 +14,10 @@ const os = require('node:os');
 const path = require('node:path');
 const {execFileSync, execSync} = require('node:child_process');
 const {SENHAS_TESTE, TEXTOS_HASH, SENHAS_ERRADAS, hashTeste, HASHES_TESTE, trocaHash, trocaLiberadas, digitaSenha,
-  NOMES_TESTE, trocaNomes} = require('./senha_teste.js');
+  NOMES_TESTE, trocaNomes, SENHA_BO, HASH_BO, trocaHashBo} = require('./senha_teste.js');
 // guarda das senhas (Parte AO e Parte I): nenhum texto do repositório, nem da tela, pode ser uma senha da Diretoria
-const {senhasNoTexto, varre: varreSenhas, DIRS: DIRS_GUARDA, N_GRAMAS: N_GRAMAS_GUARDA} = require('./guarda_senha.js');
+const {senhasNoTexto, varre: varreSenhas, DIRS: DIRS_GUARDA, N_GRAMAS: N_GRAMAS_GUARDA,
+  hashesReais, CHAVES_HASH} = require('./guarda_senha.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const FRONT = path.join(RAIZ, 'frontend');
@@ -281,9 +282,9 @@ async function abre(nome, {armazenado = {}, largura = 1200, altura = 1000, entra
     if(!fs.existsSync(arq)) return rota.fulfill({status: 404, body: ''});
     // `troca` = {'/js/config.js': texto => texto alterado} (ex.: CONFIG.INCENTIVO_ATIVO = false)
     let corpo = troca[url.pathname] ? troca[url.pathname](fs.readFileSync(arq, 'utf-8')) : fs.readFileSync(arq);
-    // senha da Diretoria: o config.js servido leva os hashes das senhas de teste (senha_teste.js), nunca as reais; e as
-    // gerências liberadas na entrada de `liberadas`
-    if(url.pathname === '/js/config.js') corpo = trocaNomes(trocaLiberadas(trocaHash(corpo), liberadas), nomes);
+    // senhas (Diretoria e Back Office): o config.js servido leva os hashes das senhas de teste (senha_teste.js), nunca
+    // as reais; e as gerências liberadas na entrada de `liberadas`
+    if(url.pathname === '/js/config.js') corpo = trocaHashBo(trocaNomes(trocaLiberadas(trocaHash(corpo), liberadas), nomes));
     rota.fulfill({status: 200, contentType: TIPOS[path.extname(arq)] || 'application/octet-stream', body: corpo});
   });
   // bibliotecas do PDF (CDN) não são usadas nos testes
@@ -320,9 +321,18 @@ const vaiAba = (page, aba) => page.evaluate(aba => {
 async function entra(page, entrar, aba = 'ICS_GC'){
   if(entrar === 'dir') entrar = {perfil: 'dir'};
   if(entrar === 'gc') entrar = {perfil: 'gc', gc: await page.evaluate(() => primeiraGc())};
+  if(entrar === 'bo') entrar = {perfil: 'bo', gc: await page.evaluate(() => primeiraGc())};
   const {perfil, gc = '', sv = '', rota = ''} = entrar;
-  if(await page.isVisible('#entCaixa')) await page.click('#entFechar');     // de volta aos quatro botões
+  if(await page.isVisible('#entCaixa')) await page.click('#entFechar');     // de volta aos botões de perfil
   await page.click(`#entrada [data-perfil="${perfil}"]`);
+  // Back Office (Frente 1): senha própria e, depois dela, a gerência (as 16 separadas, sem grupos)
+  if(perfil === 'bo'){
+    await digitaSenhaBo(page);
+    await page.click(`#entOpcoes [data-gc="${gc}"]`);
+    await page.waitForFunction(() => !document.getElementById('bo').hidden &&
+      document.getElementById('boCorpo').innerHTML !== '');
+    return;
+  }
   if(perfil === 'dir') await digitaSenha(page);
   else {
     const opcao = await page.$$eval('#entOpcoes [data-gc]', (bs, gc) => ((bs.find(b => b.dataset.gc === gc)
@@ -332,6 +342,13 @@ async function entra(page, entrar, aba = 'ICS_GC'){
     if(perfil === 'rota') await page.click(`#entOpcoes [data-rota="${rota}"]`);
   }
   if(aba) await vaiAba(page, aba);
+}
+/* Back Office: digita a senha de teste na caixa aberta e espera a 2ª etapa (a lista das gerências). Nenhum literal de
+   senha aqui: ela vem de SENHA_BO (senha_teste.js), fictícia, como as da Diretoria. */
+async function digitaSenhaBo(page, senha = SENHA_BO){
+  await page.fill('#entSenha', senha);
+  await page.press('#entSenha', 'Enter');
+  await page.waitForSelector('#entOpcoes [data-gc]');
 }
 /* volta para a entrada pela casa e entra de novo */
 async function vaiPara(page, entrar, aba){
@@ -1458,10 +1475,10 @@ const GRUPO_IT_MO = 'GC.IT + GC.MO · Itumbiara + Morrinhos';
 
 describe('Parte I — entrada por seleção', {skip: pular}, () => {
   // desde 22/10/2026 a Diretoria pede senha (Parte AB); o único campo da entrada é o dela, só com a caixa da Diretoria aberta
-  test('quatro botões; Diretoria pela senha, sem usuário; nenhum campo de texto fora da caixa da Diretoria', async () => {
+  test('cinco botões; Diretoria pela senha, sem usuário; nenhum campo de texto fora das caixas com senha', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
     assert.deepEqual(await page.$$eval('#entBotoes button', bs => bs.map(b => b.textContent)),
-                     ['DIRETORIA', 'GERÊNCIA', 'SUPERVISÃO', 'ROTA']);
+                     ['DIRETORIA', 'GERÊNCIA', 'SUPERVISÃO', 'ROTA', 'BACK OFFICE']);
     let e = await estado(page);
     assert.deepEqual([e.entrada, e.msg, e.guardado, e.acesso], [true, '', null, null]);
     assert.equal((await caixa(page)).campos, 0, 'sem campo de texto');
@@ -7458,7 +7475,7 @@ describe('Parte AB — senha da Diretoria', {skip: pular}, () => {
   test('DIRETORIA abre a caixa com o campo Senha (foco nele) e "Entrar"; GERÊNCIA, SUPERVISÃO e ROTA sem senha', async () => {
     const {page, ctx, erros} = await abre('normal', {entrar: null, antes: fixo()});
     assert.deepEqual(await page.$$eval('#entBotoes button', bs => bs.map(b => b.textContent)),
-                     ['DIRETORIA', 'GERÊNCIA', 'SUPERVISÃO', 'ROTA']);
+                     ['DIRETORIA', 'GERÊNCIA', 'SUPERVISÃO', 'ROTA', 'BACK OFFICE']);
     await page.click('#entrada [data-perfil="dir"]');
     let c = await caixaSenha(page);
     assert.deepEqual([c.vis, c.tit, c.campo, c.valor, c.msg, c.papel, c.foco, c.voltar, c.entrar],
@@ -10933,5 +10950,475 @@ describe('Parte AO — nenhuma senha de verdade em texto no repositório', () =>
     assert.equal(senhasNoTexto(`${SENHAS_TESTE[0]} e ${SENHAS_TESTE[1]}`, HASHES_TESTE), 2);
     // a tela de entrada de verdade é conferida contra os hashes REAIS na Parte I
     assert.equal(senhasNoTexto('DIRETORIA GERÊNCIA SUPERVISÃO ROTA Desempenho de Rotas'), 0);
+  });
+
+  /* Back Office (Frente 1): a regra vale para TODA senha do painel, não só as da Diretoria. O guarda lê os dois
+     campos de hash do config.js e varre os mesmos diretórios; a senha de teste do Back Office é fictícia. */
+  test('o guarda confere também o hash do Back Office, lido do config.js, e nada é achado', () => {
+    assert.deepEqual(CHAVES_HASH, ['DIRETORIA_SENHAS_HASH', 'BACKOFFICE_SENHA_HASH']);
+    const cfg = fs.readFileSync(path.join(FRONT, 'js', 'config.js'), 'utf-8');
+    const bo = ((cfg.match(/BACKOFFICE_SENHA_HASH:\s*\[([^\]]*)\]/) || [])[1] || '').match(/[0-9a-f]{64}/g) || [];
+    assert.equal(bo.length, 1, 'uma senha do Back Office, e só o hash dela');
+    const reais = hashesReais();
+    assert.equal(reais.length, 3, 'as duas da Diretoria e a do Back Office');
+    assert.ok(reais.includes(bo[0]), 'a varredura usa o hash do Back Office');
+    assert.ok(!reais.includes(HASH_BO), 'a senha de teste do Back Office não é a de verdade');
+    // com o hash do Back Office no conjunto, a varredura continua sem achar nada
+    assert.deepEqual(varreSenhas({hashes: reais}).achados, []);
+  });
+});
+
+/* ---------- Parte AP — Back Office (Frente 1): visões consolidadas e exportação para Excel ----------
+   Perfil novo na entrada (5º botão), com senha própria (CONFIG.BACKOFFICE_SENHA_HASH; nos testes, o hash de uma senha
+   FICTÍCIA de senha_teste.js — nenhum literal de senha aqui) e página própria, no lugar do painel.
+   O que estes testes travam: (a) a entrada; (c) cada célula da tela = o texto da cascata do painel para o MESMO
+   escopo, nas 4 categorias e nos 3 níveis, numa gerência e na MATRIZ; (d) a visão agrupada lado a lado, sem linha de
+   total e sem soma (a soma é calculada só para provar que ela NÃO aparece); (e) o Excel lido de volta pela própria
+   biblioteca, célula a célula; (f) o Painel de Ritmo da MATRIZ = as páginas de G1, G2 e G3, idênticas às da gerência
+   isolada; (g) 360/390/1000/1440 px sem rolagem lateral nem erro; (h) nada fora do Back Office muda contra a main. */
+const REF_PRE_BO = '8620727';    // a main antes do Back Office (Frente 1)
+const FRONT_PRE_BO = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_BO}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const t = {};
+    for(const f of ['index.html', 'css/app.css', 'js/config.js', 'js/app.js', 'js/ritmo.js'])
+      t['/' + f] = (a => () => arq(a))(f);
+    return t;
+  } catch(e) { return null; }
+})();
+// ExcelJS: o mesmo arquivo do cdnjs servido ao navegador e o módulo que LÊ o .xlsx de volta aqui no Node
+const LIB_XLSX = (() => {
+  const busca = [RAIZ, ...(process.env.NODE_PATH || '').split(path.delimiter).filter(Boolean)];
+  try { busca.push(execSync('npm root -g', {stdio: ['ignore', 'pipe', 'ignore']}).toString().trim()); } catch(e) { /* sem npm */ }
+  try {
+    return {arq: require.resolve('exceljs/dist/exceljs.min.js', {paths: busca}),
+            mod: require(require.resolve('exceljs', {paths: busca}))};
+  } catch(e) { return null; }
+})();
+
+describe('Parte AP — Back Office (Frente 1)', {skip: pular}, () => {
+  // uma categoria de cada painel (a 4ª, CERVEJAS no Todos a Bordo, é a mesma chave do ICS GC com outra conta)
+  const CATS = [['VOLUME', 'VOL REFRIGERANTES'], ['ICS_GC', 'CCTM 2L PET'], ['NOVOS_NEG', 'CAMPARI'],
+                ['INCENTIVO', 'CERVEJAS']];
+  const MATRIZ_GCS = ['G1', 'G2', 'G3'];
+
+  /* lê as tabelas do Back Office: [{g, k, tit, cab, linhas:[{off, msg, gc, nome, nums}]}] */
+  const LE_BO = () => [...document.querySelectorAll('#bo .boCat')].map(sec => ({
+    g: sec.dataset.g, k: sec.dataset.k, tit: sec.querySelector('.boCatTit').textContent,
+    cab: [...sec.querySelectorAll('thead th')].map(t => t.textContent),
+    linhas: [...sec.querySelectorAll('tbody tr')].map(tr => {
+      const off = tr.querySelector('.boOff'), un = tr.querySelector('.boUn b'), gcCel = tr.querySelector('.boGcCel');
+      return {off: !!off, msg: off ? off.textContent : '', gc: gcCel ? gcCel.textContent : '',
+        nome: un ? un.textContent : '', nums: [...tr.querySelectorAll('td.boNum')].map(td => td.textContent)};
+    }),
+  }));
+  /* lê as linhas da cascata aberta com o MESMO texto de cada célula: [{nome, off, nums:[Meta, Real, Real+Online, %, Dif]}] */
+  const LE_CASC = () => [...document.querySelectorAll('#dCorpo .cLin')].map(l => {
+    const off = l.classList.contains('off');
+    return {nome: (l.querySelector('.cNome b') || {}).textContent || '', off,
+      nums: off ? [] : [...[...l.querySelectorAll('.cEsq span')].map(s => s.textContent.replace(/^(Meta|Real)\s/, '')),
+        l.querySelector('.cRo span').textContent, l.querySelector('.cPct b').textContent,
+        l.querySelector('.cDif b').textContent]};
+  });
+  const drwOn = (p, on) => p.waitForFunction(on => document.getElementById('drw').classList.contains('on') === on, on);
+  const fechaDrw = async p => { await p.keyboard.press('Escape'); await drwOn(p, false); };
+  const mapa = ls => Object.fromEntries(ls.filter(l => !l.off).map(l => [l.nome, l.nums]));
+
+  /* Cascata do painel para o mesmo escopo: abre o card do indicador e devolve as linhas do 1º nível; com
+     nivel = 'rota', desce em cada linha (supervisões e "Neutraliza") e junta as rotas. Espera sempre o ESTADO
+     (a classe .on e o #dTit, que é "indicador · nível"), nunca tempo (PN-45, item 3). */
+  async function cascata(page, grupo, k, nivel){
+    await filtra(page, {aba: grupo});
+    if(!(await page.$(`#lista .ind[data-k="${k}"]`))) return null;      // card indisponível ou sem meta no escopo
+    await page.click(`#lista .ind[data-k="${k}"]`);
+    await drwOn(page, true);
+    let ls = await page.evaluate(LE_CASC);
+    if(nivel === 'rota'){
+      const n = ls.length, rotas = [];
+      for(let i = 0; i < n; i++){
+        if(!(await page.$(`#dCorpo .cLin[data-i="${i}"]`))) continue;
+        const t = await page.$eval('#dTit', e => e.textContent);
+        await page.click(`#dCorpo .cLin[data-i="${i}"]`);
+        await page.waitForFunction(t => document.getElementById('dTit').textContent !== t, t);
+        rotas.push(...await page.evaluate(LE_CASC));
+        const t2 = await page.$eval('#dTit', e => e.textContent);
+        await page.click('#cVolta');
+        await page.waitForFunction(t => document.getElementById('dTit').textContent !== t, t2);
+      }
+      ls = rotas;
+    }
+    await fechaDrw(page);
+    return ls;
+  }
+  const tabelaBo = async (page, g, k) => (await page.evaluate(LE_BO)).find(t => t.g === g && t.k === k);
+  const trocaFiltro = async (page, escopo, nivel) => {
+    await page.selectOption('#boGc', escopo);
+    await page.selectOption('#boNivel', nivel);
+    await page.waitForFunction(([e, n]) => document.getElementById('boGc').value === e &&
+      document.getElementById('boNivel').value === n && document.getElementById('boCorpo').innerHTML !== '', [escopo, nivel]);
+  };
+  /* Formata um número do Excel como a tela o escreve, usando as PRÓPRIAS funções do painel (fmt0, fmtN, sinal): assim
+     a comparação não depende do Intl do Node. Colunas: 0 Meta, 1 Real, 2 Real + Online, 3 %, 4 Dif. */
+  const textoDoExcel = (page, linhas) => page.evaluate(ls => ls.map(r => r.nums.map((v, j) => {
+    if(v == null) return '—';
+    if(j === 3) return v + '%';
+    if(j === 4) return sinal(r.k, v);
+    return Number.isInteger(v) ? fmt0(v) : fmtN(v);
+  })), linhas);
+
+  /* ---- (a) entrada ---- */
+  test('(a) BACK OFFICE pede senha; errada não entra; certa abre a página, guarda o acesso e a casa volta', async () => {
+    const {page, ctx, erros} = await abre('vol5', {entrar: null});
+    assert.deepEqual(await page.$$eval('#entBotoes button', bs => bs.map(b => b.dataset.perfil)),
+                     ['dir', 'gc', 'sv', 'rota', 'bo']);
+    await page.click('#entrada [data-perfil="bo"]');
+    const c = await caixaSenha(page);
+    assert.deepEqual([c.vis, c.tit, c.campo, c.foco, c.voltar, c.entrar],
+                     [true, 'BACK OFFICE', true, 'entSenha', '← Voltar', ['Entrar']], 'caixa de senha, como a Diretoria');
+    assert.deepEqual(c.attrs, ['password', 'off', 'off', 'Senha']);
+    // senha errada (derivada das de teste, nunca escrita aqui): a mesma mensagem da Diretoria e nada de acesso
+    for(const errada of SENHAS_ERRADAS.slice(0, 2)){
+      await page.fill('#entSenha', errada);
+      await page.press('#entSenha', 'Enter');
+      await page.waitForFunction(() => document.getElementById('entSenhaMsg').textContent !== '');
+      const d = await caixaSenha(page);
+      assert.deepEqual([d.msg, d.valor, d.foco], ['Senha incorreta', '', 'entSenha'], 'senha errada');
+      const e = await estado(page);
+      assert.deepEqual([e.entrada, e.acesso, e.guardado], [true, null, null], 'continua na entrada, sem guardar nada');
+    }
+    // senha certa: 2ª etapa com as 16 gerências SEPARADAS, todas habilitadas e nenhum grupo
+    await digitaSenhaBo(page);
+    const gcs = (await caixa(page)).gcs;
+    assert.deepEqual(gcs.map(g => g[0]), await page.evaluate(() => todasGcs()), 'as 16 na ordem do painel');
+    assert.equal(gcs.length, 16);
+    assert.ok(gcs.every(g => !g[0].includes('+')), 'nenhum grupo na entrada do Back Office');
+    assert.ok(gcs.every(g => g[2] === false), 'todas habilitadas');
+    await page.click('#entOpcoes [data-gc="G2"]');
+    await page.waitForFunction(() => !document.getElementById('bo').hidden);
+    const e = await estado(page);
+    assert.deepEqual(e.acesso, ['bo', 'G2', '', ''], 'acesso Back Office na gerência escolhida');
+    assert.deepEqual([e.guardado.perfil, e.guardado.gc, e.guardado.v], ['bo', 'G2', 2], 'guardado com a versão da sessão');
+    assert.equal(e.guardado.quem, undefined, 'nada de nome nem de senha no acesso guardado');
+    assert.equal(await page.isHidden('#lado'), true, 'o painel lateral sai da tela');
+    assert.equal(await page.textContent('#boTit'), 'Back Office');
+    assert.match(await page.textContent('#boEsc'), /^GC\.G2/);
+    // recarregar no mesmo dia não pede a senha de novo
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById('bo').hidden);
+    assert.deepEqual((await estado(page)).acesso, ['bo', 'G2', '', '']);
+    // a casa apaga o acesso e volta para a entrada
+    await page.click('#boCasa');
+    const f = await estado(page);
+    assert.deepEqual([f.entrada, f.acesso, f.guardado], [true, null, null]);
+    assert.equal(await page.isHidden('#bo'), true, 'a página do Back Office sai da tela');
+    assert.equal(await page.isHidden('#lado'), false, 'o painel volta');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(a) acesso do Back Office guardado sem a versão da sessão: volta para a entrada pedindo a senha', async () => {
+    const guardado = JSON.stringify({perfil: 'bo', gc: 'G1', sv: '', rota: '', dia: '2026-10-22'});
+    const {page, ctx, erros} = await abre('vol5', {entrar: null, armazenado: {drotas_sessao: guardado}});
+    const e = await estado(page);
+    assert.equal(e.entrada, true);
+    assert.equal(e.guardado, null, 'o acesso antigo é apagado');
+    assert.match(e.msg, /Back Office/);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (c) cada célula = a cascata do painel ---- */
+  for(const [grupo, k] of CATS)
+  test(`(c) ${grupo} · ${k}: cada célula da tela = a da cascata do painel, nos 3 níveis`, async () => {
+    const gc = 'G1';
+    const {page: bo, ctx: c1, erros: e1} = await abre('vol5', {entrar: {perfil: 'bo', gc}, aba: null, largura: 1440});
+    const {page: pa, ctx: c2, erros: e2} = await abre('vol5', {entrar: {perfil: 'gc', gc}, aba: null, largura: 1440});
+    const {page: di, ctx: c3, erros: e3} = await abre('vol5', {entrar: 'dir', aba: null, largura: 1440});
+    const rot = await bo.evaluate(g => rotuloGc(g), gc);
+    for(const nivel of ['gc', 'sv', 'rota']){
+      await trocaFiltro(bo, 'gc:' + gc, nivel);
+      const t = await tabelaBo(bo, grupo, k);
+      assert.ok(t, `${nivel}: a tabela da categoria existe`);
+      assert.equal(t.tit, await bo.evaluate(x => rotuloInd(x), k), `${nivel}: o rótulo do painel`);
+      assert.deepEqual(t.cab.slice(-5).slice(0, 3), ['Meta', 'Real', 'Real + Online'], `${nivel}: colunas da cascata`);
+      assert.equal(t.cab[t.cab.length - 1], 'Dif');
+      // o nível Gerência sai da cascata da Diretoria; os outros, da cascata da própria gerência
+      const casc = nivel === 'gc' ? await cascata(di, grupo, k, 'gc') : await cascata(pa, grupo, k, nivel);
+      if(!casc){     // card sem meta no escopo (Todos a Bordo): a tabela traz a mesma mensagem, numa linha só
+        assert.equal(t.linhas.length, 1, `${nivel}: uma linha`);
+        assert.ok(t.linhas[0].off, `${nivel}: linha sem dado`);
+        continue;
+      }
+      const ref = mapa(casc), tela = Object.fromEntries(t.linhas.filter(l => !l.off).map(l => [l.nome, l.nums]));
+      if(nivel === 'gc'){
+        assert.deepEqual(Object.keys(tela), [rot], 'uma linha, a da gerência');
+        assert.deepEqual(tela[rot], ref[rot], `${nivel}: células da gerência`);
+      } else {
+        assert.deepEqual(Object.keys(tela).sort(), Object.keys(ref).sort(), `${nivel}: as mesmas linhas da cascata`);
+        for(const nome of Object.keys(tela)) assert.deepEqual(tela[nome], ref[nome], `${nivel} · ${nome}`);
+        assert.ok(Object.keys(tela).length > 1, `${nivel}: mais de uma linha`);
+      }
+      assert.ok(!t.linhas.some(l => /^total|BAND/i.test(l.nome)), `${nivel}: nenhuma linha de total`);
+    }
+    assert.deepEqual([...e1, ...e2, ...e3], []);
+    await c1.close(); await c2.close(); await c3.close();
+  });
+
+  test('(c) MATRIZ: as linhas de cada gerência são as mesmas da gerência sozinha, nos 3 níveis e nas 4 categorias', async () => {
+    const {page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'bo', gc: 'G1'}, aba: null, largura: 1440});
+    for(const nivel of ['gc', 'sv', 'rota']){
+      const sozinhas = {};
+      for(const gc of MATRIZ_GCS){
+        await trocaFiltro(page, 'gc:' + gc, nivel);
+        sozinhas[gc] = await page.evaluate(LE_BO);
+      }
+      await trocaFiltro(page, 'grp:MATRIZ', nivel);
+      const matriz = await page.evaluate(LE_BO);
+      for(const [grupo, k] of CATS){
+        const t = matriz.find(x => x.g === grupo && x.k === k);
+        const juntas = MATRIZ_GCS.flatMap(gc => (sozinhas[gc].find(x => x.g === grupo && x.k === k) || {linhas: []}).linhas);
+        assert.ok(t, `${nivel} ${grupo}/${k}: tabela`);
+        assert.deepEqual(t.linhas.map(l => [l.nome, l.msg, ...l.nums]), juntas.map(l => [l.nome, l.msg, ...l.nums]),
+          `${nivel} ${grupo}/${k}: MATRIZ = G1 + G2 + G3 lado a lado, na ordem`);
+      }
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (d) visão agrupada ---- */
+  test('(d) MATRIZ com 3 linhas, IT+MO com 2, sem total e sem soma; ida e volta da agrupada sem sair da página', async () => {
+    const {page, ctx, erros} = await abre('grupo', {entrar: {perfil: 'bo', gc: 'IT'}, aba: null, largura: 1440});
+    // o seletor da página tem as 16 sozinhas e os grupos; a entrada (já conferida em (a)) não tem nenhum grupo
+    const opc = await page.evaluate(() => [...document.querySelectorAll('#boGc optgroup')]
+      .map(g => [g.label, [...g.children].map(o => o.value)]));
+    assert.deepEqual(opc[0], ['Gerência', (await page.evaluate(() => todasGcs())).map(g => 'gc:' + g)]);
+    assert.equal(opc[1][0], 'Agrupada');
+    assert.deepEqual(opc[1][1], ['grp:MATRIZ', 'grp:PA+DI', 'grp:GU+PO', 'grp:IT+MO', 'grp:UR+RI']);
+    for(const [escopo, gcs] of [['grp:MATRIZ', MATRIZ_GCS], ['grp:IT+MO', ['IT', 'MO']]]){
+      await trocaFiltro(page, escopo, 'gc');
+      const rots = await page.evaluate(gs => gs.map(g => rotuloGc(g)), gcs);
+      for(const t of await page.evaluate(LE_BO)){
+        assert.deepEqual(t.linhas.map(l => l.nome), rots, `${escopo} ${t.k}: uma linha por gerência, na ordem`);
+        assert.equal(t.linhas.length, gcs.length, `${escopo} ${t.k}: nada além das gerências`);
+        assert.ok(!t.linhas.some(l => /^total|BAND/i.test(l.nome)), `${escopo} ${t.k}: sem linha de total`);
+        /* a soma existe (o teste a calcula com a MESMA agregação do painel) e NÃO pode aparecer em lugar nenhum da
+           tabela: nem numa linha, nem numa célula */
+        const soma = await page.evaluate(([gs, kk]) => {
+          const b = agrega(gs.flatMap(g => rotasDe(g, ''))).ind[kk];
+          if(!b || b.unavailable) return null;
+          const f = ehVolume(kk) ? fmt0 : fmtN;
+          return [f(b.meta), f(b.real)];
+        }, [gcs, t.k]);
+        if(!soma) continue;
+        const celulas = t.linhas.flatMap(l => l.nums);
+        for(const [i, s] of soma.entries()){
+          // se a soma por acaso é igual à Meta (ou ao Real) de uma das linhas, o texto repetido não prova nada
+          if(t.linhas.some(l => l.nums[i] === s)) continue;
+          assert.ok(!celulas.includes(s), `${escopo} ${t.k}: a soma das gerências (${s}) não pode aparecer na tabela`);
+        }
+      }
+      // nível Supervisão: a coluna "Gerência" e as supervisões de todas, na ordem das gerências
+      await trocaFiltro(page, escopo, 'sv');
+      for(const t of await page.evaluate(LE_BO)){
+        assert.equal(t.cab[0], 'Gerência', `${escopo} ${t.k}: coluna Gerência`);
+        assert.equal(t.cab[1], 'Supervisão');
+        const ordem = [...new Set(t.linhas.map(l => l.gc))].filter(Boolean);
+        assert.deepEqual(ordem, rots.filter(r => ordem.includes(r)), `${escopo} ${t.k}: gerências na ordem`);
+        assert.ok(!t.linhas.some(l => /^total|BAND/i.test(l.nome)), `${escopo} ${t.k}: sem linha de total`);
+      }
+    }
+    // volta para uma gerência sozinha sem sair da página
+    await trocaFiltro(page, 'gc:IT', 'gc');
+    assert.equal(await page.isHidden('#bo'), false, 'continua na página do Back Office');
+    const t = (await page.evaluate(LE_BO))[0];
+    assert.equal(t.linhas.length, 1, 'uma gerência: uma linha');
+    assert.equal(t.cab[0], 'Gerência', 'sem a coluna extra');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (e) Excel ---- */
+  test('(e) Excel: nome com a data do payload, células iguais às da tela, números numéricos e MATRIZ sem soma',
+       {skip: !LIB_XLSX && 'exceljs não instalado (npm)'}, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drotas-xlsx-'));
+    try {
+      const {page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'bo', gc: 'G1'}, aba: null, largura: 1440});
+      await page.route(/cdnjs\.cloudflare\.com/, r => r.fulfill({status: 200, contentType: 'text/javascript',
+        body: fs.readFileSync(LIB_XLSX.arq), headers: {'access-control-allow-origin': '*'}}));
+      for(const [escopo, nivel, nome] of [['gc:G1', 'sv', 'G1'], ['grp:MATRIZ', 'gc', 'MATRIZ']]){
+        await trocaFiltro(page, escopo, nivel);
+        const tela = await page.evaluate(LE_BO);
+        const [dl] = await Promise.all([page.waitForEvent('download', {timeout: 60000}), page.click('#boXlsx')]);
+        const dia = await page.evaluate(() => RT.diaArq());
+        assert.match(dia, /^\d{8}$/);
+        assert.equal(dl.suggestedFilename(), `BackOffice_${nome}_${dia}.xlsx`, 'nome com a data do PAYLOAD');
+        const arq = path.join(dir, dl.suggestedFilename());
+        await dl.saveAs(arq);
+        const wb = new LIB_XLSX.mod.Workbook();
+        await wb.xlsx.readFile(arq);
+        assert.deepEqual(wb.worksheets.map(w => w.name), ['Back Office', 'Metadados']);
+        const ws = wb.getWorksheet('Back Office');
+        const cab = ws.getRow(1).values.slice(1);
+        assert.equal(cab[0], 'Painel');
+        assert.equal(cab[1], 'Categoria');
+        assert.deepEqual(cab.slice(-5), ['Meta', 'Real', 'Real + Online', '%', 'Dif']);
+        const esperado = tela.flatMap(t => t.linhas.map(l => ({t, l})));
+        assert.equal(ws.rowCount - 1, esperado.length, `${escopo}: uma linha por categoria x unidade`);
+        const cel = (i, j) => { const v = ws.getRow(i).getCell(j).value; return v === undefined ? null : v; };
+        if(escopo === 'grp:MATRIZ'){
+          assert.equal(cab[2], 'Gerência', 'no nível Gerência a unidade É a gerência');
+          const gcs = await page.evaluate(gs => gs.map(g => rotuloGc(g)), MATRIZ_GCS);
+          const col = [...new Set(esperado.map((_, i) => cel(i + 2, 3)))];
+          assert.deepEqual(col, gcs, 'G1, G2 e G3 na mesma aba, sem linha de soma');
+        }
+        // texto esperado de cada número, formatado pelas PRÓPRIAS funções do painel
+        const nums = esperado.map(({t}, i) => ({k: t.k, nums: [0, 1, 2, 3, 4].map(j => cel(i + 2, cab.length - 4 + j))}));
+        const txt = await textoDoExcel(page, nums);
+        esperado.forEach(({t, l}, i) => {
+          const onde = `${escopo} linha ${i} (${t.k})`;
+          assert.equal(cel(i + 2, 1), t.g === 'VOLUME' ? 'Volume' : t.g === 'ICS_GC' ? 'ICS GC'
+            : t.g === 'NOVOS_NEG' ? 'Novos Negócios' : 'Todos a Bordo', `${onde}: painel`);
+          assert.equal(cel(i + 2, 2), t.tit, `${onde}: categoria`);
+          assert.equal(cel(i + 2, cab.length - 5), l.nome, `${onde}: unidade`);
+          if(l.off){
+            assert.equal(cel(i + 2, cab.length - 4), l.msg, `${onde}: a mensagem da tela na coluna Meta`);
+            assert.deepEqual([1, 2, 3, 4].map(j => cel(i + 2, cab.length - 4 + j)), [null, null, null, null],
+              `${onde}: sem dado = células vazias`);
+            return;
+          }
+          nums[i].nums.forEach((v, j) => {
+            if(l.nums[j] === '—'){ assert.equal(v, null, `${onde} col ${j}: "—" = célula vazia`); return; }
+            assert.equal(typeof v, 'number', `${onde} col ${j}: número, não texto`);
+          });
+          assert.deepEqual(txt[i], l.nums, `${onde}: os mesmos valores da tela`);
+        });
+        // nenhuma fórmula em lugar nenhum
+        let formula = false;
+        ws.eachRow(r => r.eachCell(c => { if(c.formula || c.type === LIB_XLSX.mod.ValueType.Formula) formula = true; }));
+        assert.equal(formula, false, 'sem fórmula (nada é somado pelo Excel)');
+        // Metadados
+        const md = wb.getWorksheet('Metadados'), mv = {};
+        md.eachRow(r => { mv[r.getCell(1).value] = r.getCell(2).value; });
+        const p = await page.evaluate(() => ({d: P.DIA_ONTEM, t: P.TOTAL_DIAS_UTEIS, data: P.DATA_ONTEM,
+          upd: (ONLINE || {}).updatedAt, esc: document.getElementById('boGc').selectedOptions[0].textContent}));
+        assert.equal(mv['Filtro'], p.esc);
+        assert.equal(mv['Nível'], nivel === 'gc' ? 'Gerência' : 'Supervisão');
+        assert.equal(mv['Dia útil'], `${p.d}/${p.t}`);
+        assert.equal(String(mv['Data do payload']), p.data);
+        assert.equal(mv['Online atualizado em'], p.upd);
+      }
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+  });
+
+  /* ---- (f) Painel de Ritmo da Matriz ---- */
+  test('(f) Painel de ritmo da MATRIZ: páginas de G1, G2 e G3 nessa ordem, idênticas às da gerência isolada', async () => {
+    const {page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'bo', gc: 'G1'}, aba: null, largura: 1440});
+    await trocaFiltro(page, 'grp:MATRIZ', 'gc');
+    const r = await page.evaluate(gcs => {
+      const e = BO.escopoRitmo(), m = montaRitmo(P, e);
+      const sep = gcs.flatMap(g => montaRitmo(P, {tipo: 'gc', gcs: [g], nome: g}).paginas);
+      return {escopo: e, gcs: m.paginas.map(p => p.gc), niveis: m.paginas.map(p => p.nivel),
+        n: m.paginas.length, nSep: sep.length,
+        html: m.paginas.map((p, i) => [RT.desenhaPagina(p), sep[i] ? RT.desenhaPagina(sep[i]) : null])};
+    }, MATRIZ_GCS);
+    assert.deepEqual(r.escopo, {tipo: 'gc', gcs: MATRIZ_GCS, nome: 'MATRIZ'});
+    assert.equal(r.n, r.nSep, 'o mesmo nº de páginas das três gerências isoladas');
+    assert.deepEqual([...new Set(r.gcs)], MATRIZ_GCS, 'G1, depois G2, depois G3');
+    const idx = r.gcs.map(g => MATRIZ_GCS.indexOf(g));
+    assert.ok(idx.every((v, i) => i === 0 || v >= idx[i - 1]), 'as páginas de cada gerência ficam juntas, na ordem');
+    MATRIZ_GCS.forEach(g => assert.equal(r.niveis[r.gcs.indexOf(g)], 'gc', `${g}: começa pela página da gerência`));
+    assert.ok(r.n > 3, 'cada gerência traz também as páginas das supervisões dela');
+    r.html.forEach(([a, b], i) => assert.equal(a, b, `página ${i}: igual à do Painel de Ritmo da gerência isolada`));
+    assert.equal(await page.textContent('#boRitmo'), 'Painel de ritmo (Matriz)');
+    await trocaFiltro(page, 'gc:G1', 'gc');
+    assert.equal(await page.textContent('#boRitmo'), 'Painel de ritmo');
+    assert.deepEqual(await page.evaluate(() => BO.escopoRitmo()), {tipo: 'gc', gcs: ['G1'], nome: 'G1'});
+    await trocaFiltro(page, 'grp:IT+MO', 'gc');
+    assert.deepEqual(await page.evaluate(() => BO.escopoRitmo()), {tipo: 'gc', gcs: ['IT', 'MO'], nome: 'IT+MO'});
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(f) PDF real da MATRIZ: nome com a data do payload e uma página por página do modelo',
+       {skip: !LIBS_PDF && 'html2canvas/jspdf não instalados (npm)'}, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drotas-bo-pdf-'));
+    try {
+      const {page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'bo', gc: 'G1'}, aba: null, largura: 1440});
+      await page.route(/cdnjs\.cloudflare\.com/, r => {
+        const arq = /html2canvas/.test(r.request().url()) ? LIBS_PDF.html2canvas : LIBS_PDF.jspdf;
+        r.fulfill({status: 200, contentType: 'text/javascript', body: fs.readFileSync(arq),
+                   headers: {'access-control-allow-origin': '*'}});
+      });
+      await trocaFiltro(page, 'grp:MATRIZ', 'gc');
+      const n = await page.evaluate(() => montaRitmo(P, BO.escopoRitmo()).paginas.length);
+      const [dl] = await Promise.all([page.waitForEvent('download', {timeout: 300000}), page.click('#boRitmo')]);
+      const dia = await page.evaluate(() => RT.diaArq());
+      assert.equal(dl.suggestedFilename(), `Painel_Ritmo_MATRIZ_${dia}.pdf`);
+      const arq = path.join(dir, dl.suggestedFilename());
+      await dl.saveAs(arq);
+      const pdf = fs.readFileSync(arq, 'latin1');
+      assert.equal((pdf.match(/\/Type\s*\/Page[^s]/g) || []).length, n, `${n} páginas`);
+      assert.ok(fs.statSync(arq).size > 50000, 'PDF com conteúdo');
+      assert.deepEqual(erros, []);
+      await ctx.close();
+    } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+  });
+
+  /* ---- (g) larguras ---- */
+  for(const largura of [360, 390, 1000, 1440])
+  test(`(g) ${largura} px: sem rolagem lateral da página e sem erro no console`, async () => {
+    const {page, ctx, erros} = await abre('vol5', {entrar: {perfil: 'bo', gc: 'G1'}, aba: null, largura, altura: 900});
+    for(const [escopo, nivel] of [['gc:G1', 'gc'], ['gc:G1', 'sv'], ['gc:G1', 'rota'], ['grp:MATRIZ', 'sv']]){
+      await trocaFiltro(page, escopo, nivel);
+      const r = await page.evaluate(() => ({
+        pag: document.documentElement.scrollWidth <= window.innerWidth + 0.5,
+        body: document.body.scrollWidth <= window.innerWidth + 0.5,
+        // cada tabela rola DENTRO do próprio quadro
+        rola: [...document.querySelectorAll('.boCat')].every(c => c.scrollWidth <= c.clientWidth + 0.5),
+        tabs: document.querySelectorAll('.boCat').length,
+      }));
+      assert.ok(r.pag && r.body, `${escopo}/${nivel}: a página não pode rolar na horizontal`);
+      assert.ok(r.rola, `${escopo}/${nivel}: a tabela rola dentro do quadro`);
+      assert.ok(r.tabs >= 15, `${escopo}/${nivel}: as tabelas das 4 categorias (${r.tabs})`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---- (h) antes x depois ---- */
+  test(`(h) antes x depois (${REF_PRE_BO}): tudo fora do Back Office idêntico`,
+       {skip: !FRONT_PRE_BO && `sem o commit ${REF_PRE_BO}`}, async () => {
+    for(const [dados, entrar] of [['vol5', 'dir'], ['vol5', {perfil: 'gc', gc: 'G1'}],
+                                  ['grupo', {perfil: 'gc', gc: 'IT+MO'}], ['vol5fech', 'dir'],
+                                  ['exec', {perfil: 'sv', gc: 'G2', sv: '1'}],
+                                  ['vol5', {perfil: 'rota', gc: 'G2', rota: 'G211'}]])
+    for(const largura of [1280, 390]){
+      const [novo, velho] = [await abre(dados, {entrar, aba: null, largura}),
+                             await abre(dados, {entrar, aba: null, largura, troca: FRONT_PRE_BO})];
+      const quem = `${dados} ${JSON.stringify(entrar)} ${largura}px`;
+      assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${quem}: Executiva`);
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        if(await novo.page.isHidden(`.tab[data-g="${aba}"]`)) continue;
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        assert.equal(await novo.page.innerHTML('#abaTopo'), await velho.page.innerHTML('#abaTopo'), `${quem} ${aba}: cabeçalho`);
+        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${quem} ${aba}: cards`);
+        for(const k of await novo.page.$$eval('#lista .ind[data-k]', els => els.map(e => e.dataset.k))){
+          for(const {page} of [novo, velho]){ await page.click(`#lista .ind[data-k="${k}"]`); await drwOn(page, true); }
+          assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${quem} ${aba} ${k}: cascata`);
+          for(const {page} of [novo, velho]) await fechaDrw(page);
+        }
+      }
+      const rt = p => p.evaluate(() => { const e = RT.escopoRitmo(); return e ? JSON.stringify(montaRitmo(P, e)) : null; });
+      assert.equal(await rt(novo.page), await rt(velho.page), `${quem}: Painel de Ritmo`);
+      if(!(await novo.page.isHidden('#btnResumo'))){
+        for(const {page} of [novo, velho]) await page.click('#btnResumo');
+        assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${quem}: Resumo`);
+      }
+      assert.deepEqual([...novo.erros, ...velho.erros], []);
+      await novo.ctx.close(); await velho.ctx.close();
+    }
   });
 });

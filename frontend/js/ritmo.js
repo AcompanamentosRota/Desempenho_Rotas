@@ -8,6 +8,9 @@
      supervisão/rota são as linhas visíveis (sem Neutraliza, virtuais, '-EV' e ocultas; os números delas ficam no
      total do GC).
    - escopoRitmo(): o escopo pelo filtro atual (Diretoria "Todas" = as 16; uma gerência ou grupo; uma supervisão).
+     exporta(escopo, alvo) aceita um escopo PRONTO e outro botão: é assim que o Back Office (backoffice.js) pede o PDF
+     da MATRIZ ({tipo:'gc', gcs:['G1','G2','G3']}) — as páginas de G1, depois G2, depois G3, cada gerência com o
+     montaRitmo dela. Nada aqui consolida gerências e o layout das páginas não muda.
    - desenho (desenhaPagina) e PDF (exporta): página a página, 1280x720, html2canvas (escala 1.5) + jsPDF (JPEG 0.85),
      com as bibliotecas e a entrega (baixar/compartilhar) do Resumo (RS.carregaScript, RS.salvaPdf).
    ===================================================================== */
@@ -175,12 +178,18 @@ const RT = (()=>{
   const espera = () => new Promise(r => setTimeout(r, 0));
   let ocupado = false;
   const btn = () => document.getElementById('btnRitmo');
+  /* `alvo` = outro botão que chama a MESMA exportação (o "Painel de ritmo" do Back Office, backoffice.js):
+     {el, rotulo, aviso}. Sem ele, tudo segue no #btnRitmo / #rtAviso da barra do Resumo, como antes. */
+  const botaoDe = alvo => alvo ? alvo.el : btn();
+  const avisoDe = alvo => document.getElementById(alvo ? alvo.aviso : 'rtAviso');
+  const repoe = alvo => { if(!alvo) return estado();
+    if(alvo.el){ alvo.el.disabled = false; alvo.el.removeAttribute('aria-busy'); alvo.el.textContent = alvo.rotulo; } };
   // mensagem curta no próprio botão por 5 s (o texto inteiro também na região viva #rtAviso, para leitores de tela)
-  function avisa(curta, longa){
-    const el = document.getElementById('rtAviso'); if(el) el.textContent = longa || curta;
-    const b = btn(); if(!b) return;
+  function avisa(curta, longa, alvo){
+    const el = avisoDe(alvo); if(el) el.textContent = longa || curta;
+    const b = botaoDe(alvo); if(!b) return;
     b.textContent = curta; clearTimeout(avisa.t);
-    avisa.t = setTimeout(()=>{ if(!ocupado) estado(); }, 5000);
+    avisa.t = setTimeout(()=>{ if(!ocupado) repoe(alvo); }, 5000);
   }
 
   // botão: oculto no perfil Rota (a barra inteira some no render); desabilitado no fechamento do mês
@@ -193,14 +202,17 @@ const RT = (()=>{
     b.setAttribute('aria-label', fech ? `${TXT.botao} — ${TXT.fechamento}` : TXT.botao);
   }
 
-  async function exporta(){
+  /* escopoForcado = escopo pronto (o Back Office passa o da MATRIZ, {tipo:'gc', gcs:['G1','G2','G3']}: as páginas de
+     G1, depois G2, depois G3, cada gerência com a página dela e as das supervisões, sem consolidar nada); sem ele, o
+     escopo vem do filtro do painel, como sempre. `alvo` = o botão que chamou (ver botaoDe). */
+  async function exporta(escopoForcado, alvo){
     if(ocupado || !P || P.FECHAMENTO) return;
-    const escopo = escopoRitmo(); if(!escopo) return;
+    const escopo = escopoForcado || escopoRitmo(); if(!escopo) return;
     const modelo = montaRitmo(P, escopo), n = modelo.paginas.length;
-    if(!n){ avisa('Nada para exportar neste filtro'); return; }
+    if(!n){ avisa('Nada para exportar neste filtro', '', alvo); return; }
     if(escopo.tipo==='band' && !confirm(`Exportar ${n} páginas?`)) return;
     ocupado = true;
-    const b = btn(); b.disabled = true; b.setAttribute('aria-busy', 'true'); b.textContent = 'Preparando…';
+    const b = botaoDe(alvo); b.disabled = true; b.setAttribute('aria-busy', 'true'); b.textContent = 'Preparando…';
     let palco = null, msg = '', longa = '';
     try{
       try{
@@ -233,14 +245,14 @@ const RT = (()=>{
     finally{
       if(palco) palco.remove();
       ocupado = false; b.removeAttribute('aria-busy');
-      estado();
-      if(msg) avisa(msg, longa);
+      repoe(alvo);
+      if(msg) avisa(msg, longa, alvo);
     }
   }
 
   function liga(){
     const b = btn(); if(!b) return;
-    b.onclick = exporta;
+    b.onclick = () => exporta();
     estado();
   }
   return {liga, estado, escopoRitmo, desenhaPagina, exporta, diaArq};
