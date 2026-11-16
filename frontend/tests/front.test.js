@@ -5946,7 +5946,7 @@ const igualRotulo = (novo, velho) => {
     j(require('./executiva_invariantes.js').desfazMed(velho), t => t.replace(/Dest\+Art\+Cnd/g, 'Novos Negócios'))];
 };
 describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
-  test('aba inicial: Executiva na Diretoria, na Gerência (e no grupo) e na Supervisão; a Rota não tem e abre no Volume; rota no filtro tira a aba', async () => {
+  test('aba inicial: Executiva na Diretoria, na Gerência (e no grupo) e na Supervisão; a Rota abre no Volume; rota no filtro mantém a aba (PN-60)', async () => {
     for(const [dados, entrar, inicial] of [['exec', 'dir', 'EXEC'], ['exec', {perfil: 'gc', gc: 'G1'}, 'EXEC'],
         ['grupo', {perfil: 'gc', gc: 'IT+MO'}, 'EXEC'], ['exec', {perfil: 'sv', gc: 'G2', sv: '1'}, 'EXEC'],
         ['exec', {perfil: 'rota', gc: 'G2', rota: 'G211'}, 'VOLUME']]){
@@ -5984,12 +5984,14 @@ describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
     const {page, ctx, erros} = await abre('exec', {entrar: {perfil: 'gc', gc: 'G2'}, aba: null});
     await page.selectOption('#frota', 'G211');
     let e = await telaExec(page);
-    assert.ok(!e.tabs.includes('EXEC') && e.aba === 'VOLUME' && !e.exec && e.lista, 'rota no filtro');
+    /* PN-60: a rota no filtro NÃO tira mais a aba nem joga o painel no Volume — quem já estava na Executiva fica nela, e
+       ela vira a tela da rota (os quatro blocos novos na caixa #exRota). Tirando a rota, volta a Executiva de sempre. */
+    assert.ok(e.tabs.includes('EXEC') && e.aba === 'EXEC' && e.exec && !e.lista, 'rota no filtro');
+    assert.ok(await page.$('#exRota'), 'rota no filtro: os blocos da rota');
     await page.selectOption('#frota', '');
     e = await telaExec(page);
-    assert.ok(e.tabs.includes('EXEC') && e.aba === 'VOLUME', 'sem rota: a aba volta (o painel fica no Volume)');
-    await vaiAba(page, 'EXEC');
-    assert.ok((await telaExec(page)).exec);
+    assert.ok(e.tabs.includes('EXEC') && e.aba === 'EXEC' && e.exec, 'sem rota: a Executiva continua');
+    assert.ok(!(await page.$('#exRota')), 'sem rota: sem os blocos da rota');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -7323,8 +7325,9 @@ describe('Parte AA — rótulo "Novos Negócios" do volume, aba por perfil e not
             assert.ok(t.includes(ROT.NOVOS), `${onde}: medidor/linhas com ${ROT.NOVOS}`);
             // categoria em análise = o macro: Foco do fechamento, Meta do dia e Tendência x Meta com o nome novo
             await page.evaluate(k => escolheCat(k, 'exGauges'), ROT.K_NOVOS);
+            // no escopo de rota (PN-60) o bloco "Tendência x Meta" não existe: o nome vem do medidor da categoria
             const f = await page.evaluate(() => [document.getElementById('exFocoTxt').textContent, document.getElementById('exDiaTxt').textContent,
-              document.querySelector('#exDivs .dv.sel h4').textContent]);
+              (document.querySelector('#exDivs .dv.sel h4') || document.querySelector('#exGauges .gCard.sel .gTit')).textContent]);
             assert.ok(f[0].startsWith(ROT.NOVOS) && f[2] === ROT.NOVOS, `${onde}: ${f}`);
             if(dados === 'vol5') assert.ok(f[1].startsWith(ROT.NOVOS), `${onde}: ${f[1]}`);
             assert.deepEqual(await page.evaluate(ROT.RASTRO_PAGINA, ROT.SUB), [], `${onde} (categoria ${ROT.NOVOS})`);
@@ -7360,12 +7363,18 @@ describe('Parte AA — rótulo "Novos Negócios" do volume, aba por perfil e not
   });
 
   for(const largura of [1440, 390]){
-    test(`nome da aba EXEC por perfil: Diretoria, Gerencial (também no grupo), Supervisão; a Rota sem a aba (${largura} px)`, async () => {
+    test(`nome da aba EXEC por perfil: Diretoria, Gerencial (também no grupo), Supervisão e Rota (${largura} px)`, async () => {
       const {page, ctx, erros} = await abre('vol5', {entrar: 'dir', largura, aba: null});
       for(const c of PERFIS_AA){
         await vaiPara(page, c.entrar, null);
         const a = await page.evaluate(ROT.ABA_EXEC_PAGINA), onde = `${c.nome} ${largura}`;
-        if(c.perfil === 'rota'){ assert.equal(a.visivel, false, onde); continue; }
+        // PN-60: no perfil Rota a aba existe com o nome "Rota", mas a aba ABERTA continua o Volume
+        if(c.perfil === 'rota'){
+          assert.deepEqual([a.visivel, a.on, a.span, a.title, a.aria, a.abTit],
+            [true, false, ROT.NOME_EXEC.rota, ROT.NOME_EXEC.rota, ROT.NOME_EXEC.rota, 'Volume'], onde);
+          assert.equal(await page.evaluate(() => document.querySelector('.tab[data-g="EXEC"]').innerText.trim()), ROT.NOME_EXEC.rota, onde);
+          continue;
+        }
         const n = ROT.NOME_EXEC[c.perfil];
         assert.deepEqual([a.visivel, a.on, a.span, a.title, a.aria, a.abTit], [true, true, n, n, n, n], onde);
         // painel lateral (PC) ou topo do celular: o rótulo visível do botão; o recolhido guarda o nome no title
@@ -7392,7 +7401,8 @@ describe('Parte AA — rótulo "Novos Negócios" do volume, aba por perfil e not
     for(const c of PERFIS_AA){
       const [novo, velho] = [await abre('vol5', {entrar: c.entrar, largura: 1280, aba: null}),
                              await abre('vol5', {entrar: c.entrar, largura: 1280, aba: null, troca: FRONT_PRE_ROTULOS})];
-      for(const aba of ['EXEC', 'VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+      // a Executiva do escopo de rota é nova (PN-60): o front antigo não tem a aba, então ela fica fora deste antes x depois
+      for(const aba of (c.perfil === 'rota' ? ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO'] : ['EXEC', 'VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO'])){
         const tem = await novo.page.evaluate(a => !document.querySelector(`.tab[data-g="${a}"]`).hidden, aba);
         assert.equal(await velho.page.evaluate(a => !document.querySelector(`.tab[data-g="${a}"]`).hidden, aba), tem);
         if(!tem) continue;
