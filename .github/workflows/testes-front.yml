@@ -39,7 +39,11 @@ concurrency:
 
 jobs:
   front:
-    runs-on: ubuntu-latest
+    # ubuntu-24.04 FIXO, nunca `ubuntu-latest`: desde 17/11/2026 o `latest` é a Ubuntu 26.04, e o
+    # playwright 1.56.1 (o do package.json) recusa instalar o Chromium nela: "Playwright does not
+    # support chromium on ubuntu26.04-x64". Subir o playwright troca o Chromium, e esta suíte compara
+    # renderização (PDF real e os "antes x depois"), então isso é outro trabalho, com validação própria.
+    runs-on: ubuntu-24.04
     # Medido em 17/11/2026: 43 min 29 s para os 389 testes numa máquina de 8 threads. 60 min dão folga sobre
     # isso e ainda interrompem um travamento. Se o runner passar de 60, o limite precisa subir.
     timeout-minutes: 60
