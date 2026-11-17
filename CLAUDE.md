@@ -106,7 +106,10 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   **O CI roda** (`testes-front.yml`, "Testes do front"): em todo PR que toca `frontend/**`, o próprio
   `testes-front.yml`, o `package.json` ou o `package-lock.json` (no `pull_request` o GitHub usa o workflow da BRANCH do
   PR, então um PR que só troque uma versão de teste — o erro do jspdf 4.x do PR #60 — também roda a suíte); no push da
-  `main` com os mesmos paths; e à mão pelo `workflow_dispatch` (que só existe com o arquivo na branch padrão). Sem Secret, sem rede de dados, sem commit e sem publicação. O
+  `main` com os mesmos paths; e à mão pelo `workflow_dispatch` (que só existe com o arquivo na branch padrão).
+  Roda em `ubuntu-24.04` **fixo**, nunca `ubuntu-latest`: desde 17/11/2026 o `latest` é a Ubuntu 26.04 e o
+  playwright 1.56.1 não instala o Chromium nela. Quem for subir o playwright troca o Chromium junto, e a suíte
+  compara renderização (PDF real e os "antes x depois"): é outro trabalho, com validação própria. Sem Secret, sem rede de dados, sem commit e sem publicação. O
   `conferencia_real.test.js` continua FORA do CI, sob demanda: precisa do payload real por `PAYLOAD_REAL`/`ONLINE_REAL` e
   hoje tem 19 falhas antigas herdadas da main, que deixariam todo PR vermelho sem motivo (consertá-las é outro trabalho).
   O teste chama `python3` (no Windows, ponha um `python3.exe` do venv no PATH) e acha o `playwright` pelo `node_modules`
