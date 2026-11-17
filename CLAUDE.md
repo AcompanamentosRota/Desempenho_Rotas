@@ -102,8 +102,22 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   JS, manifest, versao.json e os dois JSONs; falha = "Sem conexão. Tente de novo." sem reload; sucesso = `location.reload()`;
   nunca apaga `localStorage`. Testes: Partes P (script) e Q (`abreVersao`) do front.test.js.
 - Testes de front (Chromium headless + dado sintético gerado pelo próprio back-end): `node --test frontend/tests/front.test.js`
-  (precisa de Python com as dependências do back-end e do pacote `playwright`; sem ele os testes são pulados; o CI não roda).
-  O teste chama `python3` (no Windows, ponha um `python3.exe` do venv no PATH) e acha o `playwright` por `NODE_PATH`.
+  (precisa de Python com as dependências do back-end e do pacote `playwright`; sem ele os testes são pulados).
+  **O CI roda** (`testes-front.yml`, "Testes do front"): em todo PR que toca `frontend/**`, o próprio
+  `testes-front.yml`, o `package.json` ou o `package-lock.json` (no `pull_request` o GitHub usa o workflow da BRANCH do
+  PR, então um PR que só troque uma versão de teste — o erro do jspdf 4.x do PR #60 — também roda a suíte); no push da
+  `main` com os mesmos paths; e à mão pelo `workflow_dispatch` (que só existe com o arquivo na branch padrão). Sem Secret, sem rede de dados, sem commit e sem publicação. O
+  `conferencia_real.test.js` continua FORA do CI, sob demanda: precisa do payload real por `PAYLOAD_REAL`/`ONLINE_REAL` e
+  hoje tem 19 falhas antigas herdadas da main, que deixariam todo PR vermelho sem motivo (consertá-las é outro trabalho).
+  O teste chama `python3` (no Windows, ponha um `python3.exe` do venv no PATH) e acha o `playwright` pelo `node_modules`
+  da raiz (ou por `NODE_PATH`/instalação global, como antes).
+- **`package.json` na raiz** (só dependências de TESTE; `"private": true`, sem `dependencies` e sem build): o site continua
+  sendo a pasta `frontend/` servida como está e nada disso entra no `deploy-pages.yml`. `npm ci` instala o que os testes
+  pedem e dispensa o `NODE_PATH`. **Versões EXATAS, sem `^` nem `~`**, e `html2canvas`, `jspdf` e `exceljs` têm de
+  acompanhar o `CONFIG.CDN` do `config.js` (hoje 1.4.1, 2.5.1 e 4.4.0): o teste serve o arquivo do `node_modules` no lugar
+  do cdnjs e confere o SRI do `config.js`; trocar a versão lá e esquecer aqui faz o `script.onerror` disparar e quebra as
+  Partes O e R (PDF real) e a AP (Excel do Back Office) com um erro que PARECE defeito do PR e não é (foi o que aconteceu
+  na validação do PR #60, com jspdf 4.x instalado à mão). `package-lock.json` versionado: é o que o `npm ci` usa.
   `abre(nome, {entrar})` entra pela tela de entrada clicando na caixa de seleção (`entra()`: 'gc' = primeira gerência
   com dados, 'dir' = Diretoria, ou {perfil, gc, sv, rota}, com gc = sigla ou grupo 'IT+MO'; a sigla de uma gerência
   agrupada escolhe o grupo); `vaiPara()` = casa + `entra()`; relógio simulado por `antes: p => p.clock...`.
