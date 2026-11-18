@@ -15,3 +15,6 @@ venv/
 *.tmp
 .DS_Store
 Thumbs.db
+
+# Dependências de teste (package.json da raiz)
+node_modules/

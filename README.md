@@ -575,7 +575,8 @@ da gaveta e a margem automática; e, na Diretoria, só o 1º nível). A Parte O 
 paginação (`RS.paginas`, também sem navegador), cenário `grande` (16 gerências e números de 6-7 dígitos, e o pior
 caso com 2.665.000 em todas as caixas) sem célula cortada nem caixas sobrepostas no PDF, e a tela do Resumo igual à
 do CSS do commit `2d5419a` em 390, 800, 1280 e 1700 px. Com os pacotes npm `html2canvas@1.4.1` e `jspdf@2.5.1`
-instalados (local, `NODE_PATH` ou global; o hash é o mesmo do SRI do `config.js`), gera também o PDF de verdade e
+instalados (o `npm ci` da raiz já os põe no `node_modules`; também valem `NODE_PATH` ou a instalação global; o hash
+é o mesmo do SRI do `config.js`), gera também o PDF de verdade e
 confere o nº de páginas e que nenhuma fica em branco; sem eles, esse teste é pulado (os outros simulam as bibliotecas).
 A Parte P confere o script da versão (sem navegador, precisa de `bash` e `sha256sum`): numa cópia de `frontend/`, o
 mesmo hash duas vezes, igual com só `data/` mudado, diferente com um `.js` mudado, e o `--gravar`. A Parte Q confere o
@@ -771,6 +772,50 @@ git show origin/main:frontend/data/payload.json > /tmp/real/payload.json
 git show origin/main:frontend/data/online.json > /tmp/real/online.json
 PAYLOAD_REAL=/tmp/real/payload.json ONLINE_REAL=/tmp/real/online.json node --test frontend/tests/conferencia_real.test.js
 ```
+
+#### Como rodar os testes do front (máquina e CI)
+
+Na máquina, uma vez só, instale as dependências de teste fixadas no `package.json` da raiz e o Chromium:
+
+```bash
+npm ci
+npx playwright install chromium
+node --test frontend/tests/front.test.js      # ou: npm run test:front
+```
+
+O `npm ci` põe tudo no `node_modules/` da raiz, que é onde o teste procura: **não é mais preciso `NODE_PATH`** nem
+instalação global (as duas continuam funcionando, para quem já as tem). No Windows, o teste chama `python3`: ponha um
+`python3.exe` no PATH (uma cópia do python do venv resolve) e garanta nele as dependências do back-end
+(`pip install -r backend/requirements.txt`).
+
+O `package.json` é **só de teste**: `"private": true`, sem `dependencies`, sem build e sem bundler — o site continua
+sendo a pasta `frontend/` servida como está, e nada disso vai para o Pages. As versões são **exatas** (sem `^` nem `~`)
+para a máquina e o CI rodarem o mesmo, e **`html2canvas`, `jspdf` e `exceljs` têm de acompanhar o `CONFIG.CDN` do
+`frontend/js/config.js`** (hoje 1.4.1, 2.5.1 e 4.4.0). O motivo: nos testes de PDF real (Partes O e R) e no Excel do
+Back Office (Parte AP) o arquivo do `node_modules` é servido no lugar do cdnjs e o painel confere o `integrity` do
+`config.js`. Com a versão trocada num lugar e não no outro, o hash não bate, o `script.onerror` dispara e o teste
+quebra com um erro que **parece** defeito do PR e não é — foi exatamente o que aconteceu na validação do PR #60, com
+jspdf 4.x instalado à mão. Ao mexer no `CONFIG.CDN`, mexa no `package.json` no mesmo commit (e rode `npm install` para
+atualizar o `package-lock.json`, que é o que o `npm ci` usa).
+
+**No CI** (`.github/workflows/testes-front.yml`, "Testes do front"): roda sozinho em todo **PR que toca
+`frontend/**`, o próprio `testes-front.yml`, o `package.json` ou o `package-lock.json`** e no push da `main` com os
+mesmos paths. No `pull_request` o GitHub usa o workflow da **branch do PR**, então um PR que só troque uma versão de
+teste já se testa (sem isso, o erro do jspdf 4.x que motivou este CI não rodaria teste nenhum). Dá para disparar à mão
+pelo **Actions → Testes do front → Run workflow** (`workflow_dispatch`), que só aparece com o arquivo já na branch
+padrão. O resultado aparece como um check no PR: clique em
+**Details** no check "Testes do front" para ver os passos e o log de `node --test` (é lá que saem `# pass`, `# fail` e
+`# skipped`). PR que não mexe em nenhum desses caminhos não dispara o workflow. Ele não usa Secret, não consulta o
+Datasphere, não faz commit e não publica nada. O limite é de **60 min** (a suíte inteira levou 43 min 29 s numa máquina
+de 8 threads em 17/11/2026); se o runner passar disso, o limite precisa subir.
+No CI a suíte roda **386 e pula 3** (389 no total): os três testes que medem largura de texto renderizado (Parte W
+"360 px: KPIs, quadros, medidores..." e Parte AN "(i) grande 360 px", painel aberto e recolhido) aparecem no log como
+`# SKIP mede largura de texto renderizado; ...` porque o runner mede o texto ~4 px mais largo que as máquinas de
+trabalho, e a folga do quadro do medidor é de 2 px. Na máquina eles rodam sempre (motivo e números no `CLAUDE.md` e no PR #62).
+
+A **conferência com dado real** (`conferencia_real.test.js`) fica **fora do CI**, sob demanda: ela depende do payload
+real passado por variável de ambiente e hoje tem 19 falhas antigas herdadas da `main`, que deixariam todo PR vermelho
+sem relação com o que ele mudou.
 
 ### Layout (painel lateral no PC, topo compacto no celular)
 

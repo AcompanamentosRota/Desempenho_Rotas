@@ -29,6 +29,16 @@ function carregaPlaywright(){
 const pw = carregaPlaywright();
 const CHROMIUM = ['/opt/pw-browsers/chromium'].find(p => fs.existsSync(p));
 const pular = !pw ? 'Playwright não instalado' : false;
+/* Testes que medem a LARGURA de texto renderizado ficam fora do CI (decisão da Karen, 18/11/2026; PR #62). Só eles, e só
+   onde a variável CI existe (o GitHub Actions a define sozinho; na máquina de trabalho ela não existe e eles rodam sempre).
+   Motivo: o Chromium do runner mede o texto com larguras inteiras por glifo. Com a Inter carregada (document.fonts.status
+   'loaded'), "58.620.000" em Inter 700 a 7 px (o data-fit-min do quadro do medidor) mede 39,97 px numa caixa de 42 px nas
+   máquinas de trabalho e 44 px no runner: a folga de projeto (2,03 px) é menor que a variação entre ambientes. Flags de
+   renderização do Chromium foram descartadas: o teste passaria a medir uma tela que nenhum usuário vê. Usada em três testes:
+   Parte W "360 px: KPIs, quadros, medidores..." e Parte AN "(i) grande 360 px" (painel aberto e recolhido). */
+const MEDE_TEXTO_FORA_DO_CI = process.env.CI ? 'mede largura de texto renderizado; o runner do CI mede ~4 px a mais que as ' +
+  'máquinas de trabalho ("58.620.000" a 7 px: 44 px no runner, 39,97 px na máquina, caixa de 42 px) e a folga de projeto do ' +
+  'quadro do medidor é de 2,03 px — roda na máquina, ver PR #62' : false;
 
 let browser, tmp;
 const DADOS = {};
@@ -6319,7 +6329,8 @@ describe('Parte W — aba Executiva (Etapa 5)', {skip: pular}, () => {
   });
 
   for(const largura of [1440, 1000, 390, 360]){
-    test(`${largura} px: KPIs, quadros, medidores, barras, Sem compra | Agenda e tabela de coberturas sem texto cortado nem rolagem lateral; fontes; contraste; cabeçalho do celular`, async () => {
+    test(`${largura} px: KPIs, quadros, medidores, barras, Sem compra | Agenda e tabela de coberturas sem texto cortado nem rolagem lateral; fontes; contraste; cabeçalho do celular`,
+         {skip: largura === 360 && MEDE_TEXTO_FORA_DO_CI}, async () => {
       const pc = largura >= 1000;
       for(const [dados, entrar] of [['grande', 'dir'], ['exec', {perfil: 'gc', gc: 'IT+MO'}], ['exec', {perfil: 'sv', gc: 'G2', sv: '1'}]]){
         const onde = `${dados} ${JSON.stringify(entrar)}`;
@@ -10814,7 +10825,8 @@ describe('Parte AN — medidor com Real + Online e coluna "Real + Online" na gav
   for(const dados of ['vol5', 'grande'])
   for(const largura of [360, 390, 1200, 1280])
   for(const lado of ['aberto', 'recolhido'])
-  test(`(i) ${dados} ${largura} px, painel ${lado}: três caixas lado a lado, sem número cortado`, async () => {
+  test(`(i) ${dados} ${largura} px, painel ${lado}: três caixas lado a lado, sem número cortado`,
+       {skip: dados === 'grande' && largura === 360 && MEDE_TEXTO_FORA_DO_CI}, async () => {
     const {page, ctx, erros} = await abre(dados, {entrar: 'dir', aba: null, largura, altura: largura < 1000 ? 800 : 900,
       armazenado: {drotas_lado: lado}});
     await page.addStyleTag({content: '*{transition:none!important}'});
@@ -11433,7 +11445,8 @@ describe('Parte AP — Back Office (Frente 1)', {skip: pular}, () => {
       const [novo, velho] = [await abre(dados, {entrar, aba: null, largura}),
                              await abre(dados, {entrar, aba: null, largura, troca: FRONT_PRE_BO})];
       const quem = `${dados} ${JSON.stringify(entrar)} ${largura}px`;
-      assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${quem}: Executiva`);
+      // semTam nos dois lados, como na Parte AN: o font-size que o encaixa() grava depende da largura medida (só o #exec)
+      assert.equal(semTam(await novo.page.innerHTML('#exec')), semTam(await velho.page.innerHTML('#exec')), `${quem}: Executiva`);
       for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
         if(await novo.page.isHidden(`.tab[data-g="${aba}"]`)) continue;
         for(const {page} of [novo, velho]) await filtra(page, {aba});

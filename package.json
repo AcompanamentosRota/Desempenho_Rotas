@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "name": "desempenho-rotas",
+  "description": "Dependências de TESTE do painel. O site é a pasta frontend/ servida como está: não há build, bundler nem dependência de execução. html2canvas, jspdf e exceljs têm de ficar nas MESMAS versões do CONFIG.CDN de frontend/js/config.js.",
+  "scripts": {
+    "test:front": "node --test frontend/tests/front.test.js"
+  },
+  "devDependencies": {
+    "exceljs": "4.4.0",
+    "html2canvas": "1.4.1",
+    "jspdf": "2.5.1",
+    "playwright": "1.56.1"
+  }
+}

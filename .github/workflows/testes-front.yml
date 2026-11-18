@@ -1,0 +1,77 @@
+# Testes do front (Chromium headless) nos PRs que mexem no painel.
+#
+# O que faz: instala as dependências de teste fixadas no package.json da raiz, baixa o Chromium do
+# Playwright e roda `node --test frontend/tests/front.test.js`. O dado é SINTÉTICO, gerado pelo próprio
+# back-end (frontend/tests/sintetico.py), por isso o passo do Python.
+#
+# NÃO usa rede para dados, NÃO usa Secret nenhum, NÃO consulta o Datasphere, NÃO faz commit e NÃO publica:
+# só lê o código e roda testes. O conferencia_real.test.js fica FORA daqui — ele precisa do payload real
+# por variável de ambiente (PAYLOAD_REAL/ONLINE_REAL) e continua sendo rodado sob demanda.
+name: Testes do front
+
+on:
+  # No `pull_request` o GitHub usa o workflow da BRANCH do PR, então um PR que mexa só neste arquivo ou nas
+  # versões de teste também se testa. Sem o `package.json` aqui, uma troca de versão como a do jspdf 4.x (o
+  # erro que motivou este CI) não rodaria teste nenhum.
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/testes-front.yml"
+      - "package.json"
+      - "package-lock.json"
+  push:
+    branches: ["main"]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/testes-front.yml"
+      - "package.json"
+      - "package-lock.json"
+  # Depois do merge (o dispatch exige o arquivo na branch padrão) é como se dispara à mão.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Vários pushes seguidos no mesmo PR não acumulam rodadas: a anterior é cancelada.
+concurrency:
+  group: front-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  front:
+    # ubuntu-24.04 FIXO, nunca `ubuntu-latest`: desde 17/11/2026 o `latest` é a Ubuntu 26.04, e o
+    # playwright 1.56.1 (o do package.json) recusa instalar o Chromium nela: "Playwright does not
+    # support chromium on ubuntu26.04-x64". Subir o playwright troca o Chromium, e esta suíte compara
+    # renderização (PDF real e os "antes x depois"), então isso é outro trabalho, com validação própria.
+    runs-on: ubuntu-24.04
+    # Medido em 17/11/2026: 43 min 29 s para os 389 testes numa máquina de 8 threads. 60 min dão folga sobre
+    # isso e ainda interrompem um travamento. Se o runner passar de 60, o limite precisa subir.
+    timeout-minutes: 60
+    steps:
+      # fetch-depth: 0 = histórico COMPLETO, obrigatório. A suíte compara o front atual com fronts antigos servidos por
+      # `git show <commit>:frontend/...` (os "antes x depois" das Partes N, T, O, V, R, X, Z, AA, AC, AG, AI, AK, AM, AN,
+      # AP, AQ...). Com o clone raso padrão (depth 1) esses testes NÃO falham: eles PULAM ("# SKIP sem o commit <sha>"), e
+      # um teste que pula some do resultado sem ninguém ver — é pior que falhar. Rodada 44172971229 (17/11/2026), ainda
+      # com depth 1: 23 pulados, 387 testes em vez de 389 e duas falhas que citavam commit (8620727, ac94f8b).
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # O front.test.js chama `python3` para gerar o payload sintético pelo back-end.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+
+      # html2canvas, jspdf e exceljs nas MESMAS versões do CONFIG.CDN do config.js (ver package.json).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: node --test frontend/tests/front.test.js
