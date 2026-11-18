@@ -112,6 +112,19 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   compara renderização (PDF real e os "antes x depois"): é outro trabalho, com validação própria. Sem Secret, sem rede de dados, sem commit e sem publicação. O
   `conferencia_real.test.js` continua FORA do CI, sob demanda: precisa do payload real por `PAYLOAD_REAL`/`ONLINE_REAL` e
   hoje tem 19 falhas antigas herdadas da main, que deixariam todo PR vermelho sem motivo (consertá-las é outro trabalho).
+  **Clone completo e 3 testes fora do CI** (PR #62, 17-18/11/2026): o checkout usa `fetch-depth: 0` (com o clone raso os
+  "antes x depois" servidos por `git show <commit>` PULAM, `# SKIP sem o commit ...`, em vez de falhar). No CI a suíte roda
+  386 e pula 3, declarados por `MEDE_TEXTO_FORA_DO_CI` (topo do front.test.js; só com a variável `CI`, que o Actions
+  define sozinho): Parte W "360 px: KPIs, quadros, medidores..." e Parte AN "(i) grande 360 px" (painel aberto e
+  recolhido). Eles medem largura de texto renderizado: com a Inter carregada (`document.fonts.status` 'loaded',
+  `check('700 12px Inter')` true), "58.620.000" em Inter 700 a 7 px (o `data-fit-min` do quadro) mede 39,97 px numa caixa
+  de 42 px nas máquinas de trabalho e 44 px no runner (larguras inteiras por glifo). Na máquina (sem `CI`) os três rodam
+  SEMPRE. Flags de renderização do Chromium (`--font-render-hinting=none` etc.) DESCARTADAS pela Karen (18/11/2026): o
+  teste mediria uma tela que nenhum usuário vê. Não pular mais nada por essa constante. O antes x depois da Parte AP
+  (`8620727`) compara o `#exec` com `semTam` nos dois lados, como a Parte AN (o `font-size` que o `encaixa()` grava
+  depende da largura medida: 13 x 13,5 px no runner); `#abaTopo`, `#lista`, `#drw` e o Ritmo seguem crus.
+  **Risco do PAINEL, em aberto**: a folga do quadro é de 2,03 px a 360 px com `data-fit-min` 7 e a variação entre
+  ambientes medida é de ~4 px; falta medir num notebook de gerência (1280x720, 1366x768) e num celular, zoom 100% e 110%.
   O teste chama `python3` (no Windows, ponha um `python3.exe` do venv no PATH) e acha o `playwright` pelo `node_modules`
   da raiz (ou por `NODE_PATH`/instalação global, como antes).
 - **`package.json` na raiz** (só dependências de TESTE; `"private": true`, sem `dependencies` e sem build): o site continua

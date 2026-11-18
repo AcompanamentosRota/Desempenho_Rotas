@@ -808,6 +808,10 @@ padrão. O resultado aparece como um check no PR: clique em
 `# skipped`). PR que não mexe em nenhum desses caminhos não dispara o workflow. Ele não usa Secret, não consulta o
 Datasphere, não faz commit e não publica nada. O limite é de **60 min** (a suíte inteira levou 43 min 29 s numa máquina
 de 8 threads em 17/11/2026); se o runner passar disso, o limite precisa subir.
+No CI a suíte roda **386 e pula 3** (389 no total): os três testes que medem largura de texto renderizado (Parte W
+"360 px: KPIs, quadros, medidores..." e Parte AN "(i) grande 360 px", painel aberto e recolhido) aparecem no log como
+`# SKIP mede largura de texto renderizado; ...` porque o runner mede o texto ~4 px mais largo que as máquinas de
+trabalho, e a folga do quadro do medidor é de 2 px. Na máquina eles rodam sempre (motivo e números no `CLAUDE.md` e no PR #62).
 
 A **conferência com dado real** (`conferencia_real.test.js`) fica **fora do CI**, sob demanda: ela depende do payload
 real passado por variável de ambiente e hoje tem 19 falhas antigas herdadas da `main`, que deixariam todo PR vermelho
