@@ -2576,7 +2576,9 @@ def caderno_conferencia(rel: Relatorio, cons: Consulta, estado: dict, anomes: st
               f"útil {cal.dia_ontem} de {cal.total_dias_uteis}, um dia sozinho deve ficar perto de "
               f"{_razao(1.0, float(cal.dia_ontem or 1))} do acumulado — nunca 0 e nunca mais que o mês. A pré-venda "
               "vai pela rota da META e o Vol Real do mês pela rota do CLIENTE: por rota os dois não se comparam; "
-              "por gerência e na BAND, sim.")
+              "por gerência e na BAND, sim. A coluna do Del Valle Frut soma o agrupador CRU, em qualquer gerência; "
+              f"na chave ele só tem valor nas rotas de {', '.join(M.VOLUME_EXTRA['VOL DEL VALLE FRUT']['gcs'])} "
+              "(nas outras é `null`, como o painel), porque é só lá que o indicador existe.")
 
     # E14b. pré-venda de cobertura x cobertura do mês ----------------------------------------------------------------
     rel.h3(f"E14b. Pré-venda de cobertura x cobertura de {lab_ref}")
