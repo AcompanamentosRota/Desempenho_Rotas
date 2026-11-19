@@ -152,6 +152,90 @@ def _mes_anterior(p: dict) -> tuple[list[str], list[str]]:
     return erros, avisos
 
 
+TOL_CADERNO = 0.1   # caixas: a pré-venda sai com 1 casa, como o Vol Real
+
+
+def _soma_real(rotas: dict, k: str) -> float:
+    """Vol Real do mês somado nas rotas onde o indicador existe (a mesma base da pré-venda)."""
+    return sum((d.get("indicators", {}).get(k) or {}).get("real") or 0.0
+               for d in rotas.values() if not (d.get("indicators", {}).get(k) or {"unavailable": True})["unavailable"])
+
+
+def _caderno_uma(p: dict, chave: str) -> tuple[list[str], list[str]]:
+    """Uma das chaves do Caderno (PRE_VENDA, MES_ANT_CHEIO): (erros, avisos). Erro só para NaN/inf ou valor negativo
+    (o gerador já tira a chave nesses casos, então o erro só pega um payload montado por fora)."""
+    d = p.get(chave) or {}
+    ind_vol, ind_cob = d.get("IND_VOL") or [], d.get("IND_COB") or []
+    erros, avisos, ruins, negativos = [], [], [], []
+    total_vol = 0.0
+    por_rota_vol: dict[str, dict[str, float]] = {}
+    por_rota_cob: dict[str, dict[str, int]] = {}
+    for r, vals in (d.get("ROTAS") or {}).items():
+        for ks, lista, destino in ((ind_vol, (vals or {}).get("v") or [], por_rota_vol),
+                                   (ind_cob, (vals or {}).get("c") or [], por_rota_cob)):
+            for k, x in zip(ks, lista):
+                if x is None:
+                    continue
+                if not isinstance(x, (int, float)) or isinstance(x, bool) or not math.isfinite(x):
+                    ruins.append(r)
+                    continue
+                if x < 0:
+                    negativos.append(r)
+                destino.setdefault(r, {})[k] = x
+                if destino is por_rota_vol:
+                    total_vol += x
+    if ruins:
+        erros.append(f"{chave} com valor não finito (NaN/inf) em: {', '.join(sorted(set(ruins))[:20])}")
+    if negativos:
+        erros.append(f"{chave} com valor negativo em: {', '.join(sorted(set(negativos))[:20])}")
+    if not ruins and not negativos and total_vol == 0:
+        avisos.append(f"{chave}: volume da BAND = 0 (filtro de DATA_MOVIMENTO ou NF_STATUS?)")
+    if chave != M.CHAVE_PRE_VENDA:
+        return erros, avisos
+    # um dia não pode passar o mês: a pré-venda de volume é comparada por GERÊNCIA e BAND (por rota não dá: o volume
+    # vai pela rota da META e o Vol Real do mês pela rota do cliente), e a de cobertura por rota x item (as duas
+    # contam na rota da venda, então a do dia é subconjunto da do mês)
+    por_gc = _rotas_por_gc(p)
+    acima = []
+    for gc, rotas_gc in list(por_gc.items()) + [("BAND", _rotas(p))]:
+        for k in ind_vol:
+            dia = sum(por_rota_vol.get(r, {}).get(k, 0.0) for r in rotas_gc)
+            mes = _soma_real(rotas_gc, k)
+            if dia > mes + TOL_CADERNO:
+                acima.append(f"{gc}/{M.LABELS.get(k) or M.VOLUME_EXTRA.get(k, {}).get('label') or k} "
+                             f"({dia:,.1f} x {mes:,.1f})")
+    if acima:
+        avisos.append(f"{chave}: volume do dia maior que o Vol Real do mês em {len(acima)} gerência x macro "
+                      f"(dia x mês): {', '.join(acima[:20])}")
+    rotas = _rotas(p)
+    cob_acima = []
+    for r, ks in por_rota_cob.items():
+        for k, n in ks.items():
+            mes = ((rotas.get(r, {}).get("indicators") or {}).get(k) or {}).get("real")
+            if mes is not None and n > mes:
+                cob_acima.append(f"{r}/{M.LABELS.get(k, k)} ({n} x {mes})")
+    if cob_acima:
+        avisos.append(f"{chave}: cobertura do dia maior que a do mês em {len(cob_acima)} rota x item "
+                      f"(dia x mês): {', '.join(cob_acima[:20])}")
+    return erros, avisos
+
+
+def _caderno(p: dict) -> tuple[list[str], list[str]]:
+    """Chaves opcionais PRE_VENDA e MES_ANT_CHEIO (Caderno de Vendas): (erros, avisos). Nenhuma é obrigatória; a
+    ausência só avisa (a PRE_VENDA, apenas quando há último dia útil fechado)."""
+    erros, avisos = [], []
+    for chave in (M.CHAVE_PRE_VENDA, M.CHAVE_MES_ANT_CHEIO):
+        if p.get(chave) is None:
+            if chave == M.CHAVE_MES_ANT_CHEIO or p.get("DATA_ONTEM"):
+                avisos.append(f"{chave} ausente (consulta do Caderno falhou ou passou do limite?): o Caderno de "
+                              "Vendas fica sem a coluna")
+            continue
+        e_c, a_c = _caderno_uma(p, chave)
+        erros += e_c
+        avisos += a_c
+    return erros, avisos
+
+
 def _volume_real(rotas: dict) -> float:
     return sum((d.get("indicators", {}).get(k) or {}).get("real") or 0 for d in rotas.values() for k in M.INDICADORES_VOLUME)
 
@@ -241,6 +325,9 @@ def validar_payload(novo: dict, anterior: dict | None = None) -> tuple[list[str]
     e_ma, a_ma = _mes_anterior(novo)
     erros += e_ma
     avisos += a_ma
+    e_cad, a_cad = _caderno(novo)
+    erros += e_cad
+    avisos += a_cad
     if sum(novo["VISITAS_DIA"]["geral"].values()) == 0:
         avisos.append("nenhuma visita agendada hoje (fim de semana/feriado ou VISITA_HOJE mudou?)")
 

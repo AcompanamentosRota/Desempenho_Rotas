@@ -126,5 +126,9 @@ class Fontes:
     eventuais: dict[str, str] = field(default_factory=dict)
     # mês anterior no mesmo dia útil (mes_anterior.Dados; None = sem a chave MES_ANTERIOR nesta rodada)
     mes_anterior: object | None = None
-    # segundos medidos na carga (mes_anterior_s, mes_anterior_espera_s): log e workflow "Conferir tendência"
+    # pré-venda do último dia útil fechado e mês anterior inteiro (caderno.Dados; None = sem as chaves
+    # PRE_VENDA e MES_ANT_CHEIO nesta rodada)
+    caderno: object | None = None
+    # segundos medidos na carga (mes_anterior_s, mes_anterior_espera_s, caderno_s, caderno_espera_s,
+    # neg_hoje_s): log, GITHUB_OUTPUT do gerar.py e workflow "Conferir tendência"
     tempos: dict[str, float] = field(default_factory=dict)

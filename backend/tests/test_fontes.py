@@ -268,7 +268,10 @@ class TestFontes(unittest.TestCase):
         base = [c for c in self.cons.chamadas if c[0] == M.OBJ_BASE_CLIENTE][0][2]
         self.assertIn("FL_CORRENTE eq 'S'", base)
         self.assertIn("DS_GC_AGRUPADA_ATUAL eq 'Gc. It_Mo'", base)
-        vendas = [c for c in self.cons.chamadas if c[0] == M.OBJ_META and CM.COB_MES in c[1]]
+        # a consulta de vendas do mês (COB_ONLINE no $select); as do Caderno (PRE_VENDA/MES_ANT_CHEIO) também
+        # trazem COB_MES, mas sem o online: ficam fora daqui (tests/test_caderno.py confere os filtros delas)
+        vendas = [c for c in self.cons.chamadas if c[0] == M.OBJ_META and CM.COB_ONLINE in c[1]]
+        self.assertTrue(all(CM.COB_MES in c[1] for c in vendas))
         self.assertTrue(all("ANOMES_REF eq '202610'" in c[2] for c in vendas))
         self.assertTrue(any(f"{CM.GC} eq 'Gc. G1'" in c[2] for c in vendas))
         self.assertIn("DS_AGRUPADOR_Agrupador_Prod eq 'Cctm 2l Pet'", vendas[0][2])

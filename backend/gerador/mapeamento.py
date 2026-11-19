@@ -265,6 +265,23 @@ CHAVE_MES_ANTERIOR = "MES_ANTERIOR"
 INDICADORES_MES_ANTERIOR = list(INDICADORES_VOLUME)
 MES_ANTERIOR_LIMITE_S = 60
 
+# Caderno de Vendas (Frente 2, 19/11/2026; gerador/caderno.py): duas chaves OPCIONAIS no fim do payload, depois da
+# MES_ANTERIOR. Nenhuma tela lê ainda (o front as ignora, como já ignora negHoje).
+#   PRE_VENDA     volume faturado e clientes cobertos no ÚLTIMO DIA ÚTIL FECHADO (a data é DATA_ONTEM do próprio
+#                 payload, nunca o relógio da máquina nem "hoje - 1"), por rota x indicador.
+#   MES_ANT_CHEIO o mesmo do mês anterior INTEIRO (do dia 1 ao último dia), sem corte de data. Não é a MES_ANTERIOR
+#                 (aquela vai só até o mesmo dia útil e não muda em nada).
+# Volume: os 5 macros + Del Valle Frut (INDICADORES_VOLUME_TODOS). Cobertura: os 13 itens do ICS GC e dos Novos
+# Negócios + as 3 chaves INC do Todos a Bordo (16 no total). As duas listas vão no payload (IND_VOL, IND_COB) como
+# tabelas de índice, como SEGS e DIAS: só acrescentar no fim.
+CHAVE_PRE_VENDA = "PRE_VENDA"
+CHAVE_MES_ANT_CHEIO = "MES_ANT_CHEIO"
+INDICADORES_CADERNO_VOL = list(INDICADORES_VOLUME_TODOS)
+INDICADORES_CADERNO_COB = INDICADORES_COBERTURA + INDICADORES_INCENTIVO
+# limite de tempo das quatro consultas novas (espelha MES_ANTERIOR_LIMITE_S; a cobertura do mês anterior inteiro é
+# do tamanho da consulta de vendas do mês). Passou do limite ou falhou: as chaves ficam fora e a rodada segue.
+CADERNO_LIMITE_S = 90
+
 # Rotas Neutraliza e virtuais: listas POR ROTA (valem em qualquer gerência, inclusive na AT, e independem da
 # supervisão). ÚNICA fonte: vão para o payload (NEUTRALIZA_ROTAS, VIRTUAIS_ROTAS) e o front lê de lá.
 # Neutraliza: Meta e Real de Volume, ICS GC e Novos Negócios no total da gerência; na tela, uma linha "Neutraliza"
@@ -354,6 +371,10 @@ AGRUPADORES_CONSULTA_METAS = AGRUPADORES_ORIGEM + list(AGRUPADORES_VOLUME_EXTRA.
 AGRUPADORES_METAS_INCENTIVO = list(AGRUPADORES_INCENTIVO.values())
 # Vol Real: macros de volume + extras + GDM (o GDM usa o mesmo filtro de NF_STATUS)
 AGRUPADORES_VOL_REAL = sorted(set(AGRUPADORES_VOLUME_CONSULTA) | set(AGRUPADORES_GDM))
+# Caderno de Vendas: volume = os mesmos 6 agrupadores das consultas de volume (5 macros + Del Valle Frut);
+# cobertura = os 16 itens de INDICADORES_CADERNO_COB, na mesma ordem
+AGRUPADORES_CADERNO_VOL = list(AGRUPADORES_VOLUME_CONSULTA)
+AGRUPADORES_CADERNO_COB = [AGRUPADORES_COBERTURA[k] for k in INDICADORES_CADERNO_COB]
 
 APELIDOS_COBERTURA: dict[str, list[str]] = {k: [v] for k, v in AGRUPADORES_COBERTURA.items()}
 APELIDOS_VOLUME: dict[str, list[str]] = {k: [v] for k, v in
