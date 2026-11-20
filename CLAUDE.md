@@ -84,6 +84,17 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   gerência mostra "Exclusivo portfólio Full"), BAND x Σ das gerências e a invariante Cervejas / Cervejas 600ml Retornável =
   ICS GC. Aceite: por gerência, Real da branch − Real da main (mesmo payload) = o Real que entra pelas rotas de meta 0;
   metas iguais. Testes: `test_incentivo_meta_zero.py`.
+- E14 do conferir (Caderno de Vendas, Frente 2; com rede, depois da E10): as duas chaves novas do payload
+  (`PRE_VENDA` e `MES_ANT_CHEIO`, `backend/gerador/caderno.py`) com dado real. E14a pré-venda de volume por gerência e
+  BAND ao lado do Vol Real do mês, com a razão (sanidade: um dia sozinho perto de 1/DIA_ONTEM do acumulado, nunca 0 e
+  nunca mais que o mês; por rota não dá para comparar, o volume da pré-venda vai pela rota da META e o Vol Real do mês
+  pela rota do CLIENTE); E14b pré-venda de cobertura por item (BAND) e por gerência ao lado da cobertura do mês, com as
+  rotas x item em que o dia passou o mês (impossível: as duas contam na rota da venda); E14c mês anterior INTEIRO x o
+  truncado da `MES_ANTERIOR` (volume por gerência e cobertura por item), com as violações por rota x item — o inteiro
+  tem de ser >= o truncado; E14d tempo de cada consulta nova e peso de cada chave no payload; E14e rotas com `null` em
+  cada chave e por quê. O truncado sai das consultas da E10 (a `ConsultaCronometrada` guarda a resposta: custo zero se a
+  E10 já rodou), então a comparação de cobertura fica nos 13 itens do ICS GC e dos Novos Negócios. Só contagens, totais
+  e códigos de rota. Testes: `test_caderno.py`.
 - Front local: `cd frontend && python -m http.server 8765`.
 - **Versão do código e aviso de versão nova** (README, "Versão do código e aviso de versão nova"): versão = hash de 12
   caracteres de `frontend/` sem `frontend/data/**` e sem `frontend/tests/**` (`.github/scripts/versao-front.sh`; nunca o
@@ -238,11 +249,50 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   oculta "{GC}-EV" com meta 0; meta = a do mês anterior inteiro, META_VOLUME da rota da meta, sem ela META_NEG; só os 5
   macros: sem coberturas, INC, Del Valle Frut, Imperdoáveis e Venda Zero). `{MES_LABEL, DIA_UTIL, TOTAL_DIAS_UTEIS,
   DATA_CORTE, FECHADO, IND, ROTAS: {rota: [[real, meta] | null x 5]}}`, todas as rotas do payload na ordem dele; null =
-  sem o indicador no mês anterior (o Real não entra). Chave opcional, a ÚLTIMA do payload, fora de `CHAVES_PAYLOAD`;
+  sem o indicador no mês anterior (o Real não entra). Chave opcional, fora de `CHAVES_PAYLOAD` (era a última até as duas
+  do Caderno de Vendas, abaixo);
   DIA_ONTEM = 0 = sem a chave. Consultas em threads DAEMON (`mes_anterior.Carga`, nunca ThreadPoolExecutor: ele segura o
   fim do processo) junto com as do mês; falha, > `M.MES_ANTERIOR_LIMITE_S` (60 s), Real negativo ou não finito = chave
   fora + aviso, nunca reprova. `validacao._mes_anterior`: aviso (ausente com DIA_ONTEM > 0, Real BAND 0, meta negativa),
   erro só NaN/inf ou Real negativo. O front lê desde a Etapa 8c (bloco "Evolução contra o mês anterior" da Executiva).
+  `PRE_VENDA` e `MES_ANT_CHEIO` (Caderno de Vendas, Frente 2, 19/11/2026; `gerador/caderno.py`, README "Pré-venda e mês
+  anterior fechado"): as DUAS ÚLTIMAS chaves do payload, opcionais, DEPOIS da `MES_ANTERIOR` e fora de `CHAVES_PAYLOAD`.
+  **Nenhuma tela lê ainda** — o front as ignora, como já ignora `negHoje`; são para o Caderno por gerência e supervisão
+  (colunas "Pré-venda" e "Real do mês anterior"). Forma: `PRE_VENDA` = `{DATA, IND_VOL, IND_COB, ROTAS}` e
+  `MES_ANT_CHEIO` = `{MES_LABEL, TOTAL_DIAS_UTEIS, IND_VOL, IND_COB, ROTAS}`, com
+  `ROTAS: {rota: {"v": [6 valores], "c": [16 valores]}}`. `IND_VOL` (`M.INDICADORES_CADERNO_VOL`: os 5 macros + Del
+  Valle Frut) e `IND_COB` (`M.INDICADORES_CADERNO_COB`: os 13 do ICS GC / Novos Negócios + as 3 chaves INC) são tabelas
+  de índice como `SEGS` e `DIAS`: **só acrescentar no fim**. Todas as rotas do payload, na ordem dele (Neutraliza,
+  virtuais e as ocultas das EV* inclusive), como a `MES_ANTERIOR`.
+  **Armadilha 1 — a data é a do payload, nunca o relógio**: `PRE_VENDA.DATA` = `DATA_ONTEM` (último dia útil FECHADO),
+  a mesma regra de data do Painel de Ritmo (R-RIT-02). "Hoje − 1" devolveria domingo numa segunda e o feriado no dia
+  seguinte a um feriado, e o Caderno sairia zerado em ~5 dias por mês. `DATA_ONTEM` nulo = sem a chave (a
+  `MES_ANT_CHEIO` continua).
+  **Armadilha 2 — a pré-venda de cobertura é "quem COMPROU o item naquele dia"**, não "quem entrou na cobertura naquele
+  dia": quem já tinha comprado antes no mês conta de novo. É a conta da cobertura do mês (`FX_COBERTURA_REALIZADO` > 0,
+  `M.FILTRO_SEM_NF_CANCELADA`, KS TT só nos 4 segmentos de `M.SEGMENTOS_KS_TT` pelo mesmo `payload._filtra_ks_tt`), só
+  que com `DATA_MOVIMENTO = <dia>` no `$filter` (NUNCA no groupby).
+  **Rota, diferente de propósito entre volume e cobertura**: o volume da pré-venda vai pela **rota da META**
+  (`CD_ROTA_Chave_Meta_SAP`), como a Neg Restante e a meta do dia — venda sem chave de meta fica fora (R-ESC-11,
+  `fontes.sem_rota_da_meta`) e venda cuja rota da meta é uma EV* entra na rota oculta `<GC>-EV` da gerência comercial;
+  a cobertura vai pela **rota em que a venda foi faturada** (`CD_ROTA_Clien`), como a cobertura do mês, com as EV*
+  também na rota oculta. O volume da `MES_ANT_CHEIO` segue a regra da `MES_ANTERIOR` (rota ATUAL do cliente), para as
+  duas colunas do Caderno serem comparáveis entre si. Medida e filtro de status = os do Vol Real (`FX_VOL_PADRAO_FAT`
+  com `NF_STATUS` em `M.STATUS_NF_REAL`, R-VOL-09), com os 6 agrupadores de volume.
+  **`MES_ANT_CHEIO` NÃO é a `MES_ANTERIOR`**: aquela vai só até o mesmo dia útil (`mes_anterior.filtro_ate`) e a
+  Evolução da Executiva depende dela (R-EXE-02); esta é o mês anterior inteiro (dia 1 ao último), um valor novo a mais.
+  A `MES_ANTERIOR` **não muda em nada** (provado byte a byte no PR 1).
+  **`null`** = a rota não tem o indicador no payload (`unavailable`: sem meta e sem dado) — é a disponibilidade que o
+  próprio payload acabou de montar; onde o indicador existe e não houve venda, o valor é **0**, não `null`.
+  **Falha**: as quatro consultas rodam em threads DAEMON (nunca ThreadPoolExecutor) junto com as do mês, com limite
+  próprio `M.CADERNO_LIMITE_S` (90 s). Falha, estouro de tempo, valor negativo ou não finito = a chave fica FORA com
+  aviso no log e a rodada segue; os dois blocos são independentes (a pré-venda entra sem o mês anterior inteiro e
+  vice-versa), mas dentro de um bloco volume e cobertura andam juntos — nunca um número pela metade.
+  `validacao._caderno`: só AVISA (chave ausente, volume da BAND = 0, pré-venda de volume maior que o Vol Real do mês
+  por gerência/BAND, cobertura do dia maior que a do mês por rota x item); erro só NaN/inf ou valor negativo.
+  Medido no payload real de 19/11/2026 (246 rotas): `PRE_VENDA` +22,7 KB e `MES_ANT_CHEIO` +27,2 KB (6,64 -> 6,69 MB);
+  as consultas levaram 29-46 s em paralelo com as do mês e o `gerar.py` foi de 73 s (main) para 98 s (limite de
+  atenção: 120 s). O `gerar.py` grava `caderno_s` e `caderno_espera_s` no log e no `GITHUB_OUTPUT`.
 - **Todo nome de coluna, filtro e agrupador fica em `backend/gerador/mapeamento.py`.** Valores conferidos em 13/10/2026:
   - Base de clientes guarda histórico: filtrar `FL_CORRENTE eq 'S' and STATUS_CLIENTE eq 'Ativo'`.
   - Gerências do painel na fonte (`M.GC_ORIGEM`): `Gc. G1/G2/G3/Ap/It_Mo` conferidas; `Gc. At/An/Sl/Rv/Pa_Di/Ur_Ri/Gu_Po`

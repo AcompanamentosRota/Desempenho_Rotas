@@ -118,8 +118,10 @@ class TestChaveNoPayload(unittest.TestCase):
         self.assertEqual(self.p["DIA_ONTEM"], 7)
 
     def test_a_ultima_chave_e_opcional(self):
-        self.assertEqual(list(self.p)[-1], "MES_ANTERIOR")
-        self.assertEqual(list(self.p)[-2], "SEM_COMPRA_MES")
+        # depois dela só as duas do Caderno de Vendas (PRE_VENDA, MES_ANT_CHEIO), também opcionais
+        sem_caderno = [k for k in self.p if k not in (M.CHAVE_PRE_VENDA, M.CHAVE_MES_ANT_CHEIO)]
+        self.assertEqual(sem_caderno[-1], "MES_ANTERIOR")
+        self.assertEqual(sem_caderno[-2], "SEM_COMPRA_MES")
         self.assertNotIn("MES_ANTERIOR", CHAVES_PAYLOAD)
 
     def test_todas_as_rotas_do_payload_na_ordem(self):
@@ -150,15 +152,19 @@ class TestChaveNoPayload(unittest.TestCase):
         self.assertEqual(self.ma["ROTAS"][OCULTA], [[15.0, 0.0], None, None, None, None])   # meta 0, só soma o Real
 
     def test_consultas_com_o_corte_so_no_filtro(self):
-        vol = [c for c in self.cons.chamadas_set if CM.NF_STATUS in c[0]]
+        # as consultas da MES_ANTERIOR: as do Caderno (MES_ANT_CHEIO) também são de setembro, mas trazem o
+        # Del Valle Frut (volume) ou a cobertura (COB_MES) — ficam fora daqui (tests/test_caderno.py as confere)
+        so_ma = [c for c in self.cons.chamadas_set if CM.COB_MES not in c[0] and "Del Valle" not in c[1]]
+        self.assertEqual(len(so_ma), 3)
+        vol = [c for c in so_ma if CM.NF_STATUS in c[0]]
         self.assertEqual(len(vol), 1)
         self.assertIn("DATA_MOVIMENTO le 2026-09-10", vol[0][1])
         self.assertEqual(vol[0][0][0], CM.ROTA)                           # rota ATUAL do cliente
         self.assertTrue(all(CM.DATA not in c[0] for c in self.cons.chamadas_set))
-        metas = [c for c in self.cons.chamadas_set if CM.META_NEG in c[0] or CM.META_VOLUME in c[0]]
+        metas = [c for c in so_ma if CM.META_NEG in c[0] or CM.META_VOLUME in c[0]]
         self.assertEqual(len(metas), 2)
         self.assertTrue(all(CM.DATA not in c[1] for c in metas))          # metas do mês inteiro
-        self.assertTrue(all("Del Valle" not in f and "Heineken" not in f for _, f in self.cons.chamadas_set))
+        self.assertTrue(all("Del Valle" not in f and "Heineken" not in f for _, f in so_ma))
 
     def test_tempos_e_validacao(self):
         self.assertIn("mes_anterior_s", self.f.tempos)
@@ -176,8 +182,11 @@ class TestChaveNoPayload(unittest.TestCase):
 
     def test_resto_do_payload_igual_ao_de_sem_a_chave(self):
         f, p = _carrega(ComSetembro(sintetico.dados(False), falha=True))
+        # a falha de setembro também derruba a MES_ANT_CHEIO do Caderno (as duas leem o mês anterior)
         self.assertNotIn("MES_ANTERIOR", p)
-        self.assertEqual(serializar({k: v for k, v in self.p.items() if k != "MES_ANTERIOR"}), serializar(p))
+        self.assertNotIn(M.CHAVE_MES_ANT_CHEIO, p)
+        fora = ("MES_ANTERIOR", M.CHAVE_MES_ANT_CHEIO)
+        self.assertEqual(serializar({k: v for k, v in self.p.items() if k not in fora}), serializar(p))
 
 
 class TestFalhaETempo(unittest.TestCase):
@@ -193,10 +202,11 @@ class TestFalhaETempo(unittest.TestCase):
     def test_passou_do_limite_omite_a_chave_sem_esperar(self):
         cons = ComSetembro(sintetico.dados(False), atraso=3.0)
         inicio = time.monotonic()
-        with mock.patch.object(M, "MES_ANTERIOR_LIMITE_S", 0.3):
+        with mock.patch.object(M, "MES_ANTERIOR_LIMITE_S", 0.3), mock.patch.object(M, "CADERNO_LIMITE_S", 0.3):
             f, p = _carrega(cons)
         self.assertLess(time.monotonic() - inicio, 2.5)                  # não esperou a consulta lenta
         self.assertNotIn("MES_ANTERIOR", p)
+        self.assertNotIn(M.CHAVE_MES_ANT_CHEIO, p)                       # o Caderno tem o limite próprio
         self.assertTrue(any(a.startswith("MES_ANTERIOR fora do payload: as consultas de Setembro/26 passaram de")
                             for a in f.avisos), f.avisos)
         self.assertEqual(validar_payload(p)[0], [])

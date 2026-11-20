@@ -16,6 +16,9 @@ sem tendência e sem meta do dia, Venda Zero indisponível.
 Clientes em rotas EV* (Fontes.eventuais): uma rota oculta por gerência (M.rota_eventuais), sem clientes, só com o
 Real de volume e de cobertura (meta 0; ICS GC, Novos Negócios e Todos a Bordo), numa supervisão própria
 (M.sv_eventuais); em VIRTUAIS_ROTAS e EVENTUAIS_ROTAS.
+
+Chaves opcionais no fim (o front ignora as que não conhece): MES_ANTERIOR (mes_anterior.py) e, depois delas,
+PRE_VENDA e MES_ANT_CHEIO (caderno.py, Caderno de Vendas).
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ from dataclasses import replace
 
 from . import calendario as calmod
 from . import mapeamento as M
-from . import mes_anterior, modelo
+from . import caderno, mes_anterior, modelo
 from .texto import limpar, normalizar
 from .tipos import Cliente, Fontes, Online
 
@@ -328,11 +331,28 @@ def montar_payload(f: Fontes) -> dict:
         # clientes do roster sem compra no mês (PVs em ordem crescente; None = rota sem dado), como o SEM_COMPRA_HOJE
         "SEM_COMPRA_MES": por_ordem(sem_compra_mes),
     }
-    # mês anterior no mesmo dia útil (só Volume; a última chave, opcional): fica fora sem o dado ou com valor inválido
+    # mês anterior no mesmo dia útil (só Volume; opcional): fica fora sem o dado ou com valor inválido
     if f.mes_anterior is not None:
         chave, aviso = mes_anterior.chave(f.mes_anterior, rotas_ord, f.eventuais)
         if chave is not None:
             payload[M.CHAVE_MES_ANTERIOR] = chave
         if aviso:
             f.avisos.append(aviso)
+    # Caderno de Vendas (as duas últimas chaves, opcionais): pré-venda do último dia útil fechado e mês anterior
+    # INTEIRO. O `null` segue a disponibilidade do indicador na rota (o que o payload acabou de montar) e o KS TT
+    # da cobertura passa pelo mesmo _filtra_ks_tt dos COBERTOS, com o segmento do roster e, fora dele, o da venda.
+    if f.caderno is not None:
+        disponiveis = {r: {k for k, b in d["indicators"].items() if not b.get("unavailable")}
+                       for gc in data for sv in data[gc] for r, d in data[gc][sv].items()}
+
+        def filtra_cob(r: str, por_ind: dict, segmentos: dict) -> dict:
+            return _filtra_ks_tt(por_ind, {c[0]: c[2] for c in roster.get(r, [])}, ks_tt,
+                                 {**segmentos, **f.segmento_venda})
+
+        pre, cheio, avisos_cad = caderno.chaves(f.caderno, rotas_ord, f.eventuais, disponiveis, filtra_cob)
+        if pre is not None:
+            payload[M.CHAVE_PRE_VENDA] = pre
+        if cheio is not None:
+            payload[M.CHAVE_MES_ANT_CHEIO] = cheio
+        f.avisos += avisos_cad
     return payload
