@@ -356,6 +356,80 @@ antes × depois contra a main, em que **nada fora do Back Office muda**. Com dad
 gerências com o card da Diretoria (no Todos a Bordo a diferença é exatamente o Real das rotas que entram no escopo da
 BAND e em nenhuma gerência) e confere as larguras e o PDF da MATRIZ.
 
+### Caderno de Vendas (aba do Back Office)
+
+> Frente 2, PR 2, 23/11/2026. O Caderno de Vendas em duas folhas A4 (Volume e Cobertura), nas visões **Gerência
+> aberta por supervisão** e **Supervisão aberta por rota**. **Nenhum número do painel muda** e a tabela do Back
+> Office (a aba "Tabela") continua exatamente como estava. O PDF vem no PR 3; por enquanto é só a tela.
+
+**Como abrir.** Entre como **BACK OFFICE** (o 5º botão da entrada, com a senha própria) e, na página, clique na aba
+**Caderno de Vendas**, ao lado da aba **Tabela**. A aba Tabela é a página de sempre; trocar de aba não recalcula nada
+e volta tudo como estava.
+
+**Os seletores são do Caderno, não da Tabela.** O Caderno é sempre de **uma gerência** — o filtro "Agrupada" da
+tabela (MATRIZ, PA+DI, GU+PO, IT+MO, UR+RI) não vale aqui. Por isso ele tem seletores próprios, que não mexem nos
+da Tabela:
+
+- **Gerência**: as **16 separadas**, na ordem do painel e todas habilitadas (gerência sem dados fica desabilitada).
+  Começa na primeira com dados, mesmo que você tenha entrado por outra: é só escolher.
+- **Nível**: `Gerência (aberta por supervisão)` ou `Supervisão (aberta por rota)`.
+- **Supervisão**: só aparece no nível Supervisão. Trocar de gerência mantém o nível e escolhe a primeira supervisão
+  da nova gerência.
+
+**As duas folhas.** Primeiro **Volume**, depois **Cobertura**, uma embaixo da outra, cada uma do tamanho de uma folha
+A4 em pé. Em tela estreita (celular) a folha **rola de lado dentro da própria caixa** — a página nunca ganha rolagem
+lateral. O cabeçalho de cada folha traz, à esquerda,
+`CADERNO DE VENDAS · GC/GV · VOLUME|COBERTURA · EXERCÍCIO AAAAMM` e, à direita, o escopo (`GC. G2` ou `SV.G2.1`).
+Embaixo, a linha de apoio: **Dias úteis**, **Corridos**, **Restantes**, **Pré-venda** (a data do último dia útil
+fechado, de onde vem a coluna Pré-Venda) e **Ritmo esperado** — o ritmo aparece **uma vez só**, no cabeçalho, nunca
+repetido por linha. No fechamento do mês, "Corridos" e "Restantes" saem e entra `Fechamento <mês>`.
+
+**O que cada coluna significa.** Cada **Grupo Produto** é um bloco: uma linha por supervisão (ou por rota) e, no fim
+do bloco, a linha **TOTAL**. A coluna **Seg** é fixa em `TODOS` (o Caderno não abre por segmento) e, embaixo do nome
+do item, o selo diz de que painel ele vem (ICS GC, Novos Negócios, Todos a Bordo — ou os dois, quando o item está em
+dois).
+
+| coluna | o que é |
+|---|---|
+| **Real M.A** | o Real do **mês anterior inteiro** (dia 1 ao último), para comparar o tamanho do mês |
+| **Meta** | a meta do mês, a mesma do card do painel |
+| **Real** | o Real faturado até ontem, o mesmo do card |
+| **Real x Meta** / **Dif** | Real − Meta |
+| **%** | Real ÷ Meta, com uma casa |
+| **Tend. %** (Volume) | a tendência do SAC: Real até ontem + Neg Restante, sobre a Meta |
+| **Ritmo** (Cobertura) | o quanto o % realizado está acima ou abaixo do ritmo esperado do mês; **100% ou mais é estar no ritmo** |
+| **Pré-Venda** | o que foi vendido **no último dia útil fechado** (um dia só, não o acumulado) |
+| **Meta Dia** | a meta do dia, a mesma que o card do painel mostra na caixa do Online |
+| **Plan. Dia** | **propositalmente vazia** — é o espaço para a equipe escrever o planejado do dia na folha impressa |
+
+Volume vai com **uma casa decimal** e cobertura com **número inteiro** (é contagem de clientes cobertos). Meta zero
+ou ausente deixa `%`, `Tend. %` e `Ritmo` como `—`; indicador que a unidade não tem deixa a linha em branco (não vira
+zero). No fechamento do mês, `Tend. %`, `Ritmo` e `Meta Dia` ficam `—`.
+
+**Por que os números não batem com a cascata no meio do dia.** O Caderno é um relatório **matinal**, como o Painel de
+Ritmo: ele usa **só o payload** — o Real faturado até o último dia útil fechado — e **não soma os pedidos de hoje**
+(o `online.json`). A cascata e os cards do painel mostram "Real + Online", que cresce ao longo do dia. Os dois estão
+certos: são recortes diferentes. (Os testes provam isso: as folhas saem com o **mesmo HTML** servindo a página com e
+sem o `online.json`.)
+
+**A linha TOTAL pode ser maior que a soma das linhas.** O TOTAL é o número do card do painel para aquele escopo, e
+ele inclui tudo: Neutraliza, rotas virtuais e a rota oculta dos clientes em rotas eventuais (EV*). Essa rota oculta
+não é uma supervisão de verdade, então **não vira linha** — por isso, quando ela tem venda, a soma das linhas fica
+abaixo do TOTAL. Quando isso acontece, o rodapé da folha diz quanto é, por item:
+`REFRI · Inclui clientes de rotas eventuais (EV*): Real 14,8`. No nível Supervisão vale o mesmo para as rotas
+virtuais: `REFRI · Inclui rotas virtuais: Meta ... · Real ...`. Sem diferença, não há nota.
+
+**A supervisão só de Neutraliza aparece com o nome dela.** No painel, as rotas Neutraliza viram uma linha
+"Neutraliza" no fim da cascata. No Caderno **não**: a supervisão aparece com o código real (SV.G2.5, SV.AN.4,
+SV.G1.5...), como qualquer outra — foi a decisão da Karen em 23/11/2026, para a folha espelhar a estrutura da
+gerência. **Nenhum número muda** com isso (nenhuma supervisão mistura rotas Neutraliza com rotas normais): muda só o
+rótulo da linha. A SV.G3.3, oculta no painel, também aparece.
+
+**O que não entra.** Imperdoáveis e Venda Zero ficam fora das duas folhas. O Del Valle Frut (DV FRUT) só aparece na
+gerência que tem o indicador (hoje só a G2). Se o payload ainda não trouxer as chaves `PRE_VENDA` e `MES_ANT_CHEIO`
+(um payload antigo, ou uma rodada em que a consulta falhou), as colunas **Real M.A** e **Pré-Venda** ficam vazias e o
+resto da folha desenha normalmente.
+
 ### Telas
 
 - **Gerência**: filtros de supervisão e rota (a gerência é a da entrada; num grupo, também o seletor Total / uma

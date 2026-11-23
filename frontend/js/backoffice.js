@@ -20,6 +20,11 @@
      "Categoria" e a aba "Metadados". Nome do arquivo com a data do PAYLOAD (RT.diaArq(), a regra do Painel de Ritmo).
    - "Painel de ritmo": chama a rotina de sempre (RT.exporta) com o escopo da página; na MATRIZ, um PDF só com as
      páginas de G1, depois G2, depois G3 — cada gerência calculada pelo montaRitmo dela, sem consolidar nada.
+
+   Frente 2, PR 2 (23/11/2026): a página ganhou uma BARRA DE ABAS (Tabela | Caderno de Vendas). A única mudança aqui é
+   a troca de abas: a aba "Tabela" é esta página inteira, com o HTML de antes byte a byte; a aba "Caderno" entrega o
+   desenho ao caderno.js (CAD.render) e esconde o que é da tabela (.boFiltros, .boNota e #boCorpo), que volta intacto.
+   Nenhuma conta, nenhuma linha e nenhuma célula da tabela mudaram.
    ===================================================================== */
 const BO = (()=>{
   const TXT = {botao:'Exportar Excel', exportando:'Exportando…', semConexao:'Sem conexão para gerar o Excel',
@@ -29,8 +34,13 @@ const BO = (()=>{
   const MATRIZ = 'MATRIZ';
   // nível -> rótulo da 1ª coluna (o mesmo NIVEL_CASC do cabeçalho da cascata)
   const NIVEIS = [['gc', 'Gerência'], ['sv', 'Supervisão'], ['rota', 'Rota']];
+  /* Abas da página (Frente 2, PR 2): a tabela de sempre (R-BO-03, que não muda em nada) e o Caderno de Vendas
+     (caderno.js). Os filtros e os botões desta barra (.boFiltros) são da aba "Tabela": na aba "Caderno" eles ficam
+     escondidos (o Caderno tem seletores próprios) e voltam intactos ao trocar. */
+  const ABAS = [['tabela', 'Tabela'], ['caderno', 'Caderno de Vendas']];
+  const temCaderno = () => typeof CAD !== 'undefined';     // index.html antigo no cache: sem a aba, só a tabela
 
-  let ST = null;        // {escopo: 'gc:G1' | 'grp:MATRIZ' | 'grp:IT+MO', nivel: 'gc' | 'sv' | 'rota'}
+  let ST = null;        // {escopo: 'gc:G1' | 'grp:MATRIZ' | 'grp:IT+MO', nivel: 'gc' | 'sv' | 'rota', aba: 'tabela' | 'caderno'}
   let _rotas = null;    // cache de rotasDe(gc, '') dentro de um render (o payload não muda no meio)
   let ocupado = false;
 
@@ -172,6 +182,59 @@ const BO = (()=>{
       </table></div></section>`;
   }
 
+  /* ---------- abas da página (Tabela | Caderno de Vendas) ----------
+     A barra é criada em JavaScript (o index.html não muda nesta etapa) e fica acima dos filtros. Os botões são um
+     tablist com ativação automática (setas, Home/End). O painel da aba "Tabela" (#boCorpo) NÃO recebe atributo
+     nenhum: o HTML dela tem de ficar byte a byte o de antes. */
+  function barraAbas(){
+    let el = $$('boAbas');
+    if(el) return el;
+    const bo = $$('bo'), filtros = bo && bo.querySelector('.boFiltros');
+    if(!bo || !filtros || !temCaderno()) return null;
+    el = document.createElement('div');
+    el.className = 'boAbas'; el.id = 'boAbas';
+    el.setAttribute('role', 'tablist');
+    el.setAttribute('aria-label', 'Painéis do Back Office');
+    el.innerHTML = ABAS.map(([k, rot]) => `<button type="button" class="boAba" role="tab" id="boAba-${k}"` +
+      ` data-aba="${k}" aria-controls="${k === 'tabela' ? 'boCorpo' : 'cad'}" aria-selected="false"` +
+      ` tabindex="-1">${esc(rot)}</button>`).join('');
+    bo.insertBefore(el, filtros);
+    el.onclick = ev => { const b = ev.target.closest('.boAba'); if(b) trocaAba(b.dataset.aba); };
+    el.onkeydown = ev => {
+      const passo = ev.key==='ArrowRight' ? 1 : ev.key==='ArrowLeft' ? -1 : 0;
+      const i = ABAS.findIndex(a => a[0]===ST.aba);
+      if(passo) trocaAba(ABAS[(i + passo + ABAS.length) % ABAS.length][0]);
+      else if(ev.key==='Home') trocaAba(ABAS[0][0]);
+      else if(ev.key==='End') trocaAba(ABAS[ABAS.length - 1][0]);
+      else return;
+      ev.preventDefault();
+      const b = $$('boAba-' + ST.aba); if(b) b.focus();
+    };
+    return el;
+  }
+  function pintaAbas(){
+    const el = barraAbas(); if(!el) return;
+    ABAS.forEach(([k]) => { const b = $$('boAba-' + k), on = ST.aba===k;
+      if(!b) return;
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+      b.classList.toggle('on', on);
+    });
+  }
+  function trocaAba(k){
+    if(!ST || ST.aba===k || !ABAS.some(a => a[0]===k)) return;
+    ST = {...ST, aba: k};
+    render();
+  }
+  /* Mostra ou esconde o que é da aba "Tabela" (filtros, nota e corpo); nada é recalculado ao esconder. O [hidden] não
+     bastaria: .boFiltros e .boCorpo definem display:flex, que vence o display:none do atributo (o mesmo caso da
+     .dupla da Executiva). A classe .cadOff é a única regra nova que toca nesses elementos e sai inteira ao voltar. */
+  function mostraTabela(on){
+    const bo = $$('bo');
+    for(const el of [bo && bo.querySelector('.boFiltros'), $$('boNota'), $$('boCorpo')])
+      if(el) el.classList.toggle('cadOff', !on);
+  }
+
   /* ---------- filtros e desenho ---------- */
   function pintaFiltros(){
     const sel = $$('boGc');
@@ -185,9 +248,17 @@ const BO = (()=>{
   function render(){
     if(!ativo() || !P) return;
     _rotas = {};
+    pintaAbas();
     pintaFiltros();
+    const cad = ST.aba==='caderno' && temCaderno();
+    mostraTabela(!cad);
     const gcs = gcsDoEscopo();
-    $$('boEsc').textContent = `${rotuloEscopo()} · ${P.MES_LABEL} · dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}`;
+    // na aba "Caderno" o escopo do cabeçalho é o dos seletores dele (uma gerência, ou a supervisão aberta)
+    const ec = cad ? CAD.escopoCaderno() : null;
+    $$('boEsc').textContent = `${ec ? (ec.nivel==='sv' ? ec.sv : rotuloGc(ec.gc)) : rotuloEscopo()}` +
+      ` · ${P.MES_LABEL} · dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}`;
+    if(cad){ CAD.render(); _rotas = null; return; }
+    if(temCaderno()) CAD.estado();                  // a aba "Tabela" voltou: esconde a caixa do Caderno
     $$('boNota').textContent = agrupada()
       ? `Gerências lado a lado, uma linha por gerência: nada é somado entre elas (sem linha de total), na tela e no Excel.`
       : `Os números são os mesmos dos cards e da cascata do painel para o mesmo escopo.`;
@@ -317,7 +388,8 @@ const BO = (()=>{
   /* ---------- entrar e sair ---------- */
   function entra(a){
     if(!$$('bo')) return;
-    ST = {escopo: 'gc:' + a.gc, nivel: 'gc'};
+    ST = {escopo: 'gc:' + a.gc, nivel: 'gc', aba: 'tabela'};
+    if(temCaderno()) CAD.entra(a);
     document.body.classList.add('boAtivo');
     $$('bo').hidden = false;
     render();
@@ -325,9 +397,11 @@ const BO = (()=>{
   function sai(){
     if(!ST) return;
     ST = null;
+    if(temCaderno()) CAD.sai();
     document.body.classList.remove('boAtivo');
     $$('bo').hidden = true;
     $$('boCorpo').innerHTML = '';
+    mostraTabela(true);
   }
 
   /* Sem os elementos da página (index.html antigo no cache com o backoffice.js novo) não faz nada: o painel, o ↻ e o
