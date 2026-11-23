@@ -1524,3 +1524,59 @@ body.boAtivo{padding-left:0}
   .bo{padding:12px}
   .boAcoes{margin-left:0}
 }
+
+/* Caderno de Vendas */
+/* ============ CADERNO DE VENDAS (Frente 2, PR 2) — aba nova da página do Back Office (js/caderno.js) ============
+   Nenhuma regra existente muda e nada entra em :root: todo seletor começa com .boAbas (a barra de abas) ou .cad*.
+   As classes de dentro da tabela (seg, prod, un, tot, novo, neg, selo) são as do mockup aprovado em 19/11/2026 e
+   ficam SEMPRE no escopo .cadTab, para não encostar em .tot do #exCob nem nos .neg do painel.
+   As folhas têm o tamanho de uma página A4 retrato a 96 dpi (794 px de largura) e tamanhos de letra em px: é uma folha
+   de impressão, não uma tela do painel, então ela não entra na escala --fs-* nem no encaixa(). */
+.boAbas{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--linha);padding-bottom:0}
+.boAba{font:inherit;font-size:var(--fs-legenda);font-weight:600;cursor:pointer;background:none;color:var(--txt-apoio);
+  border:1px solid transparent;border-bottom:none;border-radius:9px 9px 0 0;padding:8px 14px;margin-bottom:-1px}
+.boAba:hover{color:var(--txt)}
+.boAba.on{background:var(--branco);border-color:var(--linha);color:var(--vermelho);font-weight:700}
+.cadWrap{display:flex;flex-direction:column;gap:14px;min-width:0}
+.cadWrap[hidden]{display:none}
+/* o que é da aba "Tabela" enquanto o Caderno está aberto: .boFiltros e .boCorpo definem display:flex, que vence o
+   display:none do atributo [hidden] — por isso a classe, que é a última regra do arquivo e sai inteira ao voltar */
+.cadOff{display:none}
+.cadFiltros{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.cadFiltros select{font:inherit;font-size:var(--fs-legenda);padding:8px 10px;border-radius:9px;max-width:100%;
+  border:1px solid var(--linha-forte);background:var(--branco);color:var(--txt)}
+.cadFiltros .boCampo[hidden]{display:none}
+.cadAviso{margin:0;font-size:var(--fs-nota);color:var(--txt-apoio)}
+.cadFolhas{display:flex;flex-direction:column;gap:18px;min-width:0}
+/* a folha rola DENTRO desta caixa: a página nunca ganha rolagem lateral */
+.cadRola{overflow-x:auto;max-width:100%}
+.cadFolha{box-sizing:border-box;width:794px;padding:22px 26px 16px;background:#fff;color:#111;
+  font-family:var(--sans);font-variant-numeric:lining-nums tabular-nums;
+  border:1px solid var(--linha);border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.cadCab{border-bottom:1.5px solid #111;padding-bottom:4px;margin-bottom:8px}
+.cadCabL{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.cadTit{margin:0;font-size:11px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:#111}
+.cadEsc{font-size:13px;font-weight:800;color:#111;white-space:nowrap}
+.cadApoio{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;margin-top:3px;font-size:7.5px;color:#4a4945}
+.cadApoio .cadAberto{margin-left:auto;font-weight:700;white-space:nowrap}
+.cadTab{table-layout:fixed;border-collapse:collapse;width:100%}
+.cadTab th{background:#e9e7e2;border:.5px solid #9a978f;font-size:6.5px;font-weight:800;letter-spacing:.02em;
+  text-transform:uppercase;text-align:center;padding:2px 3px;color:#2b2a27}
+.cadTab th.novo{background:#f6ecd0;color:#6f5a14}
+.cadTab td{border:.5px solid #c9c6bf;padding:1.5px 3px;font-size:7px;text-align:right;color:#111;
+  overflow-wrap:anywhere}
+/* "TODOS" numa linha só numa coluna de 20 px: padding mínimo, letra um pouco apertada e sem quebra no meio da palavra */
+.cadTab td.seg{text-align:center;font-size:6px;color:#6b6a66;padding:1.5px 1px;letter-spacing:-.02em;
+  overflow-wrap:normal;word-break:keep-all}
+.cadTab td.prod{text-align:center;font-size:7px;font-weight:700;background:#fff;border-color:#9a978f;line-height:1.15}
+.cadTab td.prod .selo{display:block;font-size:5.5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;
+  color:#8c8980}
+.cadTab td.un{text-align:left;font-size:6.5px;font-weight:700;background:#f4f3f0}
+.cadTab td.novo{background:#fdfaf0}
+.cadTab td.neg{color:#b3261e}
+.cadTab tr.tot td{background:#2b2a27;color:#fff;font-weight:800}
+.cadTab tr.tot td.un{text-align:center}
+.cadTab tr.tot td.neg{color:#ffb3ad}
+.cadTab td.cadVazio{text-align:center;font-size:7px;color:#6b6a66;font-style:italic;padding:6px}
+.cadRod{margin-top:6px;font-size:6.5px;color:#6b6a66}
+/* fim do Caderno de Vendas */

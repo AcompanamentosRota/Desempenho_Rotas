@@ -18,6 +18,22 @@ const {SENHAS_TESTE, TEXTOS_HASH, SENHAS_ERRADAS, hashTeste, HASHES_TESTE, troca
 // guarda das senhas (Parte AO e Parte I): nenhum texto do repositório, nem da tela, pode ser uma senha da Diretoria
 const {senhasNoTexto, varre: varreSenhas, DIRS: DIRS_GUARDA, N_GRAMAS: N_GRAMAS_GUARDA,
   hashesReais, CHAVES_HASH} = require('./guarda_senha.js');
+// Caderno de Vendas (Parte AR): recontagem independente do payload, sem nenhuma função do front
+const CAD_INV = require('./caderno_invariantes.js');
+
+/* Números escolhidos para quebrar a ordem do arredondamento (R-QLD-15), na 1ª rota da SV.G2.1 do sintético:
+   volume (1 casa) meta 1,25 e real 2,00 -> Dif certa 0,8 e a errada (arredondar antes) 0,7; cobertura (inteiro)
+   meta 10,5 e real 12 -> Dif certa 2 e a errada 1. O PRE_VENDA perde o nome de um macro da tabela de índice
+   (indicador fora da tabela = célula vazia, não é erro). */
+function montaTrapCaderno(p){
+  const rota = Object.keys(p.DATA.G2['SV.G2.1'])[0], ind = p.DATA.G2['SV.G2.1'][rota].indicators;
+  Object.assign(ind['VOL CERVEJAS'], {meta: 1.25, real: 2, tendencia: 2, dif: 0.75, metaDia: 0.25,
+    negRestante: 0, pctTendencia: 160, onPace: true, unavailable: false});
+  Object.assign(ind['KAPO'], {meta: 10.5, real: 12, pct: 114, gap: 0, unavailable: false});
+  p.PRE_VENDA.IND_VOL = p.PRE_VENDA.IND_VOL.filter(k => k !== 'VOL STILL');
+  for(const r of Object.values(p.PRE_VENDA.ROTAS)) r.v = r.v.filter((_, i) => i !== 2);
+  return rota;
+}
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const FRONT = path.join(RAIZ, 'frontend');
@@ -168,6 +184,25 @@ before(async () => {
   fs.writeFileSync(path.join(semscm, 'payload.json'), JSON.stringify(sc));
   fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(semscm, 'online.json'));
   DADOS.semscm = semscm;
+  /* Caderno de Vendas (Parte AR). 'semcad' = payload sem as duas chaves da Frente 2 (o publicado até rodar o
+     "Atualizar dados" com o gerador novo, ou uma rodada em que as consultas falharam): as colunas Real M.A e
+     Pré-Venda ficam vazias. 'cadtrap' = números escolhidos para quebrar a ordem do arredondamento (R-QLD-15) na G2 e
+     um indicador fora da tabela de índice do PRE_VENDA (IND_VOL com um nome a menos). */
+  const semcad = path.join(tmp, 'semcad');
+  fs.mkdirSync(semcad);
+  const scd = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  delete scd.PRE_VENDA;
+  delete scd.MES_ANT_CHEIO;
+  fs.writeFileSync(path.join(semcad, 'payload.json'), JSON.stringify(scd));
+  fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(semcad, 'online.json'));
+  DADOS.semcad = semcad;
+  const cadtrap = path.join(tmp, 'cadtrap');
+  fs.mkdirSync(cadtrap);
+  const ct = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  montaTrapCaderno(ct);
+  fs.writeFileSync(path.join(cadtrap, 'payload.json'), JSON.stringify(ct));
+  fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(cadtrap, 'online.json'));
+  DADOS.cadtrap = cadtrap;
   // aba Executiva (Parte W): o cenário do Todos a Bordo com clientes sem compra no mês (o sintético compra tudo)
   const exec = path.join(tmp, 'exec');
   fs.mkdirSync(exec);
@@ -280,7 +315,7 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' | 'evcob' |
    'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm' | 'evo' | 'evogrupo' | 'evogrande' |
    'evofech' | 'semevo' | 'vol5' | 'vol5fech' | 'dim' | 'sab' | 'dom' | 'fer' | 'semdsem' | 'util0' |
-   'exrota' | 'exrotafech');
+   'exrota' | 'exrotafech' | 'semcad' | 'cadtrap');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
@@ -11798,5 +11833,344 @@ describe('Parte AQ — aba Executiva no escopo de uma rota (PN-60)', {skip: pula
       for(const {ctx} of [novo, velho]) await ctx.close();
     }
     assert.ok(vistos.length >= 16, vistos.join(', '));
+  });
+});
+
+/* ---------- Parte AR — Caderno de Vendas (Frente 2, PR 2): a tela das visões GC e SV ---------- */
+/* montaCaderno(P, escopo) roda num contexto vm (sem DOM) em que ONLINE, puxaOnline, os campos de hoje e o próprio
+   Date lançam erro ao serem lidos: o Caderno é um relatório MATINAL (R-BO-06, R-RIT-01). O molde é a Parte R. */
+const PROIBIDOS_CAD = ['REVERTIDO_HOJE', 'OPORTUNIDADE_HOJE', 'SEM_COMPRA_HOJE', 'revertidoHoje', 'oportunidadeHoje',
+  'semDadoHoje'];
+function vigiaCad(o){
+  return new Proxy(o, {get(t, k, r){
+    if(PROIBIDOS_CAD.includes(k)) throw new Error(`Caderno leu ${String(k)}`);
+    const v = Reflect.get(t, k, r);
+    return v && typeof v === 'object' ? vigiaCad(v) : v;
+  }});
+}
+function contextoCad(){
+  const vm = require('node:vm');
+  const ctx = vm.createContext({console});
+  for(const k of ['ONLINE', 'puxaOnline', 'REVERTIDO_HOJE', 'OPORTUNIDADE_HOJE', 'SEM_COMPRA_HOJE', 'document',
+                  'window', 'sel', 'ACESSO', 'DATA', 'Date'])
+    Object.defineProperty(ctx, k, {get(){ throw new Error(`Caderno leu ${k}`); }});
+  const js = ['config.js', 'nucleo.js', 'caderno.js'].map(f => fs.readFileSync(path.join(FRONT, 'js', f), 'utf-8')).join('\n;\n');
+  vm.runInContext(js + '\n;globalThis.montaCaderno = montaCaderno; globalThis.NUCLEO = NUCLEO;', ctx);
+  return ctx;
+}
+const payloadCad = nome => JSON.parse(fs.readFileSync(path.join(DADOS[nome], 'payload.json'), 'utf-8'));
+// textos das células de um bloco, por unidade: {cod: [9 textos]}
+const celsPorUn = b => Object.fromEntries([...b.linhas, b.total].map(l => [l.cod, l.cels.map(c => c.txt)]));
+
+describe('Parte AR — Caderno de Vendas: montaCaderno (função pura, sem navegador)', {skip: !temPython && 'sem Python'}, () => {
+  const monta = (p, escopo) => JSON.parse(JSON.stringify(contextoCad().montaCaderno(vigiaCad(p), escopo)));
+
+  test('(1) não lê ONLINE, os campos de hoje nem o Date (getters que lançam) e não usa o DOM', () => {
+    const p = payloadCad('normal');
+    const m = monta(p, {nivel: 'gc', gc: 'G2'});
+    assert.equal(m.folhas.length, 2);
+    assert.ok(m.folhas[0].blocos.length > 0);
+    // controle: o vigia e o contexto de fato lançam
+    assert.throws(() => vigiaCad(p).SEM_COMPRA_HOJE, /leu SEM_COMPRA_HOJE/);
+    assert.throws(() => contextoCad().ONLINE, /leu ONLINE/);
+    assert.throws(() => contextoCad().Date, /leu Date/);
+  });
+
+  test('(2) cabeçalho: textos exatos, EXERCÍCIO do MES_LABEL e o caso do fechamento', () => {
+    const p = payloadCad('normal');
+    const m = monta(p, {nivel: 'gc', gc: 'G2'});
+    assert.equal(m.exercicio, '202610', 'Outubro/26 -> 202610');
+    const c = m.folhas[0].cab;
+    assert.equal(c.titulo, 'CADERNO DE VENDAS · GC/GV · VOLUME · EXERCÍCIO 202610');
+    assert.equal(m.folhas[1].cab.titulo, 'CADERNO DE VENDAS · GC/GV · COBERTURA · EXERCÍCIO 202610');
+    assert.equal(c.escopo, 'GC. G2');
+    assert.equal(c.aberto, 'Aberto por supervisão');
+    assert.deepEqual(c.apoio, [`Dias úteis: ${p.TOTAL_DIAS_UTEIS}`, `Corridos: ${p.DIA_ONTEM}`,
+      `Restantes: ${p.TOTAL_DIAS_UTEIS - p.DIA_ONTEM}`, 'Pré-venda: 09/10/26', `Ritmo esperado: ${p.PACE_ONTEM_PCT}%`]);
+    // nível Supervisão: o código da supervisão e "Aberto por rota"
+    const s = monta(p, {nivel: 'sv', gc: 'G2', sv: 'SV.G2.1'});
+    assert.equal(s.folhas[0].cab.escopo, 'SV.G2.1');
+    assert.equal(s.folhas[1].cab.aberto, 'Aberto por rota');
+    // sem PRE_VENDA: "Pré-venda: —"
+    const q = payloadCad('semcad');
+    assert.equal(monta(q, {nivel: 'gc', gc: 'G2'}).folhas[0].cab.apoio[3], 'Pré-venda: —');
+    // fechamento: Corridos/Restantes saem e entra "Fechamento <MES_LABEL>"
+    const f = payloadCad('fech');
+    const cf = monta(f, {nivel: 'gc', gc: 'G2'}).folhas[0].cab;
+    assert.deepEqual(cf.apoio.slice(0, 2), [`Dias úteis: ${f.TOTAL_DIAS_UTEIS}`, `Fechamento ${f.MES_LABEL}`]);
+    assert.ok(!cf.apoio.some(t => /Corridos|Restantes/.test(t)), 'sem Corridos nem Restantes');
+  });
+
+  test('(3) as 12 colunas de cada folha, na ordem e com as larguras do mockup; Plan. Dia vazia em todas as linhas', () => {
+    const m = monta(payloadCad('normal'), {nivel: 'gc', gc: 'G2'});
+    const [vol, cob] = m.folhas;
+    assert.deepEqual(vol.colunas.map(c => [c.rotulo, c.larg]),
+      [['Seg', 20], ['Grupo Produto', 82], ['Unid.', 50], ['Real M.A', 60], ['Meta', 64], ['Real', 64],
+       ['Real x Meta', 66], ['%', 44], ['Tend. %', 42], ['Pré-Venda', 58], ['Meta Dia', 56], ['Plan. Dia', 58]]);
+    assert.deepEqual(cob.colunas.map(c => [c.rotulo, c.larg]),
+      [['Seg', 20], ['Grupo Produto', 94], ['Unid.', 50], ['Real M.A', 58], ['Meta', 56], ['Real', 56],
+       ['Dif', 58], ['%', 44], ['Ritmo', 48], ['Pré-Venda', 58], ['Meta Dia', 56], ['Plan. Dia', 58]]);
+    // as duas colunas novas, só elas
+    for(const f of m.folhas) assert.deepEqual(f.colunas.filter(c => c.novo).map(c => c.rotulo), ['Real M.A', 'Pré-Venda']);
+    // Plan. Dia é a última das 9 células de número e fica SEMPRE vazia, TOTAL incluído
+    let n = 0;
+    for(const f of m.folhas) for(const b of f.blocos) for(const l of [...b.linhas, b.total]){
+      assert.equal(l.cels.length, 9);
+      assert.equal(l.cels[8].txt, '', `${f.tipo}/${b.rotulo}/${l.cod}: Plan. Dia`);
+      n++;
+    }
+    assert.ok(n > 40, `linhas conferidas: ${n}`);
+  });
+
+  test('(4) blocos, rótulos curtos e selos; CERV e CERV 600 uma vez só; Imperdoáveis e Venda Zero fora; DV FRUT só na G2', () => {
+    const p = payloadCad('normal');
+    const g2 = monta(p, {nivel: 'gc', gc: 'G2'}), g1 = monta(p, {nivel: 'gc', gc: 'G1'});
+    assert.deepEqual(g2.folhas[0].blocos.map(b => [b.rotulo, b.selo]),
+      [['REFRI', 'Volume'], ['CERV', 'Volume'], ['STILL', 'Volume'], ['AGUA', 'Volume'],
+       ['NOVOS NEGÓCIOS', 'Volume · Dest+Art+Cnd'], ['DV FRUT', 'Volume · só G2']]);
+    // Del Valle Frut só na gerência que tem o indicador (R-VOL-14)
+    assert.deepEqual(g1.folhas[0].blocos.map(b => b.rotulo),
+      ['REFRI', 'CERV', 'STILL', 'AGUA', 'NOVOS NEGÓCIOS']);
+    const cob = g2.folhas[1].blocos;
+    assert.deepEqual(cob.map(b => b.rotulo),
+      ['CCTM 2L PET', 'KS TT', 'REF. SAB ZERO', 'CERV 600', 'CERV', 'EISENBAHN', 'KAPO', 'POWERADE', 'ARTD KO',
+       'CAMPARI', 'DREHER', 'PERFETTI TT', 'APEROL', 'HEINEKEN', 'EISENBAHN 600', 'HEINEKEN 600']);
+    // cada item uma vez só, com os dois selos quando pertence a dois grupos
+    assert.equal(new Set(cob.map(b => b.rotulo)).size, cob.length, 'nenhum item repetido');
+    const selo = r => (cob.find(b => b.rotulo === r) || {}).selo;
+    assert.equal(selo('CERV'), 'ICS GC · Todos a Bordo');
+    assert.equal(selo('CERV 600'), 'ICS GC · Todos a Bordo');
+    assert.equal(selo('ARTD KO'), 'ICS GC · Novos Neg.');
+    assert.equal(selo('HEINEKEN'), 'Todos a Bordo');
+    assert.equal(selo('CAMPARI'), 'Novos Negócios');
+    assert.ok(!cob.some(b => /IMPERDO|VENDA ?ZERO/i.test(b.rotulo)), 'Imperdoáveis e Venda Zero fora');
+    // a coluna Seg é fixa: o Caderno não abre por segmento
+    for(const f of g2.folhas) for(const b of f.blocos) assert.equal(b.seg, 'TODOS');
+  });
+
+  test('(5) formato: volume com uma casa, cobertura inteira, e a ordem do arredondamento (R-QLD-15)', () => {
+    const p = payloadCad('cadtrap');
+    const rota = Object.keys(p.DATA.G2['SV.G2.1'])[0];
+    const m = monta(p, {nivel: 'sv', gc: 'G2', sv: 'SV.G2.1'});
+    const cels = (tipo, rot) => celsPorUn(m.folhas[tipo === 'vol' ? 0 : 1].blocos.find(b => b.rotulo === rot));
+    const v = cels('vol', 'CERV')[rota];
+    // Meta 1,25 e Real 2,00: Dif = arredonda(2 - 1,25) = 0,8 (a conta errada, 2,0 - 1,3, daria 0,7)
+    assert.deepEqual([v[1], v[2], v[3]], ['1,3', '2,0', '0,8'], 'volume com uma casa e Dif dos valores crus');
+    assert.equal(v[4], '160,0%', '% dos valores crus (a conta errada daria 153,8%)');
+    const c = cels('cob', 'KAPO')[rota];
+    // Meta 10,5 e Real 12: Dif = arredonda(1,5) = 2 (a conta errada, 12 - 11, daria 1)
+    assert.deepEqual([c[1], c[2], c[3]], ['11', '12', '2'], 'cobertura inteira e Dif dos valores crus');
+    assert.equal(c[4], '114,3%', '% dos valores crus');
+  });
+
+  test('(6) payload sem PRE_VENDA e sem MES_ANT_CHEIO: as duas colunas vazias, as folhas desenham', () => {
+    const m = monta(payloadCad('semcad'), {nivel: 'gc', gc: 'G2'});
+    let n = 0;
+    for(const f of m.folhas){
+      assert.ok(f.blocos.length > 0, f.tipo);
+      assert.deepEqual(f.colunas.filter(c => c.novo).map(c => c.rotulo), ['Real M.A', 'Pré-Venda'], 'colunas não somem');
+      for(const b of f.blocos) for(const l of [...b.linhas, b.total]){
+        assert.equal(l.cels[0].txt, '', `${f.tipo}/${b.rotulo}/${l.cod}: Real M.A`);
+        assert.equal(l.cels[6].txt, '', `${f.tipo}/${b.rotulo}/${l.cod}: Pré-Venda`);
+        n++;
+      }
+    }
+    assert.ok(n > 40);
+    // com as chaves, as mesmas células têm número em algum lugar
+    const comChaves = monta(payloadCad('normal'), {nivel: 'gc', gc: 'G2'});
+    assert.ok(comChaves.folhas[0].blocos.some(b => b.total.cels[0].txt !== '' || b.total.cels[6].txt !== ''));
+  });
+
+  test('(7) indicador fora da tabela de índice (IND_VOL com um nome a menos): célula vazia, sem erro', () => {
+    const p = payloadCad('cadtrap');
+    assert.ok(!p.PRE_VENDA.IND_VOL.includes('VOL STILL'), 'a fixture tirou o VOL STILL da tabela de índice');
+    const m = monta(p, {nivel: 'gc', gc: 'G2'});
+    const vol = m.folhas[0];
+    const still = vol.blocos.find(b => b.rotulo === 'STILL'), refri = vol.blocos.find(b => b.rotulo === 'REFRI');
+    for(const l of [...still.linhas, still.total]) assert.equal(l.cels[6].txt, '', `STILL/${l.cod}: Pré-Venda vazia`);
+    // o Real M.A do STILL (que continua na tabela do MES_ANT_CHEIO) e o Pré-Venda do REFRI seguem preenchidos
+    assert.ok(still.total.cels[0].txt !== '' || refri.total.cels[6].txt !== '', 'as outras colunas não sumiram');
+  });
+
+  test('(8) nível Supervisão: rotas em ordem natural, virtuais fora do quadro e dentro do TOTAL', () => {
+    const p = payloadCad('grupo');
+    // SV.IT.3 = I31 (Neutraliza) + I32 (virtual, acrescentada pela variante)
+    const m = monta(p, {nivel: 'sv', gc: 'IT', sv: 'SV.IT.3'});
+    assert.deepEqual(m.unidades, ['I31'], 'a virtual I32 não vira linha');
+    const b = m.folhas[0].blocos.find(x => x.rotulo === 'REFRI');
+    assert.notEqual(b.total.cels[2].txt, b.linhas[0].cels[2].txt, 'a virtual soma no TOTAL');
+    assert.ok(m.folhas[0].notas.some(t => /^REFRI · Inclui rotas virtuais: Meta .+ · Real /.test(t)),
+      `nota das virtuais: ${m.folhas[0].notas.join(' | ')}`);
+    // a supervisão das rotas ocultas das EV* não vira linha, mas fica no TOTAL da gerência (nota própria)
+    const sl = monta(p, {nivel: 'gc', gc: 'SL'});
+    assert.ok(!sl.unidades.includes('SV.SL.EV'), `unidades da SL: ${sl.unidades.join(' ')}`);
+    assert.ok(sl.folhas[0].notas.some(t => /Inclui clientes de rotas eventuais \(EV\*\): Real /.test(t)),
+      `nota das eventuais: ${sl.folhas[0].notas.join(' | ')}`);
+    // a supervisão só de Neutraliza e a oculta entram com o código real (divergem do painel de propósito)
+    assert.ok(monta(p, {nivel: 'gc', gc: 'G2'}).unidades.includes('SV.G2.5'), 'SV.G2.5 (só Neutraliza)');
+    assert.ok(monta(p, {nivel: 'gc', gc: 'G3'}).unidades.includes('SV.G3.3'), 'SV.G3.3 (oculta no painel)');
+  });
+
+  test('(9) fechamento: Tend. %, Ritmo e Meta Dia ficam "—"; % continua Real ÷ Meta', () => {
+    const m = monta(payloadCad('fech'), {nivel: 'gc', gc: 'G2'});
+    let n = 0;
+    for(const f of m.folhas) for(const b of f.blocos) for(const l of [...b.linhas, b.total]){
+      if(l.cels[1].txt === '') continue;            // indicador indisponível nessas rotas
+      assert.equal(l.cels[5].txt, '—', `${f.tipo}/${b.rotulo}/${l.cod}: Tend. %/Ritmo`);
+      assert.equal(l.cels[7].txt, '—', `${f.tipo}/${b.rotulo}/${l.cod}: Meta Dia`);
+      assert.match(l.cels[4].txt, /^(—|[\d.,]+%)$/, `${f.tipo}/${b.rotulo}/${l.cod}: %`);
+      n++;
+    }
+    assert.ok(n > 20, `linhas conferidas: ${n}`);
+  });
+});
+
+describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
+  // entra no Back Office e vai para a aba Caderno
+  async function abreCaderno(nome, op = {}){
+    const r = await abre(nome, {entrar: 'bo', ...op});
+    await r.page.click('#boAba-caderno');
+    await r.page.waitForFunction(() => !document.getElementById('cad').hidden &&
+      document.getElementById('cadFolhas').innerHTML !== '');
+    return r;
+  }
+  const escolhe = async (page, campo, valor) => {
+    await page.selectOption('#' + campo, valor);
+    await page.waitForFunction(([c, v]) => document.getElementById(c).value === v, [campo, valor]);
+  };
+  const escondido = page => page.evaluate(() => ({
+    filtros: document.querySelector('#bo .boFiltros').classList.contains('cadOff'),
+    nota: document.getElementById('boNota').classList.contains('cadOff'),
+    corpo: document.getElementById('boCorpo').classList.contains('cadOff'),
+    xlsx: !document.getElementById('boXlsx').offsetParent,
+    cad: document.getElementById('cad').hidden,
+  }));
+
+  test('(10) a troca de abas: a "Tabela" volta byte a byte e os filtros e o Excel reaparecem', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: 'bo'});
+    assert.deepEqual(await page.$$eval('#boAbas .boAba', bs => bs.map(b => [b.textContent,
+      b.getAttribute('aria-selected'), b.getAttribute('role')])),
+      [['Tabela', 'true', 'tab'], ['Caderno de Vendas', 'false', 'tab']]);
+    assert.equal(await page.getAttribute('#boAbas', 'role'), 'tablist');
+    const antes = await page.innerHTML('#boCorpo');
+    const filtrosAntes = await page.evaluate(() => document.querySelector('#bo .boFiltros').outerHTML);
+    assert.deepEqual(await escondido(page), {filtros: false, nota: false, corpo: false, xlsx: false, cad: true});
+    await page.click('#boAba-caderno');
+    await page.waitForFunction(() => !document.getElementById('cad').hidden);
+    assert.deepEqual(await escondido(page), {filtros: true, nota: true, corpo: true, xlsx: true, cad: false});
+    assert.deepEqual(await page.$$eval('#boAbas .boAba', bs => bs.map(b => b.getAttribute('aria-selected'))),
+                     ['false', 'true']);
+    // o corpo da tabela não é redesenhado nem apagado enquanto o Caderno está aberto
+    assert.equal(await page.innerHTML('#boCorpo'), antes, 'o HTML da tabela fica como estava');
+    await page.click('#boAba-tabela');
+    await page.waitForFunction(() => document.getElementById('cad').hidden);
+    assert.deepEqual(await escondido(page), {filtros: false, nota: false, corpo: false, xlsx: false, cad: true});
+    assert.equal(await page.innerHTML('#boCorpo'), antes, 'a aba Tabela volta byte a byte');
+    assert.equal(await page.evaluate(() => document.querySelector('#bo .boFiltros').outerHTML), filtrosAntes,
+      'os filtros voltam intactos');
+    // setas do tablist
+    await page.focus('#boAba-tabela');
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(() => !document.getElementById('cad').hidden);
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(() => document.getElementById('cad').hidden);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(11) seletores próprios: as 16 gerências separadas, nível e supervisão; a entrada não muda', async () => {
+    const {page, ctx, erros} = await abreCaderno('normal');
+    const gcs = await page.$$eval('#cadGc option', os => os.map(o => [o.value, o.disabled]));
+    assert.deepEqual(gcs.map(g => g[0]), await page.evaluate(() => todasGcs()), 'as 16 na ordem do painel');
+    assert.ok(!gcs.some(g => g[0].includes('+') || g[0] === 'MATRIZ'), 'nenhum grupo e nenhuma MATRIZ');
+    // sem dados = desabilitada (a DI do sintético); CONFIG.GC_LIBERADAS não vale no Back Office
+    assert.deepEqual(gcs.filter(g => g[1]).map(g => g[0]), await page.evaluate(() => todasGcs().filter(g => !DATA[g])));
+    assert.equal(await page.inputValue('#cadGc'), await page.evaluate(() => gcsComDados()[0]), 'padrão: a 1ª com dados');
+    assert.equal(await page.inputValue('#cadNivel'), 'gc');
+    assert.ok(await page.evaluate(() => document.getElementById('cadCampoSv').hidden), 'Supervisão só no nível SV');
+    await escolhe(page, 'cadNivel', 'sv');
+    assert.ok(!(await page.evaluate(() => document.getElementById('cadCampoSv').hidden)));
+    const svs = () => page.$$eval('#cadSv option', os => os.map(o => o.value));
+    assert.deepEqual(await svs(), await page.evaluate(() => Object.keys(DATA[gcsComDados()[0]]).sort(ordemNatural)));
+    // trocar de gerência mantém o nível e escolhe a 1ª supervisão da nova
+    await escolhe(page, 'cadGc', 'G2');
+    assert.equal(await page.inputValue('#cadNivel'), 'sv');
+    assert.equal(await page.inputValue('#cadSv'), 'SV.G2.1');
+    assert.deepEqual(await svs(), ['SV.G2.1', 'SV.G2.2', 'SV.G2.5'], 'a só de Neutraliza entra; a das EV* não');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(12) invariantes (a)-(e) e (g) com o sintético, nas duas visões e em quatro gerências', async () => {
+    const {page, ctx, erros} = await abreCaderno('normal');
+    const P = payloadCad('normal');
+    for(const gc of ['G1', 'G2', 'SL', 'AN']){
+      await escolhe(page, 'cadNivel', 'gc');
+      await escolhe(page, 'cadGc', gc);
+      const r = await CAD_INV.confereCaderno(page, P, {nivel: 'gc', gc}, `GC.${gc}`);
+      assert.ok(r.celulas > 100, `${gc}: células conferidas`);
+      await escolhe(page, 'cadNivel', 'sv');
+      const sv = await page.inputValue('#cadSv');
+      await CAD_INV.confereCaderno(page, P, {nivel: 'sv', gc, sv}, sv);
+    }
+    // (g) Neutraliza: a SV.G2.5 existe e tem os números da rota 251
+    await escolhe(page, 'cadNivel', 'gc');
+    await escolhe(page, 'cadGc', 'G2');
+    const f = await page.evaluate(CAD_INV.LE_CAD);
+    const b = f[0].blocos.find(x => x.rotulo === 'REFRI');
+    const n5 = b.linhas.find(l => l.cod === 'SV.G2.5');
+    assert.ok(n5, `linha SV.G2.5: ${b.linhas.map(l => l.cod).join(' ')}`);
+    await escolhe(page, 'cadNivel', 'sv');
+    await escolhe(page, 'cadSv', 'SV.G2.5');
+    const g = await page.evaluate(CAD_INV.LE_CAD);
+    const b2 = g[0].blocos.find(x => x.rotulo === 'REFRI');
+    assert.deepEqual(b2.linhas.map(l => l.cod), ['251'], 'a SV.G2.5 abre só na rota 251');
+    assert.deepEqual(b2.linhas[0].cels, n5.cels, 'os números da SV.G2.5 são os da rota 251');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(13) o Caderno é matinal: o HTML das folhas é o mesmo com e sem o online.json', async () => {
+    const html = [];
+    for(const semOnline of [false, true]){
+      const op = semOnline ? {troca: {'/data/online.json': () => '{"updatedAt":null,"rotas":{},"clientes":{},"volume":{}}'}} : {};
+      const {page, ctx, erros} = await abreCaderno('normal', op);
+      await escolhe(page, 'cadGc', 'G2');
+      html.push(await page.innerHTML('#cadFolhas'));
+      assert.deepEqual(erros, [], String(semOnline));
+      await ctx.close();
+    }
+    assert.equal(html[0], html[1], 'o Caderno não lê o online');
+  });
+
+  test('(14) payload sem as duas chaves novas: desenha sem erro no console e com as colunas vazias', async () => {
+    const {page, ctx, erros} = await abreCaderno('semcad');
+    const f = await page.evaluate(CAD_INV.LE_CAD);
+    assert.equal(f.length, 2);
+    for(const folha of f){
+      assert.deepEqual(folha.colunas.filter(c => c.novo).map(c => c.rot), ['Real M.A', 'Pré-Venda']);
+      for(const b of folha.blocos) for(const l of [...b.linhas, b.total])
+        assert.deepEqual([l.cels[0].txt, l.cels[6].txt], ['', ''], `${folha.tipo}/${b.rotulo}/${l.cod}`);
+    }
+    assert.equal(f[0].apoio[3], 'Pré-venda: —');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(15) 360, 390, 1000 e 1440 px: sem rolagem lateral na página e sem erro', async () => {
+    for(const largura of [360, 390, 1000, 1440]){
+      const {page, ctx, erros} = await abreCaderno('normal', {largura});
+      for(const nivel of ['gc', 'sv']){
+        await escolhe(page, 'cadNivel', nivel);
+        const rola = await page.evaluate(() => ({
+          pagina: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          folha: [...document.querySelectorAll('.cadRola')].every(e => e.clientWidth > 0),
+        }));
+        assert.equal(rola.pagina, false, `${largura} px (${nivel}): rolagem lateral na página`);
+        assert.ok(rola.folha, `${largura} px (${nivel}): a folha rola dentro da própria caixa`);
+      }
+      assert.deepEqual(erros, [], String(largura));
+      await ctx.close();
+    }
   });
 });

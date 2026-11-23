@@ -5,8 +5,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 
 ## Estrutura e comandos
 
-- `frontend/`: site publicado. JS clássico (sem build, sem módulos ES): `config.js` → `nucleo.js` → `app.js` → `resumo.js` → `ritmo.js` → `backoffice.js` → `main.js`,
-  todos com `defer` e compartilhando globais (`P`, `DATA`, `sel`, `RS`, `RT`, `BO`, `NUCLEO`...). Dados em `frontend/data/` (gerados, não editar à mão).
+- `frontend/`: site publicado. JS clássico (sem build, sem módulos ES): `config.js` → `nucleo.js` → `app.js` → `resumo.js` → `ritmo.js` → `backoffice.js` → `caderno.js` → `main.js`,
+  todos com `defer` e compartilhando globais (`P`, `DATA`, `sel`, `RS`, `RT`, `BO`, `CAD`, `NUCLEO`...). Dados em `frontend/data/` (gerados, não editar à mão).
 - `backend/`: `odata/` (cópia do kit `C:\Users\luan.arantes\Documents\Teste_ODATA`, sem pandas), `gerador/`, `scripts/`, `tests/`.
 - Testes (sem rede, stdlib `unittest`): `cd backend && python -m unittest discover -s tests -t .`
 - Gerar dados: `cd backend && python scripts/gerar.py --forcar` (fora de 07:00-18:59 BRT só roda com `--forcar`).
@@ -539,6 +539,72 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `conferencia_real.test.js`. `senha_teste.js` ganhou `SENHA_BO`/`HASH_BO`/`trocaHashBo` (senha fictícia) e o
   teste-guarda da Parte AO passou a ler os DOIS campos de hash do config.js (`CHAVES_HASH`).
   Fora desta etapa: Venda Zero, Del Valle Frut, fechamento de M-1 a M-3 e Caderno em PDF (Frentes 2 e 3).
+- **Caderno de Vendas (tela) (Frente 2, PR 2, 23/11/2026; `frontend/js/caderno.js`, global `CAD`; README, "Caderno de
+  Vendas")**: aba NOVA dentro da página do Back Office, ao lado da tabela da R-BO-03, que **não é tocada**. Duas folhas
+  A4 retrato (Volume e depois Cobertura, 794 px, `padding:22px 26px 16px`, dentro de `.cadRola{overflow-x:auto}`: a
+  página nunca ganha rolagem lateral), nas visões Gerência aberta por supervisão e Supervisão aberta por rota. O PDF é
+  o PR 3. **Nenhum número do painel muda.**
+  **`montaCaderno(P, escopo)` é PURA** (R-RIT-01, como o `montaRitmo`): só payload e escopo, sem DOM, sem `ONLINE`/
+  `puxaOnline`/`REVERTIDO_HOJE`/`OPORTUNIDADE_HOJE`/`SEM_COMPRA_HOJE`/`revertidoHoje`/`oportunidadeHoje`/`semDadoHoje`
+  e **sem `Date`** (o exercício e a data da pré-venda vêm do payload). `escopo` = `{nivel:'gc', gc}` ou
+  `{nivel:'sv', gc, sv}`. `CAD` expõe `{entra, sai, render, ativo, estado, escopoCaderno, monta}` (`monta` só para os
+  testes). `index.html`: `<script src="js/caderno.js" defer>` entre o `backoffice.js` e o `main.js`.
+  **Seletores próprios** (decisão da Karen, 23/11/2026): o Caderno é sempre de UMA gerência, então o filtro "Agrupada"
+  da R-BO-03 não vale e ele não lê o `ST.escopo` da tabela. `#cadGc` = as 16 SEPARADAS (`todasGcs`, `rotuloGc`, sem
+  grupos e sem MATRIZ; `CONFIG.GC_LIBERADAS` não vale no Back Office, como `gcBackOffice`; sem dados = desabilitada;
+  padrão = a 1ª com dados, mesmo que a entrada tenha sido por outra), `#cadNivel` (Gerência | Supervisão) e `#cadSv`
+  (só no nível Supervisão; trocar de gerência mantém o nível e pega a 1ª supervisão da nova).
+  **De onde vem cada coluna**: tudo de `NUCLEO.agrega(P, rotas, nodo).ind[k]` (o `b`), de `NUCLEO.metaDiaCobertura` e
+  das duas chaves do PR 1 — **nunca** de `metricas()`, `realOnline()`, `onlineVol()`, `volCliOnline()` nem de `ONLINE`
+  (R-BO-06: o Caderno é MATINAL). Volume: Real M.A = `MES_ANT_CHEIO.ROTAS[r].v[i]`, Meta `b.meta`, Real `b.real`,
+  Real x Meta `b.real − b.meta`, % `b.real/b.meta`, Tend. % `b.pctTendencia`, Pré-Venda `PRE_VENDA.ROTAS[r].v[i]`,
+  Meta Dia `b.metaDia`, **Plan. Dia SEMPRE vazia** (em todas as linhas, TOTAL incluído). Cobertura: o mesmo com `.c[i]`,
+  Dif no lugar de Real x Meta, `Ritmo = (b.real/b.meta)/(PACE_ONTEM_PCT/100)×100` (dos valores CRUS, nunca `b.pct` nem
+  `b.onPace`) e Meta Dia por `metaDiaCobertura(b, TOTAL_DIAS_UTEIS)`. `i` = posição do indicador **pelo NOME** em
+  `IND_VOL`/`IND_COB` (tabelas de índice que só crescem no fim): indicador fora da tabela, chave ausente ou todas as
+  rotas com `null` = célula VAZIA, sem erro e sem esconder a coluna; `null` na rota não soma e não vira 0.
+  **Formato** (decisão da Karen, 23/11/2026): volume com UMA casa decimal (sempre, `1.234,5`), cobertura INTEIRA,
+  `%` com uma casa e `Tend. %`/`Ritmo` inteiros; `Math.round` (.5 sobe). **R-QLD-15**: toda conta com os valores crus e
+  o arredondamento só no fim (`arredonda(real − meta)`, nunca `arredonda(real) − arredonda(meta)`). Meta 0 ou ausente =
+  `—` em `%`, `Tend. %` e `Ritmo`; `.neg` no valor negativo da Dif. Fechamento (R-MES-08): `Tend. %`, `Ritmo` e
+  `Meta Dia` = `—` e o cabeçalho troca Corridos/Restantes por `Fechamento <MES_LABEL>`.
+  **Linhas** (item 8 do pedido; DIVERGE do painel de propósito): nível Gerência = TODAS as supervisões de `P.DATA[gc]`
+  em `ordemNatural`, com o código real — **inclusive a só de rotas Neutraliza** (SV.G2.5, SV.AN.4, SV.G1.5...; no
+  painel elas viram a linha "Neutraliza", R-NEU-10) e a oculta SV.G3.3 (R-ESC-14). **Nunca `rotasNormais` nem
+  `svsVisiveis`.** Fora das linhas fica só a supervisão das rotas ocultas das EV* (a que só tem rotas de
+  `EVENTUAIS_ROTAS`), que continua DENTRO do TOTAL. Nível Supervisão = as rotas dela em `ordemNatural`, sem as
+  virtuais, que também ficam no TOTAL. Medido em 19 e 23/11: nenhuma supervisão mistura Neutraliza com rota normal, então
+  nenhum número muda — só o rótulo.
+  **TOTAL** = `agrega` de TODAS as rotas do escopo (R-ESC-11/12), o número do card do painel. Como a oculta das EV* e as
+  virtuais não viram linha, a soma das linhas pode ficar abaixo do TOTAL; o resíduo vai no rodapé da folha, **por
+  indicador** (é por indicador que ele existe), com o rótulo curto na frente e o texto da `notaVirtuais`:
+  `REFRI · Inclui clientes de rotas eventuais (EV*): Real 14,8` e `REFRI · Inclui rotas virtuais: Meta X · Real Y`.
+  Sem resíduo, sem nota. (Resíduo da G2 em Refrigerantes, 19 e 23/11: 14,8 cx.)
+  **Itens**: Volume = os 5 macros + Del Valle Frut só na gerência que tem o indicador (R-VOL-14). Cobertura = os 13 do
+  ICS GC e dos Novos Negócios + as 3 chaves INC, cada um UMA vez, na ordem dos `GROUPS` do payload, com o selo dizendo
+  os dois grupos quando for o caso (ARTD KO, CERVEJAS e CERVEJAS 600ML RETORNAVEL); **IMPERDOAVEIS e VENDAZERO fora**
+  (R-ESC-08). Os itens INC seguem o ICS (R-INC-01): o Real é o do `agrega`, sem `rotasInc` — o Caderno não tem a
+  mensagem "Sem meta"/"Exclusivo portfólio Full" dos cards, e uma gerência sem meta do item mostra Meta 0 com o Real e
+  `%` = `—`. Rótulos curtos e selos ficam em `CAD_ROTULOS`, no topo do arquivo.
+  **`backoffice.js`: só a troca de abas.** Barra `.boAbas` (criada em JS, `role=tablist`, setas e Home/End), `ST.aba`
+  ('tabela' | 'caderno', padrão 'tabela'); `render()` desenha a tabela de hoje byte a byte quando a aba é 'tabela' e
+  chama `CAD.render()` quando é 'caderno'; `.boFiltros` (filtros `#boGc`/`#boNivel` e os botões Excel e Painel de ritmo),
+  `.boNota` e `#boCorpo` ganham a classe `.cadOff` na aba Caderno e voltam intactos (o `[hidden]` não bastaria: as duas
+  definem `display:flex`). `#boEsc` mostra o escopo do Caderno enquanto ela está aberta. `BO.sai()` chama `CAD.sai()`.
+  `linhas`, `linhasDaGerencia`, `gruposDoNivel`, `celulas`, `colunasNum`, `tabela`, `dadosExcel`, `montaPlanilha`,
+  `nomeArquivo` e `escopoRitmo` **não mudaram**.
+  **A etapa NÃO toca** `app.js`, `nucleo.js`, `resumo.js`, `ritmo.js`, `main.js`, `config.js`, `backend/**`,
+  `.github/**`, `frontend/data/**` nem `docs/**`; o `index.html` só ganhou a linha do `<script>`. CSS: bloco próprio no
+  fim do `app.css`, entre `/* Caderno de Vendas */` e `/* fim do Caderno de Vendas */` (não tirar esses comentários:
+  os testes os usam), só com seletores `.boAbas*`, `.cad*` e `.cadOff`; as classes de dentro da tabela do mockup
+  (`seg`, `prod`, `un`, `tot`, `novo`, `neg`, `selo`) ficam SEMPRE no escopo `.cadTab`, e as colunas de número levam o
+  prefixo `cad` (`cadRitmo`, `cadMeta`, `cadPct`...) porque `.ritmo` solto é a caixa preta do dia no painel.
+  Testes: Parte AR do `front.test.js` (vm com getters que lançam, incluindo `Date`; variantes novas `semcad` = payload
+  sem as duas chaves e `cadtrap` = números escolhidos para quebrar a R-QLD-15 e `IND_VOL` com um nome a menos),
+  `frontend/tests/caderno_invariantes.js` (recontagem INDEPENDENTE, sem `montaCaderno` e sem `agrega`) e o bloco
+  "Caderno de Vendas com dado real" do `conferencia_real.test.js` (G2 + três portes, as duas visões, com e sem o
+  online.json, 360/390/1000/1440 px nos dois fundos e o antes x depois contra `9067e44`, servindo da main os três
+  arquivos que a etapa toca).
 - **Aba Todos a Bordo ("Todos a Bordo 3.0", cobertura de cervejas; chave interna INCENTIVO, era "Incentivo" até
   21/10/2026)**: `M.GROUPS['INCENTIVO']` = CERVEJAS, INC HEINEKEN,
   INC EISENBAHN 600ML, INC HEINEKEN 600ML, CERVEJAS 600ML RETORNAVEL (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS,

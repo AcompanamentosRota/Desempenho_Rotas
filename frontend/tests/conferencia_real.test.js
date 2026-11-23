@@ -45,6 +45,7 @@ const {confereResumoTab} = require('./resumo_tab_invariantes.js');
 const CASC_INV = require('./cascata_invariantes.js');
 const {trocaHash, trocaLiberadas, digitaSenha, trocaNomes, SENHA_BO, trocaHashBo} = require('./senha_teste.js');
 const BO_INV = require('./backoffice_invariantes.js');
+const CAD_INV = require('./caderno_invariantes.js');
 
 const FRONT = path.resolve(__dirname, '..');
 const PAYLOAD = process.env.PAYLOAD_REAL, ONLINE = process.env.ONLINE_REAL;
@@ -2288,5 +2289,171 @@ describe('Back Office com dado real (Frente 1)', {skip: pular}, () => {
     console.log(`# Painel de Ritmo da MATRIZ (dado real): ${r.n} páginas (${MATRIZ.join(' + ')})`);
     assert.deepEqual(erros, []);
     await ctx.close();
+  });
+});
+
+/* ====================================================================================================
+   Caderno de Vendas com dado real (Frente 2, PR 2) — a aba nova da página do Back Office.
+   (a)-(e) e (g): as invariantes de caderno_invariantes.js (recontagem INDEPENDENTE do payload, sem montaCaderno e
+   sem agrega), na G2 e em mais três gerências de porte diferente, nas duas visões (GC aberta por supervisão e SV
+   aberta por rota). (f): o HTML das folhas com e sem o online.json. (h): 360/390/1000/1440 px nos dois fundos.
+   (i): antes x depois contra a main — os três arquivos que a etapa toca (index.html, app.css e backoffice.js)
+   servidos da main, com o MESMO payload: Executiva, as 4 abas, cascata, Resumo, Painel de Ritmo e a aba "Tabela"
+   do Back Office iguais. Só totais e códigos de gerência, supervisão e rota são impressos.
+   ==================================================================================================== */
+describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
+  const P = JSON.parse(fs.readFileSync(PAYLOAD, 'utf-8'));
+  const GCS = (P.GC_ATIVAS || Object.keys(P.DATA)).filter(g => P.DATA[g]);
+  // G2 (a do Del Valle Frut e da SV.G2.5 só de Neutraliza) + três portes diferentes, pelo nº de rotas
+  const porte = g => Object.values(P.DATA[g]).reduce((a, svs) => a + Object.keys(svs).length, 0);
+  const ORDEM = GCS.filter(g => g !== 'G2').sort((a, b) => porte(b) - porte(a));
+  const ESCOLHIDAS = ['G2', ORDEM[0], ORDEM[Math.floor(ORDEM.length / 2)], ORDEM[ORDEM.length - 1]].filter(Boolean);
+  // a main de antes desta etapa (os três arquivos que ela toca)
+  const REF_PRE_CAD = '9067e443a721912dcf588b700b1a49634f9ca656';
+  const daMain = arq => { try { return execSync(`git show ${REF_PRE_CAD}:frontend/${arq}`, {cwd: path.resolve(FRONT, '..'),
+    stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024}).toString(); } catch(e) { return null; } };
+
+  const vaiCaderno = async page => {
+    await page.click('#boAba-caderno');
+    await page.waitForFunction(() => !document.getElementById('cad').hidden &&
+      document.getElementById('cadFolhas').innerHTML !== '');
+  };
+  const escolhe = async (page, campo, valor) => {
+    await page.selectOption('#' + campo, valor);
+    await page.waitForFunction(([c, v]) => document.getElementById(c).value === v, [campo, valor]);
+  };
+
+  test('(a)-(e) e (g): G2 e mais três gerências, nas duas visões, contra a recontagem do payload', async () => {
+    const {page, ctx, erros} = await abre(1440);
+    await entra(page, {perfil: 'bo', gc: GCS[0]});
+    await vaiCaderno(page);
+    const linhas = [];
+    for(const gc of ESCOLHIDAS){
+      await escolhe(page, 'cadNivel', 'gc');
+      await escolhe(page, 'cadGc', gc);
+      linhas.push(await CAD_INV.confereCaderno(page, P, {nivel: 'gc', gc}, `GC.${gc}`));
+      await escolhe(page, 'cadNivel', 'sv');
+      const svs = await page.$$eval('#cadSv option', os => os.map(o => o.value));
+      // a 1ª supervisão e, quando houver, a só de rotas Neutraliza (item (g))
+      for(const sv of [svs[0], svs[svs.length - 1]].filter((v, i, a) => v && a.indexOf(v) === i)){
+        await escolhe(page, 'cadSv', sv);
+        linhas.push(await CAD_INV.confereCaderno(page, P, {nivel: 'sv', gc, sv}, sv));
+      }
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    const cab = ['Escopo', 'Unidades', 'Rotas fora das linhas', 'Blocos', 'Células', 'Notas de resíduo',
+                 'Linhas sem o indicador', 'Dif: ordem importa', '%: ordem importa', 'Ritmo: ordem importa'];
+    console.log(`# Caderno de Vendas (dado real): ${P.MES_LABEL}, dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}` +
+      `${P.FECHAMENTO ? ' (fechamento)' : ''}, pré-venda ${(P.PRE_VENDA || {}).DATA || '—'}`);
+    console.log(`# | ${cab.join(' | ')} |`);
+    console.log(`# |${cab.map(() => '---').join('|')}|`);
+    for(const l of linhas) console.log(`# | ${[l.onde, l.unidades, l.fora, l.blocos, l.celulas, l.notas, l.vazias,
+      l.trapDif, l.trapPct, l.trapRitmo].join(' | ')} |`);
+    const soma = c => linhas.reduce((a, l) => a + l[c], 0);
+    console.log(`# Total: ${soma('celulas')} células conferidas; a ordem do arredondamento muda o número em ` +
+      `${soma('trapDif')} Dif, ${soma('trapPct')} % e ${soma('trapRitmo')} Ritmo (R-QLD-15).`);
+  });
+
+  test('(f) nada de online: o HTML das folhas é o mesmo com e sem o online.json', async () => {
+    const html = [];
+    for(const semOnline of [false, true]){
+      const troca = semOnline ? {'/data/online.json': () => '{"updatedAt":null,"rotas":{},"clientes":{},"volume":{}}'} : {};
+      const {page, ctx, erros} = await abre(1440, undefined, troca);
+      await entra(page, {perfil: 'bo', gc: GCS[0]});
+      await vaiCaderno(page);
+      await escolhe(page, 'cadGc', ESCOLHIDAS[0]);
+      html.push(await page.innerHTML('#cadFolhas'));
+      assert.deepEqual(erros, [], String(semOnline));
+      await ctx.close();
+    }
+    assert.equal(html[0], html[1], 'o Caderno é matinal: não lê o online.json');
+  });
+
+  test('(h) 360, 390, 1000 e 1440 px, nos dois fundos: sem rolagem lateral e sem erro', async () => {
+    for(const largura of [360, 390, 1000, 1440]) for(const tema of ['preta', 'branca']){
+      const {page, ctx, erros} = await abre(largura, tema);
+      await entra(page, {perfil: 'bo', gc: GCS[0]});
+      await vaiCaderno(page);
+      for(const nivel of ['gc', 'sv']){
+        await escolhe(page, 'cadNivel', nivel);
+        const r = await page.evaluate(() => ({
+          pagina: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          folhas: document.querySelectorAll('.cadFolha').length,
+          cortada: [...document.querySelectorAll('.cadRola')].some(e => e.clientWidth <= 0),
+        }));
+        assert.equal(r.pagina, false, `${largura} px ${tema} (${nivel}): rolagem lateral na página`);
+        assert.equal(r.folhas, 2, `${largura} px ${tema} (${nivel}): duas folhas`);
+        assert.equal(r.cortada, false, `${largura} px ${tema} (${nivel}): caixa de rolagem da folha`);
+      }
+      assert.deepEqual(erros, [], `${largura} px ${tema}`);
+      await ctx.close();
+    }
+  });
+
+  test('(i) antes x depois: painel, Resumo, Painel de Ritmo e a aba "Tabela" do Back Office iguais à main', async () => {
+    const velhos = {'/index.html': daMain('index.html'), '/css/app.css': daMain('css/app.css'),
+                    '/js/backoffice.js': daMain('js/backoffice.js')};
+    for(const [k, v] of Object.entries(velhos)) assert.ok(v, `não achei ${k} em ${REF_PRE_CAD}`);
+    const troca = Object.fromEntries(Object.entries(velhos).map(([k, v]) => [k, () => v]));
+    const novo = await abre(1440), velho = await abre(1440, undefined, troca);
+    const vistos = [];
+    // painel: Diretoria "Todas", uma gerência pelo filtro e uma supervisão
+    for(const quem of [{perfil: 'dir'}, {perfil: 'gc', gc: GCS[0]}]){
+      for(const {page} of [novo, velho]) await entra(page, quem);
+      const onde = quem.perfil === 'dir' ? 'Diretoria' : `GC.${quem.gc}`;
+      assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+        for(const {page} of [novo, velho]) await page.evaluate(a => {
+          const t = document.querySelector(`.tab[data-g="${a}"]`);
+          if(t && !t.hidden && !t.classList.contains('on')) t.click();
+        }, aba);
+        assert.equal(await novo.page.innerHTML('#abaTopo'), await velho.page.innerHTML('#abaTopo'), `${onde} ${aba}: cabeçalho`);
+        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${onde} ${aba}: cards`);
+        // cascata do 1º card da aba
+        const k = await novo.page.evaluate(() => (document.querySelector('#lista .ind[data-k]') || {dataset: {}}).dataset.k);
+        if(k){
+          for(const {page} of [novo, velho]){
+            await page.click(`#lista .ind[data-k="${k}"]`);
+            await page.waitForFunction(() => document.getElementById('drw').classList.contains('on'));
+          }
+          assert.equal(await novo.page.innerHTML('#dCorpo'), await velho.page.innerHTML('#dCorpo'), `${onde} ${aba}: cascata`);
+          for(const {page} of [novo, velho]){
+            await page.keyboard.press('Escape');
+            await page.waitForFunction(() => !document.getElementById('drw').classList.contains('on'));
+          }
+        }
+        vistos.push(`${onde} ${aba}`);
+      }
+      // Resumo de vendas
+      for(const {page} of [novo, velho]) await page.click('#btnResumo');
+      assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+      for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+      // Painel de Ritmo: o HTML da 1ª página do escopo (o PDF é essa página fotografada)
+      const pg = p => p.evaluate(() => RT.desenhaPagina(montaRitmo(P, RT.escopoRitmo()).paginas[0]));
+      assert.equal(await pg(novo.page), await pg(velho.page), `${onde}: Painel de Ritmo`);
+      vistos.push(`${onde} Resumo+Ritmo`);
+    }
+    // Back Office, aba "Tabela": os filtros e o corpo, em três escopos x três níveis
+    for(const {page} of [novo, velho]) await entra(page, {perfil: 'bo', gc: GCS[0]});
+    for(const escopo of ['gc:' + GCS[0], 'gc:G2', 'grp:MATRIZ']) for(const nivel of ['gc', 'sv', 'rota']){
+      for(const {page} of [novo, velho]){
+        await page.selectOption('#boGc', escopo);
+        await page.selectOption('#boNivel', nivel);
+        await page.waitForFunction(([e, n]) => document.getElementById('boGc').value === e &&
+          document.getElementById('boNivel').value === n && document.getElementById('boCorpo').innerHTML !== '', [escopo, nivel]);
+      }
+      assert.equal(await novo.page.innerHTML('#boCorpo'), await velho.page.innerHTML('#boCorpo'),
+        `Back Office ${escopo}/${nivel}: tabela`);
+      assert.equal(await novo.page.evaluate(() => document.querySelector('#bo .boFiltros').outerHTML),
+        await velho.page.evaluate(() => document.querySelector('#bo .boFiltros').outerHTML),
+        `Back Office ${escopo}/${nivel}: filtros`);
+      assert.equal(await novo.page.textContent('#boEsc'), await velho.page.textContent('#boEsc'),
+        `Back Office ${escopo}/${nivel}: cabeçalho`);
+      vistos.push(`BO ${escopo}/${nivel}`);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Antes x depois contra ${REF_PRE_CAD.slice(0, 7)}: ${vistos.length} telas iguais — ${vistos.join(', ')}`);
   });
 });
