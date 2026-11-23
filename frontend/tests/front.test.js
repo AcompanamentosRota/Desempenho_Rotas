@@ -12173,4 +12173,55 @@ describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
       await ctx.close();
     }
   });
+
+  /* (16) O cabeçalho da página (#boEsc) tem de acompanhar os três seletores do Caderno. O defeito de 23/11/2026:
+     os onchange chamavam o render() do próprio caderno.js, que não escreve o #boEsc — só o BO.render() escreve —,
+     então a folha mudava de gerência e o alto da página continuava na gerência da ENTRADA. */
+  test('(16) #boEsc acompanha os seletores do Caderno (gerência, nível e supervisão) e volta na aba Tabela', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: 'bo'});
+    const esc = () => page.textContent('#boEsc');
+    const rot = g => page.evaluate(x => rotuloGc(x), g);
+    // 1. a entrada: o cabeçalho começa na gerência A, a do acesso
+    const a = await page.evaluate(() => ACESSO.gc);
+    const escTabela = await esc();
+    assert.ok(escTabela.startsWith(await rot(a)), `o cabeçalho começa em ${a}: ${escTabela}`);
+    const corpoAntes = await page.innerHTML('#boCorpo');
+    const filtrosAntes = await page.evaluate(() => document.querySelector('#bo .boFiltros').outerHTML);
+    // 2. a aba Caderno
+    await page.click('#boAba-caderno');
+    await page.waitForFunction(() => !document.getElementById('cad').hidden &&
+      document.getElementById('cadFolhas').innerHTML !== '');
+    // 3. uma gerência B diferente da que o Caderno está mostrando, com pelo menos duas supervisões
+    const atual = await page.inputValue('#cadGc');
+    const b = (await page.evaluate(() => {
+      const evs = new Set(P.EVENTUAIS_ROTAS || []);
+      return gcsComDados().filter(g => Object.keys(DATA[g] || {}).filter(s => {
+        const rs = Object.keys(DATA[g][s] || {});
+        return rs.length && !rs.every(r => evs.has(r));
+      }).length >= 2);
+    })).find(g => g !== atual);
+    assert.ok(b, 'o sintético tem outra gerência com duas supervisões');
+    await escolhe(page, 'cadGc', b);
+    // 4. o cabeçalho e a folha na MESMA gerência (a asserção que falha no 8c818bf)
+    assert.ok((await esc()).startsWith(await rot(b)), `o cabeçalho segue o seletor: esperado ${b}, veio "${await esc()}"`);
+    assert.equal(await page.textContent('.cadFolha[data-folha="vol"] .cadEsc'), 'GC. ' + b);
+    // 5. nível Supervisão: o cabeçalho passa a mostrar o código da supervisão, e trocar de supervisão também repinta
+    await escolhe(page, 'cadNivel', 'sv');
+    const svs = await page.$$eval('#cadSv option', os => os.map(o => o.value));
+    assert.ok(svs.length >= 2, `${b} tem ${svs.length} supervisões no seletor`);
+    assert.ok((await esc()).startsWith(svs[0]), `cabeçalho na supervisão: esperado ${svs[0]}, veio "${await esc()}"`);
+    assert.equal(await page.textContent('.cadFolha[data-folha="vol"] .cadEsc'), svs[0]);
+    await escolhe(page, 'cadSv', svs[1]);
+    assert.ok((await esc()).startsWith(svs[1]), `trocar de supervisão repinta: esperado ${svs[1]}, veio "${await esc()}"`);
+    assert.equal(await page.textContent('.cadFolha[data-folha="vol"] .cadEsc'), svs[1]);
+    // 6. de volta à Tabela: o cabeçalho volta ao escopo dela e nada da aba Tabela mudou
+    await page.click('#boAba-tabela');
+    await page.waitForFunction(() => document.getElementById('cad').hidden);
+    assert.equal(await esc(), escTabela, 'o cabeçalho volta ao escopo da tabela');
+    assert.equal(await page.innerHTML('#boCorpo'), corpoAntes, 'a aba Tabela continua byte a byte');
+    assert.equal(await page.evaluate(() => document.querySelector('#bo .boFiltros').outerHTML), filtrosAntes,
+      'os filtros continuam byte a byte');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
 });

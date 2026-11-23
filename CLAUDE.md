@@ -591,6 +591,12 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   chama `CAD.render()` quando é 'caderno'; `.boFiltros` (filtros `#boGc`/`#boNivel` e os botões Excel e Painel de ritmo),
   `.boNota` e `#boCorpo` ganham a classe `.cadOff` na aba Caderno e voltam intactos (o `[hidden]` não bastaria: as duas
   definem `display:flex`). `#boEsc` mostra o escopo do Caderno enquanto ela está aberta. `BO.sai()` chama `CAD.sai()`.
+  **Os três `onchange` do Caderno (`#cadGc`/`#cadNivel`/`#cadSv`) pedem o redesenho ao `BO.render()`** (`repinta()` no
+  caderno.js, com fallback para o `render()` local se o `backoffice.js` em cache não tiver a aba), **nunca ao `render()`
+  do próprio arquivo**: só o `BO.render()` escreve o `#boEsc`, e ele o monta a partir do `CAD.escopoCaderno()` ANTES de
+  chamar o `CAD.render()` — os dois saem do mesmo estado numa passada só. Com o `render()` local as folhas trocavam de
+  gerência e o alto da página ficava na gerência da entrada (defeito de 23/11/2026; teste (16) da Parte AR). Não há
+  laço: o `caderno.js` não cita `BO` em nenhum outro ponto.
   `linhas`, `linhasDaGerencia`, `gruposDoNivel`, `celulas`, `colunasNum`, `tabela`, `dadosExcel`, `montaPlanilha`,
   `nomeArquivo` e `escopoRitmo` **não mudaram**.
   **A etapa NÃO toca** `app.js`, `nucleo.js`, `resumo.js`, `ritmo.js`, `main.js`, `config.js`, `backend/**`,

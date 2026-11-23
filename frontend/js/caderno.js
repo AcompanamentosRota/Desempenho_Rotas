@@ -296,12 +296,17 @@ const CAD = (()=>{
     bo.insertBefore(el, rod || null);
     return el;
   }
+  // O desenho da aba Caderno é pedido ao Back Office, nunca direto: só o BO.render() escreve a linha de escopo
+  // do alto da página (#boEsc), e ele a monta a partir do CAD.escopoCaderno(). Chamando o render() local, as
+  // folhas mudavam e o cabeçalho ficava na gerência da entrada (defeito achado em 23/11/2026).
+  // O fallback é para o backoffice.js antigo em cache (sem a aba): aí o Caderno nem aparece, mas não quebra.
+  const repinta = () => (typeof BO !== 'undefined' && BO.render) ? BO.render() : render();
   function liga(){
     if(ligado || !$$('cadGc')) return;
     ligado = true;
-    $$('cadGc').onchange = ev => { ST = {...ST, gc: ev.target.value}; ajusta(); render(); };
-    $$('cadNivel').onchange = ev => { ST = {...ST, nivel: ev.target.value}; ajusta(); render(); };
-    $$('cadSv').onchange = ev => { ST = {...ST, sv: ev.target.value}; render(); };
+    $$('cadGc').onchange = ev => { ST = {...ST, gc: ev.target.value}; ajusta(); repinta(); };
+    $$('cadNivel').onchange = ev => { ST = {...ST, nivel: ev.target.value}; ajusta(); repinta(); };
+    $$('cadSv').onchange = ev => { ST = {...ST, sv: ev.target.value}; repinta(); };
   }
   function pintaFiltros(){
     const g = $$('cadGc');
