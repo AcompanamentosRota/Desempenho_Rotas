@@ -43,6 +43,11 @@ nomes ou códigos de clientes) com:
      (modelo.neg_hoje) por gerência e macro, com o caso de cada rota x macro, as violações e o tempo (grava
      e12_neg_hoje.json); do payload gravado (`--e12 PAYLOAD`, ou junto da `--e11`; sem rede): Σ negHoje x Σ negRestante,
      nulls, violações, diferença contra a parte com rede e o tamanho antes x depois. Só totais e códigos de rota.
+  E14. pré-venda do último dia útil fechado e mês anterior INTEIRO (Caderno de Vendas, chaves PRE_VENDA e
+     MES_ANT_CHEIO do gerador/caderno.py): com rede, depois da E10. Pré-venda de volume por gerência ao lado do Vol
+     Real do mês, com a razão (E14a); pré-venda de cobertura por item e por gerência ao lado da cobertura do mês, com
+     as violações (E14b); mês anterior inteiro x o truncado da MES_ANTERIOR, com as violações por rota x item (E14c);
+     tempo de cada consulta nova e peso de cada chave no payload (E14d); rotas com null e por quê (E14e). Só relata.
   E13. Todos a Bordo com o Real como o ICS GC (PN-50): do payload gravado (`--e13 PAYLOAD`, ou junto da `--e11`; sem
      rede; inserida antes da seção 9): por gerência e BAND, nos 5 itens, meta, Real antes (só rotas com meta > 0) x
      depois (todas as rotas com o item disponível, meta 0 inclusive), %, rotas com o item, rotas com meta 0 e Real > 0
@@ -74,6 +79,7 @@ from gerador.mes_anterior import (  # noqa: E402, F401
     CASO_FECHAMENTO, CASO_LIMITADO, CASO_NORMAL, CASO_SEM_DIA, FONTE_DATASPHERE, FONTE_LOCAL, CorteMesAnterior,
     consulta_volume, corte_do_dia, corte_mes_anterior, dias_uteis_do_mes, filtro_ate, linhas_do_mes,
     meta_volume_por_rota, real_por_rota)
+from gerador import caderno, saida  # noqa: E402
 from gerador import mapeamento as M  # noqa: E402
 from gerador.consulta import Consulta, e, eq, ou  # noqa: E402
 from gerador.payload import _mais_comum  # noqa: E402
@@ -2384,6 +2390,302 @@ def mes_anterior(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, hoje
     rel.p("7. KS TT do mês anterior pelo segmento de hoje: só quando as coberturas entrarem.")
 
 
+# ------------------------------------------------------------------ E14: pré-venda do dia e mês anterior inteiro
+# Caderno de Vendas, Frente 2 (19/11/2026): confere com o dado real as duas chaves novas do payload (PRE_VENDA e
+# MES_ANT_CHEIO, gerador/caderno.py). Com rede, depois da E10. Só contagens, totais e códigos de rota e gerência:
+# NUNCA nomes nem códigos de clientes.
+VOL_CAD = M.INDICADORES_CADERNO_VOL     # 5 macros + Del Valle Frut
+COB_CAD = M.INDICADORES_CADERNO_COB     # 13 do ICS GC / Novos Negócios + 3 chaves INC
+E14_MAX_VIOL = 20                       # rota x item listadas nas violações (as demais só contadas)
+
+
+def _rot(k: str) -> str:
+    """Rótulo do indicador no relatório (os do volume extra não estão em M.LABELS)."""
+    return M.LABELS.get(k) or M.VOLUME_EXTRA.get(k, {}).get("label") or k
+
+
+def _razao(parte: float | None, total: float | None) -> str | None:
+    """'12,3%' da parte sobre o total; None sem base."""
+    return None if parte is None or not total else f"{parte / total * 100:.1f}%".replace(".", ",")
+
+
+def disponiveis_do_payload(p: dict | None, rotas: list[str]) -> tuple[dict[str, set[str]], bool]:
+    """({rota: indicadores disponíveis}, veio do payload?). Sem payload publicado, tudo disponível (o relatório diz)."""
+    if not p or not p.get("DATA"):
+        return {r: set(VOL_CAD) | set(COB_CAD) for r in rotas}, False
+    return ({r: {k for k, b in d["indicators"].items() if not (b or {}).get("unavailable", True)}
+             for svs in p["DATA"].values() for rs in svs.values() for r, d in rs.items()}, True)
+
+
+def soma_vol_gc(por_rota: dict | None, gc_rota: dict[str, str], itens: list[str]) -> dict[str, dict[str, float]]:
+    """{gerência: {indicador: soma}} de um volume por rota, nas rotas do painel. Como `soma_por_gc`, mas com a lista de
+    indicadores por parâmetro: o Del Valle Frut não está em VOL (os 5 macros) e sairia zerado."""
+    out: dict = {}
+    for r, ks in (por_rota or {}).items():
+        gc = gc_rota.get(r)
+        if gc is None:
+            continue
+        for k, v in ks.items():
+            if k in itens:
+                out.setdefault(gc, {})[k] = out.setdefault(gc, {}).get(k, 0.0) + v
+    return out
+
+
+def com_band_num(por_gc: dict, gcs: list[str], itens: list[str]) -> dict[str, dict[str, float]]:
+    """{gerência: {item: soma}} com todas as gerências (zero onde falta) e a linha 'BAND'."""
+    out = {g: {k: float((por_gc.get(g) or {}).get(k, 0.0)) for k in itens} for g in gcs}
+    out["BAND"] = {k: sum(g[k] for g in out.values()) for k in itens}
+    return out
+
+
+def soma_cob_gc(cob: dict, gc_rota: dict[str, str], itens: list[str]) -> dict[str, dict[str, int]]:
+    """{gerência: {item: clientes cobertos}} somando as rotas do painel (a rota oculta das EV* inclusive), + BAND."""
+    out: dict = {g: {k: 0 for k in itens} for g in set(gc_rota.values())}
+    for r, ks in cob.items():
+        gc = gc_rota.get(r)
+        if gc is None:
+            continue
+        for k in itens:
+            out[gc][k] += len(ks.get(k, ()))
+    out["BAND"] = {k: sum(g[k] for g in out.values()) for k in itens}
+    return out
+
+
+def viola_inteiro(cheio: dict, ate: dict, itens: list[str], tamanho: bool = False) -> list[str]:
+    """Rota x item em que o mês INTEIRO ficou menor que o truncado até o corte (impossível). `tamanho`: os valores são
+    conjuntos de PVs (cobertura) e a comparação é pelo nº de clientes."""
+    fora = []
+    for r in sorted(set(cheio) | set(ate), key=_ordem_rota):
+        for k in itens:
+            a = ate.get(r, {}).get(k)
+            if a is None:
+                continue
+            b = cheio.get(r, {}).get(k)
+            va, vb = (len(a), len(b or ())) if tamanho else (a, b or 0.0)
+            if vb + (0 if tamanho else TOL_FILTRO * max(abs(va), 1.0)) < va:
+                fora.append(f"{_codigo(r)}/{_rot(k)} ({_n(vb, 0 if tamanho else 1)} x {_n(va, 0 if tamanho else 1)})")
+    return fora
+
+
+def caderno_conferencia(rel: Relatorio, cons: Consulta, estado: dict, anomes: str, hoje: date,
+                        payload_base: Path | None = PAYLOAD_PUBLICADO) -> None:
+    """Seção E14: as chaves PRE_VENDA e MES_ANT_CHEIO com o dado real. Só relata."""
+    cal, linhas_cal, gcs = estado["cal_ref"], estado.get("linhas_cal") or [], estado["gcs"]
+    if "vm" not in estado:      # a seção 1 falhou: o Vol Real do mês (com a rota oculta das EV*) sai daqui
+        estado["vm"] = fontes.carregar_volume_real(cons, anomes, gcs, None)
+        incluir_eventuais(estado, estado["vm"])
+    c = corte_mes_anterior(cal, linhas_cal)
+    ant = c.anterior.strftime("%Y%m")
+    lab_ref, lab_ant = calmod.rotulo_mes(c.ref), calmod.rotulo_mes(c.anterior)
+    dia = cal.data_ontem
+    gc_rota = dict(estado["gc_rota_painel"])
+    eventuais = dict(estado.get("eventuais", {}))
+    seg_base = {(cl.rota, cl.pv): cl.segmento for cl in estado.get("clientes", [])}
+    rel.p(f"Chaves novas do payload (`{M.CHAVE_PRE_VENDA}` e `{M.CHAVE_MES_ANT_CHEIO}`, gerador/caderno.py), para o "
+          f"Caderno de Vendas. **Nenhuma tela lê ainda.** Volume = `{CM.VOL_MES}` nos 6 agrupadores de volume "
+          f"(5 macros + Del Valle Frut) com `{CM.NF_STATUS}` em M.STATUS_NF_REAL; cobertura = `{CM.COB_MES}` > 0 nos "
+          "16 itens (ICS GC, Novos Negócios e as 3 chaves INC), sem NF cancelada, KS TT só nos 4 segmentos foco. "
+          f"A pré-venda é do **último dia útil fechado** (`DATA_ONTEM` do payload: {_d(dia) or 'nenhum'}), "
+          f"**nunca o relógio da máquina**; o volume dela vai pela **rota da meta** (`{CM.META_ROTA}`) e a cobertura "
+          f"pela **rota em que a venda foi faturada** (`{CM.ROTA}`), de propósito. `{M.CHAVE_MES_ANT_CHEIO}` = "
+          f"{lab_ant} INTEIRO, com o volume pela rota do cliente, como a `{M.CHAVE_MES_ANTERIOR}` (que não muda em "
+          "nada). Só contagens, totais e códigos de rota.")
+
+    med: dict[str, dict] = {}
+
+    def medir(chave, nome, fn):
+        antes = len(getattr(cons, "tempos", []))
+        inicio = time.monotonic()
+        try:
+            res, erro = fn(), None
+        except Exception as err:  # noqa: BLE001
+            res, erro = None, f"{type(err).__name__}: {err}"
+            print(traceback.format_exc(), file=sys.stderr)
+        novos = getattr(cons, "tempos", [])[antes:]
+        med[chave] = {"nome": nome, "s": time.monotonic() - inicio, "erro": erro, "consultas": len(novos),
+                      "linhas": sum(t[2] for t in novos) if novos else (len(res) if isinstance(res, list) else None)}
+        return res
+
+    pre_vol = pre_cob = None
+    if dia:
+        pre_vol = medir("pre_vol", f"pré-venda de volume {dia:%d/%m}, por rota da meta",
+                        lambda: caderno.consulta_volume(cons, anomes, gcs, CM.META_ROTA, dia))
+        pre_cob = medir("pre_cob", f"pré-venda de cobertura {dia:%d/%m}, rota x cliente",
+                        lambda: caderno.consulta_cobertura(cons, anomes, gcs, dia))
+    cheio_vol = medir("cheio_vol", f"volume de {lab_ant} INTEIRO, por rota do cliente",
+                      lambda: caderno.consulta_volume(cons, ant, gcs, CM.ROTA))
+    cheio_cob = medir("cheio_cob", f"cobertura de {lab_ant} INTEIRO, rota x cliente",
+                      lambda: caderno.consulta_cobertura(cons, ant, gcs))
+    vendas_ref = medir("cob_ref", f"cobertura de {lab_ref} (mês de referência, fontes.carregar_vendas)",
+                       lambda: fontes.carregar_vendas(cons, anomes, gcs, None, Online(atualizado_em=calmod.agora())))
+    cob_ref = None if vendas_ref is None else vendas_ref[0]
+    seg_venda = {} if vendas_ref is None else vendas_ref[-1]   # segmento na venda do mês (KS TT de quem saiu da rota)
+    # o mês anterior ATÉ O CORTE: as mesmas consultas da E10 (a ConsultaCronometrada guarda a resposta: custo zero
+    # se a E10 já rodou). O volume tem só os 5 macros e a cobertura, os 13 itens do ICS GC e dos Novos Negócios.
+    ate_vol = ate_cob = None
+    if c.corte:
+        ate_vol = medir("ate_vol", f"volume de {lab_ant} até {c.corte:%d/%m} (o da {M.CHAVE_MES_ANTERIOR}, da E10)",
+                        lambda: consulta_volume(cons, ant, gcs, c.corte))
+        ate_cob = medir("ate_cob", f"cobertura de {lab_ant} até {c.corte:%d/%m} (a da E10, 13 itens)",
+                        lambda: consulta_cobertura(cons, ant, gcs, c.corte))
+
+    def bloco(lv, lc, col_rota):
+        if lv is None or lc is None:
+            return caderno.Bloco(erro="consulta falhou")
+        vol, vol_ev = caderno.real_por_rota(lv, col_rota)
+        cob, cob_ev, segs = caderno.cobertos_por_rota(lc)
+        return caderno.Bloco(vol, vol_ev, cob, cob_ev, segs)
+
+    pre = bloco(pre_vol, pre_cob, CM.META_ROTA) if dia else caderno.Bloco(erro="sem dia útil fechado")
+    cheio = bloco(cheio_vol, cheio_cob, CM.ROTA)
+
+    def filtra_cob(r: str, por_ind: dict, segs: dict) -> dict:
+        """O KS TT do payload (payload._filtra_ks_tt): o segmento do roster da rota e, para quem saiu dela, o da
+        venda — o do mês de referência na frente, como o gerador faz."""
+        def elegivel(pv):
+            s = seg_base.get((r, pv)) or seg_venda.get(pv) or segs.get(pv)
+            return normalizar(s) in M.SEGMENTOS_KS_TT
+        return {k: {pv for pv in pvs if elegivel(pv)} if k == "KS TT" else set(pvs) for k, pvs in por_ind.items()}
+
+    # as rotas e a disponibilidade de cada indicador saem do payload publicado (é o que decide o null)
+    base = saida.ler(payload_base) if payload_base else None
+    rotas_pay = [r for svs in (base or {}).get("DATA", {}).values() for rs in svs.values() for r in rs]
+    rotas = rotas_pay or sorted(gc_rota, key=_ordem_rota)
+    disp, do_payload = disponiveis_do_payload(base, rotas)
+    d = caderno.Dados(dia, c.anterior, c.total_ant, pre, cheio)
+    ev_rotas = {r: gc for r, gc in gc_rota.items() if r == M.rota_eventuais(gc)} or eventuais
+    k_pre, k_cheio, avisos = caderno.chaves(d, rotas, ev_rotas, disp, filtra_cob)
+
+    # E14a. pré-venda de volume x Vol Real do mês --------------------------------------------------------------------
+    rel.h3(f"E14a. Pré-venda de volume ({_d(dia) or 'sem dia útil fechado'}) x Vol Real de {lab_ref}")
+    if pre.erro:
+        rel.p(f"Sem a pré-venda nesta execução ({pre.erro}).")
+    else:
+        gcs_tab = _gcs_com_dados(gc_rota)
+        por_gc_dia = com_band_num(soma_vol_gc(pre.vol, gc_rota, VOL_CAD), gcs_tab, VOL_CAD)
+        por_gc_mes = com_band_num(soma_vol_gc(estado["vm"].real, gc_rota, VOL_CAD), gcs_tab, VOL_CAD)
+        linhas = []
+        for g in gcs_tab + ["BAND"]:
+            cel = []
+            for k in VOL_CAD:
+                v_dia, v_mes = por_gc_dia[g][k], por_gc_mes[g][k]
+                cel.append(f"{_n(v_dia, 0)} / {_n(v_mes, 0)}" + (f" ({_razao(v_dia, v_mes)})" if v_mes else ""))
+            linhas.append([g] + cel)
+        rel.tabela(["gerência"] + [_rot(k) for k in VOL_CAD], linhas)
+        rel.p(f"\nCélula: **pré-venda do dia / Vol Real do mês (razão)**, em caixas. Sanidade: com o painel no dia "
+              f"útil {cal.dia_ontem} de {cal.total_dias_uteis}, um dia sozinho deve ficar perto de "
+              f"{_razao(1.0, float(cal.dia_ontem or 1))} do acumulado — nunca 0 e nunca mais que o mês. A pré-venda "
+              "vai pela rota da META e o Vol Real do mês pela rota do CLIENTE: por rota os dois não se comparam; "
+              "por gerência e na BAND, sim. A coluna do Del Valle Frut soma o agrupador CRU, em qualquer gerência; "
+              f"na chave ele só tem valor nas rotas de {', '.join(M.VOLUME_EXTRA['VOL DEL VALLE FRUT']['gcs'])} "
+              "(nas outras é `null`, como o painel), porque é só lá que o indicador existe.")
+
+    # E14b. pré-venda de cobertura x cobertura do mês ----------------------------------------------------------------
+    rel.h3(f"E14b. Pré-venda de cobertura x cobertura de {lab_ref}")
+    if pre.erro or cob_ref is None:
+        rel.p("Sem a pré-venda de cobertura nesta execução.")
+    else:
+        cob_mes = {r: filtra_cob(r, ks, {}) for r, ks in cob_ref.items()}
+        cob_dia = {r: filtra_cob(r, pre.cob.get(r, {}), pre.segmentos) for r in pre.cob}
+        for r, gc in ev_rotas.items():   # rota oculta das EV*: a cobertura vem pela gerência comercial
+            cob_dia[r] = filtra_cob(r, pre.cob_ev.get(gc, {}), pre.segmentos)
+        gc_dia, gc_mes = soma_cob_gc(cob_dia, gc_rota, COB_CAD), soma_cob_gc(cob_mes, gc_rota, COB_CAD)
+        rel.p("Por item (BAND; clientes distintos que compraram o item **naquele dia** — não é \"quem entrou na "
+              "cobertura no dia\": quem já tinha comprado antes no mês conta de novo):")
+        rel.tabela(["item", f"pré-venda {dia:%d/%m}", f"cobertura {lab_ref}", "razão", "rotas com o item no dia"],
+                   [[_rot(k), gc_dia["BAND"][k], gc_mes["BAND"][k], _razao(gc_dia["BAND"][k], gc_mes["BAND"][k]),
+                     sum(1 for r, ks in cob_dia.items() if r in gc_rota and ks.get(k))] for k in COB_CAD])
+        rel.p("\nPor gerência (soma dos 16 itens, clientes x item):")
+        rel.tabela(["gerência", f"pré-venda {dia:%d/%m}", f"cobertura {lab_ref}", "razão"],
+                   [[g, sum(gc_dia[g].values()), sum(gc_mes[g].values()),
+                     _razao(sum(gc_dia[g].values()), sum(gc_mes[g].values()))]
+                    for g in _gcs_com_dados(gc_rota) + ["BAND"]])
+        fora = [f"{_codigo(r)}/{_rot(k)} ({len(ks.get(k, ()))} x {len(cob_mes.get(r, {}).get(k, ()))})"
+                for r, ks in sorted(cob_dia.items(), key=lambda kv: _ordem_rota(kv[0])) for k in COB_CAD
+                if r in gc_rota and len(ks.get(k, ())) > len(cob_mes.get(r, {}).get(k, ()))]
+        rel.p(f"\nCobertura do dia maior que a do mês (impossível; as duas contam na rota da venda): "
+              f"**{len(fora)}** rota x item" + (": " + ", ".join(fora[:E14_MAX_VIOL]) if fora else "."))
+
+    # E14c. mês anterior INTEIRO x MES_ANTERIOR (até o corte) --------------------------------------------------------
+    rel.h3(f"E14c. {lab_ant} INTEIRO x {M.CHAVE_MES_ANTERIOR}"
+           + (f" (até {c.corte:%d/%m})" if c.corte else " (sem corte nesta execução)"))
+    if cheio.erro:
+        rel.p(f"Sem o mês anterior inteiro nesta execução ({cheio.erro}).")
+    else:
+        real_ate = real_por_rota(ate_vol)[0] if ate_vol is not None else {}
+        gcs_tab = _gcs_com_dados(gc_rota)
+        gc_cheio = com_band_num(soma_vol_gc(cheio.vol, gc_rota, VOL), gcs_tab, VOL)
+        gc_ate = com_band_num(soma_vol_gc(real_ate, gc_rota, VOL), gcs_tab, VOL)
+        rel.p(f"Volume por gerência (os 5 macros da `{M.CHAVE_MES_ANTERIOR}`; célula: **inteiro / até o corte "
+              "(razão do truncado)**):")
+        rel.tabela(["gerência"] + [_rot(k) for k in VOL],
+                   [[g] + [f"{_n(gc_cheio[g][k], 0)} / {_n(gc_ate[g][k], 0)}"
+                           + (f" ({_razao(gc_ate[g][k], gc_cheio[g][k])})" if gc_cheio[g][k] else "")
+                           for k in VOL]
+                    for g in gcs_tab + ["BAND"]])
+        viol_v = viola_inteiro(cheio.vol, real_ate, VOL)
+        rel.p(f"\nVolume: rota x macro em que o mês inteiro ficou **menor** que o truncado (impossível): "
+              f"**{len(viol_v)}**" + (": " + ", ".join(viol_v[:E14_MAX_VIOL]) if viol_v else "."))
+        if ate_cob is None:
+            rel.p("Cobertura até o corte indisponível (a consulta da E10 falhou): sem a comparação.")
+        else:
+            cob_ate = cobertura_por_rota(ate_cob, seg_base)
+            cob_cheio = {r: filtra_cob(r, cheio.cob.get(r, {}), cheio.segmentos) for r in set(cheio.cob) | set(cob_ate)}
+            rel.p(f"\nCobertura (BAND; os {len(COB_E10)} itens do ICS GC e dos Novos Negócios, que a E10 traz até o "
+                  "corte; as 3 chaves INC ficam fora porque a E10 não as consulta):")
+            rel.tabela(["item", f"{lab_ant} inteiro", f"até {c.corte:%d/%m}", "razão"],
+                       [[_rot(k), sum(len(ks.get(k, ())) for ks in cob_cheio.values()),
+                         sum(len(ks.get(k, ())) for ks in cob_ate.values()),
+                         _razao(sum(len(ks.get(k, ())) for ks in cob_ate.values()),
+                                sum(len(ks.get(k, ())) for ks in cob_cheio.values()))] for k in COB_E10])
+            viol_c = viola_inteiro(cob_cheio, cob_ate, COB_E10, tamanho=True)
+            rel.p(f"\nCobertura: rota x item em que o mês inteiro ficou **menor** que o truncado: **{len(viol_c)}**"
+                  + (": " + ", ".join(viol_c[:E14_MAX_VIOL]) if viol_c else "."))
+
+    # E14d. tempo e peso ---------------------------------------------------------------------------------------------
+    rel.h3("E14d. Tempo das consultas novas e peso no payload")
+    rel.tabela(["consulta", "consultas", "linhas", "segundos", "erro"],
+               [[m["nome"], m["consultas"], m["linhas"], f"{m['s']:.1f}", m["erro"]] for m in med.values()])
+    base_b = len(saida.serializar(base)) if base else None
+    rel.p("")
+    linhas_peso = []
+    for nome, chave in ((M.CHAVE_PRE_VENDA, k_pre), (M.CHAVE_MES_ANT_CHEIO, k_cheio)):
+        if chave is None:
+            linhas_peso.append([nome, None, None, "fora (consulta falhou ou valor inválido)"])
+            continue
+        b = len(saida.serializar({nome: chave})) - 1
+        linhas_peso.append([nome, len(chave["ROTAS"]), f"{_n(b / 1e3)} KB",
+                            f"{_n((base_b + b) / 1e6, 2)} MB" if base_b else None])
+    rel.tabela(["chave", "rotas", "acrescenta", "payload publicado + ela"], linhas_peso)
+    rel.p(f"Payload publicado (`frontend/data/payload.json` do checkout): "
+          + (f"{_n(base_b / 1e6, 2)} MB." if base_b else "não encontrado.")
+          + f" Limite de atenção: {LIMITE_PAYLOAD_MB:.0f} MB. O tempo acima é o da conferência (consultas em série); "
+          "no gerador as quatro rodam em threads daemon junto com as do mês, com o limite de "
+          f"{M.CADERNO_LIMITE_S:.0f} s.")
+    for a in avisos:
+        rel.p(f"- **Aviso de `caderno.chaves`:** {a}")
+
+    # E14e. rotas com null -------------------------------------------------------------------------------------------
+    rel.h3("E14e. Rotas com `null` em cada chave")
+    rel.p("`null` = a rota não tem o indicador no payload (`unavailable`: sem meta e sem dado). A disponibilidade "
+          + ("saiu do payload publicado do checkout." if do_payload else
+             "**não pôde ser lida** (payload publicado não encontrado): tudo contou como disponível."))
+    for nome, chave in ((M.CHAVE_PRE_VENDA, k_pre), (M.CHAVE_MES_ANT_CHEIO, k_cheio)):
+        if chave is None:
+            rel.p(f"\n- `{nome}`: fora do payload nesta execução.")
+            continue
+        rs = chave["ROTAS"]
+        tudo_v = sorted((r for r, v in rs.items() if all(x is None for x in v["v"])), key=_ordem_rota)
+        tudo_c = sorted((r for r, v in rs.items() if all(x is None for x in v["c"])), key=_ordem_rota)
+        rel.p(f"\n- `{nome}`: {len(rs)} rotas; **todo o volume null** em {len(tudo_v)} ({_rotas_txt(tudo_v)}); "
+              f"**toda a cobertura null** em {len(tudo_c)} ({_rotas_txt(tudo_c)}).")
+        rel.tabela(["indicador", "rotas com null"],
+                   [[_rot(k), sum(1 for v in rs.values() if v["v"][i] is None)]
+                    for i, k in enumerate(chave["IND_VOL"])]
+                   + [[_rot(k), sum(1 for v in rs.values() if v["c"][i] is None)]
+                      for i, k in enumerate(chave["IND_COB"])])
+
+
 def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
              simulado: bool = False, pasta_sac: Path = PASTA_SAC,
              payload_base: Path | None = PAYLOAD_PUBLICADO) -> tuple[Relatorio, float]:
@@ -3104,6 +3406,10 @@ def conferir(cons: Consulta, hoje: date, rotas_extra: list[str] | None = None,
     # E10. mês anterior no mesmo dia útil (descoberta da Etapa 8: calendário, consultas, custo) --------------------------
     rel.h("E10. Mês anterior no mesmo dia útil")
     etapa("E10 mês anterior", lambda: mes_anterior(rel, cons, estado, anomes, hoje, payload_base))
+
+    # E14. pré-venda do dia e mês anterior inteiro (Caderno de Vendas: PRE_VENDA e MES_ANT_CHEIO) -----------------
+    rel.h("E14. Pré-venda do último dia útil fechado e mês anterior inteiro (Caderno de Vendas)")
+    etapa("E14 Caderno", lambda: caderno_conferencia(rel, cons, estado, anomes, hoje, payload_base))
 
     # E12. Neg de hoje (negHoje) pela regra do gerador, com o caso de cada rota x macro ---------------------------------
     rel.h("E12. Neg de hoje (negHoje) por gerência e macro")

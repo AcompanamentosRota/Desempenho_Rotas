@@ -32,6 +32,11 @@ Consultas (todas analíticas, space DW_BND_COM_SAP; nomes e filtros em mapeament
   mês anterior AM_FAT_BND_ANALISE_META          Vol Real até o corte, META_VOLUME e META_NEG do mês anterior
                                                 (chave MES_ANTERIOR, gerador/mes_anterior.py): threads daemon com
                                                 limite de 60 s; falhou ou demorou = chave fora, a rodada segue
+  caderno     AM_FAT_BND_ANALISE_META           pré-venda do último dia útil fechado (volume pela rota da meta e
+                                                cobertura por rota x cliente, DATA_MOVIMENTO = DATA_ONTEM só no
+                                                $filter) e o mês anterior INTEIRO (chaves PRE_VENDA e
+                                                MES_ANT_CHEIO, gerador/caderno.py): threads daemon com limite
+                                                próprio; falhou ou demorou = chave fora, a rodada segue
 
 Todas agregam no servidor (modo analítico: o $select de dimensões é o groupby) e rodam em paralelo;
 DATA_MOVIMENTO só aparece no $filter, nunca no groupby (por dia seriam ~25 mil linhas e ~150 s).
@@ -793,6 +798,9 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     # próprio; se falhar ou demorar, a chave fica fora e a rodada segue (import aqui: o módulo usa este)
     from . import mes_anterior
     carga_ant = mes_anterior.iniciar(cons, cal, linhas_cal, gcs, rota)
+    # Caderno de Vendas (chaves PRE_VENDA e MES_ANT_CHEIO): mesmas regras, limite próprio (M.CADERNO_LIMITE_S)
+    from . import caderno
+    carga_cad = caderno.iniciar(cons, cal, linhas_cal, gcs, rota)
     if cal.fechamento:
         online.fechamento_mes = fechamento or cal.mes_label
         log.warning("Fechamento do mês: Venda Zero indisponível (o giro do comodato já é do mês novo).")
@@ -900,6 +908,10 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
     dados_ant, aviso_ant = carga_ant.resultado() if carga_ant else (None, None)
     tempos = {} if carga_ant is None else {"mes_anterior_s": round(carga_ant.segundos, 1),
                                            "mes_anterior_espera_s": round(time.monotonic() - espera, 1)}
+    dados_cad, avisos_cad = carga_cad.resultado() if carga_cad else (None, [])
+    if carga_cad:
+        tempos["caderno_s"] = round(carga_cad.segundos, 1)
+        tempos["caderno_espera_s"] = round(time.monotonic() - espera, 1)
     if neg_hoje_s is not None:
         tempos["neg_hoje_s"] = round(neg_hoje_s, 1)
     if com_neg_hoje and neg_hoje is None:
@@ -929,6 +941,10 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                               f"'{M.AGRUPADORES_VOLUME_EXTRA[k]}' zeradas ou ausentes): o card não aparece")
     if aviso_ant:
         avisos.append(aviso_ant)
+    avisos += avisos_cad
+    if carga_cad:
+        log.info("Caderno (%s e %s): consultas em %.1f s.", M.CHAVE_PRE_VENDA, M.CHAVE_MES_ANT_CHEIO,
+                 tempos["caderno_s"])
     for a in avisos:
         log.warning(a)
     # barra por cliente: (Meta NEG do cliente, Vol Real do cliente) onde o cliente tem meta
@@ -952,4 +968,4 @@ def carregar(cons: Consulta, agora: datetime, rota: str | None = None, so_online
                   vendazero=so_painel(vendazero) if vendazero is not None else None,
                   vz_meta=vz_meta, comodato_ativos=so_painel(ativos), segmento_venda=segmento, avisos=avisos,
                   comodato_cliente=so_painel(comodato_cliente(por_cli_comodato, vm.real_gdm_cliente, virtuais)),
-                  eventuais=eventuais, mes_anterior=dados_ant, tempos=tempos)
+                  eventuais=eventuais, mes_anterior=dados_ant, caderno=dados_cad, tempos=tempos)

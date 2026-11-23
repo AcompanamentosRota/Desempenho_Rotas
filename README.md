@@ -1694,6 +1694,95 @@ a mesma faixa da main nas mesmas condições (limite de atenção: 120 s).
 
 Depois do merge: rodar **"Atualizar dados"** (opção tudo) para o payload publicado trazer o campo.
 
+### Pré-venda e mês anterior fechado (`PRE_VENDA` e `MES_ANT_CHEIO`; seção E14)
+
+Caderno de Vendas, Frente 2, PR 1 de 4 (19/11/2026). O Caderno vai ganhar uma visão por **gerência** e por
+**supervisão**, no Back Office, com as colunas Meta · Real · Dif · % · Tendência (volume) / Ritmo (cobertura) ·
+Meta dia · **Pré-venda** · **Real do mês anterior**. As duas últimas não existiam no payload: são estas duas chaves.
+O Caderno é matinal, como o Painel de Ritmo — não usa o online.
+
+> **Nenhuma tela lê estas chaves.** O front as ignora, como já ignora `negHoje`. Depois do merge é preciso rodar
+> **"Atualizar dados" (opção `tudo`)**: a etapa mexe no gerador e no payload, então o site não se atualiza sozinho.
+> Nada muda para o usuário.
+
+Código em `backend/gerador/caderno.py`; nomes e constantes em `mapeamento.py` (`CHAVE_PRE_VENDA`,
+`CHAVE_MES_ANT_CHEIO`, `INDICADORES_CADERNO_VOL`, `INDICADORES_CADERNO_COB`, `AGRUPADORES_CADERNO_VOL`,
+`AGRUPADORES_CADERNO_COB`, `CADERNO_LIMITE_S`).
+
+```json
+"PRE_VENDA": {"DATA": "2026-11-18",
+  "IND_VOL": ["VOL REFRIGERANTES", "...", "VOL DEL VALLE FRUT"],
+  "IND_COB": ["CCTM 2L PET", "...", "INC HEINEKEN 600ML"],
+  "ROTAS": {"111": {"v": [1234.5, 0.0, null, ...], "c": [12, 0, null, ...]}}},
+"MES_ANT_CHEIO": {"MES_LABEL": "Outubro/26", "TOTAL_DIAS_UTEIS": 21,
+  "IND_VOL": [...], "IND_COB": [...], "ROTAS": {"111": {"v": [...], "c": [...]}}}
+```
+
+As duas são **opcionais** e são as **últimas** do payload, depois da `MES_ANTERIOR` e fora de `CHAVES_PAYLOAD`.
+`IND_VOL` (os 5 macros + Del Valle Frut) e `IND_COB` (os 13 itens do ICS GC e dos Novos Negócios + as 3 chaves INC
+do Todos a Bordo) são tabelas de índice como `SEGS` e `DIAS`: **só acrescentar no fim**. `ROTAS` traz todas as rotas
+do payload, na ordem dele (Neutraliza, virtuais e as ocultas `"{GC}-EV"` inclusive), como a `MES_ANTERIOR`.
+
+As duas armadilhas desta etapa:
+
+1. **A data é a do payload, nunca a do relógio.** `PRE_VENDA.DATA` é o `DATA_ONTEM` — o último dia útil **fechado** —,
+   a mesma regra de data do Painel de Ritmo. "Hoje − 1" pelo calendário devolveria domingo numa segunda-feira e o
+   feriado no dia seguinte a um feriado, e o Caderno sairia zerado em cerca de 5 dias por mês. Sem `DATA_ONTEM`
+   (primeiro dia útil do mês), a `PRE_VENDA` não existe; a `MES_ANT_CHEIO` continua.
+2. **A pré-venda de cobertura é "quem COMPROU o item naquele dia"**, e não "quem entrou na cobertura naquele dia":
+   um cliente que já tinha comprado o item antes no mês conta de novo. É a conta da cobertura do mês
+   (`FX_COBERTURA_REALIZADO` > 0, sem NF cancelada, KS TT só nos 4 segmentos foco), só que com
+   `DATA_MOVIMENTO = <dia>` no `$filter`.
+
+Regras:
+
+- **Volume** (os 5 macros + Del Valle Frut): `FX_VOL_PADRAO_FAT` com `NF_STATUS_Nota_Fiscal` em `M.STATUS_NF_REAL` —
+  o mesmo filtro do Vol Real, senão a coluna não reconcilia com a coluna Real da mesma linha do Caderno.
+  A pré-venda vai pela **rota da meta** (`CD_ROTA_Chave_Meta_SAP`), como a Neg Restante e a meta do dia: venda sem
+  chave de meta fica fora (como o SAC) e venda cuja rota da meta é uma EV* entra na rota oculta `"{GC}-EV"` da
+  gerência comercial do cliente.
+- **Cobertura** (16 itens): conta para a **rota em que a venda foi faturada** (`CD_ROTA_Clien`), como a cobertura do
+  mês — e não para a rota da meta. **Esta diferença entre volume e cobertura é de propósito.** As EV* também na rota
+  oculta, pela gerência comercial.
+- **`MES_ANT_CHEIO`** é o mês anterior **inteiro** (do dia 1 ao último dia), sem corte de data, no mesmo mês de
+  referência do `corte_mes_anterior` (no fechamento, o mês anterior ao fechado). O volume dela vai pela **rota ATUAL
+  do cliente** (`CD_ROTA_Clien`), a mesma regra da `MES_ANTERIOR`, para as duas colunas do Caderno serem comparáveis
+  entre si — e não pela rota da meta da pré-venda.
+- **A chave `MES_ANTERIOR` não muda em nada.** Ela vai só até o **mesmo dia útil** do mês anterior e a Evolução da
+  Executiva depende dela. O mês anterior inteiro é um valor novo, a mais. (No PR 1 isso foi provado byte a byte:
+  gerando dois payloads com a mesma resposta do Datasphere, fora das duas chaves novas os arquivos são idênticos.)
+- **`null`** = a rota não tem o indicador no payload (`unavailable`: sem meta e sem dado). Onde o indicador existe e
+  não houve venda, o valor é **0**, não `null`.
+- `DATA_MOVIMENTO` entra **só no `$filter`**, nunca no groupby.
+- **Consultas e falha**: quatro, em threads **daemon** junto com as do mês, com limite próprio
+  (`M.CADERNO_LIMITE_S`, 90 s). HTTP 500 na consulta inteira: repete por gerência. Falha, estouro de tempo, valor
+  negativo ou não finito = a chave fica **fora** do payload, com aviso no log, e a rodada segue — nunca um número
+  pela metade e nunca outra conta no lugar. Os dois blocos são independentes (a pré-venda pode entrar sem o mês
+  anterior inteiro e vice-versa); dentro de um bloco, volume e cobertura andam juntos.
+- **Validação** (`validacao._caderno`): só **avisa** — chave ausente; volume da BAND = 0; pré-venda de volume maior
+  que o Vol Real do mês (por gerência e BAND: por rota não dá, o volume da pré-venda vai pela rota da meta e o Vol
+  Real do mês pela rota do cliente); cobertura do dia maior que a do mês (por rota × item, que aí se comparam).
+  **Erro** só para `NaN`/`inf` ou valor negativo.
+- Peso medido no payload real de 19/11/2026 (246 rotas): `PRE_VENDA` +22,7 KB e `MES_ANT_CHEIO` +27,2 KB
+  (6,64 → 6,69 MB). O `gerar.py` foi de 73 s (main) para 98 s nas mesmas condições (limite de atenção: 120 s) e grava
+  `caderno_s` e `caderno_espera_s` no log e no `GITHUB_OUTPUT`.
+
+**Como conferir** (seção **E14** do "Conferir tendência", com rede, depois da E10 — o workflow já a traz; local:
+`python scripts/conferir_tendencia.py --saida DIR`, com `DIR` **fora** do repositório):
+
+- **E14a** pré-venda de volume por gerência e BAND, em cada macro, ao lado do Vol Real do mês, com a razão. Sanidade:
+  no dia útil *N*, um dia sozinho deve ficar perto de 1/*N* do acumulado — nunca 0 e nunca mais que o mês.
+- **E14b** pré-venda de cobertura por item (BAND) e por gerência, ao lado da cobertura do mês, e as rotas × item em
+  que o dia passou o mês (impossível).
+- **E14c** mês anterior **inteiro** × o truncado da `MES_ANTERIOR` (volume por gerência, cobertura por item) e as
+  violações por rota × item: **o inteiro tem de ser ≥ o truncado em toda rota × item**. O truncado sai das consultas
+  da E10 (a mesma resposta, sem custo extra), então a comparação de cobertura fica nos 13 itens do ICS GC e dos
+  Novos Negócios.
+- **E14d** tempo de cada consulta nova e o peso de cada chave no payload (com × sem ela).
+- **E14e** quantas rotas ficaram com `null` em cada chave e por quê.
+
+Só contagens, totais e códigos de rota e gerência: nunca nomes nem códigos de clientes.
+
 Diferenças em relação ao arquivo que era montado à mão:
 - **Visitas de hoje**: vêm do campo `VISITA_HOJE` do SAP e incluem clientes com mais de um dia de
   visita (ex.: "Ter - Sex"); o arquivo antigo só contava quem tinha exatamente o dia de hoje.

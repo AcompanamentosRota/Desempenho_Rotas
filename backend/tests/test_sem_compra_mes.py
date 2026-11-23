@@ -117,9 +117,10 @@ class TestSemCompraMes(unittest.TestCase):
             self.assertIsNone(_rotas(p)[ROTA_SEM_VENDA]["semCompra"])
 
     def test_chave_no_fim_e_opcional(self):
+        # a última, antes só das opcionais que vieram depois: MES_ANTERIOR (Etapa 8b) e as duas do Caderno de Vendas
+        depois = {"MES_ANTERIOR", M.CHAVE_PRE_VENDA, M.CHAVE_MES_ANT_CHEIO}
         for p in self.payloads:
-            # a última, antes só da MES_ANTERIOR (opcional, Etapa 8b)
-            self.assertEqual([k for k in p if k != "MES_ANTERIOR"][-1], "SEM_COMPRA_MES")
+            self.assertEqual([k for k in p if k not in depois][-1], "SEM_COMPRA_MES")
         self.assertNotIn("SEM_COMPRA_MES", CHAVES_PAYLOAD)
 
     def test_validacao_sem_erro_nem_aviso(self):
