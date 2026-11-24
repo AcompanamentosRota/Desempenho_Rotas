@@ -203,6 +203,17 @@ before(async () => {
   fs.writeFileSync(path.join(cadtrap, 'payload.json'), JSON.stringify(ct));
   fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(cadtrap, 'online.json'));
   DADOS.cadtrap = cadtrap;
+  /* 'cadgrande' = o caso-limite da paginação do PDF (PR 3): a SV.G2.1 com 90 rotas faz UM bloco de Grupo Produto
+     ficar mais alto que a página útil da A4. A página daquele bloco cresce (é o que o RS.paginas já faz no Resumo),
+     em vez de cortar a tabela. Com dado real isso não acontece: a maior supervisão tem 7 rotas. */
+  const cadgrande = path.join(tmp, 'cadgrande');
+  fs.mkdirSync(cadgrande);
+  const cg = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  const svG = cg.DATA.G2['SV.G2.1'], rota0 = Object.keys(svG)[0];
+  for(let i = 0; i < 90; i++) svG['Z' + String(i).padStart(2, '0')] = JSON.parse(JSON.stringify(svG[rota0]));
+  fs.writeFileSync(path.join(cadgrande, 'payload.json'), JSON.stringify(cg));
+  fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(cadgrande, 'online.json'));
+  DADOS.cadgrande = cadgrande;
   // aba Executiva (Parte W): o cenário do Todos a Bordo com clientes sem compra no mês (o sintético compra tudo)
   const exec = path.join(tmp, 'exec');
   fs.mkdirSync(exec);
@@ -315,7 +326,7 @@ const TIPOS = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', 
 /* Abre o painel com os dados `nome` ('normal' | 'fech' | 'semdv' | 'antigo' | 'semsv' | 'grupo' | 'semdados' | 'evcob' |
    'semscm' | 'inc' | 'incfech' | 'seminc' | 'grande' | 'exec' | 'dias' | 'diasscm' | 'evo' | 'evogrupo' | 'evogrande' |
    'evofech' | 'semevo' | 'vol5' | 'vol5fech' | 'dim' | 'sab' | 'dom' | 'fer' | 'semdsem' | 'util0' |
-   'exrota' | 'exrotafech' | 'semcad' | 'cadtrap');
+   'exrota' | 'exrotafech' | 'semcad' | 'cadtrap' | 'cadgrande');
    devolve {page, erros}.
    `armazenado` = localStorage inicial; `busca` = query string (ex.: link do Resumo); `fuso` = fuso do navegador;
    `antes(page)` roda antes de abrir (ex.: relógio simulado); `entrar` = como entra pela entrada (ver entra()); `aba` = a
@@ -12045,8 +12056,10 @@ function contextoCad(){
   for(const k of ['ONLINE', 'puxaOnline', 'REVERTIDO_HOJE', 'OPORTUNIDADE_HOJE', 'SEM_COMPRA_HOJE', 'document',
                   'window', 'sel', 'ACESSO', 'DATA', 'Date'])
     Object.defineProperty(ctx, k, {get(){ throw new Error(`Caderno leu ${k}`); }});
-  const js = ['config.js', 'nucleo.js', 'caderno.js'].map(f => fs.readFileSync(path.join(FRONT, 'js', f), 'utf-8')).join('\n;\n');
-  vm.runInContext(js + '\n;globalThis.montaCaderno = montaCaderno; globalThis.NUCLEO = NUCLEO;', ctx);
+  // o resumo.js entra por causa do RS.paginas, a divisão em páginas que o PDF do Caderno (PR 3) usa sem alterar
+  const js = ['config.js', 'nucleo.js', 'resumo.js', 'caderno.js'].map(f => fs.readFileSync(path.join(FRONT, 'js', f), 'utf-8')).join('\n;\n');
+  vm.runInContext(js + '\n;globalThis.montaCaderno = montaCaderno; globalThis.NUCLEO = NUCLEO;' +
+    '\n;globalThis.cadernoCompleto = cadernoCompleto; globalThis.cadernoPaginas = cadernoPaginas; globalThis.RS = RS;', ctx);
   return ctx;
 }
 const payloadCad = nome => JSON.parse(fs.readFileSync(path.join(DADOS[nome], 'payload.json'), 'utf-8'));
@@ -12214,8 +12227,65 @@ describe('Parte AR — Caderno de Vendas: montaCaderno (função pura, sem naveg
     }
     assert.ok(n > 20, `linhas conferidas: ${n}`);
   });
+
+  /* ---- PR 3: o caderno inteiro da gerência e a paginação em A4 (as duas funções também são puras) ---- */
+
+  test('(17) o caderno do PDF: 2 + 2N folhas, na ordem da tela, sem ONLINE, campos de hoje nem Date', () => {
+    const ctx = contextoCad(), p = payloadCad('normal');
+    // o vm é outro realm: o deepStrictEqual compara o protótipo dos vetores, então a saída volta por JSON
+    const puro = x => JSON.parse(JSON.stringify(x));
+    const lista = () => puro(ctx.cadernoCompleto(vigiaCad(p), 'G2').map(f => [f.nivel, f.sv, f.tipo, f.folha.cab.escopo]));
+    const svs = puro(ctx.montaCaderno(vigiaCad(p), {nivel: 'gc', gc: 'G2'}).unidades);
+    assert.deepEqual(svs, ['SV.G2.1', 'SV.G2.2', 'SV.G2.5'], 'as supervisões do Caderno, na ordem da tela');
+    const esperado = [['gc', '', 'vol', 'GC. G2'], ['gc', '', 'cob', 'GC. G2']];
+    for(const sv of svs) esperado.push(['sv', sv, 'vol', sv], ['sv', sv, 'cob', sv]);
+    assert.deepEqual(lista(), esperado, 'Gerência (Volume, Cobertura) e, depois, cada supervisão na mesma ordem');
+    assert.equal(lista().length, 2 + 2 * svs.length);
+    // a folha do PDF é a MESMA que a tela desenha para aquele escopo (um montaCaderno por escopo, nada reimplementado)
+    const naTela = JSON.parse(JSON.stringify(ctx.montaCaderno(vigiaCad(p), {nivel: 'sv', gc: 'G2', sv: 'SV.G2.1'}).folhas));
+    const noPdf = JSON.parse(JSON.stringify(ctx.cadernoCompleto(vigiaCad(p), 'G2').slice(2, 4).map(f => f.folha)));
+    assert.deepEqual(noPdf, naTela, 'a folha do PDF é a mesma da tela');
+    // no fechamento o caderno continua saindo (o botão não é desabilitado, ao contrário do Painel de Ritmo)
+    const f = payloadCad('fech');
+    assert.ok(ctx.cadernoCompleto(vigiaCad(f), 'G2').length >= 2, 'no fechamento o caderno sai igual');
+  });
+
+  test('(18) paginação com o RS.paginas: nenhum bloco em duas páginas, na ordem, e o cabeçalho com o 1º bloco', () => {
+    const ctx = contextoCad();
+    // alturas de brinquedo: cabeçalho com altura zero (é repetido em toda página) e 10 blocos de 100 px
+    const atomos = [{t: 0, b: 0}];
+    for(let i = 0; i < 10; i++) atomos.push({t: i * 100, b: i * 100 + 100});
+    const puro = x => JSON.parse(JSON.stringify(x));
+    const pags = puro(ctx.cadernoPaginas(atomos, 450, 1000, ctx.RS.paginas));
+    assert.deepEqual(pags, [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9]], 'quatro blocos por página de 450 px');
+    assert.deepEqual(pags.flat(), [...Array(10).keys()], 'todos os blocos, uma vez só e em ordem');
+    // um bloco mais alto que a página útil fica sozinho (é o que o RS.paginas já faz) e nada se perde
+    const grande = [{t: 0, b: 0}, {t: 0, b: 90}, {t: 90, b: 900}, {t: 900, b: 990}];
+    const p2 = puro(ctx.cadernoPaginas(grande, 450, 990, ctx.RS.paginas));
+    assert.deepEqual(p2.flat(), [0, 1, 2], 'o bloco gigante não some');
+    assert.ok(p2.some(x => x.length === 1 && x[0] === 1), `o bloco alto fica sozinho: ${JSON.stringify(p2)}`);
+    // folha sem bloco nenhum: uma página só, vazia (ela desenha o "Nada neste filtro.")
+    assert.deepEqual(puro(ctx.cadernoPaginas([{t: 0, b: 0}], 450, 0, ctx.RS.paginas)), [[]]);
+    // o caminho inteiro (montar o caderno + paginar) roda sem ONLINE, sem os campos de hoje e sem Date
+    const p = payloadCad('normal');
+    const fol = ctx.cadernoCompleto(vigiaCad(p), 'G2');
+    const n = fol.reduce((a, f) => a + ctx.cadernoPaginas([{t: 0, b: 0},
+      ...f.folha.blocos.map((b, i) => ({t: i * 120, b: i * 120 + 120}))], 500, 9999, ctx.RS.paginas).length, 0);
+    assert.ok(n >= fol.length, `páginas: ${n} para ${fol.length} folhas`);
+  });
 });
 
+/* Caderno em PDF (PR 3): o antes x depois da TELA é contra a main antes desta etapa, servindo dela os DOIS arquivos
+   que a etapa toca (js/caderno.js e css/app.css). Nada do painel, nada do Back Office e nada da tela do Caderno pode
+   mudar: o PDF entra por um botão novo e por um palco fora da tela. */
+const REF_PRE_PDF = 'ea1bd38';
+const FRONT_PRE_PDF = (() => {
+  try {
+    const arq = f => execSync(`git show ${REF_PRE_PDF}:frontend/${f}`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    const [js, css] = ['js/caderno.js', 'css/app.css'].map(arq);
+    return {'/js/caderno.js': () => js, '/css/app.css': () => css};
+  } catch(e) { return null; }
+})();
 describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
   // entra no Back Office e vai para a aba Caderno
   async function abreCaderno(nome, op = {}){
@@ -12413,6 +12483,341 @@ describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
     assert.equal(await page.evaluate(() => document.querySelector('#bo .boFiltros').outerHTML), filtrosAntes,
       'os filtros continuam byte a byte');
     assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* ---------- PR 3: o caderno em PDF ----------
+     O PDF é o caderno INTEIRO da gerência (2 + 2N folhas), paginado em A4 retrato pelo RS.paginas. Os testes abaixo
+     não geram PDF de verdade (isso é a Parte AR do bloco seguinte, só com os pacotes npm): eles leem a composição e
+     o HTML das páginas por CAD.paginas()/CAD.htmlPagina() e, para o nome e as propriedades, põem um jsPDF e um
+     html2canvas de mentira no lugar das bibliotecas do CDN. */
+  // jsPDF e html2canvas falsos + RS.salvaPdf gravando o que seria salvo: o caminho do exporta() roda inteiro sem rede
+  const FALSAS = () => {
+    window.html2canvas = async () => ({width: 1, height: 1, toDataURL: () => 'data:image/jpeg;base64,AA'});
+    window.jspdf = {jsPDF: function(op){
+      this.op = op; this.pgs = []; this.imgs = []; this.props = null;
+      this.addPage = (f, o) => this.pgs.push([f, o]);
+      this.addImage = (...a) => this.imgs.push(a);
+      this.setProperties = p => { this.props = p; };
+      this.output = () => { window.__pdf = {op: this.op, pgs: this.pgs, imgs: this.imgs.length, props: this.props};
+        return new Blob(['x'], {type: 'application/pdf'}); };
+    }};
+    window.__nomes = [];
+    RS.salvaPdf = async (blob, nome) => { window.__nomes.push(nome); return 'salvo'; };
+  };
+  const geraFalso = async page => {
+    await page.evaluate(() => { window.__pdf = null; });
+    await page.click('#cadPdf');
+    await page.waitForFunction(() => window.__pdf && window.__nomes.length);
+    return page.evaluate(() => ({...window.__pdf, nome: window.__nomes[window.__nomes.length - 1]}));
+  };
+
+  test('(19) o PDF é o caderno inteiro da gerência: ignora o Nível e a Supervisão da tela', async () => {
+    const {page, ctx, erros} = await abreCaderno('normal');
+    await escolhe(page, 'cadGc', 'G2');
+    const folhas = () => page.evaluate(() => CAD.paginas().pags.map(p => [p.nivel, p.sv, p.tipo]));
+    const svs = await page.evaluate(() => Object.keys(DATA.G2).filter(sv => {
+      const evs = new Set(P.EVENTUAIS_ROTAS || []), rs = Object.keys(DATA.G2[sv] || {});
+      return rs.length && !rs.every(r => evs.has(r)); }).sort(ordemNatural));
+    // a ordem das FOLHAS: Gerência (Volume, Cobertura) e, depois, cada supervisão (Volume, Cobertura)
+    const porFolha = ps => ps.filter((x, i) => i === 0 || String(ps[i - 1]) !== String(x));
+    const esperado = [['gc', '', 'vol'], ['gc', '', 'cob'], ...svs.flatMap(sv => [['sv', sv, 'vol'], ['sv', sv, 'cob']])];
+    const antes = await folhas();
+    assert.deepEqual(porFolha(antes), esperado, 'a composição do caderno');
+    // mudar os dois seletores da tela não muda NADA da lista de páginas (eles governam só a tela)
+    await escolhe(page, 'cadNivel', 'sv');
+    await escolhe(page, 'cadSv', svs[svs.length - 1]);
+    assert.deepEqual(await folhas(), antes, 'o Nível e a Supervisão não entram no PDF');
+    // e, trocando a gerência, o caderno é o da nova
+    await escolhe(page, 'cadGc', 'G1');
+    assert.ok((await folhas()).every(x => x[1] === '' || x[1].startsWith('SV.G1')), 'o caderno segue o seletor Gerência');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(20) paginação: bloco nunca em duas páginas, cabeçalho e <thead> em todas, nota só na última, Folha X de Y',
+    async () => {
+    const {page, ctx, erros} = await abreCaderno('normal');
+    for(const gc of ['G2', 'AT']){
+      await escolhe(page, 'cadGc', gc);
+      const r = await page.evaluate(() => {
+        const {pags} = CAD.paginas(), n = pags.length, caixa = document.createElement('div');
+        document.body.appendChild(caixa);
+        const out = pags.map((pg, i) => {
+          caixa.innerHTML = CAD.htmlPagina(pg, i + 1, n);
+          const sec = caixa.querySelector('.cadFolha');
+          return {folha: sec.dataset.folha, escopo: sec.querySelector('.cadEsc').textContent,
+            titulo: sec.querySelector('.cadTit').textContent,
+            cab: !!sec.querySelector('.cadCab'), thead: sec.querySelectorAll('thead th').length,
+            blocos: [...sec.querySelectorAll('td.prod')].map(td => td.childNodes[0].textContent),
+            // nenhuma linha solta: toda <tr> do corpo pertence a um bloco com rowspan fechado
+            linhas: sec.querySelectorAll('tbody tr').length,
+            totais: sec.querySelectorAll('tbody tr.tot').length,
+            notas: [...sec.querySelectorAll('.cadRod div')].map(d => d.textContent),
+            folio: (caixa.querySelector('.cadFolio') || {}).textContent,
+            altura: caixa.querySelector('.cadPag').getBoundingClientRect().height, alt: pg.alt,
+            transborda: sec.getBoundingClientRect().bottom >
+              caixa.querySelector('.cadPag').getBoundingClientRect().bottom + 0.5};
+        });
+        caixa.remove();
+        // as folhas inteiras, para conferir que a página não perdeu nem repetiu bloco
+        const folhas = pags.map(pg => ({chave: pg.nivel + '|' + pg.sv + '|' + pg.tipo,
+          blocos: pg.folha.blocos.map(b => b.rotulo), notas: pg.folha.notas}));
+        return {n, out, folhas};
+      });
+      const n = r.n;
+      const vistos = {};
+      r.out.forEach((pg, i) => {
+        const onde = `${gc} página ${i + 1}/${n} (${r.folhas[i].chave})`;
+        assert.ok(pg.cab, `${onde}: cabeçalho da folha`);
+        assert.ok(pg.thead >= 12, `${onde}: cabeçalho das colunas (${pg.thead} th)`);
+        assert.equal(pg.folio, `Folha ${i + 1} de ${n}`, `${onde}: rodapé`);
+        // a página é a A4; só um bloco maior que a página útil a faria crescer (caso-limite do RS.paginas)
+        assert.equal(Math.round(pg.altura), pg.alt, `${onde}: a altura desenhada é a do modelo`);
+        assert.equal(pg.alt, 1123, `${onde}: A4 retrato (nenhum bloco maior que a página útil)`);
+        assert.equal(pg.transborda, false, `${onde}: a folha transbordou da página`);
+        // um bloco por TOTAL: nenhum bloco entrou pela metade
+        assert.equal(pg.totais, pg.blocos.length, `${onde}: blocos inteiros (um TOTAL por bloco)`);
+        const c = r.folhas[i].chave;
+        (vistos[c] = vistos[c] || []).push(...pg.blocos);
+        // a nota do resíduo (EV*/virtuais) só na ÚLTIMA página daquela folha
+        const ultima = i === n - 1 || r.folhas[i + 1].chave !== c;
+        assert.deepEqual(pg.notas, ultima ? r.folhas[i].notas : [], `${onde}: nota de rodapé (última: ${ultima})`);
+      });
+      // cada folha teve TODOS os blocos dela, uma vez só e na ordem
+      for(const [c, bs] of Object.entries(vistos)){
+        const f = r.folhas.find(x => x.chave === c);
+        assert.deepEqual(bs, f.blocos, `${gc}/${c}: os blocos da folha, na ordem e sem repetir`);
+      }
+      assert.ok(n >= r.folhas.filter((f, i) => i === 0 || r.folhas[i - 1].chave !== f.chave).length,
+        `${gc}: pelo menos uma página por folha`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(21) nome do arquivo com a data do PAYLOAD, propriedades e uma página A4 por página do caderno', async () => {
+    const {page, ctx, erros} = await abreCaderno('normal');
+    await escolhe(page, 'cadGc', 'G2');
+    await page.evaluate(FALSAS);
+    page.on('dialog', d => d.accept());
+    const n = await page.evaluate(() => CAD.paginas().pags.length);
+    const r = await geraFalso(page);
+    const P = payloadCad('normal');
+    assert.equal(r.nome, `Caderno_Vendas_G2_${P.DATA_ONTEM.replace(/-/g, '')}.pdf`, 'a data é a do payload');
+    assert.deepEqual(r.op.format, [794, 1123], 'A4 retrato em px');
+    assert.equal(r.op.orientation, 'portrait');
+    assert.equal(r.imgs, n, 'uma imagem por página');
+    assert.equal(r.pgs.length, n - 1, 'a 1ª página já vem com o documento');
+    assert.ok(r.pgs.every(([f, o]) => String(f) === '794,1123' && o === 'portrait'), JSON.stringify(r.pgs[0]));
+    assert.equal(r.props.title, `Caderno de Vendas · G2 · dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS} · dados até ` +
+      `${P.DATA_ONTEM.slice(8)}/${P.DATA_ONTEM.slice(5, 7)}`);
+    assert.equal(r.props.author, 'Comercial Bandeirantes');
+    // o botão volta ao normal e avisa
+    await page.waitForFunction(() => !document.getElementById('cadPdf').hasAttribute('aria-busy'));
+    assert.match(await page.textContent('#cadMsg'), /^PDF salvo: Caderno_Vendas_G2_/);
+    // payload sem DATA_ONTEM: cai no hojeArq() (a data de hoje em Brasília) e o título perde o "dados até"
+    await page.evaluate(() => { delete P.DATA_ONTEM; });
+    const r2 = await geraFalso(page);
+    assert.match(r2.nome, /^Caderno_Vendas_G2_\d{8}\.pdf$/, r2.nome);
+    assert.equal(r2.nome.slice(-12, -4), await page.evaluate(() => RT.diaArq()), 'sem DATA_ONTEM, a data de hoje');
+    assert.equal(r2.props.title, `Caderno de Vendas · G2 · dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}`);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(22) fechamento do mês: o botão continua habilitado e o PDF sai (ao contrário do Painel de Ritmo)', async () => {
+    const {page, ctx, erros} = await abreCaderno('incfech');
+    assert.equal(await page.evaluate(() => P.FECHAMENTO), true);
+    assert.equal(await page.evaluate(() => document.getElementById('cadPdf').disabled), false, 'botão habilitado');
+    // controle: o do Painel de Ritmo, no mesmo payload, continua desabilitado
+    assert.equal(await page.evaluate(() => document.getElementById('boRitmo').disabled), true, 'o do Ritmo, não');
+    await page.evaluate(FALSAS);
+    page.on('dialog', d => d.accept());
+    const n = await page.evaluate(() => CAD.paginas().pags.length);
+    const r = await geraFalso(page);
+    assert.ok(n > 0 && r.imgs === n, `${n} páginas no fechamento`);
+    assert.match(r.props.title, /^Caderno de Vendas · /);
+    // a folha do PDF é a do fechamento: o cabeçalho troca Corridos/Restantes por "Fechamento <mês>"
+    const apoio = await page.evaluate(() => {
+      const {pags} = CAD.paginas(), caixa = document.createElement('div');
+      document.body.appendChild(caixa);
+      caixa.innerHTML = CAD.htmlPagina(pags[0], 1, pags.length);
+      const t = [...caixa.querySelectorAll('.cadApoio > span')].map(x => x.textContent);
+      caixa.remove();
+      return t;
+    });
+    assert.ok(apoio.some(t => /^Fechamento /.test(t)), apoio.join(' | '));
+    assert.ok(!apoio.some(t => /Corridos|Restantes/.test(t)), apoio.join(' | '));
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* Caso-limite do RS.paginas: um bloco de Grupo Produto mais alto que a página útil. A página daquele bloco fica
+     mais alta (é o que o Resumo faz), em vez de a tabela ser cortada — e ele continua sozinho nela. Com dado real
+     não acontece (a maior supervisão tem 7 rotas; o maior bloco mede 121 px contra ~1.011 px de página útil). */
+  test('(24) bloco maior que a página útil: a página cresce, o bloco fica sozinho e nada é cortado', async () => {
+    const {page, ctx, erros} = await abreCaderno('cadgrande');
+    await escolhe(page, 'cadGc', 'G2');
+    await escolhe(page, 'cadNivel', 'sv');
+    await escolhe(page, 'cadSv', 'SV.G2.1');
+    const r = await page.evaluate(() => {
+      const {pags} = CAD.paginas(), n = pags.length, caixa = document.createElement('div');
+      document.body.appendChild(caixa);
+      const out = pags.map((pg, i) => {
+        caixa.innerHTML = CAD.htmlPagina(pg, i + 1, n);
+        const sec = caixa.querySelector('.cadFolha'), cx = caixa.querySelector('.cadPag');
+        return {alt: pg.alt, desenhada: Math.round(cx.getBoundingClientRect().height),
+          blocos: sec.querySelectorAll('td.prod').length, totais: sec.querySelectorAll('tbody tr.tot').length,
+          folio: (caixa.querySelector('.cadFolio') || {}).textContent,
+          transborda: sec.getBoundingClientRect().bottom > cx.getBoundingClientRect().bottom + 0.5};
+      });
+      caixa.remove();
+      return {n, out};
+    });
+    const altas = r.out.filter(x => x.alt > 1123);
+    assert.ok(altas.length > 0, `alguma página cresce: ${JSON.stringify(r.out.map(x => x.alt))}`);
+    altas.forEach((x, i) => assert.equal(x.blocos, 1, `página alta ${i + 1}: o bloco gigante fica sozinho`));
+    r.out.forEach((x, i) => {
+      assert.equal(x.desenhada, x.alt, `página ${i + 1}: a altura desenhada é a do modelo`);
+      assert.equal(x.transborda, false, `página ${i + 1}: a folha transbordou`);
+      assert.equal(x.totais, x.blocos, `página ${i + 1}: nenhum bloco partido`);
+      assert.equal(x.folio, `Folha ${i + 1} de ${r.n}`, `página ${i + 1}: Folha X de Y`);
+    });
+    // e o PDF sai, com o formato de cada página seguindo a altura dela
+    await page.evaluate(FALSAS);
+    page.on('dialog', d => d.accept());
+    const pdf = await geraFalso(page);
+    assert.deepEqual(pdf.op.format, [794, r.out[0].alt], 'o formato da 1ª página');
+    assert.deepEqual(pdf.pgs.map(([f]) => f[1]), r.out.slice(1).map(x => x.alt), 'a altura das demais');
+    assert.equal(pdf.imgs, r.n);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('(23) a tela não muda: #cadFolhas, seletores, aba "Tabela", abas do painel, Resumo e Ritmo byte a byte',
+    {skip: !FRONT_PRE_PDF && `sem o commit ${REF_PRE_PDF}`}, async () => {
+    const troca = FRONT_PRE_PDF;
+    const novo = await abre('normal', {entrar: 'bo'}), velho = await abre('normal', {entrar: 'bo', troca});
+    const pgs = [novo, velho];
+    // Back Office, aba "Tabela"
+    for(const nivel of ['gc', 'sv', 'rota']){
+      for(const {page} of pgs){
+        await page.selectOption('#boNivel', nivel);
+        await page.waitForFunction(n => document.getElementById('boNivel').value === n &&
+          document.getElementById('boCorpo').innerHTML !== '', nivel);
+      }
+      assert.equal(await novo.page.innerHTML('#boCorpo'), await velho.page.innerHTML('#boCorpo'), `Tabela ${nivel}`);
+    }
+    assert.equal(await novo.page.evaluate(() => document.querySelector('#bo .boFiltros').outerHTML),
+      await velho.page.evaluate(() => document.querySelector('#bo .boFiltros').outerHTML), 'filtros da Tabela');
+    // aba Caderno: as folhas e os seletores (o botão novo é o único elemento a mais)
+    for(const {page} of pgs){
+      await page.click('#boAba-caderno');
+      await page.waitForFunction(() => !document.getElementById('cad').hidden &&
+        document.getElementById('cadFolhas').innerHTML !== '');
+    }
+    for(const gc of ['G2', 'G1', 'AT']) for(const nivel of ['gc', 'sv']){
+      for(const {page} of pgs){ await escolhe(page, 'cadGc', gc); await escolhe(page, 'cadNivel', nivel); }
+      assert.equal(await novo.page.innerHTML('#cadFolhas'), await velho.page.innerHTML('#cadFolhas'),
+        `${gc}/${nivel}: as folhas da tela`);
+      assert.equal(await novo.page.textContent('#cadAviso'), await velho.page.textContent('#cadAviso'), `${gc}: aviso`);
+      assert.equal(await novo.page.textContent('#boEsc'), await velho.page.textContent('#boEsc'), `${gc}: cabeçalho`);
+      for(const campo of ['cadGc', 'cadNivel', 'cadSv'])
+        assert.equal(await novo.page.evaluate(c => document.getElementById(c).outerHTML, campo),
+          await velho.page.evaluate(c => document.getElementById(c).outerHTML, campo), `${gc}/${nivel}: ${campo}`);
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], [], 'Back Office');
+    for(const {ctx} of pgs) await ctx.close();
+    // painel: Executiva, as 4 abas, a cascata do 1º card, o Resumo e a 1ª página do Painel de Ritmo
+    const n2 = await abre('normal', {entrar: {perfil: 'gc', gc: 'G2'}, aba: null});
+    const v2 = await abre('normal', {entrar: {perfil: 'gc', gc: 'G2'}, aba: null, troca});
+    const pgs2 = [n2, v2];
+    assert.equal(await n2.page.innerHTML('#exec'), await v2.page.innerHTML('#exec'), 'Executiva');
+    for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG', 'INCENTIVO']){
+      for(const {page} of pgs2) await vaiAba(page, aba);
+      assert.equal(await n2.page.innerHTML('#abaTopo'), await v2.page.innerHTML('#abaTopo'), `${aba}: cabeçalho`);
+      assert.equal(await n2.page.innerHTML('#lista'), await v2.page.innerHTML('#lista'), `${aba}: cards`);
+    }
+    const k = await n2.page.evaluate(() => (document.querySelector('#lista .ind[data-k]') || {dataset: {}}).dataset.k);
+    for(const {page} of pgs2){
+      await page.click(`#lista .ind[data-k="${k}"]`);
+      await page.waitForFunction(() => document.getElementById('drw').classList.contains('on'));
+    }
+    assert.equal(await n2.page.innerHTML('#dCorpo'), await v2.page.innerHTML('#dCorpo'), 'cascata');
+    for(const {page} of pgs2){
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !document.getElementById('drw').classList.contains('on'));
+      await page.click('#btnResumo');
+    }
+    assert.equal(await n2.page.innerHTML('#rsFolha'), await v2.page.innerHTML('#rsFolha'), 'Resumo');
+    for(const {page} of pgs2) await page.click('#rsVoltar');
+    const pg = p => p.evaluate(() => RT.desenhaPagina(montaRitmo(P, RT.escopoRitmo()).paginas[0]));
+    assert.equal(await pg(n2.page), await pg(v2.page), 'Painel de Ritmo');
+    assert.deepEqual([...n2.erros, ...v2.erros], [], 'painel');
+    for(const {ctx} of pgs2) await ctx.close();
+  });
+});
+
+/* ---------- Parte AR — Caderno de Vendas: PDF real (html2canvas + jsPDF) ----------
+   Só com os pacotes npm nas versões do CONFIG.CDN, servidos no lugar do cdnjs (o molde é a Parte O e a Parte R).
+   Gera o caderno inteiro da G2 e confere: o nº de páginas = o do CAD.paginas(), o formato A4 retrato de cada uma
+   (794x1123 px = 595,5x842,25 pt), o título, o autor, o nome do arquivo com a data do payload e que nenhuma página
+   saiu em branco. */
+describe('Parte AR — Caderno de Vendas: PDF real (html2canvas + jsPDF)',
+  {skip: pular || (!LIBS_PDF && 'html2canvas/jspdf não instalados (npm)')}, () => {
+  test('caderno inteiro da G2: páginas, A4 retrato, nenhuma em branco, nome e propriedades', async () => {
+    const {page, ctx, erros} = await abre('normal', {entrar: 'bo', altura: 900});
+    await page.route(/cdnjs\.cloudflare\.com/, r => {
+      const arq = /html2canvas/.test(r.request().url()) ? LIBS_PDF.html2canvas : LIBS_PDF.jspdf;
+      r.fulfill({status: 200, contentType: 'text/javascript', body: fs.readFileSync(arq),
+        headers: {'access-control-allow-origin': '*'}});
+    });
+    await page.click('#boAba-caderno');
+    await page.waitForFunction(() => !document.getElementById('cad').hidden &&
+      document.getElementById('cadFolhas').innerHTML !== '');
+    await page.selectOption('#cadGc', 'G2');
+    await page.waitForFunction(() => document.getElementById('cadGc').value === 'G2');
+    await page.evaluate(async () => {
+      for(const lib of [CONFIG.CDN.html2canvas, CONFIG.CDN.jspdf]) await new Promise((ok, erro) => {
+        const s = document.createElement('script'); s.src = lib.src; s.integrity = lib.integrity;
+        s.crossOrigin = 'anonymous'; s.onload = ok; s.onerror = erro; document.head.appendChild(s);
+      });
+      const add = window.jspdf.jsPDF.API.addImage;
+      window.__imgs = [];
+      window.jspdf.jsPDF.API.addImage = function(img, ...r){ window.__imgs.push(img); return add.call(this, img, ...r); };
+    });
+    const n = await page.evaluate(() => CAD.paginas().pags.length);
+    assert.ok(n >= 8, `o caderno da G2 tem ${n} páginas`);
+    page.on('dialog', d => d.accept());      // só pergunta acima de 12 páginas
+    const [baixado] = await Promise.all([page.waitForEvent('download', {timeout: 600000}), page.click('#cadPdf')]);
+    const arq = await baixado.path(), bytes = fs.readFileSync(arq).toString('latin1');
+    const P = payloadCad('normal');
+    assert.equal(baixado.suggestedFilename(), `Caderno_Vendas_G2_${P.DATA_ONTEM.replace(/-/g, '')}.pdf`);
+    assert.match(bytes.slice(0, 5), /^%PDF-/);
+    assert.equal((bytes.match(/\/Type\s*\/Page\b(?!s)/g) || []).length, n, 'uma página do PDF por página do caderno');
+    // 794x1123 px = 595,5x842,25 pt, retrato
+    const caixas = bytes.match(/\/MediaBox \[[^\]]*\]/g) || [];
+    assert.ok(caixas.length === n && caixas.every(c => /0 0 595\.5 842\.25\]/.test(c)), `${caixas.slice(0, 2)}`);
+    assert.match(bytes, /\/Title \(Caderno de Vendas/);
+    assert.match(bytes, /\/Author \(Comercial Bandeirantes\)/);
+    // nenhuma página em branco (a mesma medida de "tinta" da Parte R)
+    const tinta = await page.evaluate(imgs => Promise.all(imgs.map(src => new Promise(ok => {
+      const im = new Image();
+      im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+        const cx = c.getContext('2d'); cx.drawImage(im, 0, 0);
+        const d = cx.getImageData(0, 0, im.width, im.height).data; let k = 0;
+        for(let i = 0; i < d.length; i += 16) if(d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200) k++;
+        ok([im.width, im.height, k / (d.length / 16)]); };
+      im.src = src;
+    }))), await page.evaluate(() => window.__imgs));
+    assert.equal(tinta.length, n);
+    tinta.forEach(([w, h, t], i) => { assert.deepEqual([w, h], [1191, 1684], `página ${i + 1}: tamanho da imagem`);
+      assert.ok(t > 0.005, `página ${i + 1} quase em branco (${t})`); });
+    const kb = Math.round(fs.statSync(arq).size / 1024);
+    console.log(`# Caderno de Vendas G2 (sintético): ${n} páginas, ${kb} KB (${Math.round(kb / n)} KB/página)`);
+    await page.waitForFunction(() => !document.getElementById('cadPdf').hasAttribute('aria-busy'));
+    assert.deepEqual(erros.filter(e => !/net::ERR_FAILED|cdnjs/.test(e)), []);
     await ctx.close();
   });
 });

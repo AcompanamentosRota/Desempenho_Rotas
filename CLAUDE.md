@@ -125,7 +125,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   hoje tem 19 falhas antigas herdadas da main, que deixariam todo PR vermelho sem motivo (consertá-las é outro trabalho).
   **Clone completo e 3 testes fora do CI** (PR #62, 17-18/11/2026): o checkout usa `fetch-depth: 0` (com o clone raso os
   "antes x depois" servidos por `git show <commit>` PULAM, `# SKIP sem o commit ...`, em vez de falhar). No CI a suíte roda
-  386 e pula 3, declarados por `MEDE_TEXTO_FORA_DO_CI` (topo do front.test.js; só com a variável `CI`, que o Actions
+  416 e pula 3 (419 na máquina, 24/11/2026; eram 386 em 18/11), declarados por `MEDE_TEXTO_FORA_DO_CI` (topo do front.test.js; só com a variável `CI`, que o Actions
   define sozinho): Parte W "360 px: KPIs, quadros, medidores..." e Parte AN "(i) grande 360 px" (painel aberto e
   recolhido). Eles medem largura de texto renderizado: com a Inter carregada (`document.fonts.status` 'loaded',
   `check('700 12px Inter')` true), "58.620.000" em Inter 700 a 7 px (o `data-fit-min` do quadro) mede 39,97 px numa caixa
@@ -612,6 +612,58 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   "Caderno de Vendas com dado real" do `conferencia_real.test.js` (G2 + três portes, as duas visões, com e sem o
   online.json, 360/390/1000/1440 px nos dois fundos e o antes x depois contra `9067e44`, servindo da main os três
   arquivos que a etapa toca).
+- **Caderno de Vendas em PDF (Frente 2, PR 3, 24/11/2026; `frontend/js/caderno.js`, botão `#cadPdf` na barra de
+  filtros da aba Caderno)**: o caderno **inteiro da gerência** em A4 retrato, da MESMA fonte da tela (R-BO-06).
+  **Nenhum número muda**, a tela do PR 2 fica byte a byte e `montaCaderno` continua pura.
+  **Composição** (decisão da Karen, 24/11/2026): o PDF é sempre o da gerência do `#cadGc` e **ignora** o `#cadNivel` e
+  o `#cadSv` (eles governam só a tela). `cadernoCompleto(P, gc)` (pura, no topo do arquivo) devolve 2 + 2N folhas na
+  ordem: Gerência (Volume, Cobertura) e, depois, CADA supervisão de `svsCad(gc)` na ordem da tela (Volume, Cobertura),
+  cada folha de um `montaCaderno(P, {nivel, gc, sv})` — uma chamada por escopo, nada reimplementado. Na G2 de 24/11
+  são 4 supervisões = 10 folhas.
+  **Paginação, nunca encolhimento**: a folha tem 794 px de largura e altura livre, e uma folha de cobertura de
+  supervisão passa de uma A4. A divisão é a do Resumo — **`RS.paginas(atomos, H0, altTotal)`, usada SEM ALTERAÇÃO**
+  (o Resumo depende dela) — por `cadernoPaginas(atomos, altUtil, altTotal, paginador)` (pura; o paginador entra por
+  parâmetro, então o teste roda sem o DOM). Átomos: o cabeçalho da folha e, depois, **um por bloco de Grupo Produto**
+  (o `td.prod` com o `rowspan` cobre exatamente as linhas de unidade e o TOTAL do bloco, e é ele que é medido);
+  **bloco nunca é cortado ao meio**. As coordenadas são medidas a partir do topo do `<tbody>`, porque o cabeçalho da
+  folha e o `<thead>` são **repetidos em TODA página** (senão uma página solta fica ilegível) e por isso saem do
+  orçamento `altUtil` = 1123 − cromo − rodapé − 14 px da faixa do folio, em vez de consumi-lo só na 1ª; o átomo do
+  cabeçalho entra com altura zero e o `RS.paginas` o funde com o 1º bloco (a regra do `.rs-cab`). A **nota do resíduo**
+  (EV* e virtuais) sai só na ÚLTIMA página daquela folha, e toda página leva `Folha X de Y` do **caderno inteiro**
+  (6,5 px, `#6b6a66`, `.cadFolio`). **Caso-limite**: um bloco mais alto que a página útil fica sozinho numa página MAIS
+  ALTA (`paginasDoCaderno.altura`, o `addPage([LARG, alt])` e um `style="height"` na `.cadPag`; é o que o Resumo já
+  faz), nunca cortado; com o payload de 24/11 o maior bloco tem 121 px contra ~1.011 px de página útil (precisaria de
+  ~80 linhas num Grupo Produto só), e quem trava isso é a variante sintética `cadgrande` (SV.G2.1 com 90 rotas).
+  **Geração** (molde do `exporta()` do `ritmo.js`): guarda `ocupado`; `document.fonts.ready` antes de medir e
+  fotografar; palco `div.cad-palco` fora da tela (`aria-hidden`, altura livre, FORA do `#cadFolhas`: as invariantes
+  leem `#cadFolhas .cadFolha`) com a MESMA marcação `.cadFolha` da tela, sem o `.cadRola`; 1ª passada mede e pagina
+  tudo, **o `confirm("Exportar N páginas?")` só acima de 12 páginas** e só então as bibliotecas do `CONFIG.CDN` são
+  carregadas (`RS.carregaScript`; falha = "Sem conexão para gerar o PDF"); depois, uma página por vez —
+  `html2canvas` escala 1.5, JPEG 0.85, `addImage`, `canvas.width = canvas.height = 0` e um `await` que cede ao
+  navegador; entrega por `RS.salvaPdf`. `folhaHtml(f, op)` ganhou o 2º parâmetro (`pdf`, `blocos`, `ultima`); **sem
+  `op` o HTML é byte a byte o de antes**. Nada de `encaixa()` na folha (ela não entra na escala `--fs-*`).
+  **Nome e propriedades**: `Caderno_Vendas_<GC>_AAAAMMDD.pdf` com a data do **PAYLOAD** por `RT.diaArq()` (R-RIT-02:
+  nunca o relógio; sem `DATA_ONTEM`, o `hojeArq()`), escopo sanitizado como no Ritmo; `title` = `Caderno de Vendas ·
+  <GC> · dia útil D/T` + ` · dados até dd/mm` quando há `DATA_ONTEM`, `author` = Comercial Bandeirantes.
+  **No fechamento o botão CONTINUA LIGADO** (decisão da Karen, 24/11/2026; ao contrário do Painel de Ritmo, que fica
+  desabilitado): a folha já trata o fechamento (Tend. %, Ritmo e Meta Dia em "—", `Fechamento <MES_LABEL>` no
+  cabeçalho) e é justamente o caderno do mês fechado que interessa imprimir.
+  **Nada de online e nada de relógio** (R-BO-06, R-RIT-01): o código do PDF não lê `ONLINE`, `puxaOnline`,
+  `REVERTIDO_HOJE`, `OPORTUNIDADE_HOJE`, `SEM_COMPRA_HOJE`, `revertidoHoje`, `oportunidadeHoje`, `semDadoHoje`,
+  `Date.now()` nem `new Date()`; a única data vem do payload e do `RT.diaArq()`.
+  A etapa só toca `caderno.js`, o bloco do Caderno no `app.css` (classes `.cadAcoes`, `.cad-palco`, `.cadPag`,
+  `.cadFolio`) e os testes: `RS.paginas`, `resumo.js`, `ritmo.js`, `app.js`, `backoffice.js`, `nucleo.js`,
+  `config.js`, `index.html`, `backend/**`, `.github/**` e `frontend/data/**` ficam como estão.
+  `CAD` passou a expor também `exporta`, `htmlPagina`, `paginas` e `medidas` (só os testes leem os três últimos).
+  Medido com o payload real de 24/11 (dia útil 14/19): G2 e AN 14 páginas, GU e AT 8; folha mais alta 2.017 px
+  (SV.GU.1, cobertura, 2 páginas); PDF da G2 2,74 MB em 10,5 s (200 KB/página, contra ~165 KB do Painel de Ritmo —
+  a A4 a 1,5x é uma imagem de 1191x1684 px).
+  Testes: Partes AR (17)-(24) do `front.test.js` — composição e paginação puras (o `contextoCad` passou a carregar o
+  `resumo.js` pelo `RS.paginas`), paginação no navegador, nome/propriedades com um jsPDF e um html2canvas de mentira,
+  fechamento, o antes x depois da TELA contra `ea1bd38` (`REF_PRE_PDF`, servindo da main o `caderno.js` e o
+  `app.css`) e o caso-limite da página alta (`cadgrande`) —, a Parte AR do **PDF real** (só com os pacotes npm nas versões do `CONFIG.CDN`) e o bloco (j) do
+  `conferencia_real.test.js` (composição, paginação e **cada célula das páginas = a da tela**, folha por folha, em
+  quatro gerências, com a tabela de medição).
 - **Aba Todos a Bordo ("Todos a Bordo 3.0", cobertura de cervejas; chave interna INCENTIVO, era "Incentivo" até
   21/10/2026)**: `M.GROUPS['INCENTIVO']` = CERVEJAS, INC HEINEKEN,
   INC EISENBAHN 600ML, INC HEINEKEN 600ML, CERVEJAS 600ML RETORNAVEL (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS,
