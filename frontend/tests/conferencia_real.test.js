@@ -761,7 +761,10 @@ describe('Resumo de vendas: bloco Todos a Bordo 3.0 com dado real', {skip: pular
     await entra(page, {perfil: 'dir'});
     linhas.push(await confereResumoTab(page, 'BAND'));
     // gerências sem nenhuma rota com meta de Heineken (BARRACUDA): "—" na coluna delas na Diretoria
-    const barracuda = await page.evaluate(() => gcsComDados().filter(g => !rotasInc('INC HEINEKEN', rotasDe(g, '')).length).map(g => 'GC.' + g));
+    // "—" no Resumo = coluna sem Meta do item (celInd precisa de Meta > 0); desde a PN-68 o rotasInc não é mais a
+    // pergunta certa aqui (ele devolve as rotas de meta 0 também, que o card mostra e a célula do Resumo não)
+    const barracuda = await page.evaluate(() => gcsComDados()
+      .filter(g => !rotasDe(g, '').some(r => temMetaInc('INC HEINEKEN', r))).map(g => 'GC.' + g));
     const hein = (linhas[0].semMeta['Heineken'] || []);
     assert.deepEqual(hein.filter(c => c.startsWith('GC.')), barracuda, 'Diretoria: Heineken "—" exatamente nas BARRACUDA');
     for(const g of info.gcs){
@@ -785,6 +788,166 @@ describe('Resumo de vendas: bloco Todos a Bordo 3.0 com dado real', {skip: pular
     console.log(`# | ${cab.join(' | ')} |`);
     console.log(`# |${cab.map(() => '---').join('|')}|`);
     for(const l of linhas) console.log(`# | ${[l.onde, l.colunas, l.celulas, l.tracos, ...l.itens.map(x => `${x[1]} / ${x[2]} / ${x[3]}`)].join(' | ')} |`);
+  });
+});
+
+/* ---------- Todos a Bordo sem meta no escopo, com dado real (PN-68, 24/11/2026) ----------
+   Decisão da Karen: o item DISPONÍVEL na rota com meta 0 em todas as rotas do escopo passa a aparecer com o Real,
+   como o ICS GC (R-INC-01), porque o total da gerência já conta esse Real (R-COB-10). O item INDISPONÍVEL em todas
+   as rotas do escopo (sem linha de meta na fonte: as BARRACUDA sem CD da Heineken) continua escondido com
+   "Exclusivo portfólio Full" / "Sem meta".
+   (a) recontagem INDEPENDENTE, direto do payload (sem rotasInc, sem agrega, sem navegador): as células que passam a
+       aparecer por nível (Diretoria/BAND, gerência, supervisão e rota), quantas têm Real > 0 e quantos clientes
+       cobertos elas revelam; em cada uma, o Real do payload = o nº de clientes contados do COBERTOS (com o filtro de
+       KS TT, que não alcança nenhum item do incentivo). A Diretoria tem de dar ZERO célula nova.
+   (b) na tela: em cada supervisão do painel que ganha uma célula, o card mostra Meta 0 e o Real recontado.
+   (c) fecho da R-INC-01: CERVEJAS e CERVEJAS 600ML RETORNAVEL (os dois itens que estão no ICS GC e no Todos a Bordo)
+       têm Meta e Real IDÊNTICOS nos dois cards, em todo escopo. */
+describe('Todos a Bordo sem meta no escopo, com dado real (PN-68)', {skip: pular}, () => {
+  const P = JSON.parse(fs.readFileSync(PAYLOAD, 'utf-8'));
+  const ITENS = (P.GROUPS || {}).INCENTIVO || [];
+  const SEGS_KSTT = new Set(['TRADICIONAL', 'FRIO', 'BAR', 'RESTAURANTE']);   // M.SEGMENTOS_KS_TT, só para a KS TT
+
+  // índice rota -> nó, e as rotas por gerência / supervisão, direto do DATA
+  const NO = {}, PORGC = {}, SV = {};
+  for(const gc of Object.keys(P.DATA)){
+    PORGC[gc] = []; SV[gc] = {};
+    for(const sv of Object.keys(P.DATA[gc])){
+      SV[gc][sv] = Object.keys(P.DATA[gc][sv]);
+      for(const r of SV[gc][sv]){ NO[r] = P.DATA[gc][sv][r]; PORGC[gc].push(r); }
+    }
+  }
+  const VIRT = new Set([...(P.VIRTUAIS_ROTAS || []), ...(P.EVENTUAIS_ROTAS || [])]);
+  const EV = new Set(P.EVENTUAIS_ROTAS || []);
+  const NEU = new Set(P.NEUTRALIZA_ROTAS || []);
+  const bloco = (k, r) => ((NO[r] || {}).indicators || {})[k];
+  const disp = (k, r) => { const b = bloco(k, r); return !!b && !b.unavailable; };
+  const comMeta = (k, r) => { const b = bloco(k, r); return !!b && !b.unavailable && b.meta > 0; };
+  const soma = (campo, k, rotas) => rotas.reduce((a, r) => a + (disp(k, r) ? (bloco(k, r)[campo] || 0) : 0), 0);
+  // clientes cobertos do item numa rota, contados do COBERTOS (KS TT: só os 4 segmentos, como payload._filtra_ks_tt)
+  const segDo = (r, pv) => { const c = (P.CLIENT_ROSTER[r] || []).find(x => x[0] === pv);
+    return c ? String((P.SEGS || [])[c[2]] || '').toUpperCase() : null; };
+  function cobertosDoItem(k, r){
+    const pvs = ((P.COBERTOS[r] || {})[k] || []);
+    if(k !== 'KS TT') return pvs;
+    return pvs.filter(pv => { const sg = segDo(r, pv); return sg == null || SEGS_KSTT.has(sg); });
+  }
+  const realCob = (k, rotas) => rotas.reduce((a, r) => a + (disp(k, r) ? cobertosDoItem(k, r).length : 0), 0);
+
+  /* escopos, como o painel os monta (rotasAtuais): BAND = todas as rotas; gerência = todas as rotas dela; supervisão
+     = cada supervisão com TODAS as rotas dela, menos a oculta das EV* (a que só tem rotas de EVENTUAIS_ROTAS, que
+     nunca aparece); rota = cada rota que não é virtual nem '-EV'. A coluna "no painel" marca os escopos que o usuário
+     chega a abrir (a supervisão precisa de alguma rota normal: svsVisiveis). */
+  function escopos(){
+    const svs = [];
+    for(const gc of Object.keys(SV)) for(const sv of Object.keys(SV[gc])){
+      const rs = SV[gc][sv];
+      if(rs.every(r => EV.has(r))) continue;
+      svs.push({nome: sv, gc, rotas: rs, noPainel: rs.some(r => !VIRT.has(r) && !NEU.has(r))});
+    }
+    return {
+      'Diretoria / BAND': [{nome: 'BAND', rotas: Object.keys(NO), noPainel: true}],
+      'Gerência': Object.keys(PORGC).sort().map(gc => ({nome: gc, gc, rotas: PORGC[gc], noPainel: true})),
+      'Supervisão': svs.sort((a, b) => a.nome < b.nome ? -1 : 1),
+      'Rota': Object.keys(NO).filter(r => !VIRT.has(r)).sort().map(r => ({nome: r, rotas: [r], noPainel: true})),
+    };
+  }
+  // células que passam a aparecer num nível: item disponível em alguma rota e Meta 0 em todas elas
+  function novas(lista){
+    const out = [];
+    for(const e of lista) for(const k of ITENS){
+      if(!e.rotas.some(r => disp(k, r))) continue;          // indisponível em todas: segue escondido
+      if(e.rotas.some(r => comMeta(k, r))) continue;         // já aparecia
+      const rs = e.rotas.filter(r => disp(k, r));
+      out.push({...e, k, rotas: rs, meta: soma('meta', k, rs), real: soma('real', k, rs), cob: realCob(k, rs)});
+    }
+    return out;
+  }
+
+  test('(a) recontagem independente do payload: células que passam a aparecer por nível; a Diretoria não muda; Real = clientes do COBERTOS', () => {
+    assert.ok(ITENS.length, 'o payload real traz GROUPS.INCENTIVO');
+    assert.ok(!ITENS.includes('KS TT'), 'o filtro de KS TT não alcança os itens do incentivo');
+    const tabela = [], casos = [];
+    for(const [nivel, lista] of Object.entries(escopos())){
+      const ns = novas(lista);
+      const indisp = lista.reduce((a, e) => a + ITENS.filter(k => !e.rotas.some(r => disp(k, r))).length, 0);
+      for(const c of ns){
+        assert.equal(c.meta, 0, `${nivel} ${c.nome} ${c.k}: célula nova com Meta ${c.meta} (deveria ser 0)`);
+        assert.equal(c.real, c.cob, `${nivel} ${c.nome} ${c.k}: Real ${c.real} x clientes do COBERTOS ${c.cob}`);
+        if(c.real > 0) casos.push({nivel, nome: c.nome, k: c.k, real: c.real, rotas: c.rotas.length, noPainel: c.noPainel});
+      }
+      tabela.push({nivel, celulas: ns.length, comReal: ns.filter(c => c.real > 0).length,
+                   clientes: ns.reduce((a, c) => a + c.real, 0), indisp});
+    }
+    // a melhor invariante da etapa: nada muda na Diretoria
+    assert.equal(tabela[0].celulas, 0, 'a Diretoria/BAND ganha células novas (não deveria ganhar nenhuma)');
+    console.log(`# Todos a Bordo sem meta no escopo (PN-68), dado real: ${P.MES_LABEL}, dia útil ${P.DIA_ONTEM} de `
+      + `${P.TOTAL_DIAS_UTEIS}, dados até ${P.DATA_ONTEM}${P.FECHAMENTO ? ' (fechamento)' : ''}`);
+    console.log('# | escopo | células que passam a aparecer | dessas, com Real > 0 | clientes cobertos revelados | indisponíveis (seguem escondidas) |');
+    console.log('# |---|---|---|---|---|');
+    for(const l of tabela) console.log(`# | ${l.nivel} | ${l.celulas} | ${l.comReal} | ${l.clientes} | ${l.indisp} |`);
+    console.log('# | nível | escopo | item | Real | rotas | no painel |');
+    console.log('# |---|---|---|---|---|---|');
+    for(const c of casos) console.log(`# | ${c.nivel} | ${c.nome} | ${c.k} | ${c.real} | ${c.rotas} | ${c.noPainel ? 'sim' : 'não'} |`);
+  });
+
+  test('(b) na tela: em cada supervisão do painel que ganha uma célula, o card mostra Meta 0 e o Real recontado', async () => {
+    const casos = novas(escopos()['Supervisão']).filter(c => c.noPainel && c.real > 0);
+    const {page, ctx, erros} = await abre(1440);
+    const vistos = [];
+    for(const c of casos){
+      await entra(page, {perfil: 'sv', gc: c.gc, sv: c.nome});
+      assert.ok(await vaiAba(page, 'INCENTIVO'), `${c.nome}: sem a aba Todos a Bordo`);
+      const card = await page.evaluate(k => {
+        const el = document.querySelector(`#lista .ind[data-k="${k}"]`);
+        if(!el) return {off: !!document.querySelector(`#lista .ind[data-inc-off="${k}"]`)};
+        const cl = el.querySelector('.cl').textContent.replace(/\s+/g, ' ');
+        const m = cl.match(/Meta ([\d.]+) Real ([\d.]+)/), num = t => Number(String(t).replace(/\./g, ''));
+        return {off: false, meta: num(m[1]), real: num(m[2]), big: el.querySelector('.big').textContent.trim()};
+      }, c.k);
+      assert.equal(card.off, false, `${c.nome} ${c.k}: o card continua escondido`);
+      assert.deepEqual([card.meta, card.real], [0, c.real], `${c.nome} ${c.k}: Meta e Real do card`);
+      assert.match(card.big, /—$/, `${c.nome} ${c.k}: % do card com Meta 0`);
+      vistos.push(`${c.nome}/${c.k}=${card.real}`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    console.log(`# (b) supervisões do painel com célula nova e venda: ${vistos.join(', ') || 'nenhuma neste payload'}`);
+  });
+
+  test('(c) R-INC-01: CERVEJAS e CERVEJAS 600ML RETORNAVEL com Meta e Real iguais no card do Todos a Bordo e no do ICS GC, em todo escopo', async () => {
+    const ks = ITENS.filter(k => (P.GROUPS.ICS_GC || []).includes(k));
+    assert.deepEqual(ks, ['CERVEJAS', 'CERVEJAS 600ML RETORNAVEL'], 'os itens compartilhados com o ICS GC');
+    const {page, ctx, erros} = await abre(1440);
+    const info = await page.evaluate(() => ({gcs: gcsComDados(), grupos: gruposGc().map(g => g.chave).filter(temDados)}));
+    const LE = ks => page.evaluate(ks => Object.fromEntries(ks.map(k => {
+      const el = document.querySelector(`#lista .ind[data-k="${k}"]`);
+      if(!el) return [k, null];
+      const cl = el.querySelector('.cl').textContent.replace(/\s+/g, ' ');
+      const m = cl.match(/Meta ([\d.]+) Real ([\d.]+)/), num = t => Number(String(t).replace(/\./g, ''));
+      return [k, [num(m[1]), num(m[2])]];
+    })), ks);
+    const linhas = [];
+    const confere = async onde => {
+      assert.ok(await vaiAba(page, 'ICS_GC'), `${onde}: sem a aba ICS GC`);
+      const ics = await LE(ks);
+      assert.ok(await vaiAba(page, 'INCENTIVO'), `${onde}: sem a aba Todos a Bordo`);
+      const inc = await LE(ks);
+      for(const k of ks) assert.deepEqual(inc[k], ics[k], `${onde} ${k}: Todos a Bordo x ICS GC`);
+      linhas.push(`${onde}: ${ks.map(k => `${k} ${ics[k] ? ics[k].join('/') : '—'}`).join(' · ')}`);
+    };
+    await entra(page, {perfil: 'dir'});
+    await confere('BAND');
+    for(const g of info.gcs){ await page.selectOption('#fgc', g); await confere(`GC.${g}`); }
+    for(const g of info.grupos){ await entra(page, {perfil: 'gc', gc: g}); await confere(`Total ${g}`); }
+    const sv = await page.evaluate(() => { const g = gcsComDados()[0]; return {gc: g, sv: svsDaEntrada(g)[0]}; });
+    await entra(page, {perfil: 'sv', gc: sv.gc, sv: sv.sv});
+    await confere(sv.sv);
+    assert.ok(linhas.length >= 1 + info.gcs.length, linhas.length + ' escopos');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    console.log('# (c) Meta/Real dos dois itens compartilhados (card do Todos a Bordo = card do ICS GC):');
+    for(const l of linhas) console.log(`#   ${l}`);
   });
 });
 

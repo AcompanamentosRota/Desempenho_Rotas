@@ -306,7 +306,7 @@ cada célula — a conta é a da cascata (`NUCLEO.agrega` + `realOnline`), nada 
 - **Linhas**: uma por gerência, supervisão ou rota, na ordem do painel (supervisões e rotas em ordem natural, a linha
   **"Neutraliza"** por último). Rotas virtuais e as ocultas das eventuais (EV*) nunca viram linha e continuam dentro do
   total, como na cascata; a supervisão oculta (SV.G3.3) aparece, como aparece na cascata.
-- **Todos a Bordo**: a regra do painel. O escopo só tem o item se alguma rota dele tem meta; aí somam todas as rotas com
+- **Todos a Bordo**: a regra do painel. Somam todas as rotas com
   o item disponível (meta 0 com o Real e a oculta das EV*). Gerência sem nenhuma rota com meta: a linha mostra
   **"Exclusivo portfólio Full"** (Heineken e Heineken - 600ml) ou **"Sem meta"**, como o card da aba. Indicador sem fonte
   na gerência: **"indisponível"**; gerência sem dados: **"sem dados"**.
@@ -545,16 +545,22 @@ resto da folha desenha normalmente.
     clientes com compra hoje. **O Real segue o ICS** (PN-50, 11/11/2026; R-INC-01): rota com linha de meta do item com
     META_COBERTURA **0** entra com Meta 0 e o Real dela (como nos itens do ICS), nas somas, na cascata, no botão Clientes,
     no "x / n itens em 100%", no bloco do Resumo e no online do item; rota **sem linha** de meta do item fica fora de todas
-    as somas e listas dele. O escopo só tem o item com alguma rota com meta > 0 (as rotas BARRACUDA não têm meta de
-    Heineken: "Exclusivo portfólio Full", mesmo com rota de meta 0). Neutraliza e virtuais entram no total da gerência,
+    as somas e listas dele. **O escopo não precisa de rota com meta** (PN-68, 24/11/2026; decisão da Karen): o item com
+    meta 0 em todas as rotas do escopo aparece com Meta 0 e o Real, como no ICS GC — "Exclusivo portfólio Full" /
+    "Sem meta" fica só para o item **sem linha de meta** em todas elas (as BARRACUDA sem CD da Heineken).
+    Neutraliza e virtuais entram no total da gerência,
     como nas coberturas; os clientes de rotas eventuais (EV*) também, junto das rotas com meta do item. Medição de
     11/11/2026 contra o modelo META_SAP do SAC: meta igual em 227 de 227 rotas; o Real só batia em 10 dos 12 agrupadores
     porque a Heineken (−63) e a Heineken 600ml (−19) jogavam fora o Real das rotas de meta 0 (A32, A35, 112, 121, 234,
     R11, C28): com a PN-50, os % de Heineken sobem na AN, G1, G2, RV e RI.
   - **Os cinco cards são os do ICS GC** (mesma função, mesmas métricas): Meta, Real e Diferença; % = Real / Meta, verde
     pela régua do ritmo (% >= o % do dia útil de ontem); "faltam X hoje" / "no ritmo"; oportunidades do dia; caixa do
-    Online com a meta do dia do ICS ("meta do dia X" / "no ritmo" / "Meta batida!"). Escopo sem nenhuma rota com meta do
-    item: **"Exclusivo portfólio Full"** (Heineken e Heineken - 600ml) ou **"Sem meta"** (os outros). Escopo misto
+    Online com a meta do dia do ICS ("meta do dia X" / "no ritmo" / "Meta batida!"). Escopo em que o item está
+    **indisponível** em todas as rotas (sem linha de meta na fonte): **"Exclusivo portfólio Full"** (Heineken e
+    Heineken - 600ml) ou **"Sem meta"** (os outros). Escopo com o item e **meta 0 em todas as rotas** (PN-68): o card
+    aparece com Meta 0 e o Real, `%` = "—", sem "Meta batida!" (precisa de Meta > 0) e fora do "x / n itens em 100%";
+    o Resumo e a tabela de coberturas da Executiva continuam "—" nessa célula, porque a célula dos dois precisa de
+    Meta > 0 — a mesma regra dos itens do ICS GC com meta 0. Escopo misto
     (ex.: G2, SV.G2.1): as rotas com meta e as de meta 0 com o Real ("· n com meta" conta só as de meta > 0). A aba começa direto nos cinco cards (não há mais card de Status).
   - Card do topo: **"x / n itens em 100%"** (n = itens com meta no escopo; x = os com Real >= Meta) e, embaixo, a
     linha menor **"Status"**: "-" enquanto algum desses itens não está em 100%; "✓" verde quando todos estão. Sem item

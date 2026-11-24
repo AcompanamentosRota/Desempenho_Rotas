@@ -2296,9 +2296,11 @@ function temMetaInc(k, r){
 // item disponível na rota: meta > 0, meta 0 com o Real (linha de meta com META_COBERTURA 0, como no ICS; PN-50) ou a
 // oculta das EV* com cliente coberto no item. Rota sem linha de meta do item: indisponível
 const temItemInc = (k, r) => !(indInc(k, r) || {unavailable:true}).unavailable;
-// rotas que somam no item: o escopo precisa de alguma rota com meta > 0 (temMetaInc; sem nenhuma, "Exclusivo portfólio
-// Full" / "Sem meta"); com ela, somam todas as rotas com o item disponível (as de meta 0 com o Real e a oculta das EV*)
-const rotasInc = (k, rotas) => !rotas.some(r=>temMetaInc(k, r)) ? [] : rotas.filter(r=>temItemInc(k, r));
+// rotas que somam no item: todas as rotas com o item disponível (meta > 0, meta 0 com o Real — PN-50 — e a oculta
+// das EV* com cliente coberto). NÃO há mais o portão de "o escopo precisa de alguma rota com meta > 0": o Todos a
+// Bordo segue o ICS GC (R-INC-01, decisão da Karen de 24/11/2026, PN-68). Quando o item está INDISPONÍVEL em todas
+// as rotas do escopo, este filtro devolve [] sozinho e o "Exclusivo portfólio Full" / "Sem meta" continua aparecendo.
+const rotasInc = (k, rotas) => rotas.filter(r=>temItemInc(k, r));
 
 // card do item: o mesmo do ICS GC, só com as rotas com meta dele
 function cardIncItem(k, rotas){
