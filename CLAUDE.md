@@ -1152,14 +1152,25 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
 
 ## GitHub e segurança
 
-- Repo `AcompanamentosRota/Desempenho_Rotas` (conta pessoal, público; remote `rotas`). Operar com a conta **LuanAlves2**
-  (tem push, não admin); `GH_TOKEN=$(gh auth token --user LuanAlves2) gh ...`, também para `git push`.
-  Secrets, Variables e a fonte do Pages só o dono do repo altera.
+- Repo `AcompanamentosRota/Desempenho_Rotas` (conta pessoal, público; remote `rotas`). Quem opera o repositório
+  é a conta **AcompanamentosRota**, a **dona** do repositório, com todos os direitos — inclusive Secrets, Variables
+  e a fonte do Pages. A credencial dela já está guardada na máquina. A **LuanAlves2** (tinha push, sem admin)
+  não está mais em uso.
 - Repo anterior: `karenoliveiragyn2-stack/desempenho` (remote `upstream`; `origin` é o fork LuanAlves2/desempenho).
   Lá o Pages já está em "GitHub Actions" e os dados se atualizam sozinhos (PRs #1-#3 aceitos até 15/10/2026).
 - Commits feitos com `GITHUB_TOKEN` não disparam workflows: `atualizar-dados.yml` chama `deploy-pages.yml` via `workflow_call`.
+- **"Publicar site" (`deploy-pages.yml`) tem DOIS jobs de propósito — `build` (checkout, versão do código e
+  `upload-pages-artifact`) e `deploy` (só o `deploy-pages`, com o `environment: github-pages` e a saída `page_url`,
+  sem checkout): não juntar de volta.** No mesmo job, o `deploy-pages@v4` roda menos de 1 s depois do upload, acha
+  o artefato e o rejeita (`No artifacts named "github-pages" were found`) e falha de primeira, sem repetir; em
+  24/11/2026 foram 4 de 4 rodadas falhando e o site parou de receber os dados. Com dois jobs, o intervalo passa a
+  ser o do agendamento do job (dezenas de segundos).
+- O defeito é o `actions/deploy-pages#451` (corrida contra a API de artefatos), sem correção oficial: nas rodadas
+  em que o upload levou 2 s a publicação passou; com 1 s, falhou.
 - Nunca versionar `backend/.env`. Antes de commitar, verificar que nenhum arquivo contém o client ID/secret.
-- Push que mexe em `.github/workflows/` exige o escopo `workflow` no token do `gh` (LuanAlves2 já tem).
+- Push que mexe em `.github/workflows/` exige o escopo `workflow` no token. Sem esse escopo o push é recusado
+  (`refusing to allow an OAuth App to create or update workflow ... without 'workflow' scope`); o caminho então é
+  editar o arquivo pela **interface do GitHub**, que não exige escopo nenhum.
 - Pendências em 16/10/2026: PR `importa-desempenho` → `main` em `AcompanamentosRota/Desempenho_Rotas` aberto
   (o `main` de lá só tinha o envio manual de 09/10, sem histórico em comum; o branch une os dois com `merge -s ours`).
   Antes do merge o dono precisa cadastrar Secrets/Variables e trocar Pages para "GitHub Actions". Depois do merge:
