@@ -1579,4 +1579,17 @@ body.boAtivo{padding-left:0}
 .cadTab tr.tot td.neg{color:#ffb3ad}
 .cadTab td.cadVazio{text-align:center;font-size:7px;color:#6b6a66;font-style:italic;padding:6px}
 .cadRod{margin-top:6px;font-size:6.5px;color:#6b6a66}
+/* ---- Caderno em PDF (Frente 2, PR 3): o botão, o palco fora da tela e a página A4 que o html2canvas fotografa ----
+   A folha é a MESMA da tela (mesmas classes .cad*): o que muda é só a moldura. O palco tem altura livre, porque a
+   1ª passada desenha a folha inteira para medir os blocos; quem corta em A4 é a .cadPag de cada página. */
+.cadAcoes{display:flex;align-items:center;gap:8px;margin-left:auto}
+.cad-palco{position:fixed;left:-20000px;top:0;width:794px;pointer-events:none;z-index:-1;background:#fff}
+/* a altura é a da A4; um bloco de Grupo Produto que não coubesse nela ganha uma página mais alta, por style inline */
+.cadPag{position:relative;box-sizing:border-box;width:794px;height:1123px;overflow:hidden;background:#fff}
+/* no papel a folha não tem moldura nem sombra, e preenche a página inteira */
+.cadPag .cadFolha{border:0;border-radius:0;box-shadow:none;min-height:100%}
+.cadFolio{position:absolute;right:26px;bottom:5px;font-size:6.5px;color:#6b6a66}
+@media (max-width:640px){
+  .cadAcoes{margin-left:0}
+}
 /* fim do Caderno de Vendas */

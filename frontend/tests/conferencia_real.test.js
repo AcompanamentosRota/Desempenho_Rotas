@@ -2460,6 +2460,9 @@ describe('Back Office com dado real (Frente 1)', {skip: pular}, () => {
    (a)-(e) e (g): as invariantes de caderno_invariantes.js (recontagem INDEPENDENTE do payload, sem montaCaderno e
    sem agrega), na G2 e em mais três gerências de porte diferente, nas duas visões (GC aberta por supervisão e SV
    aberta por rota). (f): o HTML das folhas com e sem o online.json. (h): 360/390/1000/1440 px nos dois fundos.
+   (j): o PDF do caderno (PR 3) — a composição (2 + 2N folhas da gerência), a paginação em A4 retrato (cabeçalho da
+   folha e das colunas em toda página, nenhum bloco partido, a nota do resíduo só na última página da folha, Folha X
+   de Y) e cada célula das páginas igual à da tela, folha por folha; imprime a tabela de medição.
    (i): antes x depois contra a main — os três arquivos que a etapa toca (index.html, app.css e backoffice.js)
    servidos da main, com o MESMO payload: Executiva, as 4 abas, cascata, Resumo, Painel de Ritmo e a aba "Tabela"
    do Back Office iguais. Só totais e códigos de gerência, supervisão e rota são impressos.
@@ -2552,6 +2555,96 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
       assert.deepEqual(erros, [], `${largura} px ${tema}`);
       await ctx.close();
     }
+  });
+
+  /* (j) Caderno em PDF (PR 3): a composição do caderno inteiro da gerência, a paginação em A4 e — o que de fato
+     importa — que cada célula das PÁGINAS é a MESMA célula da tela, folha por folha, na mesma ordem. Imprime a
+     tabela de medição (altura de cada folha e nº de páginas por gerência). Só totais e códigos. */
+  test('(j) PDF: composição, paginação em A4 e as células das páginas iguais às da tela', async () => {
+    const {page, ctx, erros} = await abre(1440);
+    await entra(page, {perfil: 'bo', gc: GCS[0]});
+    await vaiCaderno(page);
+    const linhas = [];
+    for(const gc of ESCOLHIDAS){
+      await escolhe(page, 'cadGc', gc);
+      // composição: 2 + 2N folhas, Gerência (Volume, Cobertura) e cada supervisão (Volume, Cobertura)
+      const svs = await page.$$eval('#cadSv option', os => os.map(o => o.value));
+      const r = await page.evaluate(() => {
+        const {pags, medidas} = CAD.paginas(), n = pags.length, caixa = document.createElement('div');
+        document.body.appendChild(caixa);
+        const folhas = new Map();
+        const paginas = pags.map((pg, i) => {
+          caixa.innerHTML = CAD.htmlPagina(pg, i + 1, n);
+          const sec = caixa.querySelector('.cadFolha');
+          const chave = pg.nivel + '|' + pg.sv + '|' + pg.tipo;
+          const cels = [...sec.querySelectorAll('tbody tr')].map(tr => [...tr.querySelectorAll('td')]
+            .filter(td => !td.classList.contains('seg') && !td.classList.contains('prod'))
+            .map(td => td.textContent).join('\u00a7'));
+          const f = folhas.get(chave) || {chave, cels: [], blocos: [], notas: [], paginas: 0};
+          f.cels.push(...cels);
+          f.blocos.push(...[...sec.querySelectorAll('td.prod')].map(td => td.childNodes[0].textContent));
+          f.notas = [...sec.querySelectorAll('.cadRod div')].map(d => d.textContent);
+          f.paginas++;
+          folhas.set(chave, f);
+          return {chave, i: i + 1, folio: (caixa.querySelector('.cadFolio') || {}).textContent,
+            cab: !!sec.querySelector('.cadCab'), th: sec.querySelectorAll('thead th').length,
+            blocos: sec.querySelectorAll('td.prod').length, totais: sec.querySelectorAll('tbody tr.tot').length,
+            alta: caixa.querySelector('.cadPag').getBoundingClientRect().height, alt: pg.alt,
+            transborda: sec.getBoundingClientRect().bottom >
+              caixa.querySelector('.cadPag').getBoundingClientRect().bottom + 0.5,
+            notas: sec.querySelectorAll('.cadRod div').length};
+        });
+        caixa.remove();
+        return {n, medidas, paginas, folhas: [...folhas.values()]};
+      });
+      const esperado = ['gc||vol', 'gc||cob', ...svs.flatMap(sv => ['sv|' + sv + '|vol', 'sv|' + sv + '|cob'])];
+      assert.deepEqual(r.folhas.map(f => f.chave), esperado, `${gc}: as 2 + 2N folhas, na ordem`);
+      // paginação: A4 retrato, cabeçalho e <thead> em toda página, bloco inteiro, folio certo, nota só na última
+      r.paginas.forEach((pg, i) => {
+        const onde = `${gc} página ${i + 1}/${r.n} (${pg.chave})`;
+        assert.ok(pg.cab && pg.th >= 12, `${onde}: cabeçalho da folha e das colunas`);
+        assert.equal(pg.folio, `Folha ${i + 1} de ${r.n}`, `${onde}: Folha X de Y`);
+        assert.equal(Math.round(pg.alta), pg.alt, `${onde}: a altura desenhada é a do modelo`);
+        if(pg.alt !== 1123) console.log(`# ATENÇÃO ${onde}: página de ${pg.alt} px (um bloco maior que a A4)`);
+        assert.equal(pg.transborda, false, `${onde}: transbordou`);
+        assert.equal(pg.totais, pg.blocos, `${onde}: nenhum bloco partido`);
+        const ultima = i === r.n - 1 || r.paginas[i + 1].chave !== pg.chave;
+        if(!ultima) assert.equal(pg.notas, 0, `${onde}: a nota do resíduo só na última página da folha`);
+      });
+      // as células das páginas são as MESMAS da tela, folha por folha e na ordem
+      for(const f of r.folhas){
+        const [nivel, sv] = f.chave.split('|');
+        await escolhe(page, 'cadNivel', nivel);
+        if(nivel === 'sv') await escolhe(page, 'cadSv', sv);
+        const tela = await page.evaluate(CAD_INV.LE_CAD);
+        const folha = tela[f.chave.endsWith('vol') ? 0 : 1];
+        const naTela = [];
+        for(const b of folha.blocos) for(const l of [...b.linhas, b.total])
+          naTela.push([l.cod, ...l.cels.map(c => c.txt)].join('\u00a7'));
+        assert.deepEqual(f.cels, naTela, `${gc}/${f.chave}: as células do PDF são as da tela`);
+        assert.deepEqual(f.blocos, folha.blocos.map(b => b.rotulo), `${gc}/${f.chave}: os blocos`);
+        assert.deepEqual(f.notas, folha.notas, `${gc}/${f.chave}: a nota do resíduo`);
+      }
+      // uma página por folha, no mínimo; e nada de página vazia
+      const porFolha = r.folhas.map(f => f.paginas);
+      assert.ok(porFolha.every(x => x >= 1), `${gc}: páginas por folha ${porFolha.join(',')}`);
+      assert.equal(porFolha.reduce((a, x) => a + x, 0), r.n);
+      for(const m of r.medidas) linhas.push({gc, ...m});
+      linhas.push({gc, tipo: 'TOTAL', escopo: '', alt: '', altUtil: '', blocos: '', paginas: r.n, maior: ''});
+      // caso-limite do RS.paginas: um bloco sozinho mais alto que a página útil
+      for(const m of r.medidas) if(m.maior > m.altUtil)
+        console.log(`# ATENÇÃO ${gc}/${m.escopo}/${m.tipo}: um bloco de ${m.maior} px numa página útil de ${m.altUtil} px`);
+      await escolhe(page, 'cadNivel', 'gc');
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    console.log(`# Caderno em PDF (dado real): A4 retrato 794x1123 px, ${P.MES_LABEL}, dia útil ` +
+      `${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}${P.FECHAMENTO ? ' (fechamento)' : ''}`);
+    const cab = ['Gerência', 'Escopo', 'Folha', 'Altura px', 'Altura útil px', 'Blocos', 'Páginas', 'Maior bloco px'];
+    console.log(`# | ${cab.join(' | ')} |`);
+    console.log(`# |${cab.map(() => '---').join('|')}|`);
+    for(const l of linhas) console.log(`# | ${[l.gc, l.escopo, l.tipo, l.alt, l.altUtil, l.blocos, l.paginas,
+      l.maior].join(' | ')} |`);
   });
 
   test('(i) antes x depois: painel, Resumo, Painel de Ritmo e a aba "Tabela" do Back Office iguais à main', async () => {

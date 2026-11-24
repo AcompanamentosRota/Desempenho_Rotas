@@ -358,9 +358,10 @@ BAND e em nenhuma gerência) e confere as larguras e o PDF da MATRIZ.
 
 ### Caderno de Vendas (aba do Back Office)
 
-> Frente 2, PR 2, 23/11/2026. O Caderno de Vendas em duas folhas A4 (Volume e Cobertura), nas visões **Gerência
-> aberta por supervisão** e **Supervisão aberta por rota**. **Nenhum número do painel muda** e a tabela do Back
-> Office (a aba "Tabela") continua exatamente como estava. O PDF vem no PR 3; por enquanto é só a tela.
+> Frente 2, PR 2 (tela, 23/11/2026) e PR 3 (PDF, 24/11/2026). O Caderno de Vendas em duas folhas A4 (Volume e
+> Cobertura), nas visões **Gerência aberta por supervisão** e **Supervisão aberta por rota**, e o botão que imprime
+> o caderno inteiro da gerência em PDF. **Nenhum número do painel muda** e a tabela do Back Office (a aba "Tabela")
+> continua exatamente como estava.
 
 **Como abrir.** Entre como **BACK OFFICE** (o 5º botão da entrada, com a senha própria) e, na página, clique na aba
 **Caderno de Vendas**, ao lado da aba **Tabela**. A aba Tabela é a página de sempre; trocar de aba não recalcula nada
@@ -429,6 +430,39 @@ rótulo da linha. A SV.G3.3, oculta no painel, também aparece.
 gerência que tem o indicador (hoje só a G2). Se o payload ainda não trouxer as chaves `PRE_VENDA` e `MES_ANT_CHEIO`
 (um payload antigo, ou uma rodada em que a consulta falhou), as colunas **Real M.A** e **Pré-Venda** ficam vazias e o
 resto da folha desenha normalmente.
+
+#### O caderno em PDF
+
+**Como gerar.** Entre como **BACK OFFICE**, abra a aba **Caderno de Vendas**, escolha a **gerência** e clique em
+**Caderno em PDF**, o botão à direita dos seletores. O arquivo é baixado (no celular, abre a folha de compartilhar).
+
+**O que sai: o caderno INTEIRO da gerência, não só o que está na tela.** O PDF leva, nesta ordem:
+
+1. a **gerência** — folha de Volume e folha de Cobertura;
+2. **cada supervisão** da gerência, na mesma ordem em que o seletor as mostra — Volume e Cobertura.
+
+São **2 + 2 × (nº de supervisões)** folhas. Os seletores **Nível** e **Supervisão** valem só para a tela: o PDF é
+sempre o caderno completo da gerência escolhida. Acima de 12 páginas o navegador pergunta antes ("Exportar N
+páginas?"), como no Painel de Ritmo da Diretoria.
+
+**Quantas páginas esperar.** Cada folha é uma A4 em pé (794 × 1123 px). A folha de Volume quase sempre cabe numa
+página; a de Cobertura são 16 itens e costuma ocupar **duas**. Uma folha que não cabe é **dividida**, nunca
+encolhida: o corte acontece sempre **entre** dois Grupos Produto, então **nenhum bloco é partido ao meio** e nenhuma
+linha fica cortada. (Se um único Grupo Produto não coubesse numa página — precisaria de umas 80 linhas, o que hoje
+não acontece —, ele ganharia uma página mais alta, em vez de ser partido.) Toda página repete o cabeçalho da folha e
+a linha de título das colunas, e traz `Folha X de Y`
+no pé, à direita — o X conta o caderno inteiro, não a folha. A nota de rodapé do resíduo (as rotas eventuais EV* e
+as virtuais) aparece só na **última página daquela folha**. Com o payload de 24/11/2026: **G2 e AN com 14 páginas**,
+**GU e AT com 8**; o arquivo da G2 ficou em 2,7 MB e levou ~10 s.
+
+**Os números são os da manhã.** O PDF sai da mesma fonte da tela: só o `payload.json`, sem os pedidos de hoje
+(`online.json`). A data do arquivo (`Caderno_Vendas_G2_AAAAMMDD.pdf`) é a do **payload** — o último dia útil fechado,
+até onde vão os dados —, nunca a do relógio: um painel aberto antes da primeira rodada do dia gera um arquivo
+datado de ontem, que é o que ele de fato mostra.
+
+**No fechamento do mês o botão continua funcionando** (diferente do Painel de Ritmo, que fica desabilitado): o
+caderno do mês fechado é justamente o que interessa imprimir, e a folha já troca `Tend. %`, `Ritmo` e `Meta Dia` por
+`—` e põe `Fechamento <mês>` no cabeçalho.
 
 ### Telas
 

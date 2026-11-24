@@ -1,6 +1,6 @@
 /* =====================================================================
-   CADERNO DE VENDAS (tela) — Frente 2, PR 2 de 4. Aba nova DENTRO da página do Back Office (backoffice.js), ao lado
-   da tabela da R-BO-03, que não é tocada.
+   CADERNO DE VENDAS (tela, PR 2, e PDF, PR 3) — Frente 2. Aba nova DENTRO da página do Back Office (backoffice.js),
+   ao lado da tabela da R-BO-03, que não é tocada.
 
    Relatório MATINAL, como o Painel de Ritmo (R-BO-06, R-RIT-01): SÓ dados do payload.json. Nada do online.json
    (ONLINE, puxaOnline) nem dos campos do payload que dependem da venda de hoje (REVERTIDO_HOJE, OPORTUNIDADE_HOJE,
@@ -12,7 +12,9 @@
 
    - montaCaderno(P, escopo): FUNÇÃO PURA (sem DOM, sem ONLINE, sem relógio) -> as duas folhas (Volume e Cobertura).
      escopo = {nivel:'gc', gc} (gerência aberta por supervisão) | {nivel:'sv', gc, sv} (supervisão aberta por rota).
-   - CAD: a tela (seletores próprios, desenho das folhas). O PDF é o PR 3; aqui a tela só fica pronta para ele.
+   - cadernoCompleto / cadernoPaginas: TAMBÉM PURAS -> o caderno inteiro da gerência (2 + 2N folhas) e a divisão
+     dele em páginas A4, pelo RS.paginas do Resumo (usado sem alteração).
+   - CAD: a tela (seletores próprios, desenho das folhas) e o PDF (botão "Caderno em PDF", palco fora da tela).
 
    Duas divergências de propósito em relação ao painel (decisões da Karen, 23/11/2026; ver CLAUDE.md):
    - a supervisão só de rotas Neutraliza entra como supervisão NORMAL, com o código real dela (no painel é a linha
@@ -246,11 +248,58 @@ function montaCaderno(P, escopo){
     unidades: unidades.map(u => u.cod), folhas: [folha('vol'), folha('cob')]};
 }
 
+/* ---------- o caderno inteiro da gerência, em páginas A4 (PDF, PR 3) ----------
+   Também PURO (sem DOM, sem ONLINE, sem relógio): as medidas chegam prontas de quem mediu a folha na tela.
+
+   cadernoCompleto(P, gc): a lista de folhas do PDF, na ordem que a Karen decidiu em 24/11/2026 — Gerência (Volume,
+   Cobertura) e, depois, CADA supervisão de `svsCad(gc)` na mesma ordem da tela (Volume, Cobertura). São 2 + 2N folhas
+   e cada uma sai do montaCaderno, a mesma função pura da tela, chamada UMA vez por escopo. Os seletores Nível e
+   Supervisão da tela NÃO entram nisso: o PDF é sempre o caderno inteiro da gerência do seletor Gerência.
+
+   cadernoPaginas(atomos, altUtil, altTotal, paginador): a folha não cabe numa A4, então é PAGINADA — nunca encolhida.
+   A divisão é a do Resumo (`RS.paginas`, função pura já testada, injetada aqui como `paginador` e NÃO alterada): os
+   átomos são o cabeçalho da folha e, depois, um por bloco de Grupo Produto (o td.prod com o rowspan, as linhas de
+   unidade e a linha TOTAL), e um bloco nunca é cortado ao meio.
+   As coordenadas são medidas a partir do topo do CORPO da tabela, porque o cabeçalho da folha e o <thead> são
+   repetidos em TODA página (senão uma página solta seria ilegível) e por isso saem do orçamento `altUtil`, em vez de
+   consumi-lo só na primeira. O átomo do cabeçalho entra como atomos[0] com altura zero: o RS.paginas o funde com o
+   1º bloco (a regra do .rs-cab do Resumo, "o cabeçalho nunca fica sozinho"), que aqui é o próprio bloco.
+   Devolve um vetor por página com os ÍNDICES dos blocos dela. */
+function cadernoCompleto(P, gc){
+  const g = montaCaderno(P, {nivel: 'gc', gc});
+  const out = g.folhas.map(f => ({nivel: 'gc', gc, sv: '', rotulo: g.rotulo, tipo: f.tipo, folha: f}));
+  for(const sv of g.unidades){
+    const m = montaCaderno(P, {nivel: 'sv', gc, sv});
+    for(const f of m.folhas) out.push({nivel: 'sv', gc, sv, rotulo: m.rotulo, tipo: f.tipo, folha: f});
+  }
+  return out;
+}
+function cadernoPaginas(atomos, altUtil, altTotal, paginador){
+  const faixas = paginador(atomos, altUtil, altTotal);
+  const out = faixas.map(() => []);
+  // cada átomo cabe INTEIRO em uma faixa só (as faixas se encostam por alguns px, por isso "cabe inteiro" e não
+  // "começa dentro"); o ponteiro só anda para a frente, então nenhum bloco fica fora nem entra em duas páginas
+  let p = 0;
+  for(let i = 1; i < atomos.length; i++){
+    const a = atomos[i];
+    while(p < out.length - 1 && !(a.t >= faixas[p][0] - 1 && a.b <= faixas[p][1] + 1)) p++;
+    out[p].push(i - 1);
+  }
+  return out;
+}
+
 /* ---------- a tela (navegador) ---------- */
 const CAD = (()=>{
   const NIVEIS = [['gc', 'Gerência (aberta por supervisão)'], ['sv', 'Supervisão (aberta por rota)']];
+  /* PDF (PR 3): A4 retrato a 96 dpi, as medidas da .cadFolha do app.css. ALT_FOLIO = a faixa reservada no pé de cada
+     página para o "Folha X de Y" (ele é absoluto, não entra no fluxo, mas ocupa o papel). CONFIRMA = acima disso o
+     navegador pergunta antes de gerar, como o Painel de Ritmo faz na Diretoria "Todas". */
+  const LARG = 794, ALT = 1123, ALT_FOLIO = 14, ESCALA = 1.5, QUALIDADE = 0.85, CONFIRMA = 12;
+  const TXT = {botao: 'Caderno em PDF', dica: 'Gerar o caderno completo da gerência em PDF (só dados do payload)',
+    semConexao: 'Sem conexão para gerar o PDF', erro: 'Não foi possível gerar o PDF',
+    vazio: 'Nada para exportar nesta gerência'};
   let ST = null;        // {gc, nivel:'gc'|'sv', sv}
-  let ligado = false;
+  let ligado = false, ocupado = false;
 
   const $$ = id => document.getElementById(id);
   const ativo = () => !!ST && !!ACESSO && ACESSO.perfil === 'bo';
@@ -290,7 +339,9 @@ const CAD = (()=>{
       <div class="boCampo"><label class="boRot" for="cadNivel">Nível</label><select id="cadNivel">${
         NIVEIS.map(([v, r]) => `<option value="${v}">${esc(r)}</option>`).join('')}</select></div>
       <div class="boCampo" id="cadCampoSv"><label class="boRot" for="cadSv">Supervisão</label>
-        <select id="cadSv"></select></div></div>
+        <select id="cadSv"></select></div>
+      <div class="cadAcoes"><button id="cadPdf" class="boBtn boPri" type="button">${esc(TXT.botao)}</button>
+        <span id="cadMsg" class="sr-only" role="status" aria-live="polite"></span></div></div>
       <p class="cadAviso" id="cadAviso"></p>
       <div class="cadFolhas" id="cadFolhas"></div>`;
     bo.insertBefore(el, rod || null);
@@ -307,6 +358,7 @@ const CAD = (()=>{
     $$('cadGc').onchange = ev => { ST = {...ST, gc: ev.target.value}; ajusta(); repinta(); };
     $$('cadNivel').onchange = ev => { ST = {...ST, nivel: ev.target.value}; ajusta(); repinta(); };
     $$('cadSv').onchange = ev => { ST = {...ST, sv: ev.target.value}; repinta(); };
+    $$('cadPdf').onclick = () => exporta();     // sem o MouseEvent como 1º argumento
   }
   function pintaFiltros(){
     const g = $$('cadGc');
@@ -338,9 +390,16 @@ const CAD = (()=>{
       `<td class="prod" rowspan="${n}">${esc(b.rotulo)}${b.selo ? `<span class="selo">${esc(b.selo)}</span>` : ''}</td>`;
     return ls.map((l, i) => linhaHtml(l, cols, i === 0 ? prim : '')).join('');
   }
-  function folhaHtml(f){
-    const cols = f.colunas;
-    return `<div class="cadRola"><section class="cadFolha" data-folha="${esc(f.tipo)}">
+  /* A MESMA marcação da tela e do PDF (R-BO-06: uma fonte só). Sem `op`, o HTML é byte a byte o de antes — a folha
+     inteira dentro do .cadRola, que é o que dá a rolagem lateral da tela. Com `op` (só o PDF):
+     - `pdf` tira o .cadRola (no papel não há rolagem) e devolve a <section> crua, para o palco;
+     - `blocos` = os índices dos blocos DAQUELA página (o cabeçalho da folha e o <thead> saem em todas);
+     - `ultima` = é a última página da folha, a única que leva a nota de rodapé do resíduo (EV* e virtuais). */
+  function folhaHtml(f, op){
+    const cols = f.colunas, o = op || {};
+    const bls = o.blocos ? o.blocos.map(i => f.blocos[i]) : f.blocos;
+    const notas = o.blocos && !o.ultima ? [] : f.notas;
+    const miolo = `<section class="cadFolha" data-folha="${esc(f.tipo)}">
       <header class="cadCab">
         <div class="cadCabL"><h3 class="cadTit">${esc(f.cab.titulo)}</h3><span class="cadEsc">${esc(f.cab.escopo)}</span></div>
         <div class="cadApoio">${f.cab.apoio.map(t => `<span>${esc(t)}</span>`).join('')}` +
@@ -348,11 +407,130 @@ const CAD = (()=>{
       </header>
       <table class="cadTab"><colgroup>${cols.map(c => `<col style="width:${c.larg}px">`).join('')}</colgroup>
         <thead><tr>${cols.map(c => `<th class="${c.chave}${c.novo ? ' novo' : ''}">${esc(c.rotulo)}</th>`).join('')}</tr></thead>
-        <tbody>${f.blocos.map(b => blocoHtml(b, cols)).join('') ||
+        <tbody>${bls.map(b => blocoHtml(b, cols)).join('') ||
           `<tr><td class="cadVazio" colspan="${cols.length}">Nada neste filtro.</td></tr>`}</tbody>
       </table>
-      ${f.notas.length ? `<div class="cadRod">${f.notas.map(t => `<div>${esc(t)}</div>`).join('')}</div>` : ''}
-    </section></div>`;
+      ${notas.length ? `<div class="cadRod">${notas.map(t => `<div>${esc(t)}</div>`).join('')}</div>` : ''}
+    </section>`;
+    return o.pdf ? miolo : `<div class="cadRola">${miolo}</div>`;
+  }
+
+  /* ---------- o PDF (PR 3) ----------
+     O PDF é SEMPRE o caderno inteiro da gerência do seletor Gerência (decisão da Karen, 24/11/2026): os seletores
+     Nível e Supervisão governam só a tela. Molde: o exporta() do ritmo.js, que já resolveu memória (um canvas por
+     vez, liberado em seguida), travamento (um await que cede ao navegador entre páginas) e entrega (RS.salvaPdf).
+     Nada aqui lê o online.json nem o relógio (R-BO-06, R-RIT-01): a data do arquivo é a do PAYLOAD, por RT.diaArq().
+     Ao contrário do Painel de Ritmo, o botão FUNCIONA no fechamento do mês (decisão da Karen, 24/11/2026). */
+  // 'AAAA-MM-DD' -> 'dd/mm' (só as propriedades do PDF; a folha já tem o cadDataBR da pré-venda)
+  const curtaDe = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? `${m[3]}/${m[2]}` : ''; };
+  const espera = () => new Promise(r => setTimeout(r, 0));
+  const btnPdf = () => $$('cadPdf');
+  function repoe(){
+    const b = btnPdf(); if(!b) return;
+    b.disabled = false; b.removeAttribute('aria-busy'); b.textContent = TXT.botao;
+  }
+  // mensagem curta no próprio botão por 5 s (o texto inteiro na região viva #cadMsg, para leitores de tela)
+  function avisa(curta, longa){
+    const el = $$('cadMsg'); if(el) el.textContent = longa || curta;
+    const b = btnPdf(); if(!b) return;
+    b.textContent = curta; clearTimeout(avisa.t);
+    avisa.t = setTimeout(() => { if(!ocupado) repoe(); }, 5000);
+  }
+  // o botão nunca é desabilitado pelo fechamento (ver acima); durante uma exportação, o render do online não o mexe
+  function pintaBotao(){
+    const b = btnPdf(); if(!b || ocupado) return;
+    b.textContent = TXT.botao; b.title = TXT.dica; b.setAttribute('aria-label', TXT.botao);
+  }
+
+  /* Mede a folha JÁ DESENHADA no palco (largura fixa de 794 px e o CSS do app.css: é a mesma geometria que o
+     html2canvas vai fotografar) e devolve os átomos do cadernoPaginas. O átomo de um bloco de Grupo Produto é o
+     retângulo do próprio td.prod: o rowspan dele cobre exatamente as linhas de unidade e a linha TOTAL do bloco.
+     `cromo` = da borda de cima da folha ao fim do <thead> (repetido em toda página) e `rodape` = a nota do resíduo
+     mais o padding de baixo: os dois saem do orçamento de altura dos blocos, com a faixa do "Folha X de Y". */
+  function medeFolha(palco){
+    const sec = palco.querySelector('.cadFolha'), tb = sec.querySelector('tbody');
+    const rs = sec.getBoundingClientRect(), rt = tb.getBoundingClientRect();
+    const cromo = rt.top - rs.top, corpo = rt.height, rodape = rs.height - cromo - corpo;
+    const atomos = [{t: 0, b: 0}, ...[...sec.querySelectorAll('td.prod')].map(td => {
+      const r = td.getBoundingClientRect(); return {t: r.top - rt.top, b: r.bottom - rt.top}; })];
+    return {atomos, altUtil: ALT - cromo - rodape - ALT_FOLIO, altTotal: corpo, alt: rs.height, cromo, rodape};
+  }
+  /* uma página do PDF: a folha com os blocos dela (o cabeçalho da folha e o <thead> saem em TODAS) e o
+     "Folha X de Y" no pé. `pg.alt` é a altura da página: a A4 (1123 px) ou, no caso-limite de um bloco de Grupo
+     Produto mais alto que a página útil, a altura daquele bloco (é o que o RS.paginas já faz no Resumo — a folha
+     cresce, nada é cortado). Com o payload de 24/11 o maior bloco tem 121 px numa página útil de ~1.011 px. */
+  const paginaHtml = (pg, i, n) => `<div class="cadPag"${pg.alt === ALT ? '' : ` style="height:${pg.alt}px"`}>${
+    folhaHtml(pg.folha, {pdf: true, blocos: pg.blocos, ultima: pg.ultima})
+    }<div class="cadFolio">Folha ${i} de ${n}</div></div>`;
+
+  /* Divide as 2 + 2N folhas da gerência em páginas A4, sem capturar nada: devolve uma entrada por página do caderno
+     inteiro. Separada do exporta() para os testes conferirem a composição e a paginação sem gerar o PDF. */
+  function paginasDoCaderno(palco, folhas){
+    const pags = [], medidas = [];
+    for(const it of folhas){
+      palco.innerHTML = folhaHtml(it.folha, {pdf: true});
+      const m = medeFolha(palco);
+      const grupos = cadernoPaginas(m.atomos, m.altUtil, m.altTotal, RS.paginas);
+      medidas.push({tipo: it.tipo, escopo: it.sv || 'GC.' + it.gc, alt: Math.round(m.alt),
+        altUtil: Math.round(m.altUtil), blocos: m.atomos.length - 1, paginas: grupos.length,
+        maior: Math.round(Math.max(0, ...m.atomos.slice(1).map(a => a.b - a.t)))});
+      // altura da página: a A4, ou mais que isso se os blocos dela não couberem (ver paginaHtml)
+      const altura = bls => { if(!bls.length) return ALT;
+        const corpo = m.atomos[bls[bls.length - 1] + 1].b - m.atomos[bls[0] + 1].t;
+        return Math.max(ALT, Math.ceil(m.cromo + corpo + m.rodape + ALT_FOLIO)); };
+      grupos.forEach((bls, i) => pags.push({...it, blocos: bls, ultima: i === grupos.length - 1, alt: altura(bls)}));
+    }
+    return {pags, medidas};
+  }
+
+  async function exporta(){
+    if(ocupado || !ativo() || !P) return;
+    const b = btnPdf(); if(!b) return;
+    const gc = ST.gc, folhas = cadernoCompleto(P, gc);
+    if(!folhas.length){ avisa(TXT.vazio); return; }
+    ocupado = true;
+    b.disabled = true; b.setAttribute('aria-busy', 'true'); b.textContent = 'Preparando…';
+    let palco = null, msg = '', longa = '';
+    try{
+      if(document.fonts) await document.fonts.ready;     // medir e fotografar com a Inter, nunca com a fonte reserva
+      palco = document.createElement('div'); palco.className = 'cad-palco'; palco.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(palco);
+      const pags = paginasDoCaderno(palco, folhas).pags, n = pags.length;
+      if(n > CONFIRMA && !confirm(`Exportar ${n} páginas?`)) return;
+      try{
+        await Promise.all([RS.carregaScript(CONFIG.CDN.html2canvas, 'html2canvas'),
+                           RS.carregaScript(CONFIG.CDN.jspdf, 'jspdf')]);
+      }catch(err){ msg = TXT.semConexao; return; }
+      const pdf = new window.jspdf.jsPDF({orientation: 'portrait', unit: 'px', format: [LARG, pags[0].alt],
+        hotfixes: ['px_scaling'], compress: true});
+      for(let i = 0; i < n; i++){
+        const alt = pags[i].alt;
+        b.textContent = `Gerando ${i + 1}/${n}`;
+        palco.innerHTML = paginaHtml(pags[i], i + 1, n);
+        let canvas = await html2canvas(palco.firstElementChild, {scale: ESCALA, backgroundColor: '#ffffff',
+          useCORS: true, width: LARG, height: alt, windowWidth: LARG, windowHeight: alt, logging: false});
+        if(i > 0) pdf.addPage([LARG, alt], 'portrait');
+        pdf.addImage(canvas.toDataURL('image/jpeg', QUALIDADE), 'JPEG', 0, 0, LARG, alt);
+        canvas.width = canvas.height = 0; canvas = null;  // libera a memória do canvas (celular)
+        await espera();                                   // cede ao navegador: a interface não trava
+      }
+      palco.remove(); palco = null;
+      // título do PDF (aba do leitor): o dia útil do payload e, com DATA_ONTEM, até quando vão os dados reais
+      const curta = curtaDe(P.DATA_ONTEM);
+      pdf.setProperties({title: `Caderno de Vendas · ${gc} · dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}` +
+        (curta ? ' · dados até ' + curta : ''), author: 'Comercial Bandeirantes'});
+      // o nome leva a data do PAYLOAD (RT.diaArq: DATA_ONTEM, o último dia útil fechado), nunca a do relógio (R-RIT-02)
+      const nomeArq = `Caderno_Vendas_${gc.replace(/[^\w.+-]+/g, '_')}_${RT.diaArq()}.pdf`;
+      if(await RS.salvaPdf(pdf.output('blob'), nomeArq) === 'salvo'){
+        msg = 'PDF salvo'; longa = 'PDF salvo: ' + nomeArq;
+      }
+    }catch(err){ msg = TXT.erro; }
+    finally{
+      if(palco) palco.remove();
+      ocupado = false;
+      repoe();
+      if(msg) avisa(msg, longa);
+    }
   }
 
   function render(){
@@ -361,6 +539,7 @@ const CAD = (()=>{
     liga();
     ajusta();
     pintaFiltros();
+    pintaBotao();
     $$('cad').hidden = false;
     const m = montaCaderno(P, escopoCaderno());
     $$('cadAviso').textContent = m.unidades.length
@@ -388,6 +567,10 @@ const CAD = (()=>{
     if(el){ el.hidden = true; $$('cadFolhas').innerHTML = ''; }
   }
 
-  // só o que o Back Office chama (entra/sai/render/estado) e o que os testes leem (escopoCaderno, monta)
-  return {entra, sai, render, ativo, estado, escopoCaderno, monta: montaCaderno};
+  /* só o que o Back Office chama (entra/sai/render/estado) e o que os testes leem (escopoCaderno, monta e, do PDF,
+     htmlPagina e paginas: a composição e a divisão em páginas sem gerar o arquivo) */
+  return {entra, sai, render, ativo, estado, escopoCaderno, monta: montaCaderno, exporta, htmlPagina: paginaHtml,
+    paginas: () => { const palco = document.createElement('div'); palco.className = 'cad-palco';
+      palco.setAttribute('aria-hidden', 'true'); document.body.appendChild(palco);
+      try { return paginasDoCaderno(palco, cadernoCompleto(P, ST.gc)); } finally { palco.remove(); } }};
 })();
