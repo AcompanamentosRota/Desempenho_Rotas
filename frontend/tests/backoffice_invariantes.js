@@ -39,11 +39,11 @@ function categorias(P, idx, rotas){
   }).filter(c => c.itens.length);
 }
 
-/* Todos a Bordo: o escopo só tem o item se alguma rota dele tem meta > 0; aí somam todas as rotas com o item
-   disponível (meta 0 com o Real e a oculta das EV* entram). A mesma regra do painel, recontada aqui. */
+/* Todos a Bordo: somam todas as rotas com o item disponível (meta > 0, meta 0 com o Real e a oculta das EV*).
+   Desde a PN-68 (24/11/2026) o escopo NÃO precisa mais de nenhuma rota com meta > 0: a linha "Exclusivo portfólio
+   Full" / "Sem meta" fica só para o item indisponível em todas as rotas. A mesma regra do painel, recontada aqui. */
 function rotasInc(P, idx, k, rotas){
-  const comMeta = r => { const b = bloco(idx, r, k); return !!b && !b.unavailable && b.meta > 0; };
-  return rotas.some(comMeta) ? rotas.filter(r => disponivel(idx, r, k)) : [];
+  return rotas.filter(r => disponivel(idx, r, k));
 }
 
 /* Soma de um indicador num conjunto de rotas, do jeito mais direto possível. Devolve null quando nenhuma rota tem o
@@ -104,14 +104,15 @@ async function confereBackOffice(page, P, ONLINE, gcs, onde){
   for(const t of tabelas){
     const inc = t.g === 'INCENTIVO';
     /* No nível Gerência é sempre uma linha por gerência do escopo, na ordem, sem total e sem soma: a gerência sem
-       nenhuma rota com meta do item do Todos a Bordo entra com a linha "Exclusivo portfólio Full" / "Sem meta", como
-       o card da aba (ex.: a G3, que é BARRACUDA, no Heineken). */
+       nenhuma rota com o item do Todos a Bordo DISPONÍVEL entra com a linha "Exclusivo portfólio Full" / "Sem meta",
+       como o card da aba (ex.: a G3, que é BARRACUDA, no Heineken: nenhuma rota tem a linha de meta do item). Desde a
+       PN-68 a gerência com rotas de meta 0 e Real mostra as linhas com os números. */
     assert.equal(t.linhas.length, gcs.length, `${onde} ${t.g}/${t.k}: uma linha por gerência (sem total)`);
     assert.deepEqual(t.linhas.map(l => l.gc || null).filter(Boolean),
       gcs.filter(g => t.linhas.some(l => l.gc === g)), `${onde} ${t.g}/${t.k}: gerências na ordem do escopo`);
     for(const l of t.linhas) if(l.off && inc)
       assert.equal(rotasInc(P, idx, t.k, rotasDaGc(P, l.gc || '')).length, 0,
-        `${onde} ${t.g}/${t.k}: linha sem dado só onde não há rota com meta do item`);
+        `${onde} ${t.g}/${t.k}: linha sem dado só onde nenhuma rota tem o item disponível`);
     for(const l of t.linhas){
       if(l.off) continue;                       // "indisponível", "sem dados" ou "Exclusivo portfólio Full"
       const rs = inc ? rotasInc(P, idx, t.k, rotasDaGc(P, l.gc)) : rotasDaGc(P, l.gc);
@@ -128,7 +129,8 @@ async function confereBackOffice(page, P, ONLINE, gcs, onde){
 }
 
 /* (b) Reconciliação: a soma das gerências x o card da Diretoria (BAND). No Todos a Bordo a diferença esperada é o
-   Real das rotas que entram no escopo da BAND e em nenhuma gerência. Devolve as linhas da tabela do PR. */
+   Real das rotas que entram no escopo da BAND e em nenhuma gerência — desde a PN-68 não existem mais rotas assim (o
+   rotasInc passou a ser por rota, não por escopo), então a diferença fecha em zero. Devolve as linhas da tabela do PR. */
 function reconcilia(P, ONLINE, gcs){
   const idx = indices(P);
   const todas = gcs.flatMap(g => rotasDaGc(P, g));

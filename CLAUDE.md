@@ -522,8 +522,9 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   GC e em Novos Negócios, com contas diferentes. Linhas = `gruposDo` do nível (Gerência = a linha da gerência;
   Supervisão = `gruposDo(ctxGerencia(gc))`, com a "Neutraliza" no fim; Rota = `gruposDo({nivel:'rota', rotas:rotasDe(gc,'')})`),
   então Neutraliza, virtuais, EV* e SV.G3.3 entram exatamente como no painel. Todos a Bordo: `rotasInc` do escopo da
-  GERÊNCIA e cada linha filtrada por ele (a regra do `pintaCascata`), com "· n com meta"; escopo sem meta = uma linha com
-  `msgSemMetaInc(k)`. Cada linha publica `data-gc/meta/real/ro/dir/dif` exatos, como a cascata.
+  GERÊNCIA e cada linha filtrada por ele (a regra do `pintaCascata`), com "· n com meta"; escopo em que o item está
+  indisponível em todas as rotas = uma linha com `msgSemMetaInc(k)` (desde a PN-68 o escopo só de meta 0 mostra as
+  linhas com os números). Cada linha publica `data-gc/meta/real/ro/dir/dif` exatos, como a cascata.
   **Excel**: ExcelJS 4.4.0 por `RS.carregaScript(CONFIG.CDN.exceljs, 'ExcelJS')` (entrada nova no `CDN`, `integrity`
   SHA-512 conferido contra o SRI do cdnjs). `BackOffice_<ESCOPO>_AAAAMMDD.xlsx` com o escopo sanitizado como no Painel
   de Ritmo e a data do PAYLOAD (`RT.diaArq()`, exposto). Abas "Back Office" (uma linha por categoria x unidade, colunas
@@ -628,15 +629,38 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `rota_tem_meta` no incentivo. COBERTOS, OPORTUNIDADES_DIA e online.json (`online_ks_tt` pelo payload) nas rotas com o
   item disponível (meta > 0 ou 0); QUALQUER sem o incentivo (`payload.sem_incentivo`); `inc_da_gc` (a oculta das EV*)
   continua pedindo meta > 0.
+  **O ESCOPO NÃO PRECISA DE ROTA COM META (PN-68, 24/11/2026, decisão da Karen; só front, uma linha do app.js)**:
+  `rotasInc = (k, rotas) => rotas.filter(r=>temItemInc(k, r))` — caiu o portão `!rotas.some(r=>temMetaInc(k, r)) ? []`.
+  Com o item DISPONÍVEL e meta 0 em todas as rotas do escopo, o card aparece com Meta 0 e o Real, como o ICS GC
+  (R-INC-01) e como o total da gerência já contava (R-COB-10); a mensagem `msgSemMetaInc` ("Exclusivo portfólio Full" /
+  "Sem meta") fica só para o item INDISPONÍVEL em todas elas (sem linha de meta na fonte: as BARRACUDA sem CD da
+  Heineken), caso para o qual o filtro devolve `[]` sozinho. `temMetaInc` CONTINUA e segue usado em três lugares, que
+  perguntam se AQUELA ROTA tem meta: a contagem "· n com meta" (cascata e Back Office), o quadrinho da ficha da busca
+  ("só Full" / "sem meta") e o filtro das lojas da rede. `itensEm100` não mudou (a guarda `!(b.meta > 0)` mantém o item
+  de meta 0 fora do "x / n", no numerador e no denominador), nem `INC_SO_FULL`, nem o back-end (`payload.inc_da_gc`
+  continua pedindo meta > 0, então num escopo sem meta nenhuma os clientes cobertos das EV* seguem fora: consequência
+  conhecida e aceita). Quem muda de tela: o card, a cascata, `cardsDaAba`, o botão Clientes e o Back Office (que troca a
+  linha única com a mensagem pelas linhas com os números). Quem NÃO muda: o Resumo e a tabela de coberturas da Executiva
+  (a célula dos dois precisa de Meta > 0 — `celInd` em resumo.js e `b.pct == null` em `pintaCoberturasExec` —, como em
+  qualquer item do ICS GC com meta 0), a Diretoria (nenhuma célula nova no payload real), o Painel de Ritmo e o Caderno
+  de Vendas (que já mostrava o Real assim). Medido no payload de 24/11 (dia útil 13 de 19): células que passam a
+  aparecer 0 na Diretoria, 2 na gerência (AT: Eisenbahn 600 e Cerv. 600), 51 na supervisão (7 com Real, 47 clientes) e
+  126 na rota (16 com Real, 157 clientes); as 12 células indisponíveis do nível gerência (Heineken e Heineken 600 na AP,
+  AT, G3, PA, DI e GU) continuam escondidas. Testes: Parte L (a)-(f) do front.test.js (antes x depois contra `4c49a68`,
+  `REF_PN68`/`FRONT_PRE_PN68`, só o app.js servido do commit antigo) e o bloco "Todos a Bordo sem meta no escopo" do
+  conferencia_real.test.js (recontagem do payload, as supervisões na tela e o fecho da R-INC-01: CERVEJAS e CERVEJAS
+  600ML RETORNAVEL com Meta e Real iguais no card do Todos a Bordo e no do ICS GC).
   No nó, as 3 chaves INC vêm depois dos 5 macros (`M.ORDEM_INDICADORES`) e o volume extra continua no fim.
   `validacao._incentivo`: aviso só para item sem meta em nenhuma rota da BAND (gerência BARRACUDA não avisa).
   Front (`app.js`, seção "aba Todos a Bordo"; só o texto exibido mudou, chaves INCENTIVO/INC*/INCENTIVO_ATIVO iguais):
-  os 5 cards SÃO os do ICS GC (`cardIncItem` = `linha(k, agrega(rs).ind[k], rs)` com `rs = rotasInc(k, rotas)`: o
-  escopo tem o item só com alguma rota com meta > 0 (`temMetaInc`, que não mudou); aí somam TODAS as rotas com o item
-  disponível (`temItemInc`: meta > 0, meta 0 com o Real e a oculta das EV* com cliente coberto; PN-50); `agrega()` soma
+  os 5 cards SÃO os do ICS GC (`cardIncItem` = `linha(k, agrega(rs).ind[k], rs)` com `rs = rotasInc(k, rotas)` = TODAS
+  as rotas do escopo com o item disponível (`temItemInc`: meta > 0, meta 0 com o Real e a oculta das EV* com cliente
+  coberto; PN-50), sem nenhum portão de meta no escopo desde a PN-68 (24/11/2026); `agrega()` soma
   também as chaves de `GROUPS.INCENTIVO`, mesma conta das coberturas):
   % = Real/Meta com a régua do ritmo, "faltam X hoje", oportunidades, caixa Online e "Meta batida!" do ICS; sem EF nem
-  "real + hoje". Sem meta no escopo: "Exclusivo portfólio Full" (INC HEINEKEN/INC HEINEKEN 600ML) ou "Sem meta".
+  "real + hoje". Item INDISPONÍVEL em todas as rotas do escopo: "Exclusivo portfólio Full" (INC HEINEKEN/INC HEINEKEN
+  600ML) ou "Sem meta" (`msgSemMetaInc`); com o item e meta 0 em todas elas, o card aparece com Meta 0 e o Real, `%`
+  "—" e sem "Meta batida!" (PN-68, acima).
   Cascata = a do ICS com `CASC.inc` (`abreIncentivo` → `pintaCascata`: cada linha soma as rotas dela que estão no
   `rotasInc` do escopo aberto, então a rota de meta 0 aparece com Meta 0 e o Real e linhas + nota = card; `notaVirtuais(k,
   gc, inc)` e a lista de clientes por `temItemInc`; grupos sem rota que some fora; "· n com meta" conta só meta > 0).

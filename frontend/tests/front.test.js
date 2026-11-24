@@ -906,7 +906,7 @@ describe('Parte D — cascata', {skip: pular}, () => {
     await ctx.close();
   });
 
-  test('cobertura dos clientes de rotas eventuais (EV*): Real no total da gerência (ICS GC, Novos Negócios e Todos a Bordo), com nota', async () => {
+  test('cobertura dos clientes de rotas eventuais (EV*): Real no total da gerência (ICS GC, Novos Negócios e Todos a Bordo), com nota; a oculta sozinha soma desde a PN-68', async () => {
     const {page, ctx, erros} = await abre('evcob');
     // diferença do total da gerência com e sem a rota oculta: [Meta, Real]
     const dif = (k, inc) => page.evaluate(([k, inc]) => {
@@ -936,11 +936,15 @@ describe('Parte D — cascata', {skip: pular}, () => {
     await page.click('.ind[data-k="INC HEINEKEN"]');
     assert.deepEqual(notas(await lerGaveta(page)), [['Inclui clientes de rotas eventuais (EV*): Real 1', 0, 1]]);
     await page.keyboard.press('Escape');
-    // AP (sem meta de Heineken): o cliente EV* coberto não cria o card; continua "Exclusivo portfólio Full"
+    /* AP (nenhuma rota com meta de Heineken, só a oculta das EV* com o cliente coberto): desde a PN-68 (24/11/2026) o
+       escopo não precisa mais de rota com meta, então a oculta entra sozinha e o card aparece com Meta 0 e o Real
+       dela. Isto é um cenário SINTÉTICO: o gerador não monta esse payload, porque o `payload.inc_da_gc` só preenche o
+       item na oculta da gerência que tem rota com meta dele (conferido no payload real de 24/11: nenhuma gerência com
+       item na EV* e sem meta nas rotas normais). O caso real de "item escondido" é o INDISPONÍVEL, na Parte L (b). */
     await filtra(page, {gc: 'AP', aba: 'INCENTIVO'});
-    assert.deepEqual(await page.evaluate(() => rotasInc('INC HEINEKEN', rotasAtuais())), []);
+    assert.deepEqual(await page.evaluate(() => rotasInc('INC HEINEKEN', rotasAtuais())), ['AP-EV']);
     const ap = (await cardsInc(page))['INC HEINEKEN'];
-    assert.deepEqual([ap.off, ap.semdado], [true, 'Exclusivo portfólio Full']);
+    assert.deepEqual([ap.off, ...metaReal(ap), ap.big], [false, 0, 1, '▼—']);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -2688,6 +2692,15 @@ function montaIncentivo(p, o){
   for(const k of ['CERVEJAS', 'INC EISENBAHN 600ML', 'CERVEJAS 600ML RETORNAVEL']) poe('G212', k, [g, h]);
 }
 const TITULOS_INC = ['Cervejas', 'Heineken', 'Eisenbahn - 600ml', 'Heineken - 600ml', 'Cervejas 600ml Retornável'];
+/* PN-68: a main antes da etapa, para o antes x depois. Só o frontend/js/app.js mudou (uma linha, o rotasInc), então
+   é o único arquivo servido do commit antigo. */
+const REF_PN68 = '4c49a68';
+const FRONT_PRE_PN68 = (() => {
+  try {
+    const js = execSync(`git show ${REF_PN68}:frontend/js/app.js`, {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore']}).toString();
+    return {'/js/app.js': () => js};
+  } catch(e) { return null; }
+})();
 /* cards da aba Todos a Bordo por chave (data-k; sem meta: data-inc-off) */
 const cardsInc = page => page.$$eval('#lista .ind', els => Object.fromEntries(els.map(el => {
   const n = c => el.dataset[c] == null ? null : Number(el.dataset[c]);
@@ -3046,7 +3059,7 @@ describe('Parte L — aba Todos a Bordo', {skip: pular}, () => {
     await ctx.close();
   });
 
-  test('PN-50: rota com meta 0 e Real soma como no ICS (card = linhas da cascata, Clientes, "x / n"); escopo sem meta > 0 continua "Exclusivo portfólio Full"', async () => {
+  test('PN-50: rota com meta 0 e Real soma como no ICS (card = linhas da cascata, Clientes, "x / n"); desde a PN-68 o escopo só de meta 0 mostra o card', async () => {
     const {page, ctx, erros} = await abre('incz', {entrar: {perfil: 'gc', gc: 'G2'}, aba: 'INCENTIVO'});
     const k = 'INC HEINEKEN';
     const [b1, b2] = await page.evaluate(k => ['G211', 'G212'].map(r => nodo('', r).indicators[k]), k);
@@ -3081,14 +3094,16 @@ describe('Parte L — aba Todos a Bordo', {skip: pular}, () => {
     assert.deepEqual(await page.evaluate(k => rotasListas().filter(r => temItemCli(k, r)), k), ['G211', 'G212']);
     await page.keyboard.press('Escape');
     // a rota sozinha (só meta 0, nenhuma com meta > 0): "Exclusivo portfólio Full", como antes
+    // a rota sozinha (só meta 0, nenhuma com meta > 0): desde a PN-68 o card aparece com Meta 0 e o Real (era
+    // "Exclusivo portfólio Full"); o % fica "—" porque não há meta
     await vaiPara(page, {perfil: 'rota', gc: 'G2', rota: 'G212'}, 'INCENTIVO');
     c = await cardsInc(page);
-    assert.deepEqual([c[k].off, c[k].semdado], [true, 'Exclusivo portfólio Full']);
-    // gerência BARRACUDA (AP) com uma rota de meta 0 e Real: continua "Exclusivo portfólio Full", sem cascata nem Clientes
+    assert.deepEqual([c[k].off, ...metaReal(c[k]), c[k].big], [false, 0, 2, '▼—']);
+    // gerência BARRACUDA (AP) com uma rota de meta 0 e Real: também mostra o card, e o botão Clientes volta a listá-lo
     await vaiPara(page, {perfil: 'gc', gc: 'AP'}, 'INCENTIVO');
     c = await cardsInc(page);
-    assert.deepEqual([c[k].off, c[k].semdado, c[k].abre], [true, 'Exclusivo portfólio Full', false]);
-    assert.equal(await page.evaluate(k => agrupadoresCli().includes(k), k), false);
+    assert.deepEqual([c[k].off, ...metaReal(c[k]), c[k].abre], [false, 0, 1, true]);
+    assert.equal(await page.evaluate(k => agrupadoresCli().includes(k), k), true);
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -3109,6 +3124,182 @@ describe('Parte L — aba Todos a Bordo', {skip: pular}, () => {
     for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG']) assert.deepEqual(b[aba], a[aba], aba);
     const muda = Object.keys(a.INCENTIVO).filter(kk => a.INCENTIVO[kk] !== b.INCENTIVO[kk]);
     assert.deepEqual(muda, ['INC HEINEKEN']);
+  });
+
+  /* ---------- PN-68 (decisão da Karen, 24/11/2026): o escopo não precisa mais de rota com meta ----------
+     O `rotasInc` deixou de exigir alguma rota com meta > 0 no escopo: com o item DISPONÍVEL e meta 0 em todas as
+     rotas, o card aparece com Meta 0 e o Real, como o ICS GC já faz (R-INC-01) e como o total da gerência já conta
+     (R-COB-10). A mensagem "Exclusivo portfólio Full" / "Sem meta" fica só para o item INDISPONÍVEL em todas as
+     rotas do escopo (sem linha de meta na fonte: as BARRACUDA sem CD da Heineken), que é para o que ela foi escrita.
+     Cenário: 'incz' (PN-50), em que a 1ª rota da AP tem Heineken com meta 0 e Real 1 e a G212 com meta 0 e Real 2. */
+  const AP_K = 'INC HEINEKEN';
+  // escopo de uma gerência no 'incz': rotas com meta do item, rotas com o item disponível e o que o rotasInc soma
+  const escopoZero = (page, gc = 'AP', k = AP_K) => page.evaluate(([gc, k]) => { const rs = rotasDe(gc, '');
+    return {comMeta: rs.filter(r => temMetaInc(k, r)), disp: rs.filter(r => temItemInc(k, r)), inc: rotasInc(k, rs)}; }, [gc, k]);
+
+  test('PN-68 (a): escopo com o item disponível e meta 0 em todas as rotas mostra o card com o Real (Meta 0, % "—", sem "Meta batida!") e (c) a cascata fecha com o card', async () => {
+    const {page, ctx, erros} = await abre('incz', {entrar: {perfil: 'gc', gc: 'AP'}, aba: 'INCENTIVO'});
+    const k = AP_K, e = await escopoZero(page);
+    assert.deepEqual(e.comMeta, [], 'AP (BARRACUDA): nenhuma rota com meta do item');
+    assert.equal(e.disp.length, 1, 'uma rota com o item disponível (meta 0 com o Real)');
+    assert.deepEqual(e.inc, e.disp, 'rotasInc = as rotas com o item disponível, sem portão de meta no escopo');
+    // (a) o card aparece, com Meta 0 e o Real; % "—" (não há meta), "no ritmo", sem o verde e sem "Meta batida!"
+    const c = await cardsInc(page);
+    assert.deepEqual([c[k].off, ...metaReal(c[k])], [false, 0, 1]);
+    assert.deepEqual([c[k].big, c[k].acao, c[k].ok], ['▼—', 'no ritmo', false]);
+    assert.doesNotMatch(c[k].html, /Meta batida!/, 'coberturaBatida exige Meta > 0');
+    assert.equal(await page.evaluate(k => coberturaBatida(agrega(rotasInc(k, rotasAtuais())).ind[k]), k), false);
+    assert.equal(c[k].semdado, '', 'sem a mensagem de "Sem meta"');
+    // o card é o do ICS GC com as mesmas rotas (nada recalculado para o Todos a Bordo)
+    const semEstilo = h => h.replace(/ style="[^"]*"/g, '');
+    assert.equal(semEstilo(c[k].html), await page.evaluate(([k, rs]) => linha(k, agrega(rs).ind[k], rs), [k, e.disp]));
+    // (c) cascata: abre e as linhas + a nota fecham com o card
+    await page.click(`.ind[data-k="${k}"]`);
+    await page.waitForFunction(() => document.getElementById('drw').classList.contains('on'));
+    const g = await linhasInc(page), n = await notasInc(page);
+    assert.ok(g.length + n.length > 0, 'cascata vazia');
+    assert.deepEqual(somaLinhas([...g, ...n]), metaReal(c[k]), 'linhas + nota = card');
+    await page.keyboard.press('Escape');
+    // a rota sozinha, com meta 0 e Real 2 (a G2 tem meta na G211, mas a rota G212 não)
+    await vaiPara(page, {perfil: 'rota', gc: 'G2', rota: 'G212'}, 'INCENTIVO');
+    const c2 = await cardsInc(page);
+    assert.deepEqual([c2[k].off, ...metaReal(c2[k]), c2[k].big], [false, 0, 2, '▼—']);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('PN-68 (b): item INDISPONÍVEL em todas as rotas do escopo continua "Exclusivo portfólio Full" / "Sem meta", sem cascata', async () => {
+    const {page, ctx, erros} = await abre('incz', {entrar: {perfil: 'gc', gc: 'AP'}, aba: 'INCENTIVO'});
+    // AP: o Heineken - 600ml não tem linha de meta em nenhuma rota (unavailable) -> segue escondido
+    const k = 'INC HEINEKEN 600ML';
+    const e = await escopoZero(page, 'AP', k);
+    assert.deepEqual([e.comMeta, e.disp, e.inc], [[], [], []], 'nenhuma rota com o item disponível');
+    let c = await cardsInc(page);
+    assert.deepEqual([c[k].off, c[k].semdado, c[k].abre], [true, 'Exclusivo portfólio Full', false]);
+    assert.equal(await page.evaluate(k => agrupadoresCli().includes(k), k), false, 'fora do botão Clientes');
+    await page.click(`.ind[data-inc-off="${k}"]`);
+    assert.equal(await page.evaluate(() => document.getElementById('drw').classList.contains('on')), false, 'sem cascata');
+    // os itens de INC_SO_FULL dão "Exclusivo portfólio Full"; os outros, "Sem meta" (G3 sem Eisenbahn - 600ml)
+    await vaiPara(page, {perfil: 'gc', gc: 'G3'}, 'INCENTIVO');
+    c = await cardsInc(page);
+    assert.deepEqual([c['INC EISENBAHN 600ML'].off, c['INC EISENBAHN 600ML'].semdado], [true, 'Sem meta']);
+    assert.deepEqual(await page.evaluate(() => [msgSemMetaInc('INC HEINEKEN'), msgSemMetaInc('INC HEINEKEN 600ML'),
+                                                msgSemMetaInc('CERVEJAS'), INC_SO_FULL]),
+                     ['Exclusivo portfólio Full', 'Exclusivo portfólio Full', 'Sem meta', ['INC HEINEKEN', 'INC HEINEKEN 600ML']]);
+    // e a rota G311, sem nenhum item na fonte: os cinco cards escondidos, como antes
+    await vaiPara(page, {perfil: 'rota', gc: 'G3', rota: 'G311'}, 'INCENTIVO');
+    c = await cardsInc(page);
+    assert.deepEqual(Object.values(c).map(x => x.off), [true, true, true, true, true]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test('PN-68 (e): o item de meta 0 não entra no "x / n itens em 100%" (nem no n nem no nOk)', async () => {
+    const {page, ctx, erros} = await abre('incz', {entrar: {perfil: 'gc', gc: 'AP'}, aba: 'INCENTIVO'});
+    const k = AP_K;
+    // na AP: 3 itens com meta (Cervejas, Eisenbahn - 600ml, Cervejas 600ml Retornável), o Heineken com meta 0 e o
+    // Heineken - 600ml indisponível -> o "x / n" conta só os 3 com meta, mesmo com o card do Heineken na tela
+    const c = await cardsInc(page);
+    const comMeta = Object.entries(c).filter(([, x]) => !x.off && metaReal(x)[0] > 0);
+    const nOk = comMeta.filter(([, x]) => metaReal(x)[1] >= metaReal(x)[0]).length;
+    const zero = Object.entries(c).filter(([, x]) => !x.off && metaReal(x)[0] === 0).map(([kk]) => kk);
+    assert.deepEqual(zero, [k], 'só o Heineken com Meta 0');
+    assert.equal((await terceiroCard(page))[1], `${nOk} / ${comMeta.length}`);
+    // a guarda do itensEm100 é a mesma que a Executiva e a linha "Status" usam
+    assert.deepEqual(await page.evaluate(k => { const rs = rotasInc(k, rotasAtuais());
+      return [rs.length, itensEm100([[k, rs]]), itensEm100(itensInc().map(x => [x, rotasInc(x, rotasAtuais())]))]; }, k),
+                     [1, {n: 0, nOk: 0}, {n: comMeta.length, nOk}]);
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* (d) Back Office, Resumo e Executiva. O Back Office escreve a linha de cada unidade com os números da cascata,
+     então passa a mostrar as linhas do item de meta 0 no lugar da mensagem. O Resumo e a tabela de coberturas da
+     Executiva seguem o ICS GC: a célula precisa de Meta > 0 (celInd em resumo.js: `if(!x || !x.meta)` -> vazio; cel
+     em app.js: `b.pct == null` -> "—"), então um item de meta 0 continua "—" nos dois, antes e depois — como
+     qualquer item do ICS GC com meta 0. É o que o antes x depois abaixo prova byte a byte. */
+  test('PN-68 (d): Back Office mostra as linhas do item de meta 0; Resumo e Executiva seguem o ICS GC ("—" sem Meta)', async () => {
+    // Back Office na AP: a tabela do Todos a Bordo troca a linha única com a mensagem pelas linhas com os números
+    const bo = await abre('incz', {entrar: {perfil: 'bo', gc: 'AP'}, aba: null, largura: 1440});
+    const t = await bo.page.evaluate(k => {
+      const sec = [...document.querySelectorAll('#bo .boCat')].find(x => x.dataset.g === 'INCENTIVO' && x.dataset.k === k);
+      if(!sec) return null;
+      return [...sec.querySelectorAll('tbody tr')].map(tr => { const off = tr.querySelector('.boOff');
+        return {off: !!off, msg: off ? off.textContent : '', nome: (tr.querySelector('.boUn b') || {}).textContent || '',
+                meta: Number(tr.dataset.meta), real: Number(tr.dataset.real)}; });
+    }, AP_K);
+    assert.ok(t && t.length, 'sem a tabela do item no Back Office');
+    assert.deepEqual(t.map(l => l.off), t.map(() => false), 'nenhuma linha com a mensagem de "sem meta"');
+    assert.equal(t.map(l => l.msg).join(''), '');
+    assert.deepEqual([t.reduce((x, l) => x + l.meta, 0), t.reduce((x, l) => x + l.real, 0)], [0, 1]);
+    assert.deepEqual(bo.erros, []);
+    await bo.ctx.close();
+    // painel na AP: a célula do item na tabela da Executiva e no bloco do Resumo continua "—" (sem Meta)
+    const {page, ctx, erros} = await abre('incz', {entrar: {perfil: 'gc', gc: 'AP'}, aba: 'INCENTIVO'});
+    const c = await cardsInc(page);
+    assert.deepEqual([c[AP_K].off, ...metaReal(c[AP_K])], [false, 0, 1], 'o card mostra o Real');
+    await vaiAba(page, 'EXEC');
+    const cels = await page.$$eval(`#exCob td[data-g="INCENTIVO"][data-k="${AP_K}"]`, tds => tds.map(td => td.textContent));
+    assert.ok(cels.length > 0 && cels.every(x => x === '—'), `Executiva: ${cels.join('|')}`);
+    await page.click('#btnResumo');
+    if(await page.getAttribute('#rsOverlay [data-rsb="tab"]', 'aria-pressed') !== 'true') await page.click('#rsOverlay [data-rsb="tab"]');
+    const lin = await page.evaluate(k => {
+      const bl = document.querySelector('#rsFolha .rs-bloco[data-bloco="tab"]');
+      const rot = rotuloInd(k);
+      const tr = bl && [...bl.querySelectorAll('.rs-tab tbody tr')].find(x => x.children[0].textContent === rot);
+      return tr ? [...tr.children].slice(1).map(td => td.textContent.replace(/\s+/g, ' ').trim()) : null;
+    }, AP_K);
+    assert.ok(lin && lin.length, 'sem a linha do item no bloco do Resumo');
+    assert.ok(lin.every(x => x === '—' || x === ''), `Resumo: ${lin.join('|')}`);
+    await page.click('#rsVoltar');
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  test(`PN-68 (f): antes x depois (main ${REF_PN68}, mesmo payload): Volume, ICS GC, Novos Negócios, Executiva, Resumo e Painel de Ritmo iguais`,
+    {skip: !FRONT_PRE_PN68 && `sem o commit ${REF_PN68}`}, async () => {
+    const ESCOPOS_RT = [{tipo: 'band', nome: 'BAND'}, {tipo: 'gc', gcs: ['AP'], nome: 'AP'},
+                        {tipo: 'gc', gcs: ['G2'], nome: 'G2'}, {tipo: 'sv', gcs: ['G2'], sv: 'SV.G2.1', nome: 'SV.G2.1'}];
+    const vistos = [];
+    for(const entrar of ['dir', {perfil: 'gc', gc: 'AP'}, {perfil: 'gc', gc: 'G2'}, {perfil: 'gc', gc: 'IT+MO'},
+                         {perfil: 'sv', gc: 'G2', sv: 'SV.G2.1'}]){
+      const onde = JSON.stringify(entrar);
+      const [novo, velho] = [await abre('incz', {entrar, largura: 1280, aba: null}),
+                             await abre('incz', {entrar, largura: 1280, aba: null, troca: FRONT_PRE_PN68})];
+      for(const {page} of [novo, velho]){ await vaiAba(page, 'VOLUME'); await vaiAba(page, 'EXEC'); }
+      assert.equal(await novo.page.innerHTML('#exec'), await velho.page.innerHTML('#exec'), `${onde}: Executiva`);
+      for(const aba of ['VOLUME', 'ICS_GC', 'NOVOS_NEG']){
+        for(const {page} of [novo, velho]) await filtra(page, {aba});
+        assert.deepEqual(await novo.page.evaluate(CABECALHO), await velho.page.evaluate(CABECALHO), `${onde} ${aba}: cabeçalho`);
+        assert.equal(await novo.page.innerHTML('#lista'), await velho.page.innerHTML('#lista'), `${onde} ${aba}: cards`);
+        const k = (await novo.page.$$eval('#lista .ind[data-k]', es => es.map(e => e.dataset.k)))[0];
+        if(k){
+          for(const {page} of [novo, velho]) await page.click(`#lista .ind[data-k="${k}"]`);
+          assert.equal(await novo.page.innerHTML('#drw'), await velho.page.innerHTML('#drw'), `${onde} ${aba} ${k}: cascata`);
+          for(const {page} of [novo, velho]) await page.keyboard.press('Escape');
+        }
+        vistos.push(`${onde} ${aba}`);
+      }
+      // Resumo, com o bloco Todos a Bordo ligado (é o bloco do Resumo que lê o rotasInc)
+      for(const {page} of [novo, velho]){
+        await page.click('#btnResumo');
+        if(await page.getAttribute('#rsOverlay [data-rsb="tab"]', 'aria-pressed') !== 'true') await page.click('#rsOverlay [data-rsb="tab"]');
+      }
+      assert.equal(await novo.page.innerHTML('#rsFolha'), await velho.page.innerHTML('#rsFolha'), `${onde}: Resumo`);
+      for(const {page} of [novo, velho]) await page.click('#rsVoltar');
+      // Painel de Ritmo: só dados reais do payload (nenhum caminho pelo rotasInc), páginas byte a byte
+      const htmlPaginas = (page, e) => page.evaluate(e => { const m = montaRitmo(P, e);
+        return {nome: m.nome, html: m.paginas.map(pg => RT.desenhaPagina(pg)).join('\n<!--pag-->\n')}; }, e);
+      for(const e of ESCOPOS_RT){
+        const a = await htmlPaginas(novo.page, e), v = await htmlPaginas(velho.page, e);
+        assert.ok(a.html.includes('rt-pag'), `${e.nome}: sem páginas`);
+        assert.deepEqual([a.nome, a.html], [v.nome, v.html], `${onde} ${e.nome}: Painel de Ritmo`);
+      }
+      assert.deepEqual([...novo.erros, ...velho.erros], [], onde);
+      for(const {ctx} of [novo, velho]) await ctx.close();
+      vistos.push(`${onde} EXEC+RS+RT`);
+    }
+    assert.ok(vistos.length >= 20, vistos.join(', '));
   });
 });
 
