@@ -557,9 +557,19 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `rotuloGc`, sem grupos e sem MATRIZ; `CONFIG.GC_LIBERADAS` não vale no Back Office, como `gcBackOffice`; sem dados
   = desabilitada; padrão = a 1ª com dados), `#cadNivel` (Gerência | Supervisão) e `#cadSv` (só no nível Supervisão;
   trocar de gerência mantém o nível e pega a 1ª supervisão da nova).
+  **A supervisão só de Neutraliza NÃO tem folha própria** (R-BO-12, decisão da Karen de 27/11/2026): `svsCad` e o
+  `cadernoCompleto` a tiram pela MESMA função pura do topo do arquivo, `cadSoNeutraliza(P, gc, sv)` (as rotas da
+  supervisão, sem as virtuais, todas em `NEUTRALIZA_ROTAS`), que é também o `svNeutraliza` do `montaCaderno` — a
+  regra mora num lugar só e não é duplicada. Ela continua sendo a linha `Neutraliza · <rotas>` da folha da gerência,
+  a última, dentro do TOTAL (R-NEU-10), com os MESMOS números. No payload de 27/11/2026 são 11 (uma por gerência,
+  menos AP, G3, PA, DI e GU): SV.AN.4 SV.AT.3 SV.G1.5 SV.G2.5 SV.RV.3 SV.SL.3 SV.PO.2 SV.IT.3 SV.MO.3 SV.UR.3
+  SV.RI.3. A SV.G3.3 (oculta, R-ESC-14) CONTINUA com folha: ela não é Neutraliza. Gerência cuja única supervisão
+  fosse dessas (hoje não existe): `#cadSv` vazio sem erro e o PDF só com as duas folhas da GC (variante `cadneu`).
   **Cabeçalho** (`.cadCab`, `cabecalho()`): logos `.cadLogos` (Coca-Cola Bandeirantes em PRETO,
-  `assets/coca-bandeirantes-preto.png`, e a do IM, `assets/logo-im.png`, as duas com 32 px de altura e 7 px entre
-  elas; `useCORS` já cobre, são do mesmo domínio); `.cadTit` = `CADERNO DE VENDAS · GC/GV · EXERCÍCIO AAAAMM` (7 px,
+  `assets/coca-bandeirantes-preto.png`, e a do IM, `assets/logo-im.png` — desde 27/11/2026 o arquivo que a Karen
+  entregou, 241x240 px, RGBA com FUNDO TRANSPARENTE, 28 KB, posto byte a byte, sem conversão —, as duas com 32 px de
+  altura e 7 px entre elas; `useCORS` já cobre, são do mesmo domínio);
+  `.cadTit` = `CADERNO DE VENDAS · GC/GV · EXERCÍCIO AAAAMM` (7 px,
   600, .08em, #444 — **sem** o tipo, que virou caixa); `.cadEsc` = o nome da unidade em 20 px/800 (`GC. G2`, ou
   `SV.G2.1 · <primeiro nome>` no nível Supervisão) + `.cadTipo` = caixa preta **VOLUME**/**COBERTURA** (11 px/800,
   .06em, `padding:3px 8px`, raio 4); `.cadPace` = o ritmo esperado do dia (`PACE_ONTEM_PCT`, 15 px/800, borda 1 px,
@@ -577,7 +587,15 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   na **CERVEJAS 600ML RETORNAVEL** (Bar/Boteco, Lanchonete, Restaurante, Adegas e Outros canais). Nenhum outro item
   tem tag.
   **Tabela do cartão**, 9 colunas (`CAD_COLS`): **Unid. · R. M.A · Meta · Real · Dif · % · Tend. % (volume) ou Ritmo
-  (cobertura) · Pré-v. · Dia**. A **Plan. Dia SAIU**. Cabeçalhos centralizados (Unid. à esquerda), números à direita.
+  (cobertura) · Pré-v. · Meta dia**. A **Plan. Dia SAIU**. A última chama-se **Meta dia** desde 27/11/2026 (era
+  "Dia"; `META DIA` com o `text-transform`, numa linha só — o peso da coluna sai do rótulo, então ela alarga e nada é
+  cortado), e por isso o `DEFINICOES` do rodapé perdeu o `Dia = meta do dia ·`. **A tabela não tem GRADE** (mesma
+  decisão): `.cadTab th`, `.cadTab td` e `th.cadUn` com `border:0` — o padding (`2px`, inalterado) e os fundos é que
+  separam as células; FICAM a borda preta do `.cadCart`, o `#ececec` do cabeçalho, o `#d9d9d9` do TOTAL, o zebrado e
+  o % em preto. **O padding não pode subir**: medido em 27/11/2026 (68.086 células em 53 escopos com dado real,
+  nenhuma cortada), a menor folga entre dois números vizinhos é 4,00 px (GC.AT, Volume, Dif|%) = o próprio padding,
+  o mesmo espaço de antes (a linha da grade ficava no meio dele); com 3 px aquele número seria cortado.
+  Cabeçalhos centralizados (Unid. à esquerda), números à direita.
   A **1ª linha é o TOTAL** (`tr.tot`, fundo `#d9d9d9`), depois as unidades em zebra `#f1f1f1`/branco. O **% da
   unidade atrás** vai em `td.pct.atras` (fundo preto, letra branca) — em todas as linhas, TOTAL incluído. Unidade sem
   o indicador = `td.cadSemMeta` com `colspan=5` ("sem meta") no lugar de Meta…Tend.; R. M.A e Pré-v. continuam com o
@@ -603,7 +621,8 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   R-ESC-14) — inclusive a oculta SV.G3.3. **A supervisão cujas rotas são TODAS Neutraliza** (SV.G2.5, SV.AN.4,
   SV.G1.5...) vira a linha **`Neutraliza · <rotas>`** (ex.: `Neutraliza · 251`) e vai **SEMPRE por ÚLTIMO**, dentro do
   TOTAL (R-NEU-10; decisão da Karen de 27/11/2026, que atualiza a de 23/11: o número é o mesmo, muda o rótulo e a
-  posição). **Nunca `rotasNormais` nem `svsVisiveis`.** Fora das linhas fica só a supervisão das rotas ocultas das
+  posição) e **não tem folha própria** (R-BO-12, acima: fora do `#cadSv` e do PDF).
+  **Nunca `rotasNormais` nem `svsVisiveis`.** Fora das linhas fica só a supervisão das rotas ocultas das
   EV* (a que só tem rotas de `EVENTUAIS_ROTAS`), que continua DENTRO do TOTAL. Nível Supervisão = as rotas dela em
   `ordemNatural`, sem as virtuais (também no TOTAL), com `<rota> · <primeiro nome do consultor>`.
   **TOTAL** = `agrega` de TODAS as rotas do escopo (R-ESC-11/12), o número do card do painel. Como a oculta das EV* e
@@ -643,22 +662,30 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `.cadTab`, e tudo o que é modificador do cartão leva o prefixo `cad` (`cadAtras`, `cadNoRitmo`, `cadSemMeta`,
   `cadUn`, `cadNota`...) — `.ritmo` solto é a caixa preta do dia no painel.
   Testes: Parte AR do `front.test.js` (vm com getters que lançam, incluindo `Date`; variantes `semcad`, `cadtrap`,
-  `cadgrande`, e as novas `cadrotas` = SV.G2.1 com 9 rotas e SV.G2.2 com 12, e `cad17` = 17 itens de cobertura),
+  `cadgrande`, `cadrotas` = SV.G2.1 com 9 rotas e SV.G2.2 com 12, `cad17` = 17 itens de cobertura e `cadneu` = a G1
+  só com a SV.G1.5, a gerência cuja única supervisão é Neutraliza; testes (30)-(34) = a R-BO-12, o antes x depois das
+  células contra `cd15079`, a tabela sem borda, o rótulo "Meta dia" e a folga entre números vizinhos),
   `frontend/tests/caderno_invariantes.js` (recontagem INDEPENDENTE, sem `montaCaderno` e sem `agrega`, mais a
   geometria: nada cortado, nada transbordando, rodapé sem sobrepor cartão, cartão com a mesma altura em todas as
-  folhas) e o bloco "Caderno de Vendas com dado real" do `conferencia_real.test.js` (G2, AT, GU, RI e PO, cada
-  supervisão, as duas visões, com e sem o online.json, 360/390/1000/1440 px nos dois fundos e o antes x depois contra
-  `a153450`, servindo da main o `caderno.js` e o `app.css`).
+  folhas; `confereComposicaoPdf` = os 2 + 2N conjuntos de folhas, com `svsComFolha`/`svsSoNeutraliza` recontados do
+  payload) e o bloco "Caderno de Vendas com dado real" do `conferencia_real.test.js` (G2, AT, GU, RI e PO, cada
+  supervisão, as duas visões, com e sem o online.json, 360/390/1000/1440 px nos dois fundos, o antes x depois contra
+  `a153450`, servindo da main o `caderno.js` e o `app.css`, e o (k) da R-BO-12: contra `cd15079`, nas 16 gerências,
+  toda célula da folha da GC e das folhas de SV que continuam — 51.308 células em 53 escopos em 27/11/2026 —,
+  mudando só o rótulo da coluna e a frase do rodapé).
 - **Caderno de Vendas em PDF (Frente 2; `frontend/js/caderno.js`, botão `#cadPdf` na barra de filtros da aba
   Caderno)**: o caderno **inteiro da gerência** em A4 retrato, da MESMA fonte da tela (R-BO-06). **Nenhum número
   muda** e `montaCaderno` continua pura.
   **Composição** (decisão da Karen, 24/11/2026): o PDF é sempre o da gerência do `#cadGc` e **ignora** o `#cadNivel`
   e o `#cadSv` (eles governam só a tela). `cadernoCompleto(P, gc)` (pura, no topo do arquivo) devolve as folhas na
-  ordem: Gerência (Volume, Cobertura) e, depois, CADA supervisão na ordem da tela (Volume, Cobertura), cada folha
-  saindo de um `montaCaderno(P, {nivel, gc, sv})` — uma chamada por escopo, nada reimplementado.
+  ordem: Gerência (Volume, Cobertura) e, depois, CADA supervisão COM FOLHA na ordem da tela (Volume, Cobertura),
+  cada folha saindo de um `montaCaderno(P, {nivel, gc, sv})` — uma chamada por escopo, nada reimplementado. São
+  **2 + 2 x (supervisões com folha)** conjuntos de folhas (`cadSoNeutraliza` e a oculta das EV* ficam fora, R-BO-12);
+  a quebra em partes pode somar mais páginas que isso (a cobertura de uma supervisão com muitas rotas vira 2 folhas).
   **Com o layout em cartões, cada folha JÁ é uma página A4**: a quebra é a cada `porFolha` cartões (acima), então
   **não há mais passada de medição nem paginação por bloco** — `cadernoPaginas` e o uso do `RS.paginas` SAÍRAM do
-  caderno.js (o `RS.paginas` em si não mudou: o Resumo continua com ele). Na G2 de 27/11 são 12 páginas.
+  caderno.js (o `RS.paginas` em si não mudou: o Resumo continua com ele). Na G2 de 27/11 são **10** páginas (eram 12
+  antes da R-BO-12) e **123** nas 16 gerências (eram 145).
   **Geração** (molde do `exporta()` do `ritmo.js`): guarda `ocupado`; o `confirm("Exportar N páginas?")` só acima de
   12 páginas, ANTES de carregar as bibliotecas; `document.fonts.ready` antes de fotografar; palco `div.cad-palco`
   fora da tela (`aria-hidden`, FORA do `#cadFolhas`: as invariantes leem `#cadFolhas .cadFolha`) com a MESMA marcação

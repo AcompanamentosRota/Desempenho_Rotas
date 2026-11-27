@@ -22,9 +22,10 @@
    - cadernoCompleto(P, gc): TAMBÉM PURA -> o caderno inteiro da gerência, folha a folha (cada folha = uma página A4).
    - CAD: a tela (seletores próprios, desenho das folhas) e o PDF (botão "Caderno em PDF", palco fora da tela).
 
-   Duas divergências de propósito em relação ao painel (decisões da Karen; ver CLAUDE.md):
-   - a supervisão só de rotas Neutraliza entra como a linha "Neutraliza · <rotas>", SEMPRE a última (R-NEU-10), e a
-     SV.G3.3 (oculta no painel, R-ESC-14) entra com o código real dela;
+   Divergências de propósito em relação ao painel (decisões da Karen; ver CLAUDE.md):
+   - a supervisão só de rotas Neutraliza entra como a linha "Neutraliza · <rotas>", SEMPRE a última (R-NEU-10), e
+     NÃO tem folha própria: nem no seletor Supervisão, nem no PDF (R-BO-12, decisão da Karen de 27/11/2026);
+   - a SV.G3.3 (oculta no painel, R-ESC-14) entra com o código real dela e TEM folha própria (ela não é Neutraliza);
    - fora das linhas fica só a supervisão das rotas ocultas das EV*, que continua DENTRO do TOTAL (R-ESC-11/12), por
      isso a soma das linhas pode ficar abaixo do TOTAL — o resíduo vai no rodapé da folha, com o texto da notaVirtuais.
    ===================================================================== */
@@ -70,7 +71,7 @@ const CAD_FORA_COB = ['IMPERDOAVEIS', 'VENDAZERO'];
    cobertura, quando ele difere do da folha de volume (Tend. % -> Ritmo). */
 const CAD_COLS = [
   ['un', 'Unid.'], ['ma', 'R. M.A'], ['meta', 'Meta'], ['real', 'Real'], ['dif', 'Dif'],
-  ['pct', '%'], ['tend', 'Tend. %', 'Ritmo'], ['pv', 'Pré-v.'], ['dia', 'Dia'],
+  ['pct', '%'], ['tend', 'Tend. %', 'Ritmo'], ['pv', 'Pré-v.'], ['dia', 'Meta dia'],
 ];
 /* Geometria da folha A4 a 96 dpi e da grade de cartões. A grade é a faixa `1fr` da .cadFolha (o CSS divide a altura
    que sobra entre as linhas do grid), então aqui basta decidir QUANTAS linhas de cartões a folha tem.
@@ -101,6 +102,18 @@ const cadSemAcento = s => String(s == null ? '' : s).normalize('NFD').replace(/[
    "ROTA SEM VENDEDOR" em qualquer caixa, ou vazio, vira "Sem vendedor" (R-ESC-14). */
 const cadPrimeiroNome = s => { const n = String(s == null ? '' : s).trim();
   return !n || /SEM\s+VENDEDOR/i.test(n) ? 'Sem vendedor' : NUCLEO.titulo(n.split(/\s+/)[0]); };
+
+/* Rotas de uma supervisão no payload e "essa supervisão é só de rotas Neutraliza?" — a regra mora num lugar SÓ
+   (R-BO-12), porque três pontos fazem a mesma pergunta: a linha "Neutraliza · <rotas>" do montaCaderno, o seletor
+   #cadSv e o cadernoCompleto (o PDF). As virtuais não contam (elas nunca viram linha).
+   Decisão da Karen (27/11/2026): a supervisão só de Neutraliza NÃO tem folha própria — ela aparece só na folha da
+   gerência, como aquela linha, dentro do TOTAL (R-NEU-10). */
+const cadRotasSv = (P, gc, sv) => Object.keys((((P && P.DATA) || {})[gc] || {})[sv] || {});
+function cadSoNeutraliza(P, gc, sv){
+  const neutras = new Set((P && P.NEUTRALIZA_ROTAS) || []);
+  const rs = cadRotasSv(P, gc, sv).filter(r => !NUCLEO.ehVirtual(P, r));
+  return rs.length > 0 && rs.every(r => neutras.has(r));
+}
 
 /* MES_LABEL ('Novembro/26') -> 'AAAAMM' do exercício. Vem do PAYLOAD, nunca do relógio; sem conseguir ler o rótulo,
    a data do último dia útil fechado (DATA_ONTEM) serve de reserva. */
@@ -141,12 +154,11 @@ function montaCaderno(P, escopo){
      muda só o rótulo e a posição; os números continuam os da supervisão). Fora fica só a supervisão das rotas
      ocultas das EV* (todas as rotas dela são eventuais), que não é uma supervisão de verdade e continua dentro do
      TOTAL. Supervisão aberta por rota: as rotas dela em ordem natural, sem as virtuais, com o nome do consultor. */
-  const evs = new Set(P.EVENTUAIS_ROTAS || []), neutras = new Set(P.NEUTRALIZA_ROTAS || []);
+  const evs = new Set(P.EVENTUAIS_ROTAS || []);
   const svsGc = () => Object.keys(D[gc] || {});
   const rotasSv = s => Object.keys((D[gc] || {})[s] || {});
   const svEventual = s => { const rs = rotasSv(s); return rs.length > 0 && rs.every(r => evs.has(r)); };
-  const svNeutraliza = s => { const rs = rotasSv(s).filter(r => !N.ehVirtual(P, r));
-    return rs.length > 0 && rs.every(r => neutras.has(r)); };
+  const svNeutraliza = s => cadSoNeutraliza(P, gc, s);        // a regra única, do topo do arquivo
   function unidadesDe(){
     if(nivel === 'sv') return rotasSv(sv).filter(r => !N.ehVirtual(P, r)).sort(N.ordemNatural)
       .map(r => ({cod: r, rotulo: `${r} · ${cadPrimeiroNome((nodo(r) || {}).consultor)}`, rotas: [r]}));
@@ -362,13 +374,17 @@ function montaCaderno(P, escopo){
 /* ---------- o caderno inteiro da gerência (PDF) ----------
    Também PURO (sem DOM, sem ONLINE, sem relógio). Cada folha do layout em cartões JÁ é uma página A4: a quebra
    acontece a cada `porFolha` cartões (R-BO-07), então não há mais paginação por medição de blocos.
-   A ordem é a que a Karen decidiu em 24/11/2026 — Gerência (Volume, Cobertura) e, depois, CADA supervisão na mesma
-   ordem da tela (Volume, Cobertura) —, cada folha saindo do montaCaderno, a mesma função pura da tela. Os seletores
-   Nível e Supervisão da tela NÃO entram nisso: o PDF é sempre o caderno inteiro da gerência do seletor Gerência. */
+   A ordem é a que a Karen decidiu em 24/11/2026 — Gerência (Volume, Cobertura) e, depois, CADA supervisão COM FOLHA
+   na mesma ordem da tela (Volume, Cobertura) —, cada folha saindo do montaCaderno, a mesma função pura da tela. Os
+   seletores Nível e Supervisão da tela NÃO entram nisso: o PDF é sempre o caderno inteiro da gerência do seletor
+   Gerência. São 2 + 2 x (supervisões com folha) conjuntos de folhas: a só de Neutraliza fica fora (R-BO-12). */
 function cadernoCompleto(P, gc){
   const g = montaCaderno(P, {nivel: 'gc', gc});
   const out = g.folhas.map(f => ({nivel: 'gc', gc, sv: '', rotulo: g.rotulo, tipo: f.tipo, alt: f.altura, folha: f}));
   for(const sv of g.unidades){
+    // a supervisão só de Neutraliza não tem folha própria: ela é a linha "Neutraliza · <rotas>" da folha da
+    // gerência, e só (decisão da Karen, 27/11/2026; R-BO-12)
+    if(cadSoNeutraliza(P, gc, sv)) continue;
     const m = montaCaderno(P, {nivel: 'sv', gc, sv});
     for(const f of m.folhas) out.push({nivel: 'sv', gc, sv, rotulo: m.rotulo, tipo: f.tipo, alt: f.altura, folha: f});
   }
@@ -386,7 +402,7 @@ const CAD = (()=>{
     vazio: 'Nada para exportar nesta gerência'};
   /* Rodapé da folha: as definições das colunas, num lugar só. "Dif = Real − Meta" e "% = Real ÷ Meta" são as mesmas
      contas do montaCaderno — aqui é só o texto que explica a tabela ao leitor. */
-  const DEFINICOES = 'Dif = Real − Meta · Dia = meta do dia · % = Real ÷ Meta, sem o online (caderno matinal) · ' +
+  const DEFINICOES = 'Dif = Real − Meta · % = Real ÷ Meta, sem o online (caderno matinal) · ' +
     'Ritmo = % ÷ ritmo esperado · R. M.A = real do mês anterior inteiro · Pré-v. = último dia útil fechado. ' +
     'Item em mais de um grupo aparece uma vez, com todos os selos.';
   const LEG_SIT = [['atras', 'tendência/ritmo abaixo de 100%; na linha, o % em fundo preto marca a unidade atrás'],
@@ -404,12 +420,13 @@ const CAD = (()=>{
      As 16 SEPARADAS (nunca grupos, nunca a MATRIZ) e todas habilitadas, como a 2ª etapa da entrada do Back Office
      (gcBackOffice; CONFIG.GC_LIBERADAS não vale aqui); sem dados = desabilitada. */
   const gcsCad = () => todasGcs();
-  // supervisões que viram linha no Caderno: as do payload, menos a das rotas ocultas das EV* (a mesma regra do
-  // montaCaderno; aqui só para o seletor)
+  /* supervisões com FOLHA PRÓPRIA no Caderno: as do payload, menos a das rotas ocultas das EV* e menos a que só
+     tem rotas Neutraliza (R-BO-12; essa continua na folha da gerência como a linha "Neutraliza · <rotas>").
+     É a mesma lista que o cadernoCompleto percorre, pela mesma função pura: a regra não é duplicada aqui. */
   function svsCad(gc){
     const svs = Object.keys((DATA || {})[gc] || {}), evs = new Set((P && P.EVENTUAIS_ROTAS) || []);
     return svs.filter(s => { const rs = Object.keys(DATA[gc][s] || {});
-      return rs.length && !rs.every(r => evs.has(r)); }).sort(ordemNatural);
+      return rs.length && !rs.every(r => evs.has(r)) && !cadSoNeutraliza(P, gc, s); }).sort(ordemNatural);
   }
   const primeiraCad = () => gcsCad().find(g => DATA[g]) || gcsCad()[0] || '';
   function ajusta(){
