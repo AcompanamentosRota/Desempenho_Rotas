@@ -376,14 +376,18 @@ da Tabela:
   Começa na primeira com dados, mesmo que você tenha entrado por outra: é só escolher.
 - **Nível**: `Gerência (aberta por supervisão)` ou `Supervisão (aberta por rota)`.
 - **Supervisão**: só aparece no nível Supervisão. Trocar de gerência mantém o nível e escolhe a primeira supervisão
-  da nova gerência.
+  da nova gerência. A lista traz as supervisões **com folha própria**: fica fora a supervisão cujas rotas são
+  **todas Neutraliza** (ela vive só na folha da gerência, como a linha "Neutraliza"; ver abaixo) e a supervisão
+  interna das rotas ocultas dos clientes em rotas eventuais (EV*). A SV.G3.3, oculta no painel, **continua** com
+  folha: ela não é Neutraliza.
 
 **A folha.** Primeiro as folhas de **Volume**, depois as de **Cobertura**, uma embaixo da outra, cada uma do tamanho
 de uma folha **A4 em pé** (794 × 1123 px), em **preto e branco** — nada depende de cor, para a folha impressa ou
 fotocopiada dizer a mesma coisa. Em tela estreita (celular) a folha **rola de lado dentro da própria caixa**: a
 página nunca ganha rolagem lateral.
 
-O **cabeçalho** traz, da esquerda para a direita: as duas **logos** (Coca-Cola Bandeirantes em preto e a do IM); a
+O **cabeçalho** traz, da esquerda para a direita: as duas **logos** (Coca-Cola Bandeirantes em preto e a do IM, esta
+com **fundo transparente** desde 27/11/2026 — `frontend/assets/logo-im.png`, 241 × 240 px, RGBA); a
 linha pequena `CADERNO DE VENDAS · GC/GV · EXERCÍCIO AAAAMM` e, embaixo, o **nome da unidade** em destaque
 (`GC. G2`, ou `SV.G2.1 · Valdecir` no nível Supervisão) seguido da caixa preta **VOLUME** ou **COBERTURA**; e, à
 direita, o **ritmo esperado da meta hoje** (o mesmo `PACE_ONTEM_PCT` do painel), **uma vez só**, nunca repetido por
@@ -420,12 +424,18 @@ R. M.A e Pré-v., que vêm do mês anterior e do último dia útil, continuam co
 | **Tend. %** (Volume) | a tendência do SAC: Real até ontem + Neg Restante, sobre a Meta |
 | **Ritmo** (Cobertura) | o quanto o % realizado está acima ou abaixo do ritmo esperado do mês; **100% ou mais é estar no ritmo** |
 | **Pré-v.** | o que foi vendido **no último dia útil fechado** (um dia só, não o acumulado) |
-| **Dia** | a meta do dia, a mesma que o card do painel mostra na caixa do Online |
+| **Meta dia** | a meta do dia, a mesma que o card do painel mostra na caixa do Online |
 
 A coluna **Unid. alarga com o rótulo** (a largura sai do maior rótulo daquela folha): nome nenhum é cortado nem vira
 reticências. Volume vai com **uma casa decimal** e cobertura com **número inteiro** (é contagem de clientes
 cobertos). Meta zero ou ausente deixa `%`, `Tend. %` e `Ritmo` como `—`. No fechamento do mês, `Tend. %`, `Ritmo` e
-`Dia` ficam `—` e o cartão fica sem caixa de situação. A antiga coluna **Plan. Dia** (sempre vazia) **saiu**.
+`Meta dia` ficam `—` e o cartão fica sem caixa de situação. A antiga coluna **Plan. Dia** (sempre vazia) **saiu**.
+
+A tabela do cartão **não tem grade** (decisão da Karen, 27/11/2026): nenhuma célula tem borda. Quem separa as
+linhas é o **fundo** — o cinza do título das colunas, o cinza mais forte da linha TOTAL e o zebrado das unidades —
+e quem separa as colunas é o espaçamento das células. Continuam como estavam a **moldura preta do cartão**, os
+fundos e o **%** da unidade atrás em preto. A coluna da meta do dia passou a se chamar **Meta dia** (antes só
+"Dia"), e por isso a definição "Dia = meta do dia" **saiu** do rodapé: o nome da coluna já diz o que ela é.
 
 **Quantos cartões por folha.** A folha tem oito linhas de cartões, e **o cartão tem sempre o mesmo tamanho**: uma
 folha com poucos itens deixa o espaço em branco no pé, sem esticar nada. Quando o escopo tem muitas unidades a
@@ -458,11 +468,18 @@ abaixo do TOTAL. Quando isso acontece, o rodapé da folha diz quanto é, por ite
 `REFRI · Inclui clientes de rotas eventuais (EV*): Real 14,8`. No nível Supervisão vale o mesmo para as rotas
 virtuais: `REFRI · Inclui rotas virtuais: Meta ... · Real ...`. Sem diferença, não há nota.
 
-**A supervisão só de Neutraliza vira a linha "Neutraliza".** Quando todas as rotas de uma supervisão são Neutraliza
-(SV.G2.5, SV.AN.4, SV.G1.5...), a linha mostra **`Neutraliza · <rotas>`** — por exemplo `Neutraliza · 251` — e fica
-**sempre por último** no cartão, dentro do TOTAL (decisão da Karen, 27/11/2026; atualiza a de 23/11, que mostrava o
-código da supervisão). **Nenhum número muda** com isso: muda só o rótulo e a posição. A SV.G3.3, oculta no painel,
-continua aparecendo com o código real.
+**A supervisão só de Neutraliza vira a linha "Neutraliza" — e não tem folha própria.** Quando todas as rotas de uma
+supervisão são Neutraliza, a linha do cartão mostra **`Neutraliza · <rotas>`** — por exemplo `Neutraliza · 251` — e
+fica **sempre por último**, dentro do TOTAL (decisão da Karen, 27/11/2026; atualiza a de 23/11, que mostrava o
+código da supervisão). **Nenhum número muda** com isso: muda só o rótulo e a posição.
+
+Essa supervisão **aparece somente aí**: ela não entra no seletor **Supervisão** e o PDF não gera folha de Volume
+nem de Cobertura para ela (decisão da Karen, 27/11/2026). No payload de 27/11/2026 são **onze**: SV.AN.4 (A41),
+SV.AT.3 (431), SV.G1.5 (151), SV.G2.5 (251), SV.RV.3 (R31), SV.SL.3 (S31), SV.PO.2 (O21), SV.IT.3 (I31),
+SV.MO.3 (M31), SV.UR.3 (U31) e SV.RI.3 (C31) — uma por gerência, nas que têm rotas Neutraliza em supervisão
+separada. Se algum dia a **única** supervisão de uma gerência for dessas, o seletor Supervisão fica vazio (sem
+erro) e o PDF sai só com as duas folhas da gerência. A SV.G3.3, oculta no painel, **continua** com folha própria:
+ela não é Neutraliza.
 
 **O que não entra.** Imperdoáveis e Venda Zero ficam fora das folhas. O Del Valle Frut (DV FRUT) só aparece na
 gerência que tem o indicador (hoje só a G2). Se o payload ainda não trouxer as chaves `PRE_VENDA` e `MES_ANT_CHEIO`
@@ -479,7 +496,9 @@ gerador e terão PR próprio.
 **O que sai: o caderno INTEIRO da gerência, não só o que está na tela.** O PDF leva, nesta ordem:
 
 1. a **gerência** — folha de Volume e folha de Cobertura;
-2. **cada supervisão** da gerência, na mesma ordem em que o seletor as mostra — Volume e Cobertura.
+2. **cada supervisão com folha**, na mesma ordem em que o seletor as mostra — Volume e Cobertura. São
+   **2 + 2 × (supervisões com folha)** conjuntos de folhas: a supervisão só de rotas Neutraliza e a interna das
+   rotas eventuais (EV*) ficam de fora.
 
 Os seletores **Nível** e **Supervisão** valem só para a tela: o PDF é sempre o caderno completo da gerência
 escolhida. Acima de 12 páginas o navegador pergunta antes ("Exportar N páginas?"), como no Painel de Ritmo da
@@ -492,9 +511,10 @@ gerência e nas supervisões até 7 rotas, e vira **duas** nas supervisões maio
 folha e o título das colunas, e traz `Folha X de Y` no pé, à direita — o X conta o caderno inteiro, não a folha. A
 nota de rodapé do resíduo (as rotas eventuais EV* e as virtuais) aparece só na **última página daquela folha**.
 (Se um único cartão não coubesse numa A4 — precisaria de umas 90 unidades, o que hoje não acontece —, a folha
-inteira ganharia alguns pixels a mais, em vez de o cartão ser cortado.) Com o payload de 27/11/2026: **G2 com 12
-páginas**, **RI com 9**, **AT com 8**, **GU e PO com 7**; o arquivo da G2 ficou em 2,8 MB (241 KB/página) e levou
-alguns segundos.
+inteira ganharia alguns pixels a mais, em vez de o cartão ser cortado.) Com o payload de 27/11/2026, depois de a
+supervisão só de Neutraliza perder a folha própria: **G2 com 10 páginas** (eram 12), **AN e PA com 11**, **AP e G1
+com 10**, **G3 com 9**, **RI, IT, MO, RV e GU com 7**, **AT, SL e UR com 6**, **PO com 5** e **DI com 4** — 123
+páginas nas 16 gerências, contra 145 antes. O arquivo da G2 ficou em 2,2 MB (~230 KB por página) e levou 11 s.
 
 **Os números são os da manhã.** O PDF sai da mesma fonte da tela: só o `payload.json`, sem os pedidos de hoje
 (`online.json`). A data do arquivo (`Caderno_Vendas_G2_AAAAMMDD.pdf`) é a do **payload** — o último dia útil fechado,

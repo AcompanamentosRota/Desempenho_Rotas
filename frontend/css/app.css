@@ -1598,15 +1598,18 @@ body.boAtivo{padding-left:0}
 .cadCartPct{font-size:11px;font-weight:800;line-height:1;color:#111}
 
 /* ---- a tabela do cartão: cabeçalhos centralizados (Unid. à esquerda) e números à direita ---- */
+/* SEM GRADE (decisão da Karen, 27/11/2026): nenhuma célula tem borda. O que separa as linhas é o fundo — o cinza
+   do cabeçalho, o da linha TOTAL e o zebrado das unidades —, e o que separa as colunas é o padding lateral
+   (o de sempre). O que FICA: a borda preta do .cadCart, os fundos e o % em preto. */
 .cadTab{table-layout:fixed;border-collapse:collapse;width:100%}
-.cadTab th{background:#ececec;border:.5px solid #b4b1aa;font-size:5.5px;font-weight:700;letter-spacing:.02em;
+.cadTab th{background:#ececec;border:0;font-size:5.5px;font-weight:700;letter-spacing:.02em;
   text-transform:uppercase;text-align:center;padding:1px 2px;color:#2b2a27;white-space:nowrap;line-height:1.2}
 /* cabeçalhos centralizados, menos o da Unid., que fica à esquerda como a coluna */
 .cadTab thead th.un{text-align:left}
-.cadTab td{border:.5px solid #cfccc5;padding:.75px 2px;font-size:6px;text-align:right;color:#111;white-space:nowrap;
+.cadTab td{border:0;padding:.75px 2px;font-size:6px;text-align:right;color:#111;white-space:nowrap;
   line-height:1.2}
 /* a coluna Unid. é um <th scope=row>: alarga com o rótulo (a largura sai do maior rótulo da folha) e fica à esquerda */
-.cadTab th.cadUn{background:#fff;border-color:#cfccc5;text-align:left;font-size:6px;font-weight:700;
+.cadTab th.cadUn{background:#fff;border:0;text-align:left;font-size:6px;font-weight:700;
   text-transform:none;letter-spacing:0;color:#111;padding:.75px 2px;line-height:1.2}
 .cadTab tbody tr:nth-child(even) td,.cadTab tbody tr:nth-child(even) th.cadUn{background:#f1f1f1}
 .cadTab tr.tot td,.cadTab tr.tot th.cadUn{background:#d9d9d9;font-weight:800}

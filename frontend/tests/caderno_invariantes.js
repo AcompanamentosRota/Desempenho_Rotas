@@ -23,6 +23,10 @@
    (i) Tags de segmento: FOCO só no KS TT, FOCO 600 só na Cervejas 600ml Retornável, nenhum outro cartão com tag.
    (j) Geometria (só no navegador): nenhum texto cortado, nenhum cartão transbordando, o rodapé sem sobrepor cartão,
        a quebra a cada `porFolha` cartões e o cartão com a mesma altura em todas as folhas do escopo.
+   (k) Composição do PDF (R-BO-12, decisão da Karen de 27/11/2026): 2 + 2 x (supervisões COM FOLHA) conjuntos de
+       folhas, na ordem da tela. Supervisão com folha = a do payload que não é só de rotas ocultas das EV* e não é
+       só de rotas Neutraliza (esta aparece apenas como a linha "Neutraliza · <rotas>" da folha da gerência).
+       A lista é recontada aqui do payload, sem nenhuma função do front.
 
    Nada daqui imprime nome ou código de cliente: só totais e códigos de gerência, supervisão e rota. */
 'use strict';
@@ -73,7 +77,6 @@ const primeiroNome = s => { const n = String(s == null ? '' : s).trim();
 
 function escopoDe(P, escopo){
   const D = P.DATA || {}, gc = escopo.gc, evs = new Set(P.EVENTUAIS_ROTAS || []);
-  const neutras = new Set(P.NEUTRALIZA_ROTAS || []);
   const svs = Object.keys(D[gc] || {});
   const rotasSv = s => Object.keys((D[gc] || {})[s] || {});
   if(escopo.nivel === 'sv'){
@@ -82,8 +85,9 @@ function escopoDe(P, escopo){
       .map(r => ({cod: r, rotulo: `${r} · ${primeiroNome((D[gc][escopo.sv][r] || {}).consultor)}`, rotas: [r]}))};
   }
   const uteis = svs.filter(s => rotasSv(s).length && !rotasSv(s).every(r => evs.has(r))).sort(ordemNatural);
-  const soNeutra = s => { const rs = rotasSv(s).filter(r => !ehVirtual(P, r));
-    return rs.length > 0 && rs.every(r => neutras.has(r)); };
+  // a mesma pergunta do svsComFolha, uma definição só neste arquivo (a supervisão continua sendo LINHA da folha
+  // da gerência, mesmo sem folha própria)
+  const soNeutra = s => soNeutraliza(P, gc, s);
   const linha = s => soNeutra(s)
     ? {cod: s, neutraliza: true, rotas: rotasSv(s),
        rotulo: 'Neutraliza · ' + rotasSv(s).filter(r => !ehVirtual(P, r)).sort(ordemNatural).join(', ')}
@@ -191,6 +195,53 @@ const LE_GEO = () => [...document.querySelectorAll('#cadFolhas .cadFolha')].map(
     sobreRodape: fundo > rod.top + 0.5, transborda: fundo > rf.bottom + 0.5,
     rodapeDentro: rod.bottom <= rf.bottom + 0.5};
 });
+
+/* ---------- supervisões com folha própria (R-BO-12) ----------
+   Recontagem INDEPENDENTE, do payload: a supervisão só de rotas ocultas das EV* nunca foi uma supervisão de
+   verdade, e a só de rotas Neutraliza passou a viver apenas na linha "Neutraliza · <rotas>" da folha da gerência
+   (decisão da Karen, 27/11/2026). As virtuais não contam. */
+function soEventual(P, gc, sv){
+  const rs = Object.keys(((P.DATA || {})[gc] || {})[sv] || {});
+  return rs.length > 0 && rs.every(r => (P.EVENTUAIS_ROTAS || []).includes(r));
+}
+function soNeutraliza(P, gc, sv){
+  const rs = Object.keys(((P.DATA || {})[gc] || {})[sv] || {}).filter(r => !ehVirtual(P, r));
+  return rs.length > 0 && rs.every(r => (P.NEUTRALIZA_ROTAS || []).includes(r));
+}
+const svsComFolha = (P, gc) => Object.keys((P.DATA || {})[gc] || {})
+  .filter(sv => Object.keys(P.DATA[gc][sv] || {}).length && !soEventual(P, gc, sv) && !soNeutraliza(P, gc, sv))
+  .sort(ordemNatural);
+const svsSoNeutraliza = (P, gc) => Object.keys((P.DATA || {})[gc] || {})
+  .filter(sv => soNeutraliza(P, gc, sv)).sort(ordemNatural);
+
+/* (k) A composição do caderno em PDF de uma gerência, lida do próprio navegador (CAD.paginas()) e conferida
+   contra a recontagem acima. Devolve uma linha de resumo (só contagens e códigos). */
+async function confereComposicaoPdf(page, P, gc, onde){
+  const r = await page.evaluate(() => {
+    const {pags} = CAD.paginas();
+    return {pags: pags.map(p => [p.nivel, p.sv, p.tipo, p.folha.parte, p.folha.partes]),
+      gc: pags.length ? pags[0].gc : ''};
+  });
+  assert.equal(r.gc, gc, `${onde}: o PDF é o da gerência do seletor`);
+  const svs = svsComFolha(P, gc);
+  // os CONJUNTOS de folhas, na ordem: Gerência (Volume, Cobertura) e, depois, cada supervisão com folha
+  const escopos = [...new Set(r.pags.map(p => `${p[0]}|${p[1]}|${p[2]}`))];
+  const esperado = ['gc||vol', 'gc||cob', ...svs.flatMap(sv => [`sv|${sv}|vol`, `sv|${sv}|cob`])];
+  assert.deepEqual(escopos, esperado, `${onde}: 2 + 2 x ${svs.length} conjuntos de folhas, na ordem`);
+  assert.equal(escopos.length, 2 + 2 * svs.length, `${onde}: 2 + 2N conjuntos de folhas`);
+  // nenhuma folha de supervisão só de Neutraliza
+  const neu = svsSoNeutraliza(P, gc);
+  for(const sv of neu) assert.ok(!r.pags.some(p => p[1] === sv),
+    `${onde}: a supervisão ${sv} (só Neutraliza) não pode ter folha própria`);
+  // o número de páginas = a soma das partes de cada conjunto
+  for(const e of esperado){
+    const minhas = r.pags.filter(p => `${p[0]}|${p[1]}|${p[2]}` === e);
+    assert.deepEqual(minhas.map(p => p[3]), minhas.map((p, i) => i + 1), `${onde}/${e}: as partes em ordem`);
+    assert.ok(minhas.every(p => p[4] === minhas.length), `${onde}/${e}: partes = ${minhas.length}`);
+  }
+  return {onde, gc, svsComFolha: svs.length, soNeutraliza: neu.join(', '), escopos: escopos.length,
+    paginas: r.pags.length};
+}
 
 /* ---------- conferência de um escopo ---------- */
 /* Devolve uma linha de resumo (só contagens e códigos) e falha em qualquer divergência. */
@@ -351,5 +402,6 @@ async function confereCaderno(page, P, escopo, onde){
   return res;
 }
 
-module.exports = {confereCaderno, LE_CAD, LE_GEO, escopoDe, soma, somaChave, itensFolha, indices, num, br, arred,
-  pctTxt, ordemNatural, ehVirtual, primeiroNome, TAGS};
+module.exports = {confereCaderno, confereComposicaoPdf, LE_CAD, LE_GEO, escopoDe, soma, somaChave, itensFolha,
+  indices, num, br, arred, pctTxt, ordemNatural, ehVirtual, primeiroNome, TAGS,
+  svsComFolha, svsSoNeutraliza, soNeutraliza, soEventual};

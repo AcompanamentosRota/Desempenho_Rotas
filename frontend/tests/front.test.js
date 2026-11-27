@@ -228,6 +228,16 @@ before(async () => {
   fs.writeFileSync(path.join(cadrotas, 'payload.json'), JSON.stringify(cr));
   fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(cadrotas, 'online.json'));
   DADOS.cadrotas = cadrotas;
+  /* 'cadneu' = o caso-limite da R-BO-12: uma gerência cuja ÚNICA supervisão é só de rotas Neutraliza (a G1 do
+     sintético, só com a SV.G1.5/151). Hoje isso não existe no payload real; se aparecer, o seletor Supervisão fica
+     vazio sem erro e o PDF sai só com as duas folhas da gerência. */
+  const cadneu = path.join(tmp, 'cadneu');
+  fs.mkdirSync(cadneu);
+  const cnu = JSON.parse(fs.readFileSync(path.join(DADOS.normal, 'payload.json'), 'utf-8'));
+  for(const sv of Object.keys(cnu.DATA.G1)) if(sv !== 'SV.G1.5') delete cnu.DATA.G1[sv];
+  fs.writeFileSync(path.join(cadneu, 'payload.json'), JSON.stringify(cnu));
+  fs.copyFileSync(path.join(DADOS.normal, 'online.json'), path.join(cadneu, 'online.json'));
+  DADOS.cadneu = cadneu;
   /* 'cad17' = 17 itens de cobertura (um a mais que os 16 de hoje), para provar a quebra: a 1ª folha é preenchida
      até o limite e só o que passa vai para a 2ª, com o cartão da mesma altura nas duas. */
   const cad17 = path.join(tmp, 'cad17');
@@ -12153,9 +12163,9 @@ describe('Parte AR — Caderno de Vendas: montaCaderno (função pura, sem naveg
     const [vol, cob] = m.folhas;
     assert.deepEqual(vol.colunas.map(c => [c.chave, c.rotulo]),
       [['un', 'Unid.'], ['ma', 'R. M.A'], ['meta', 'Meta'], ['real', 'Real'], ['dif', 'Dif'],
-       ['pct', '%'], ['tend', 'Tend. %'], ['pv', 'Pré-v.'], ['dia', 'Dia']]);
+       ['pct', '%'], ['tend', 'Tend. %'], ['pv', 'Pré-v.'], ['dia', 'Meta dia']]);
     assert.deepEqual(cob.colunas.map(c => c.rotulo),
-      ['Unid.', 'R. M.A', 'Meta', 'Real', 'Dif', '%', 'Ritmo', 'Pré-v.', 'Dia']);
+      ['Unid.', 'R. M.A', 'Meta', 'Real', 'Dif', '%', 'Ritmo', 'Pré-v.', 'Meta dia']);
     assert.ok(!m.folhas.some(f => f.colunas.some(c => /Plan/i.test(c.rotulo))), 'a coluna Plan. Dia saiu');
     // cada linha tem 8 células de número (as 9 colunas menos a Unid.) e a largura é proporcional ao maior texto
     let n = 0;
@@ -12370,10 +12380,13 @@ describe('Parte AR — Caderno de Vendas: montaCaderno (função pura, sem naveg
     const puro = x => JSON.parse(JSON.stringify(x));
     const lista = () => puro(ctx.cadernoCompleto(vigiaCad(p), 'G2').map(f => [f.nivel, f.sv, f.tipo, f.folha.parte]));
     const svs = puro(ctx.montaCaderno(vigiaCad(p), {nivel: 'gc', gc: 'G2'}).unidades);
-    assert.deepEqual(svs, ['SV.G2.1', 'SV.G2.2', 'SV.G2.5'], 'as supervisões do Caderno, na ordem da tela');
+    assert.deepEqual(svs, ['SV.G2.1', 'SV.G2.2', 'SV.G2.5'], 'as unidades da folha da gerência, na ordem da tela');
+    // a SV.G2.5 é a linha "Neutraliza · 251" da folha da gerência e NÃO tem folha própria (R-BO-12, teste (30))
+    const comFolha = CAD_INV.svsComFolha(p, 'G2');
+    assert.deepEqual(comFolha, ['SV.G2.1', 'SV.G2.2'], 'as supervisões com folha própria');
     const esperado = [['gc', '', 'vol', 1], ['gc', '', 'cob', 1]];
-    for(const sv of svs) esperado.push(['sv', sv, 'vol', 1], ['sv', sv, 'cob', 1]);
-    assert.deepEqual(lista(), esperado, 'Gerência (Volume, Cobertura) e, depois, cada supervisão na mesma ordem');
+    for(const sv of comFolha) esperado.push(['sv', sv, 'vol', 1], ['sv', sv, 'cob', 1]);
+    assert.deepEqual(lista(), esperado, 'Gerência (Volume, Cobertura) e, depois, cada supervisão com folha');
     // a folha do PDF é a MESMA que a tela desenha para aquele escopo (um montaCaderno por escopo)
     const naTela = puro(ctx.montaCaderno(vigiaCad(p), {nivel: 'sv', gc: 'G2', sv: 'SV.G2.1'}).folhas);
     const noPdf = puro(ctx.cadernoCompleto(vigiaCad(p), 'G2').slice(2, 2 + naTela.length).map(f => f.folha));
@@ -12442,6 +12455,110 @@ describe('Parte AR — Caderno de Vendas: montaCaderno (função pura, sem naveg
     assert.ok(celulas > 5000, `células comparadas: ${celulas} em ${unidades} linhas`);
     console.log(`# Caderno em cartões: ${celulas} células comparadas com a main (${REF_PRE_CARTOES}) em ` +
       `${unidades} linhas — todas idênticas (só a Plan. Dia saiu).`);
+  });
+
+  /* (b) e (c) do pedido — R-BO-12: a supervisão só de rotas Neutraliza NÃO tem folha própria no PDF, mas CONTINUA
+     sendo a última linha de cada cartão da folha da gerência, com os mesmos números (R-NEU-10). */
+  test('(30) a supervisão só de Neutraliza: sem folha no PDF e, na folha da GC, a linha de sempre', () => {
+    const ctx = contextoCad(), p = payloadCad('normal');
+    const puro = x => JSON.parse(JSON.stringify(x));
+    // as só-Neutraliza do sintético, recontadas do payload (sem nenhuma função do front)
+    const neutras = {};
+    for(const gc in p.DATA) for(const sv in p.DATA[gc]){
+      const rs = Object.keys(p.DATA[gc][sv]).filter(r => !CAD_INV.ehVirtual(p, r));
+      if(rs.length && rs.every(r => (p.NEUTRALIZA_ROTAS || []).includes(r))) (neutras[gc] = neutras[gc] || []).push(sv);
+    }
+    assert.deepEqual(Object.keys(neutras).sort(), ['AN', 'G1', 'G2', 'IT', 'MO', 'RV'],
+      `as gerências com supervisão só de Neutraliza: ${JSON.stringify(neutras)}`);
+    for(const gc of Object.keys(p.DATA)){
+      const m = puro(ctx.montaCaderno(vigiaCad(p), {nivel: 'gc', gc}));
+      const escopos = puro(ctx.cadernoCompleto(vigiaCad(p), gc)).map(f => f.sv);
+      const comFolha = CAD_INV.svsComFolha(p, gc);
+      // 2 + 2N conjuntos de folhas: a gerência e, depois, só as supervisões com folha
+      assert.deepEqual([...new Set(escopos)], ['', ...comFolha], `${gc}: os escopos do PDF`);
+      for(const sv of neutras[gc] || []){
+        assert.ok(!escopos.includes(sv), `${gc}: ${sv} não pode ter folha própria`);
+        assert.ok(!comFolha.includes(sv), `${gc}: ${sv} fora da lista de supervisões com folha`);
+        // a linha continua na folha da gerência, por último, com o rótulo "Neutraliza · <rotas>"
+        assert.equal(m.unidades[m.unidades.length - 1], sv, `${gc}: ${sv} é a última unidade da folha da GC`);
+        const rot = m.rotulosUnidades[m.unidades.length - 1];
+        assert.match(rot, /^Neutraliza · /, `${gc}: o rótulo da linha é "${rot}"`);
+        for(const c of cartoesDe(m, 'vol')){
+          const ultima = c.linhas[c.linhas.length - 1];
+          assert.equal(ultima.cod, sv, `${gc}/${c.k}: a última linha do cartão`);
+          assert.equal(ultima.rotulo, rot);
+          assert.equal(ultima.neutraliza, true);
+        }
+      }
+    }
+    // (c) gerência cuja ÚNICA supervisão é só de Neutraliza: duas folhas (as da GC) e nada mais, sem erro
+    const pn = payloadCad('cadneu');
+    assert.deepEqual(Object.keys(pn.DATA.G1), ['SV.G1.5'], 'a variante deixou só a SV.G1.5 na G1');
+    const so = puro(ctx.cadernoCompleto(vigiaCad(pn), 'G1'));
+    assert.deepEqual(so.map(f => [f.nivel, f.sv, f.tipo]), [['gc', '', 'vol'], ['gc', '', 'cob']],
+      'o PDF sai só com as duas folhas da gerência');
+    assert.deepEqual(CAD_INV.svsComFolha(pn, 'G1'), [], 'nenhuma supervisão com folha');
+    const mn = puro(ctx.montaCaderno(vigiaCad(pn), {nivel: 'gc', gc: 'G1'}));
+    assert.deepEqual(mn.unidades, ['SV.G1.5'], 'a folha da gerência continua com a linha dela');
+    assert.match(mn.rotulosUnidades[0], /^Neutraliza · 151$/);
+  });
+
+  /* (d) do pedido: o antes x depois das CÉLULAS contra a main desta etapa (cd15079, o merge do #68), com o MESMO
+     payload. NENHUM número muda: a única diferença permitida no montaCaderno é o RÓTULO da coluna da meta do dia
+     ("Dia" -> "Meta dia") e, por consequência dele, o peso (a largura relativa) daquela coluna. */
+  const REF_PRE_NEU = 'cd15079';
+  const CAD_PRE_NEU = (() => {
+    try { return execSync(`git show ${REF_PRE_NEU}:frontend/js/caderno.js`,
+      {cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 32 * 1024 * 1024}).toString(); }
+    catch(e) { return null; }
+  })();
+  test('(31) antes x depois (cd15079): toda célula igual; muda só o rótulo da coluna da meta do dia',
+    {skip: !CAD_PRE_NEU && `sem o commit ${REF_PRE_NEU}`}, () => {
+    const novo = contextoCad(), velho = contextoCad(CAD_PRE_NEU);
+    const puro = x => JSON.parse(JSON.stringify(x));
+    let celulas = 0, escopos = 0;
+    for(const nome of ['normal', 'fech', 'cadtrap', 'semcad', 'cadrotas']){
+      const p = payloadCad(nome);
+      for(const gc of Object.keys(p.DATA)){
+        // a folha da GC e as folhas de SV que CONTINUAM (as só-Neutraliza não têm mais folha, item 1)
+        const alvos = [{nivel: 'gc', gc}, ...CAD_INV.svsComFolha(p, gc).map(sv => ({nivel: 'sv', gc, sv}))];
+        for(const e of alvos){
+          escopos++;
+          const a = puro(velho.montaCaderno(vigiaCad(p), e)), b = puro(novo.montaCaderno(vigiaCad(p), e));
+          const onde = `${nome}/${e.gc}${e.sv ? '/' + e.sv : ''}`;
+          assert.deepEqual(b.unidades, a.unidades, `${onde}: as unidades`);
+          assert.deepEqual(b.rotulosUnidades, a.rotulosUnidades, `${onde}: os rótulos das unidades`);
+          assert.deepEqual(b.grade, a.grade, `${onde}: a grade (linhas, cartões por folha, altura)`);
+          assert.equal(b.folhas.length, a.folhas.length, `${onde}: o nº de folhas`);
+          a.folhas.forEach((fa, i) => {
+            const fb = b.folhas[i], q = `${onde}/${fa.tipo}${fa.parte}`;
+            assert.deepEqual(fb.cab, fa.cab, `${q}: o cabeçalho`);
+            assert.deepEqual(fb.notas, fa.notas, `${q}: as notas do rodapé`);
+            assert.deepEqual(fb.legendas, fa.legendas, `${q}: a legenda das tags`);
+            // as colunas: a mesma lista, com 'Dia' -> 'Meta dia' (o peso muda com o rótulo, de propósito)
+            assert.deepEqual(fb.colunas.map(c => [c.chave, c.rotulo]),
+              fa.colunas.map(c => [c.chave, c.rotulo === 'Dia' ? 'Meta dia' : c.rotulo]), `${q}: as colunas`);
+            assert.deepEqual(fb.cartoes.map(c => c.k), fa.cartoes.map(c => c.k), `${q}: os itens`);
+            fa.cartoes.forEach((ca, j) => {
+              const cb = fb.cartoes[j];
+              assert.deepEqual([cb.rotulo, cb.selo, cb.tag, cb.pct, cb.situacao],
+                [ca.rotulo, ca.selo, ca.tag, ca.pct, ca.situacao], `${q}/${ca.k}: o título e a situação`);
+              ca.linhas.forEach((la, z) => {
+                const lb = cb.linhas[z];
+                assert.deepEqual([lb.cod, lb.rotulo, lb.tot, lb.neutraliza, lb.semMeta, lb.atras, lb.pct],
+                  [la.cod, la.rotulo, la.tot, la.neutraliza, la.semMeta, la.atras, la.pct],
+                  `${q}/${ca.k}/${la.cod}: a linha`);
+                assert.deepEqual(lb.cels, la.cels, `${q}/${ca.k}/${la.cod}: as células`);
+                celulas += la.cels.length;
+              });
+            });
+          });
+        }
+      }
+    }
+    assert.ok(celulas > 10000, `células comparadas: ${celulas}`);
+    console.log(`# Caderno (R-BO-12): ${celulas} células comparadas com a main (${REF_PRE_NEU}) em ${escopos} ` +
+      `escopos — todas idênticas; mudou só o rótulo "Dia" -> "Meta dia".`);
   });
 });
 
@@ -12522,12 +12639,15 @@ describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
     await escolhe(page, 'cadNivel', 'sv');
     assert.ok(!(await page.evaluate(() => document.getElementById('cadCampoSv').hidden)));
     const svs = () => page.$$eval('#cadSv option', os => os.map(o => o.value));
-    assert.deepEqual(await svs(), await page.evaluate(() => Object.keys(DATA[gcsComDados()[0]]).sort(ordemNatural)));
+    // as supervisões COM FOLHA da 1ª gerência (sem a das EV* e sem a só de Neutraliza, R-BO-12)
+    assert.deepEqual(await svs(), CAD_INV.svsComFolha(payloadCad('normal'),
+      await page.evaluate(() => gcsComDados()[0])));
     // trocar de gerência mantém o nível e escolhe a 1ª supervisão da nova
     await escolhe(page, 'cadGc', 'G2');
     assert.equal(await page.inputValue('#cadNivel'), 'sv');
     assert.equal(await page.inputValue('#cadSv'), 'SV.G2.1');
-    assert.deepEqual(await svs(), ['SV.G2.1', 'SV.G2.2', 'SV.G2.5'], 'a só de Neutraliza entra; a das EV* não');
+    // R-BO-12: nem a só de Neutraliza (SV.G2.5) nem a das rotas ocultas das EV* entram no seletor
+    assert.deepEqual(await svs(), ['SV.G2.1', 'SV.G2.2'], 'a só de Neutraliza e a das EV* ficam fora');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -12552,13 +12672,12 @@ describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
     const ultima = c.linhas[c.linhas.length - 1];
     assert.equal(ultima.cod, 'Neutraliza · 251', `a última linha: ${c.linhas.map(l => l.cod).join(' | ')}`);
     assert.equal(ultima.neutraliza, true);
+    // R-BO-12: a SV.G2.5 não tem folha própria — ela não está no seletor e o PDF não a traz
     await escolhe(page, 'cadNivel', 'sv');
-    await escolhe(page, 'cadSv', 'SV.G2.5');
-    const g = await page.evaluate(CAD_INV.LE_CAD);
-    const c2 = g[0].cartoes.find(x => x.rotulo === 'REFRI');
-    assert.deepEqual(c2.linhas.slice(1).map(l => l.cod.split(' · ')[0]), ['251'], 'a SV.G2.5 abre só na rota 251');
-    assert.deepEqual(c2.linhas[1].cels.map(x => x.txt), ultima.cels.map(x => x.txt),
-      'os números da linha Neutraliza são os da rota 251');
+    assert.ok(!(await page.$$eval('#cadSv option', os => os.map(o => o.value))).includes('SV.G2.5'),
+      'a SV.G2.5 (só Neutraliza) fora do seletor');
+    assert.ok(!(await page.evaluate(() => CAD.paginas().pags.map(x => x.sv))).includes('SV.G2.5'),
+      'a SV.G2.5 fora do PDF');
     assert.deepEqual(erros, []);
     await ctx.close();
   });
@@ -12734,9 +12853,9 @@ describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
     const {page, ctx, erros} = await abreCaderno('normal');
     await escolhe(page, 'cadGc', 'G2');
     const folhas = () => page.evaluate(() => CAD.paginas().pags.map(p => [p.nivel, p.sv, p.tipo, p.folha.parte]));
-    const svs = await page.evaluate(() => Object.keys(DATA.G2).filter(sv => {
-      const evs = new Set(P.EVENTUAIS_ROTAS || []), rs = Object.keys(DATA.G2[sv] || {});
-      return rs.length && !rs.every(r => evs.has(r)); }).sort(ordemNatural));
+    // as supervisões COM FOLHA (sem a das rotas ocultas das EV* e sem a só de Neutraliza, R-BO-12)
+    const svs = CAD_INV.svsComFolha(payloadCad('normal'), 'G2');
+    assert.deepEqual(svs, ['SV.G2.1', 'SV.G2.2'], 'a SV.G2.5 (só Neutraliza) não tem folha');
     // a ordem das PÁGINAS: Gerência (Volume, Cobertura) e, depois, cada supervisão (Volume, Cobertura)
     const esperado = [['gc', '', 'vol', 1], ['gc', '', 'cob', 1],
       ...svs.flatMap(sv => [['sv', sv, 'vol', 1], ['sv', sv, 'cob', 1]])];
@@ -12745,6 +12864,7 @@ describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
     // mudar os dois seletores da tela não muda NADA da lista de páginas (eles governam só a tela)
     await escolhe(page, 'cadNivel', 'sv');
     await escolhe(page, 'cadSv', svs[svs.length - 1]);
+    assert.deepEqual(await page.$$eval('#cadSv option', os => os.map(o => o.value)), svs, 'o seletor Supervisão');
     assert.deepEqual(await folhas(), antes, 'o Nível e a Supervisão não entram no PDF');
     // e, trocando a gerência, o caderno é o da nova
     await escolhe(page, 'cadGc', 'G1');
@@ -12917,6 +13037,161 @@ describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
     await ctx.close();
   });
 
+  /* (a) e (c) do pedido — R-BO-12: nas 16 gerências do sintético, o seletor Supervisão traz exatamente as
+     supervisões COM FOLHA (recontadas do payload, sem nenhuma função do front), e o PDF traz 2 + 2N conjuntos de
+     folhas. Inclui a gerência cuja ÚNICA supervisão é só de Neutraliza (variante 'cadneu'): seletor vazio, sem
+     erro, e o PDF só com as duas folhas da gerência. */
+  test('(32) o seletor Supervisão e o PDF sem a só de Neutraliza, nas 16 gerências', async () => {
+    const {page, ctx, erros} = await abreCaderno('normal');
+    const P = payloadCad('normal');
+    const linhas = [];
+    for(const gc of await page.evaluate(() => todasGcs().filter(g => DATA[g]))){
+      await escolhe(page, 'cadGc', gc);
+      await escolhe(page, 'cadNivel', 'sv');
+      const opcoes = await page.$$eval('#cadSv option', os => os.map(o => o.value));
+      assert.deepEqual(opcoes, CAD_INV.svsComFolha(P, gc), `${gc}: as supervisões do seletor`);
+      for(const sv of CAD_INV.svsSoNeutraliza(P, gc))
+        assert.ok(!opcoes.includes(sv), `${gc}: ${sv} (só Neutraliza) no seletor`);
+      // a supervisão escolhida é sempre uma das válidas (o ajusta() cai na 1ª quando a guardada sai)
+      if(opcoes.length) assert.ok(opcoes.includes(await page.inputValue('#cadSv')), `${gc}: a supervisão escolhida`);
+      linhas.push(await CAD_INV.confereComposicaoPdf(page, P, gc, `GC.${gc}`));
+      await escolhe(page, 'cadNivel', 'gc');
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    console.log('# Caderno (R-BO-12), sintético: ' + linhas.map(l =>
+      `${l.gc} ${l.svsComFolha} SV com folha, ${l.paginas} páginas${l.soNeutraliza ? ` (fora: ${l.soNeutraliza})` : ''}`
+      ).join('; '));
+    // (c) a gerência cuja única supervisão é só de Neutraliza
+    const r = await abreCaderno('cadneu');
+    const Pn = payloadCad('cadneu');
+    await escolhe(r.page, 'cadGc', 'G1');
+    await escolhe(r.page, 'cadNivel', 'sv');
+    assert.deepEqual(await r.page.$$eval('#cadSv option', os => os.map(o => o.value)), [],
+      'o seletor Supervisão fica vazio');
+    assert.equal(await r.page.inputValue('#cadSv'), '', 'nenhuma supervisão escolhida');
+    assert.deepEqual(await r.page.evaluate(() => CAD.paginas().pags.map(x => [x.nivel, x.sv, x.tipo])),
+      [['gc', '', 'vol'], ['gc', '', 'cob']], 'o PDF sai só com as duas folhas da gerência');
+    await CAD_INV.confereComposicaoPdf(r.page, Pn, 'G1', 'GC.G1 (só Neutraliza)');
+    // e a folha da gerência continua com a linha "Neutraliza · 151"
+    await escolhe(r.page, 'cadNivel', 'gc');
+    const f = await r.page.evaluate(CAD_INV.LE_CAD);
+    for(const c of f[0].cartoes) assert.equal(c.linhas[c.linhas.length - 1].cod, 'Neutraliza · 151',
+      `${c.rotulo}: a linha da Neutraliza`);
+    assert.deepEqual(r.erros, []);
+    await r.ctx.close();
+  });
+
+  /* (e) e (f) do pedido: a tabela do cartão SEM GRADE (nenhuma célula com borda) e a coluna da meta do dia
+     chamada "Meta dia" (META DIA com o text-transform), com o rodapé sem a definição "Dia = meta do dia". O que
+     FICA: a borda preta do .cadCart, o fundo do cabeçalho, o da linha TOTAL, o zebrado e o % em preto. */
+  test('(33) a tabela do cartão sem grade e a coluna "Meta dia"; a borda do cartão e os fundos ficam', async () => {
+    const {page, ctx, erros} = await abreCaderno('normal');
+    for(const gc of ['G2', 'AT']) for(const nivel of ['gc', 'sv']){
+      await escolhe(page, 'cadGc', gc);
+      await escolhe(page, 'cadNivel', nivel);
+      const r = await page.evaluate(() => {
+        const lado = (el, l) => parseFloat(getComputedStyle(el)[`border${l}Width`]);
+        const bordas = [], cartoes = [], fundos = {cab: new Set(), tot: new Set(), zebra: new Set(), pct: new Set()};
+        for(const f of document.querySelectorAll('#cadFolhas .cadFolha')){
+          for(const c of f.querySelectorAll('.cadCart')){
+            const e = getComputedStyle(c);
+            cartoes.push([e.borderTopWidth, e.borderTopStyle, e.borderTopColor].join(' '));
+            for(const cel of c.querySelectorAll('.cadTab th, .cadTab td')){
+              const soma = ['Top', 'Right', 'Bottom', 'Left'].reduce((a, l) => a + lado(cel, l), 0);
+              if(soma > 0) bordas.push([c.dataset.k, cel.className, soma]);
+            }
+            const ths = [...c.querySelectorAll('thead th')];
+            fundos.cab.add(getComputedStyle(ths[0]).backgroundColor);
+            const trs = [...c.querySelectorAll('tbody tr')];
+            fundos.tot.add(getComputedStyle(trs[0].querySelector('th')).backgroundColor);
+            // o zebrado é o nth-child(even) do tbody: a 2ª linha (a 1ª é o TOTAL, com o cinza dele)
+            if(trs[1]) fundos.zebra.add(getComputedStyle(trs[1].querySelector('th')).backgroundColor);
+            for(const td of c.querySelectorAll('td.pct.atras')){
+              const e2 = getComputedStyle(td);
+              fundos.pct.add(e2.backgroundColor + ' / ' + e2.color);
+            }
+          }
+        }
+        const cols = [...document.querySelectorAll('.cadCart:first-child thead th')];
+        return {bordas, cartoes: [...new Set(cartoes)],
+          rotulos: cols.map(t => t.textContent), maiusculas: cols.map(t => getComputedStyle(t).textTransform),
+          fundos: {cab: [...fundos.cab], tot: [...fundos.tot], zebra: [...fundos.zebra], pct: [...fundos.pct]},
+          def: (document.querySelector('.cadDef span') || {}).textContent || ''};
+      });
+      const onde = `${gc}/${nivel}`;
+      // (e) nenhuma célula com borda
+      assert.deepEqual(r.bordas, [], `${onde}: célula com borda`);
+      assert.deepEqual(r.cartoes, ['1px solid rgb(17, 17, 17)'], `${onde}: a borda do cartão`);
+      // os fundos de sempre
+      assert.deepEqual(r.fundos.cab, ['rgb(236, 236, 236)'], `${onde}: fundo do cabeçalho`);
+      assert.deepEqual(r.fundos.tot, ['rgb(217, 217, 217)'], `${onde}: fundo da linha TOTAL`);
+      assert.deepEqual(r.fundos.zebra, ['rgb(241, 241, 241)'], `${onde}: o zebrado`);
+      for(const x of r.fundos.pct) assert.equal(x, 'rgb(17, 17, 17) / rgb(255, 255, 255)', `${onde}: % em preto`);
+      // (f) o rótulo da coluna e o rodapé
+      assert.equal(r.rotulos[8], 'Meta dia', `${onde}: o rótulo da 9ª coluna`);
+      assert.equal(r.maiusculas[8], 'uppercase', `${onde}: o cabeçalho em caixa alta (META DIA)`);
+      assert.ok(!r.rotulos.includes('Dia'), `${onde}: nenhuma coluna chamada só "Dia"`);
+      assert.ok(!/Dia = meta do dia/.test(r.def), `${onde}: o rodapé ainda define a Dia: ${r.def}`);
+      assert.match(r.def, /^Dif = Real − Meta · % = Real ÷ Meta/, `${onde}: as definições do rodapé`);
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+  });
+
+  /* (g) do pedido: sem a grade, nenhum número pode ser cortado nem encostar no vizinho. Confere célula a célula
+     (scrollWidth <= clientWidth, nenhuma reticência) e mede a menor FOLGA horizontal entre o texto de duas
+     células vizinhas da mesma linha, nas folhas da G2, da RI e da AT, nas duas visões. */
+  test('(34) nenhum número cortado e nenhum encostando no vizinho (G2, RI e AT)', async () => {
+    const {page, ctx, erros} = await abreCaderno('cadrotas');
+    const medidas = [];
+    for(const gc of ['G2', 'RI', 'AT']) for(const nivel of ['gc', 'sv']){
+      await escolhe(page, 'cadGc', gc);
+      await escolhe(page, 'cadNivel', nivel);
+      const svs = await page.$$eval('#cadSv option', os => os.map(o => o.value));
+      for(const sv of (nivel === 'sv' ? svs : [''])){
+        if(sv) await escolhe(page, 'cadSv', sv);
+        const r = await page.evaluate(() => {
+          // largura do TEXTO de uma célula (não da caixa): o retângulo do conteúdo
+          const caixaTexto = cel => { const no = cel.firstChild;
+            if(!no || no.nodeType !== 3 || !no.textContent.trim()) return null;
+            const rg = document.createRange(); rg.selectNodeContents(no);
+            const b = rg.getBoundingClientRect(); rg.detach && rg.detach();
+            return b.width > 0 ? b : null; };
+          const cortes = [], reticencias = [];
+          let folga = 1e9, onde = '';
+          for(const f of document.querySelectorAll('#cadFolhas .cadFolha'))
+            for(const c of f.querySelectorAll('.cadCart'))
+              for(const tr of c.querySelectorAll('tr')){
+                const cels = [...tr.querySelectorAll('th, td')];
+                for(const cel of cels){
+                  if(cel.scrollWidth > cel.clientWidth + 0.5) cortes.push([c.dataset.k, cel.className, cel.textContent]);
+                  if(getComputedStyle(cel).textOverflow === 'ellipsis') reticencias.push(cel.className);
+                }
+                for(let i = 1; i < cels.length; i++){
+                  const a = caixaTexto(cels[i - 1]), b = caixaTexto(cels[i]);
+                  if(!a || !b) continue;
+                  const d = b.left - a.right;
+                  if(d < folga){ folga = d; onde = `${c.dataset.k} ${cels[i - 1].className}|${cels[i].className}`; }
+                }
+              }
+          return {cortes, reticencias, folga: Math.round(folga * 100) / 100, onde,
+            celulas: [...document.querySelectorAll('#cadFolhas .cadTab th, #cadFolhas .cadTab td')].length};
+        });
+        const q = `${gc}/${nivel}${sv ? '/' + sv : ''}`;
+        assert.deepEqual(r.cortes, [], `${q}: número cortado`);
+        assert.deepEqual(r.reticencias, [], `${q}: célula com reticências`);
+        assert.ok(r.folga > 0, `${q}: dois números encostados (${r.folga} px em ${r.onde})`);
+        medidas.push({q, folga: r.folga, onde: r.onde, celulas: r.celulas});
+      }
+    }
+    assert.deepEqual(erros, []);
+    await ctx.close();
+    const pior = medidas.reduce((a, b) => b.folga < a.folga ? b : a);
+    console.log(`# Caderno sem grade (sintético): ${medidas.reduce((a, m) => a + m.celulas, 0)} células medidas em ` +
+      `${medidas.length} folhas; menor folga entre dois números vizinhos ${pior.folga} px (${pior.q}, ${pior.onde}).`);
+  });
+
   test('(29) o resto não muda: aba "Tabela", filtros, Executiva, abas, cascata, Resumo e Painel de Ritmo',
     {skip: !FRONT_PRE_PDF && `sem o commit ${REF_PRE_PDF}`}, async () => {
     const troca = FRONT_PRE_PDF;
@@ -12943,9 +13218,15 @@ describe('Parte AR — Caderno de Vendas no navegador', {skip: pular}, () => {
       for(const {page} of pgs){ await escolhe(page, 'cadGc', gc); await escolhe(page, 'cadNivel', nivel); }
       assert.equal(await novo.page.textContent('#cadAviso'), await velho.page.textContent('#cadAviso'), `${gc}: aviso`);
       assert.equal(await novo.page.textContent('#boEsc'), await velho.page.textContent('#boEsc'), `${gc}: cabeçalho`);
-      for(const campo of ['cadGc', 'cadNivel', 'cadSv'])
+      for(const campo of ['cadGc', 'cadNivel'])
         assert.equal(await novo.page.evaluate(c => document.getElementById(c).outerHTML, campo),
           await velho.page.evaluate(c => document.getElementById(c).outerHTML, campo), `${gc}/${nivel}: ${campo}`);
+      /* o #cadSv muda de propósito desde a R-BO-12 (27/11/2026): a supervisão só de rotas Neutraliza saiu do
+         seletor, porque não tem mais folha própria. O que continua igual é a lista SEM ela. */
+      const ops = pg => pg.$$eval('#cadSv option', os => os.map(o => o.value));
+      assert.deepEqual(await ops(novo.page),
+        (await ops(velho.page)).filter(sv => !CAD_INV.soNeutraliza(payloadCad('normal'), gc, sv)),
+        `${gc}/${nivel}: as supervisões do seletor, sem a só de Neutraliza`);
     }
     assert.deepEqual([...novo.erros, ...velho.erros], [], 'Back Office');
     for(const {ctx} of pgs) await ctx.close();
@@ -13009,7 +13290,10 @@ describe('Parte AR — Caderno de Vendas: PDF real (html2canvas + jsPDF)',
       window.jspdf.jsPDF.API.addImage = function(img, ...r){ window.__imgs.push(img); return add.call(this, img, ...r); };
     });
     const n = await page.evaluate(() => CAD.paginas().pags.length);
-    assert.ok(n >= 8, `o caderno da G2 tem ${n} páginas`);
+    // a G2 do sintético: as duas folhas da gerência e as das 2 supervisões COM FOLHA (a SV.G2.5, só de Neutraliza,
+    // não tem folha própria desde a R-BO-12) — cada uma numa página A4
+    assert.equal(n, 2 + 2 * CAD_INV.svsComFolha(payloadCad('normal'), 'G2').length,
+      `o caderno da G2 tem ${n} páginas`);
     page.on('dialog', d => d.accept());      // só pergunta acima de 12 páginas
     const [baixado] = await Promise.all([page.waitForEvent('download', {timeout: 600000}), page.click('#cadPdf')]);
     const arq = await baixado.path(), bytes = fs.readFileSync(arq).toString('latin1');

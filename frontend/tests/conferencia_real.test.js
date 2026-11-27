@@ -2467,7 +2467,11 @@ describe('Back Office com dado real (Frente 1)', {skip: pular}, () => {
    fundos. (j): o PDF — a composição (2 + 2N escopos, uma página por folha) e cada célula das páginas igual à da
    tela, folha por folha. (i): antes x depois contra a main anterior a esta etapa — os DOIS arquivos que ela toca
    (js/caderno.js e css/app.css) servidos de lá, com o MESMO payload: Executiva, as 4 abas, cascata, Resumo, Painel
-   de Ritmo e a aba "Tabela" do Back Office iguais. Só totais e códigos de gerência, supervisão e rota são impressos.
+   de Ritmo e a aba "Tabela" do Back Office iguais. (k): a R-BO-12 (27/11/2026) — a supervisão só de rotas
+   Neutraliza NÃO tem folha própria (fora do seletor e do PDF), continua sendo a linha "Neutraliza · <rotas>" da
+   folha da gerência, e o antes x depois contra a main de então mostra que NENHUM número mudou: nas 16 gerências,
+   toda célula da folha da GC e das folhas de SV que continuam é idêntica, e as únicas diferenças são o rótulo da
+   coluna "Dia" -> "Meta dia" e a frase do rodapé. Só totais e códigos de gerência, supervisão e rota são impressos.
    ==================================================================================================== */
 describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
   const P = JSON.parse(fs.readFileSync(PAYLOAD, 'utf-8'));
@@ -2477,8 +2481,9 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
   const ESCOLHIDAS = ['G2', 'AT', 'GU', 'RI', 'PO'].filter(g => GCS.includes(g));
   // a main de antes desta etapa (os dois arquivos que ela toca)
   const REF_PRE_CAD = 'a153450';
-  const daMain = arq => { try { return execSync(`git show ${REF_PRE_CAD}:frontend/${arq}`, {cwd: path.resolve(FRONT, '..'),
-    stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024}).toString(); } catch(e) { return null; } };
+  const daMain = (arq, ref) => { try { return execSync(`git show ${ref || REF_PRE_CAD}:frontend/${arq}`,
+    {cwd: path.resolve(FRONT, '..'), stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024}).toString(); }
+    catch(e) { return null; } };
 
   const vaiCaderno = async page => {
     await page.click('#boAba-caderno');
@@ -2501,6 +2506,8 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
       linhas.push(await CAD_INV.confereCaderno(page, P, {nivel: 'gc', gc}, `GC.${gc}`));
       await escolhe(page, 'cadNivel', 'sv');
       const svs = await page.$$eval('#cadSv option', os => os.map(o => o.value));
+      // R-BO-12: o seletor traz as supervisões COM FOLHA (sem a das rotas ocultas das EV* e sem a só de Neutraliza)
+      assert.deepEqual(svs, CAD_INV.svsComFolha(P, gc), `${gc}: as supervisões do seletor`);
       for(const sv of svs){
         await escolhe(page, 'cadSv', sv);
         linhas.push(await CAD_INV.confereCaderno(page, P, {nivel: 'sv', gc, sv}, sv));
@@ -2568,7 +2575,7 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
     const {page, ctx, erros} = await abre(1440);
     await entra(page, {perfil: 'bo', gc: GCS[0]});
     await vaiCaderno(page);
-    const linhas = [];
+    const linhas = [], composicao = [];
     for(const gc of ESCOLHIDAS){
       await escolhe(page, 'cadGc', gc);
       const svs = await page.$$eval('#cadSv option', os => os.map(o => o.value));
@@ -2604,6 +2611,10 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
       });
       const esperado = ['gc||vol', 'gc||cob', ...svs.flatMap(sv => ['sv|' + sv + '|vol', 'sv|' + sv + '|cob'])];
       assert.deepEqual(r.folhas.map(f => f.chave), esperado, `${gc}: os 2 + 2N escopos, na ordem`);
+      // (k) R-BO-12: 2 + 2 x (supervisões com folha), recontadas do payload; nenhuma folha da só de Neutraliza
+      const comp = await CAD_INV.confereComposicaoPdf(page, P, gc, `GC.${gc}`);
+      assert.equal(r.folhas.length, 2 + 2 * CAD_INV.svsComFolha(P, gc).length, `${gc}: 2 + 2N conjuntos de folhas`);
+      composicao.push(comp);
       r.paginas.forEach((pg, i) => {
         const onde = `${gc} página ${i + 1}/${r.n} (${pg.chave})`;
         assert.ok(pg.cab && pg.th === 9, `${onde}: cabeçalho da folha e as 9 colunas`);
@@ -2645,6 +2656,8 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
     console.log(`# |${cab.map(() => '---').join('|')}|`);
     for(const l of linhas) console.log(`# | ${[l.gc, l.escopo, l.tipo, l.tipo === 'TOTAL' ? l.partes + ' páginas'
       : `${l.parte}/${l.partes}`, l.unidades, l.linhas, l.porFolha, l.cartoes, l.alt].join(' | ')} |`);
+    console.log('# Composição (R-BO-12): ' + composicao.map(c => `${c.gc} ${c.svsComFolha} SV com folha, ` +
+      `${c.paginas} páginas${c.soNeutraliza ? ` (sem folha: ${c.soNeutraliza})` : ''}`).join('; '));
   });
 
   test('(i) antes x depois: painel, Resumo, Painel de Ritmo e a aba "Tabela" do Back Office iguais à main', async () => {
@@ -2710,5 +2723,98 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
     assert.deepEqual([...novo.erros, ...velho.erros], []);
     for(const {ctx} of [novo, velho]) await ctx.close();
     console.log(`# Antes x depois contra ${REF_PRE_CAD.slice(0, 7)}: ${vistos.length} telas iguais — ${vistos.join(', ')}`);
+  });
+
+  /* (k) R-BO-12 (27/11/2026): o antes x depois contra a main de ANTES desta etapa (o merge do #68), com o MESMO
+     payload, servindo dela o caderno.js e o app.css. NENHUM número muda: nas 16 gerências, cada célula da folha
+     da GC (Volume e Cobertura) e das folhas de SV que CONTINUAM é idêntica, com a mesma unidade e a mesma ordem.
+     As ÚNICAS diferenças permitidas: o rótulo da coluna "Dia" -> "Meta dia" e a frase do rodapé (saiu a definição
+     "Dia = meta do dia"). Mais: as folhas que SAEM são exatamente as das supervisões só de Neutraliza, e a linha
+     "Neutraliza · <rotas>" continua a última de cada cartão da folha da gerência, com os mesmos números. */
+  const REF_PRE_NEU = 'cd15079';
+  test('(k) antes x depois: toda célula igual nas 16 gerências; muda só o rótulo da coluna e o rodapé', async () => {
+    const velhos = {'/js/caderno.js': daMain('js/caderno.js', REF_PRE_NEU),
+                    '/css/app.css': daMain('css/app.css', REF_PRE_NEU)};
+    for(const [k, v] of Object.entries(velhos)) assert.ok(v, `não achei ${k} em ${REF_PRE_NEU}`);
+    const troca = Object.fromEntries(Object.entries(velhos).map(([k, v]) => [k, () => v]));
+    const novo = await abre(1440), velho = await abre(1440, undefined, troca);
+    for(const {page} of [novo, velho]){ await entra(page, {perfil: 'bo', gc: GCS[0]}); await vaiCaderno(page); }
+    const leDef = pg => pg.evaluate(() => [...document.querySelectorAll('.cadFolha .cadDef span:first-child')]
+      .map(x => x.textContent));
+    let celulas = 0, escopos = 0, folhasSaem = [];
+    const linhas = [];
+    for(const gc of GCS){
+      // as supervisões que continuam (recontadas do payload) e as que saem
+      const comFolha = CAD_INV.svsComFolha(P, gc), neutras = CAD_INV.svsSoNeutraliza(P, gc);
+      const svsVelho = await (async () => { await escolhe(velho.page, 'cadGc', gc);
+        await escolhe(velho.page, 'cadNivel', 'sv');
+        return velho.page.$$eval('#cadSv option', os => os.map(o => o.value)); })();
+      await escolhe(novo.page, 'cadGc', gc);
+      await escolhe(novo.page, 'cadNivel', 'sv');
+      const svsNovo = await novo.page.$$eval('#cadSv option', os => os.map(o => o.value));
+      assert.deepEqual(svsNovo, comFolha, `${gc}: as supervisões do seletor`);
+      assert.deepEqual(svsVelho.filter(sv => !neutras.includes(sv)), svsNovo,
+        `${gc}: o seletor perdeu exatamente as supervisões só de Neutraliza`);
+      for(const sv of neutras) assert.ok(svsVelho.includes(sv), `${gc}: ${sv} estava no seletor da main`);
+      folhasSaem.push(...neutras.map(sv => `${gc}/${sv}`));
+      // os escopos: a folha da GC e as folhas de SV que continuam
+      for(const e of [{nivel: 'gc'}, ...comFolha.map(sv => ({nivel: 'sv', sv}))]){
+        escopos++;
+        for(const {page} of [novo, velho]){
+          await escolhe(page, 'cadNivel', e.nivel);
+          if(e.sv) await escolhe(page, 'cadSv', e.sv);
+        }
+        const [a2, b2] = [await velho.page.evaluate(CAD_INV.LE_CAD), await novo.page.evaluate(CAD_INV.LE_CAD)];
+        const onde = `${gc}${e.sv ? '/' + e.sv : ''}`;
+        assert.equal(b2.length, a2.length, `${onde}: o nº de folhas`);
+        a2.forEach((fa, i) => {
+          const fb = b2[i], q = `${onde}/${fa.tipo}${fa.parte}`;
+          assert.deepEqual([fb.titulo, fb.escopo, fb.caixaTipo, fb.pace, fb.apoio, fb.linhasGrade, fb.pagina],
+            [fa.titulo, fa.escopo, fa.caixaTipo, fa.pace, fa.apoio, fa.linhasGrade, fa.pagina], `${q}: o cabeçalho`);
+          assert.deepEqual(fb.notas, fa.notas, `${q}: as notas do resíduo`);
+          // a ÚNICA diferença das colunas: o rótulo da coluna da meta do dia
+          assert.deepEqual(fb.colunas, fa.colunas.map(c => c === 'Dia' ? 'Meta dia' : c), `${q}: as colunas`);
+          assert.deepEqual(fb.cartoes.map(c => c.k), fa.cartoes.map(c => c.k), `${q}: os itens`);
+          fa.cartoes.forEach((ca, j) => {
+            const cb = fb.cartoes[j];
+            assert.deepEqual([cb.rotulo, cb.selo, cb.tag, cb.situacao, cb.pct],
+              [ca.rotulo, ca.selo, ca.tag, ca.situacao, ca.pct], `${q}/${ca.k}: título e situação`);
+            assert.deepEqual(cb.linhas.map(l => l.cod), ca.linhas.map(l => l.cod), `${q}/${ca.k}: as unidades`);
+            ca.linhas.forEach((la, z) => {
+              const lb = cb.linhas[z];
+              assert.deepEqual([lb.tot, lb.neutraliza, lb.semMeta, lb.atras],
+                [la.tot, la.neutraliza, la.semMeta, la.atras], `${q}/${ca.k}/${la.cod}: a linha`);
+              assert.deepEqual(lb.cels.map(x => x.txt), la.cels.map(x => x.txt),
+                `${q}/${ca.k}/${la.cod}: as células`);
+              celulas += la.cels.length;
+            });
+          });
+        });
+        // o rodapé: só saiu a definição da coluna da meta do dia
+        const [da, db] = [await leDef(velho.page), await leDef(novo.page)];
+        assert.deepEqual(db, da.map(t => t.replace('Dia = meta do dia · ', '')), `${onde}: as definições do rodapé`);
+        for(const t of db) assert.ok(!/Dia = meta do dia/.test(t), `${onde}: o rodapé ainda define a Dia`);
+      }
+      // a linha "Neutraliza · <rotas>" continua a última de cada cartão da folha da gerência
+      if(neutras.length){
+        await escolhe(novo.page, 'cadNivel', 'gc');
+        const f = await novo.page.evaluate(CAD_INV.LE_CAD);
+        for(const c of f[0].cartoes){
+          const u = c.linhas[c.linhas.length - 1];
+          assert.ok(/^Neutraliza · /.test(u.cod), `${gc}/${c.k}: a última linha é "${u.cod}"`);
+          assert.equal(u.neutraliza, true, `${gc}/${c.k}: a classe da linha Neutraliza`);
+        }
+      }
+      linhas.push({gc, antes: svsVelho.length, depois: svsNovo.length, saiu: neutras.join(', ') || '—'});
+    }
+    assert.deepEqual([...novo.erros, ...velho.erros], []);
+    for(const {ctx} of [novo, velho]) await ctx.close();
+    console.log(`# Caderno (R-BO-12) antes x depois contra ${REF_PRE_NEU}: ${celulas} células comparadas em ` +
+      `${escopos} escopos das ${GCS.length} gerências — todas idênticas; ${folhasSaem.length} supervisões ` +
+      `perderam a folha (${folhasSaem.join(', ')}).`);
+    const cab = ['Gerência', 'SVs com folha antes', 'depois', 'Supervisões que saíram'];
+    console.log(`# | ${cab.join(' | ')} |`);
+    console.log(`# |${cab.map(() => '---').join('|')}|`);
+    for(const l of linhas) console.log(`# | ${[l.gc, l.antes, l.depois, l.saiu].join(' | ')} |`);
   });
 });
