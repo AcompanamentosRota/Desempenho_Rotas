@@ -2456,26 +2456,27 @@ describe('Back Office com dado real (Frente 1)', {skip: pular}, () => {
 });
 
 /* ====================================================================================================
-   Caderno de Vendas com dado real (Frente 2, PR 2) — a aba nova da página do Back Office.
-   (a)-(e) e (g): as invariantes de caderno_invariantes.js (recontagem INDEPENDENTE do payload, sem montaCaderno e
-   sem agrega), na G2 e em mais três gerências de porte diferente, nas duas visões (GC aberta por supervisão e SV
-   aberta por rota). (f): o HTML das folhas com e sem o online.json. (h): 360/390/1000/1440 px nos dois fundos.
-   (j): o PDF do caderno (PR 3) — a composição (2 + 2N folhas da gerência), a paginação em A4 retrato (cabeçalho da
-   folha e das colunas em toda página, nenhum bloco partido, a nota do resíduo só na última página da folha, Folha X
-   de Y) e cada célula das páginas igual à da tela, folha por folha; imprime a tabela de medição.
-   (i): antes x depois contra a main — os três arquivos que a etapa toca (index.html, app.css e backoffice.js)
-   servidos da main, com o MESMO payload: Executiva, as 4 abas, cascata, Resumo, Painel de Ritmo e a aba "Tabela"
-   do Back Office iguais. Só totais e códigos de gerência, supervisão e rota são impressos.
+   Caderno de Vendas com dado real (Frente 2) — a aba nova da página do Back Office, no layout em CARTÕES
+   (R-BO-07).
+   (a)-(j): as invariantes de caderno_invariantes.js (recontagem INDEPENDENTE do payload, sem montaCaderno e sem
+   agrega), nas gerências pedidas (G2, AT, GU, RI e PO) e em TODAS as supervisões delas, nas duas visões (GC aberta
+   por supervisão e SV aberta por rota): TOTAL na 1ª linha, Neutraliza por último, rótulos com o primeiro nome, tags
+   de segmento, situação ATRÁS/NO RITMO pelos valores crus, a quebra em folhas A4 e a geometria (nada cortado, nada
+   transbordando, rodapé sem sobrepor cartão). Imprime a tabela do caso-limite (escopo x unidades x altura do
+   cartão x cartões por folha). (f): o HTML das folhas com e sem o online.json. (h): 360/390/1000/1440 px nos dois
+   fundos. (j): o PDF — a composição (2 + 2N escopos, uma página por folha) e cada célula das páginas igual à da
+   tela, folha por folha. (i): antes x depois contra a main anterior a esta etapa — os DOIS arquivos que ela toca
+   (js/caderno.js e css/app.css) servidos de lá, com o MESMO payload: Executiva, as 4 abas, cascata, Resumo, Painel
+   de Ritmo e a aba "Tabela" do Back Office iguais. Só totais e códigos de gerência, supervisão e rota são impressos.
    ==================================================================================================== */
 describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
   const P = JSON.parse(fs.readFileSync(PAYLOAD, 'utf-8'));
   const GCS = (P.GC_ATIVAS || Object.keys(P.DATA)).filter(g => P.DATA[g]);
-  // G2 (a do Del Valle Frut e da SV.G2.5 só de Neutraliza) + três portes diferentes, pelo nº de rotas
-  const porte = g => Object.values(P.DATA[g]).reduce((a, svs) => a + Object.keys(svs).length, 0);
-  const ORDEM = GCS.filter(g => g !== 'G2').sort((a, b) => porte(b) - porte(a));
-  const ESCOLHIDAS = ['G2', ORDEM[0], ORDEM[Math.floor(ORDEM.length / 2)], ORDEM[ORDEM.length - 1]].filter(Boolean);
-  // a main de antes desta etapa (os três arquivos que ela toca)
-  const REF_PRE_CAD = '9067e443a721912dcf588b700b1a49634f9ca656';
+  // as gerências pedidas para esta etapa (G2 tem o Del Valle Frut e a SV.G2.5 só de Neutraliza; RI e PO têm as
+  // supervisões de 9 rotas, o caso-limite medido); o que não existir no payload sai da lista
+  const ESCOLHIDAS = ['G2', 'AT', 'GU', 'RI', 'PO'].filter(g => GCS.includes(g));
+  // a main de antes desta etapa (os dois arquivos que ela toca)
+  const REF_PRE_CAD = 'a153450';
   const daMain = arq => { try { return execSync(`git show ${REF_PRE_CAD}:frontend/${arq}`, {cwd: path.resolve(FRONT, '..'),
     stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024}).toString(); } catch(e) { return null; } };
 
@@ -2489,7 +2490,7 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
     await page.waitForFunction(([c, v]) => document.getElementById(c).value === v, [campo, valor]);
   };
 
-  test('(a)-(e) e (g): G2 e mais três gerências, nas duas visões, contra a recontagem do payload', async () => {
+  test('(a)-(j): G2, AT, GU, RI e PO, cada supervisão, contra a recontagem do payload', async () => {
     const {page, ctx, erros} = await abre(1440);
     await entra(page, {perfil: 'bo', gc: GCS[0]});
     await vaiCaderno(page);
@@ -2500,22 +2501,22 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
       linhas.push(await CAD_INV.confereCaderno(page, P, {nivel: 'gc', gc}, `GC.${gc}`));
       await escolhe(page, 'cadNivel', 'sv');
       const svs = await page.$$eval('#cadSv option', os => os.map(o => o.value));
-      // a 1ª supervisão e, quando houver, a só de rotas Neutraliza (item (g))
-      for(const sv of [svs[0], svs[svs.length - 1]].filter((v, i, a) => v && a.indexOf(v) === i)){
+      for(const sv of svs){
         await escolhe(page, 'cadSv', sv);
         linhas.push(await CAD_INV.confereCaderno(page, P, {nivel: 'sv', gc, sv}, sv));
       }
     }
     assert.deepEqual(erros, []);
     await ctx.close();
-    const cab = ['Escopo', 'Unidades', 'Rotas fora das linhas', 'Blocos', 'Células', 'Notas de resíduo',
-                 'Linhas sem o indicador', 'Dif: ordem importa', '%: ordem importa', 'Ritmo: ordem importa'];
-    console.log(`# Caderno de Vendas (dado real): ${P.MES_LABEL}, dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}` +
+    const cab = ['Escopo', 'Unidades', 'Rotas fora das linhas', 'Folhas A4', 'Linhas de cartões', 'Altura do cartão px',
+                 'Cartões', 'Células', 'Notas de resíduo', 'Linhas sem o indicador', '% em preto',
+                 'Dif: ordem importa', '%: ordem importa', 'Ritmo: ordem importa'];
+    console.log(`# Caderno de Vendas em cartões (dado real): ${P.MES_LABEL}, dia útil ${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}` +
       `${P.FECHAMENTO ? ' (fechamento)' : ''}, pré-venda ${(P.PRE_VENDA || {}).DATA || '—'}`);
     console.log(`# | ${cab.join(' | ')} |`);
     console.log(`# |${cab.map(() => '---').join('|')}|`);
-    for(const l of linhas) console.log(`# | ${[l.onde, l.unidades, l.fora, l.blocos, l.celulas, l.notas, l.vazias,
-      l.trapDif, l.trapPct, l.trapRitmo].join(' | ')} |`);
+    for(const l of linhas) console.log(`# | ${[l.onde, l.unidades, l.fora, l.folhas, l.grade, l.altCartao, l.cartoes,
+      l.celulas, l.notas, l.vazias, l.atras, l.trapDif, l.trapPct, l.trapRitmo].join(' | ')} |`);
     const soma = c => linhas.reduce((a, l) => a + l[c], 0);
     console.log(`# Total: ${soma('celulas')} células conferidas; a ordem do arredondamento muda o número em ` +
       `${soma('trapDif')} Dif, ${soma('trapPct')} % e ${soma('trapRitmo')} Ritmo (R-QLD-15).`);
@@ -2546,10 +2547,13 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
         const r = await page.evaluate(() => ({
           pagina: document.documentElement.scrollWidth > document.documentElement.clientWidth,
           folhas: document.querySelectorAll('.cadFolha').length,
+          larguras: [...new Set([...document.querySelectorAll('.cadFolha')].map(f =>
+            Math.round(f.getBoundingClientRect().width)))],
           cortada: [...document.querySelectorAll('.cadRola')].some(e => e.clientWidth <= 0),
         }));
         assert.equal(r.pagina, false, `${largura} px ${tema} (${nivel}): rolagem lateral na página`);
-        assert.equal(r.folhas, 2, `${largura} px ${tema} (${nivel}): duas folhas`);
+        assert.ok(r.folhas >= 2, `${largura} px ${tema} (${nivel}): ${r.folhas} folhas`);
+        assert.deepEqual(r.larguras, [794], `${largura} px ${tema} (${nivel}): a folha é uma A4`);
         assert.equal(r.cortada, false, `${largura} px ${tema} (${nivel}): caixa de rolagem da folha`);
       }
       assert.deepEqual(erros, [], `${largura} px ${tema}`);
@@ -2557,17 +2561,16 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
     }
   });
 
-  /* (j) Caderno em PDF (PR 3): a composição do caderno inteiro da gerência, a paginação em A4 e — o que de fato
-     importa — que cada célula das PÁGINAS é a MESMA célula da tela, folha por folha, na mesma ordem. Imprime a
-     tabela de medição (altura de cada folha e nº de páginas por gerência). Só totais e códigos. */
-  test('(j) PDF: composição, paginação em A4 e as células das páginas iguais às da tela', async () => {
+  /* (j) Caderno em PDF: com o layout em cartões cada folha JÁ é uma página A4 (a quebra é a cada `porFolha`
+     cartões). Confere a composição (2 + 2N escopos, na ordem) e — o que de fato importa — que cada célula das
+     PÁGINAS é a MESMA célula da tela, folha por folha, na mesma ordem. Imprime a tabela de medição. */
+  test('(j) PDF: composição, uma página A4 por folha e as células das páginas iguais às da tela', async () => {
     const {page, ctx, erros} = await abre(1440);
     await entra(page, {perfil: 'bo', gc: GCS[0]});
     await vaiCaderno(page);
     const linhas = [];
     for(const gc of ESCOLHIDAS){
       await escolhe(page, 'cadGc', gc);
-      // composição: 2 + 2N folhas, Gerência (Volume, Cobertura) e cada supervisão (Volume, Cobertura)
       const svs = await page.$$eval('#cadSv option', os => os.map(o => o.value));
       const r = await page.evaluate(() => {
         const {pags, medidas} = CAD.paginas(), n = pags.length, caixa = document.createElement('div');
@@ -2577,39 +2580,41 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
           caixa.innerHTML = CAD.htmlPagina(pg, i + 1, n);
           const sec = caixa.querySelector('.cadFolha');
           const chave = pg.nivel + '|' + pg.sv + '|' + pg.tipo;
-          const cels = [...sec.querySelectorAll('tbody tr')].map(tr => [...tr.querySelectorAll('td')]
-            .filter(td => !td.classList.contains('seg') && !td.classList.contains('prod'))
-            .map(td => td.textContent).join('\u00a7'));
-          const f = folhas.get(chave) || {chave, cels: [], blocos: [], notas: [], paginas: 0};
+          // cada cartão da página: o item e, por linha, o rótulo da unidade e as células
+          const cels = [...sec.querySelectorAll('.cadCart')].map(c => [c.dataset.k,
+            ...[...c.querySelectorAll('tbody tr')].map(tr => [...tr.querySelectorAll('th, td')]
+              .map(td => td.textContent).join('§'))].join('¶'));
+          const f = folhas.get(chave) || {chave, cels: [], notas: [], paginas: 0};
           f.cels.push(...cels);
-          f.blocos.push(...[...sec.querySelectorAll('td.prod')].map(td => td.childNodes[0].textContent));
-          f.notas = [...sec.querySelectorAll('.cadRod div')].map(d => d.textContent);
+          f.notas = [...sec.querySelectorAll('.cadNota')].map(d => d.textContent);
           f.paginas++;
           folhas.set(chave, f);
-          return {chave, i: i + 1, folio: (caixa.querySelector('.cadFolio') || {}).textContent,
-            cab: !!sec.querySelector('.cadCab'), th: sec.querySelectorAll('thead th').length,
-            blocos: sec.querySelectorAll('td.prod').length, totais: sec.querySelectorAll('tbody tr.tot').length,
-            alta: caixa.querySelector('.cadPag').getBoundingClientRect().height, alt: pg.alt,
+          return {chave, folio: (caixa.querySelector('.cadFolio') || {}).textContent,
+            cab: !!sec.querySelector('.cadCab'), th: sec.querySelectorAll('.cadCart:first-child thead th').length,
+            logos: sec.querySelectorAll('.cadLogos img').length,
+            cartoes: sec.querySelectorAll('.cadCart').length, porFolha: pg.folha.grade.porFolha,
+            parte: pg.folha.parte, partes: pg.folha.partes,
+            alta: Math.round(caixa.querySelector('.cadPag').getBoundingClientRect().height), alt: pg.alt,
             transborda: sec.getBoundingClientRect().bottom >
               caixa.querySelector('.cadPag').getBoundingClientRect().bottom + 0.5,
-            notas: sec.querySelectorAll('.cadRod div').length};
+            notas: sec.querySelectorAll('.cadNota').length};
         });
         caixa.remove();
         return {n, medidas, paginas, folhas: [...folhas.values()]};
       });
       const esperado = ['gc||vol', 'gc||cob', ...svs.flatMap(sv => ['sv|' + sv + '|vol', 'sv|' + sv + '|cob'])];
-      assert.deepEqual(r.folhas.map(f => f.chave), esperado, `${gc}: as 2 + 2N folhas, na ordem`);
-      // paginação: A4 retrato, cabeçalho e <thead> em toda página, bloco inteiro, folio certo, nota só na última
+      assert.deepEqual(r.folhas.map(f => f.chave), esperado, `${gc}: os 2 + 2N escopos, na ordem`);
       r.paginas.forEach((pg, i) => {
         const onde = `${gc} página ${i + 1}/${r.n} (${pg.chave})`;
-        assert.ok(pg.cab && pg.th >= 12, `${onde}: cabeçalho da folha e das colunas`);
+        assert.ok(pg.cab && pg.th === 9, `${onde}: cabeçalho da folha e as 9 colunas`);
+        assert.equal(pg.logos, 2, `${onde}: as duas logos`);
         assert.equal(pg.folio, `Folha ${i + 1} de ${r.n}`, `${onde}: Folha X de Y`);
-        assert.equal(Math.round(pg.alta), pg.alt, `${onde}: a altura desenhada é a do modelo`);
-        if(pg.alt !== 1123) console.log(`# ATENÇÃO ${onde}: página de ${pg.alt} px (um bloco maior que a A4)`);
+        assert.equal(pg.alta, pg.alt, `${onde}: a altura desenhada é a do modelo`);
+        if(pg.alt !== 1123) console.log(`# ATENÇÃO ${onde}: página de ${pg.alt} px (um cartão maior que a A4)`);
         assert.equal(pg.transborda, false, `${onde}: transbordou`);
-        assert.equal(pg.totais, pg.blocos, `${onde}: nenhum bloco partido`);
-        const ultima = i === r.n - 1 || r.paginas[i + 1].chave !== pg.chave;
-        if(!ultima) assert.equal(pg.notas, 0, `${onde}: a nota do resíduo só na última página da folha`);
+        assert.ok(pg.cartoes > 0 && pg.cartoes <= pg.porFolha,
+          `${onde}: ${pg.cartoes} cartões num limite de ${pg.porFolha}`);
+        if(pg.parte !== pg.partes) assert.equal(pg.notas, 0, `${onde}: a nota do resíduo só na última folha`);
       });
       // as células das páginas são as MESMAS da tela, folha por folha e na ordem
       for(const f of r.folhas){
@@ -2617,39 +2622,33 @@ describe('Caderno de Vendas com dado real (Frente 2)', {skip: pular}, () => {
         await escolhe(page, 'cadNivel', nivel);
         if(nivel === 'sv') await escolhe(page, 'cadSv', sv);
         const tela = await page.evaluate(CAD_INV.LE_CAD);
-        const folha = tela[f.chave.endsWith('vol') ? 0 : 1];
-        const naTela = [];
-        for(const b of folha.blocos) for(const l of [...b.linhas, b.total])
-          naTela.push([l.cod, ...l.cels.map(c => c.txt)].join('\u00a7'));
+        const tipo = f.chave.split('|')[2];
+        const naTela = tela.filter(x => x.tipo === tipo).flatMap(x => x.cartoes).map(c => [c.k,
+          ...c.linhas.map(l => [l.cod, ...l.cels.map(y => y.txt)].join('§'))].join('¶'));
         assert.deepEqual(f.cels, naTela, `${gc}/${f.chave}: as células do PDF são as da tela`);
-        assert.deepEqual(f.blocos, folha.blocos.map(b => b.rotulo), `${gc}/${f.chave}: os blocos`);
-        assert.deepEqual(f.notas, folha.notas, `${gc}/${f.chave}: a nota do resíduo`);
+        const notasTela = tela.filter(x => x.tipo === tipo).flatMap(x => x.notas);
+        assert.deepEqual(f.notas, notasTela, `${gc}/${f.chave}: a nota do resíduo`);
       }
-      // uma página por folha, no mínimo; e nada de página vazia
-      const porFolha = r.folhas.map(f => f.paginas);
-      assert.ok(porFolha.every(x => x >= 1), `${gc}: páginas por folha ${porFolha.join(',')}`);
-      assert.equal(porFolha.reduce((a, x) => a + x, 0), r.n);
+      assert.equal(r.folhas.reduce((a, f) => a + f.paginas, 0), r.n);
       for(const m of r.medidas) linhas.push({gc, ...m});
-      linhas.push({gc, tipo: 'TOTAL', escopo: '', alt: '', altUtil: '', blocos: '', paginas: r.n, maior: ''});
-      // caso-limite do RS.paginas: um bloco sozinho mais alto que a página útil
-      for(const m of r.medidas) if(m.maior > m.altUtil)
-        console.log(`# ATENÇÃO ${gc}/${m.escopo}/${m.tipo}: um bloco de ${m.maior} px numa página útil de ${m.altUtil} px`);
+      linhas.push({gc, tipo: 'TOTAL', escopo: '', alt: '', cartoes: '', linhas: '', porFolha: '', unidades: '',
+        parte: '', partes: r.n});
       await escolhe(page, 'cadNivel', 'gc');
     }
     assert.deepEqual(erros, []);
     await ctx.close();
     console.log(`# Caderno em PDF (dado real): A4 retrato 794x1123 px, ${P.MES_LABEL}, dia útil ` +
       `${P.DIA_ONTEM}/${P.TOTAL_DIAS_UTEIS}${P.FECHAMENTO ? ' (fechamento)' : ''}`);
-    const cab = ['Gerência', 'Escopo', 'Folha', 'Altura px', 'Altura útil px', 'Blocos', 'Páginas', 'Maior bloco px'];
+    const cab = ['Gerência', 'Escopo', 'Folha', 'Parte', 'Unidades', 'Linhas de cartões', 'Cartões por folha',
+                 'Cartões', 'Altura px'];
     console.log(`# | ${cab.join(' | ')} |`);
     console.log(`# |${cab.map(() => '---').join('|')}|`);
-    for(const l of linhas) console.log(`# | ${[l.gc, l.escopo, l.tipo, l.alt, l.altUtil, l.blocos, l.paginas,
-      l.maior].join(' | ')} |`);
+    for(const l of linhas) console.log(`# | ${[l.gc, l.escopo, l.tipo, l.tipo === 'TOTAL' ? l.partes + ' páginas'
+      : `${l.parte}/${l.partes}`, l.unidades, l.linhas, l.porFolha, l.cartoes, l.alt].join(' | ')} |`);
   });
 
   test('(i) antes x depois: painel, Resumo, Painel de Ritmo e a aba "Tabela" do Back Office iguais à main', async () => {
-    const velhos = {'/index.html': daMain('index.html'), '/css/app.css': daMain('css/app.css'),
-                    '/js/backoffice.js': daMain('js/backoffice.js')};
+    const velhos = {'/js/caderno.js': daMain('js/caderno.js'), '/css/app.css': daMain('css/app.css')};
     for(const [k, v] of Object.entries(velhos)) assert.ok(v, `não achei ${k} em ${REF_PRE_CAD}`);
     const troca = Object.fromEntries(Object.entries(velhos).map(([k, v]) => [k, () => v]));
     const novo = await abre(1440), velho = await abre(1440, undefined, troca);

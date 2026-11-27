@@ -358,10 +358,11 @@ BAND e em nenhuma gerência) e confere as larguras e o PDF da MATRIZ.
 
 ### Caderno de Vendas (aba do Back Office)
 
-> Frente 2, PR 2 (tela, 23/11/2026) e PR 3 (PDF, 24/11/2026). O Caderno de Vendas em duas folhas A4 (Volume e
-> Cobertura), nas visões **Gerência aberta por supervisão** e **Supervisão aberta por rota**, e o botão que imprime
-> o caderno inteiro da gerência em PDF. **Nenhum número do painel muda** e a tabela do Back Office (a aba "Tabela")
-> continua exatamente como estava.
+> Frente 2. O Caderno de Vendas em folhas A4, nas visões **Gerência aberta por supervisão** e **Supervisão aberta
+> por rota**, e o botão que imprime o caderno inteiro da gerência em PDF. Desde **27/11/2026** a folha é o layout
+> em **cartões** aprovado pela Karen (R-BO-07): um cartão por item, dois por linha. **Nenhum número mudou** — a
+> conta e o formato de cada célula são os mesmos de antes; o que mudou foi a apresentação. A tabela do Back Office
+> (a aba "Tabela") continua exatamente como estava.
 
 **Como abrir.** Entre como **BACK OFFICE** (o 5º botão da entrada, com a senha própria) e, na página, clique na aba
 **Caderno de Vendas**, ao lado da aba **Tabela**. A aba Tabela é a página de sempre; trocar de aba não recalcula nada
@@ -377,35 +378,72 @@ da Tabela:
 - **Supervisão**: só aparece no nível Supervisão. Trocar de gerência mantém o nível e escolhe a primeira supervisão
   da nova gerência.
 
-**As duas folhas.** Primeiro **Volume**, depois **Cobertura**, uma embaixo da outra, cada uma do tamanho de uma folha
-A4 em pé. Em tela estreita (celular) a folha **rola de lado dentro da própria caixa** — a página nunca ganha rolagem
-lateral. O cabeçalho de cada folha traz, à esquerda,
-`CADERNO DE VENDAS · GC/GV · VOLUME|COBERTURA · EXERCÍCIO AAAAMM` e, à direita, o escopo (`GC. G2` ou `SV.G2.1`).
-Embaixo, a linha de apoio: **Dias úteis**, **Corridos**, **Restantes**, **Pré-venda** (a data do último dia útil
-fechado, de onde vem a coluna Pré-Venda) e **Ritmo esperado** — o ritmo aparece **uma vez só**, no cabeçalho, nunca
-repetido por linha. No fechamento do mês, "Corridos" e "Restantes" saem e entra `Fechamento <mês>`.
+**A folha.** Primeiro as folhas de **Volume**, depois as de **Cobertura**, uma embaixo da outra, cada uma do tamanho
+de uma folha **A4 em pé** (794 × 1123 px), em **preto e branco** — nada depende de cor, para a folha impressa ou
+fotocopiada dizer a mesma coisa. Em tela estreita (celular) a folha **rola de lado dentro da própria caixa**: a
+página nunca ganha rolagem lateral.
 
-**O que cada coluna significa.** Cada **Grupo Produto** é um bloco: uma linha por supervisão (ou por rota) e, no fim
-do bloco, a linha **TOTAL**. A coluna **Seg** é fixa em `TODOS` (o Caderno não abre por segmento) e, embaixo do nome
-do item, o selo diz de que painel ele vem (ICS GC, Novos Negócios, Todos a Bordo — ou os dois, quando o item está em
-dois).
+O **cabeçalho** traz, da esquerda para a direita: as duas **logos** (Coca-Cola Bandeirantes em preto e a do IM); a
+linha pequena `CADERNO DE VENDAS · GC/GV · EXERCÍCIO AAAAMM` e, embaixo, o **nome da unidade** em destaque
+(`GC. G2`, ou `SV.G2.1 · Valdecir` no nível Supervisão) seguido da caixa preta **VOLUME** ou **COBERTURA**; e, à
+direita, o **ritmo esperado da meta hoje** (o mesmo `PACE_ONTEM_PCT` do painel), **uma vez só**, nunca repetido por
+linha. Embaixo vem a faixa **Dias úteis · Corridos · Restantes · Pré-venda** (a data do último dia útil fechado, de
+onde vem a coluna Pré-v.). No fechamento do mês, "Corridos" e "Restantes" saem e entra `Fechamento <mês>`.
+
+**Um cartão por item.** Cada indicador — os 5 macros de Volume (mais o Del Valle Frut na gerência que o tem) e os 16
+itens de Cobertura — ganha um cartão próprio, **dois por linha** e até **16 por folha**. O cartão tem:
+
+- **à esquerda**, o nome do item e, abaixo, menor, o(s) **selo(s)** do(s) painel(éis) de onde ele vem (`ICS GC`,
+  `Novos Negócios`, `ICS GC · Todos a Bordo`…). Item que está em dois grupos aparece **uma vez só**, com os dois
+  selos;
+- **a tag cinza do segmento de cliente**, quando o item atende um segmento específico: **`FOCO`** no **KS TT**
+  (Boteco, Padarias, Restaurante e Lanchonete) e **`FOCO 600`** na **Cervejas 600ml Retornável** (Bar/Boteco,
+  Lanchonete, Restaurante, Adegas e Outros canais). Os demais itens valem para todos os segmentos e ficam sem tag —
+  a legenda está no rodapé;
+- **à direita**, a situação do TOTAL — **ATRÁS** (caixa preta) ou **NO RITMO** (caixa com borda) — e o **%** do
+  TOTAL em destaque. ATRÁS é `Tend. % < 100` no Volume e `Ritmo < 100` na Cobertura, pelos valores crus. Item sem
+  meta no escopo não tem caixa de situação e mostra `—`.
+
+**A tabela do cartão.** A **primeira linha é o TOTAL** (fundo cinza, negrito); depois vêm as unidades, em linhas
+zebradas. O **%** de uma unidade **atrás** vai em **fundo preto com letra branca** — é a marca que faz a unidade
+saltar aos olhos. Unidade que não tem o indicador mostra **"sem meta"** no lugar das colunas de número (as colunas
+R. M.A e Pré-v., que vêm do mês anterior e do último dia útil, continuam com o valor que tinham).
 
 | coluna | o que é |
 |---|---|
-| **Real M.A** | o Real do **mês anterior inteiro** (dia 1 ao último), para comparar o tamanho do mês |
+| **Unid.** | a supervisão (`SV.G2.1 · Valdecir`) ou a rota (`211 · Thiago`) — código e **primeiro nome** de quem responde |
+| **R. M.A** | o Real do **mês anterior inteiro** (dia 1 ao último), para comparar o tamanho do mês |
 | **Meta** | a meta do mês, a mesma do card do painel |
 | **Real** | o Real faturado até ontem, o mesmo do card |
-| **Real x Meta** / **Dif** | Real − Meta |
+| **Dif** | Real − Meta |
 | **%** | Real ÷ Meta, com uma casa |
 | **Tend. %** (Volume) | a tendência do SAC: Real até ontem + Neg Restante, sobre a Meta |
 | **Ritmo** (Cobertura) | o quanto o % realizado está acima ou abaixo do ritmo esperado do mês; **100% ou mais é estar no ritmo** |
-| **Pré-Venda** | o que foi vendido **no último dia útil fechado** (um dia só, não o acumulado) |
-| **Meta Dia** | a meta do dia, a mesma que o card do painel mostra na caixa do Online |
-| **Plan. Dia** | **propositalmente vazia** — é o espaço para a equipe escrever o planejado do dia na folha impressa |
+| **Pré-v.** | o que foi vendido **no último dia útil fechado** (um dia só, não o acumulado) |
+| **Dia** | a meta do dia, a mesma que o card do painel mostra na caixa do Online |
 
-Volume vai com **uma casa decimal** e cobertura com **número inteiro** (é contagem de clientes cobertos). Meta zero
-ou ausente deixa `%`, `Tend. %` e `Ritmo` como `—`; indicador que a unidade não tem deixa a linha em branco (não vira
-zero). No fechamento do mês, `Tend. %`, `Ritmo` e `Meta Dia` ficam `—`.
+A coluna **Unid. alarga com o rótulo** (a largura sai do maior rótulo daquela folha): nome nenhum é cortado nem vira
+reticências. Volume vai com **uma casa decimal** e cobertura com **número inteiro** (é contagem de clientes
+cobertos). Meta zero ou ausente deixa `%`, `Tend. %` e `Ritmo` como `—`. No fechamento do mês, `Tend. %`, `Ritmo` e
+`Dia` ficam `—` e o cartão fica sem caixa de situação. A antiga coluna **Plan. Dia** (sempre vazia) **saiu**.
+
+**Quantos cartões por folha.** A folha tem oito linhas de cartões, e **o cartão tem sempre o mesmo tamanho**: uma
+folha com poucos itens deixa o espaço em branco no pé, sem esticar nada. Quando o escopo tem muitas unidades a
+tabela do cartão fica mais alta, e aí **quem cede é o número de linhas de cartões da folha** — o cartão nunca é
+cortado, nenhuma unidade some e nenhuma letra encolhe. Medido no payload de 27/11/2026:
+
+| unidades na tabela (com o TOTAL) | linhas de cartões | cartões por folha | exemplo |
+|---|---|---|---|
+| até 7 | 8 | 16 | qualquer gerência (a maior tem 4 supervisões) e a maioria das supervisões |
+| 8 e 9 | 7 | 14 | SV.G2.1 e SV.GU.1 (7 e 8 rotas) |
+| 10 e 11 | 6 | 12 | SV.RI.2 e SV.PO.1 (9 rotas, o maior de hoje) |
+
+Quando os cartões não cabem numa folha, a **primeira é preenchida até o limite** e só o que passa vai para a
+seguinte, que **repete o cabeçalho**; o cartão tem a **mesma altura** nas duas.
+
+**O rodapé** da folha tem três linhas: a legenda das tags (`FOCO`, `FOCO 600` e "sem tag = todos os segmentos"); a
+legenda de `ATRÁS` e `NO RITMO`; e as definições das colunas, com a nota do resíduo (abaixo) quando houver e, à
+direita, a folha (`GC 1/1` ou `SV 2/2`) e a data do payload.
 
 **Por que os números não batem com a cascata no meio do dia.** O Caderno é um relatório **matinal**, como o Painel de
 Ritmo: ele usa **só o payload** — o Real faturado até o último dia útil fechado — e **não soma os pedidos de hoje**
@@ -420,16 +458,18 @@ abaixo do TOTAL. Quando isso acontece, o rodapé da folha diz quanto é, por ite
 `REFRI · Inclui clientes de rotas eventuais (EV*): Real 14,8`. No nível Supervisão vale o mesmo para as rotas
 virtuais: `REFRI · Inclui rotas virtuais: Meta ... · Real ...`. Sem diferença, não há nota.
 
-**A supervisão só de Neutraliza aparece com o nome dela.** No painel, as rotas Neutraliza viram uma linha
-"Neutraliza" no fim da cascata. No Caderno **não**: a supervisão aparece com o código real (SV.G2.5, SV.AN.4,
-SV.G1.5...), como qualquer outra — foi a decisão da Karen em 23/11/2026, para a folha espelhar a estrutura da
-gerência. **Nenhum número muda** com isso (nenhuma supervisão mistura rotas Neutraliza com rotas normais): muda só o
-rótulo da linha. A SV.G3.3, oculta no painel, também aparece.
+**A supervisão só de Neutraliza vira a linha "Neutraliza".** Quando todas as rotas de uma supervisão são Neutraliza
+(SV.G2.5, SV.AN.4, SV.G1.5...), a linha mostra **`Neutraliza · <rotas>`** — por exemplo `Neutraliza · 251` — e fica
+**sempre por último** no cartão, dentro do TOTAL (decisão da Karen, 27/11/2026; atualiza a de 23/11, que mostrava o
+código da supervisão). **Nenhum número muda** com isso: muda só o rótulo e a posição. A SV.G3.3, oculta no painel,
+continua aparecendo com o código real.
 
-**O que não entra.** Imperdoáveis e Venda Zero ficam fora das duas folhas. O Del Valle Frut (DV FRUT) só aparece na
+**O que não entra.** Imperdoáveis e Venda Zero ficam fora das folhas. O Del Valle Frut (DV FRUT) só aparece na
 gerência que tem o indicador (hoje só a G2). Se o payload ainda não trouxer as chaves `PRE_VENDA` e `MES_ANT_CHEIO`
-(um payload antigo, ou uma rodada em que a consulta falhou), as colunas **Real M.A** e **Pré-Venda** ficam vazias e o
-resto da folha desenha normalmente.
+(um payload antigo, ou uma rodada em que a consulta falhou), as colunas **R. M.A** e **Pré-v.** ficam vazias e o
+resto da folha desenha normalmente. Os itens do pacote de segmentação (Sabores TT, Sucos, Refri SS, Monster, Prêmia
+Band, Desafio Q4) e o **segmento MISTA/SEGMENTADA** no cabeçalho **ainda não entram**: dependem de dado novo do
+gerador e terão PR próprio.
 
 #### O caderno em PDF
 
@@ -441,19 +481,20 @@ resto da folha desenha normalmente.
 1. a **gerência** — folha de Volume e folha de Cobertura;
 2. **cada supervisão** da gerência, na mesma ordem em que o seletor as mostra — Volume e Cobertura.
 
-São **2 + 2 × (nº de supervisões)** folhas. Os seletores **Nível** e **Supervisão** valem só para a tela: o PDF é
-sempre o caderno completo da gerência escolhida. Acima de 12 páginas o navegador pergunta antes ("Exportar N
-páginas?"), como no Painel de Ritmo da Diretoria.
+Os seletores **Nível** e **Supervisão** valem só para a tela: o PDF é sempre o caderno completo da gerência
+escolhida. Acima de 12 páginas o navegador pergunta antes ("Exportar N páginas?"), como no Painel de Ritmo da
+Diretoria.
 
-**Quantas páginas esperar.** Cada folha é uma A4 em pé (794 × 1123 px). A folha de Volume quase sempre cabe numa
-página; a de Cobertura são 16 itens e costuma ocupar **duas**. Uma folha que não cabe é **dividida**, nunca
-encolhida: o corte acontece sempre **entre** dois Grupos Produto, então **nenhum bloco é partido ao meio** e nenhuma
-linha fica cortada. (Se um único Grupo Produto não coubesse numa página — precisaria de umas 80 linhas, o que hoje
-não acontece —, ele ganharia uma página mais alta, em vez de ser partido.) Toda página repete o cabeçalho da folha e
-a linha de título das colunas, e traz `Folha X de Y`
-no pé, à direita — o X conta o caderno inteiro, não a folha. A nota de rodapé do resíduo (as rotas eventuais EV* e
-as virtuais) aparece só na **última página daquela folha**. Com o payload de 24/11/2026: **G2 e AN com 14 páginas**,
-**GU e AT com 8**; o arquivo da G2 ficou em 2,7 MB e levou ~10 s.
+**Quantas páginas esperar.** Com o layout em cartões **cada folha já é uma página A4**: a quebra acontece a cada
+16 cartões (ou menos, quando o escopo tem muitas unidades — ver a tabela acima), sempre **entre** cartões, nunca no
+meio de um. A folha de Volume (5 ou 6 itens) sempre cabe numa página; a de Cobertura (16 itens) cabe numa página na
+gerência e nas supervisões até 7 rotas, e vira **duas** nas supervisões maiores. Toda página repete o cabeçalho da
+folha e o título das colunas, e traz `Folha X de Y` no pé, à direita — o X conta o caderno inteiro, não a folha. A
+nota de rodapé do resíduo (as rotas eventuais EV* e as virtuais) aparece só na **última página daquela folha**.
+(Se um único cartão não coubesse numa A4 — precisaria de umas 90 unidades, o que hoje não acontece —, a folha
+inteira ganharia alguns pixels a mais, em vez de o cartão ser cortado.) Com o payload de 27/11/2026: **G2 com 12
+páginas**, **RI com 9**, **AT com 8**, **GU e PO com 7**; o arquivo da G2 ficou em 2,8 MB (241 KB/página) e levou
+alguns segundos.
 
 **Os números são os da manhã.** O PDF sai da mesma fonte da tela: só o `payload.json`, sem os pedidos de hoje
 (`online.json`). A data do arquivo (`Caderno_Vendas_G2_AAAAMMDD.pdf`) é a do **payload** — o último dia útil fechado,
@@ -461,7 +502,7 @@ até onde vão os dados —, nunca a do relógio: um painel aberto antes da prim
 datado de ontem, que é o que ele de fato mostra.
 
 **No fechamento do mês o botão continua funcionando** (diferente do Painel de Ritmo, que fica desabilitado): o
-caderno do mês fechado é justamente o que interessa imprimir, e a folha já troca `Tend. %`, `Ritmo` e `Meta Dia` por
+caderno do mês fechado é justamente o que interessa imprimir, e a folha já troca `Tend. %`, `Ritmo` e `Dia` por
 `—` e põe `Fechamento <mês>` no cabeçalho.
 
 ### Telas

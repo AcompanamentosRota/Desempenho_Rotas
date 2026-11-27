@@ -1526,12 +1526,14 @@ body.boAtivo{padding-left:0}
 }
 
 /* Caderno de Vendas */
-/* ============ CADERNO DE VENDAS (Frente 2, PR 2) — aba nova da página do Back Office (js/caderno.js) ============
+/* ============ CADERNO DE VENDAS (Frente 2) — aba nova da página do Back Office (js/caderno.js) ============
    Nenhuma regra existente muda e nada entra em :root: todo seletor começa com .boAbas (a barra de abas) ou .cad*.
-   As classes de dentro da tabela (seg, prod, un, tot, novo, neg, selo) são as do mockup aprovado em 19/11/2026 e
-   ficam SEMPRE no escopo .cadTab, para não encostar em .tot do #exCob nem nos .neg do painel.
-   As folhas têm o tamanho de uma página A4 retrato a 96 dpi (794 px de largura) e tamanhos de letra em px: é uma folha
-   de impressão, não uma tela do painel, então ela não entra na escala --fs-* nem no encaixa(). */
+   As folhas têm o tamanho de uma página A4 retrato a 96 dpi (794 x 1123 px) e tamanhos de letra em px: é uma folha
+   de impressão, não uma tela do painel, então ela não entra na escala --fs-* nem no encaixa().
+   Layout em CARTÕES (R-BO-07): a folha é um grid de três faixas — cabeçalho, grade de cartões (a que cresce) e
+   rodapé. A grade tem duas colunas e --cad-linhas linhas de altura igual (1fr), posto pelo caderno.js: é assim que
+   "folha com menos cartões deixa o espaço em branco no pé" sem o cartão esticar, e que um escopo com muitas
+   unidades ganha cartões mais altos em vez de linha cortada. */
 .boAbas{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--linha);padding-bottom:0}
 .boAba{font:inherit;font-size:var(--fs-legenda);font-weight:600;cursor:pointer;background:none;color:var(--txt-apoio);
   border:1px solid transparent;border-bottom:none;border-radius:9px 9px 0 0;padding:8px 14px;margin-bottom:-1px}
@@ -1550,45 +1552,87 @@ body.boAtivo{padding-left:0}
 .cadFolhas{display:flex;flex-direction:column;gap:18px;min-width:0}
 /* a folha rola DENTRO desta caixa: a página nunca ganha rolagem lateral */
 .cadRola{overflow-x:auto;max-width:100%}
-.cadFolha{box-sizing:border-box;width:794px;padding:22px 26px 16px;background:#fff;color:#111;
+.cadFolha{box-sizing:border-box;width:794px;height:1123px;padding:20px 24px 12px;background:#fff;color:#111;
+  display:grid;grid-template-rows:auto var(--cad-grade) 1fr;--cad-grade:920px;
   font-family:var(--sans);font-variant-numeric:lining-nums tabular-nums;
   border:1px solid var(--linha);border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-.cadCab{border-bottom:1.5px solid #111;padding-bottom:4px;margin-bottom:8px}
-.cadCabL{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-.cadTit{margin:0;font-size:11px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:#111}
-.cadEsc{font-size:13px;font-weight:800;color:#111;white-space:nowrap}
-.cadApoio{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;margin-top:3px;font-size:7.5px;color:#4a4945}
+
+/* ---- cabeçalho: logos | título e escopo | ritmo esperado; embaixo, a faixa de dias úteis ---- */
+.cadCab{border-bottom:1.5px solid #111;padding-bottom:5px;margin-bottom:9px}
+.cadCabAlto{display:flex;align-items:center;gap:12px}
+.cadLogos{display:flex;align-items:center;gap:7px;flex:none}
+/* as duas logos com 32 px de altura; a largura sai da proporção do arquivo (nunca filter, nunca troca de src) */
+.cadLogoCoca{height:32px;width:auto;display:block}
+.cadLogoIm{height:32px;width:auto;display:block}
+.cadCabTxt{min-width:0;flex:1 1 auto}
+.cadTit{margin:0;font-size:7px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#444}
+.cadEscL{margin:1px 0 0;display:flex;align-items:center;gap:8px;min-width:0}
+.cadEsc{font-size:20px;font-weight:800;line-height:1.05;color:#111;white-space:nowrap}
+.cadTipo{flex:none;background:#111;color:#fff;font-size:11px;font-weight:800;letter-spacing:.06em;
+  padding:3px 8px;border-radius:4px;white-space:nowrap}
+.cadPace{flex:none;text-align:center;border:1px solid #111;border-radius:6px;padding:3px 8px;max-width:94px}
+.cadPace b{display:block;font-size:15px;font-weight:800;line-height:1.05;color:#111}
+.cadPace span{display:block;font-size:7px;line-height:1.1;color:#444}
+.cadApoio{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;margin-top:4px;font-size:7.5px;color:#4a4945}
 .cadApoio .cadAberto{margin-left:auto;font-weight:700;white-space:nowrap}
+
+/* ---- a grade de cartões: duas colunas, --cad-linhas linhas de altura igual ---- */
+/* a grade tem altura FIXA (--cad-grade): assim o nº de cartões por folha, decidido no caderno.js, nunca depende de
+   quantas linhas o rodapé ocupou. O rodapé fica com o que sobra e é colado no pé da folha (align-self:end). */
+.cadGrade{display:grid;grid-template-columns:repeat(2,1fr);
+  grid-template-rows:repeat(var(--cad-linhas,8),1fr);gap:7px;min-height:0}
+.cadVazio{grid-column:1/-1;margin:0;align-self:start;text-align:center;font-size:8px;color:#6b6a66;font-style:italic}
+.cadCart{box-sizing:border-box;border:1px solid #111;border-radius:4px;padding:2px 4px 1px;min-width:0;min-height:0;
+  display:flex;flex-direction:column}
+.cadCartTopo{display:flex;align-items:flex-start;justify-content:space-between;gap:5px;margin-bottom:1px}
+.cadCartTit{min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 3px}
+.cadTag{flex:none;background:#d9d9d9;color:#111;font-size:5.5px;font-weight:700;letter-spacing:.03em;
+  border-radius:3px;padding:1px 3px;white-space:nowrap}
+.cadNome{font-size:8px;font-weight:800;letter-spacing:.01em;line-height:1.1;color:#111}
+.cadSelo{flex-basis:100%;font-size:5.5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:#8c8980;
+  line-height:1.1}
+.cadCartSit{flex:none;display:flex;align-items:center;gap:4px}
+.cadSit{font-size:5.5px;font-weight:800;letter-spacing:.04em;border-radius:3px;padding:1px 3px;white-space:nowrap}
+.cadSit.cadAtras{background:#111;color:#fff}
+.cadSit.cadNoRitmo{border:1px solid #111;color:#111;padding:0 2px}
+.cadCartPct{font-size:11px;font-weight:800;line-height:1;color:#111}
+
+/* ---- a tabela do cartão: cabeçalhos centralizados (Unid. à esquerda) e números à direita ---- */
 .cadTab{table-layout:fixed;border-collapse:collapse;width:100%}
-.cadTab th{background:#e9e7e2;border:.5px solid #9a978f;font-size:6.5px;font-weight:800;letter-spacing:.02em;
-  text-transform:uppercase;text-align:center;padding:2px 3px;color:#2b2a27}
-.cadTab th.novo{background:#f6ecd0;color:#6f5a14}
-.cadTab td{border:.5px solid #c9c6bf;padding:1.5px 3px;font-size:7px;text-align:right;color:#111;
-  overflow-wrap:anywhere}
-/* "TODOS" numa linha só numa coluna de 20 px: padding mínimo, letra um pouco apertada e sem quebra no meio da palavra */
-.cadTab td.seg{text-align:center;font-size:6px;color:#6b6a66;padding:1.5px 1px;letter-spacing:-.02em;
-  overflow-wrap:normal;word-break:keep-all}
-.cadTab td.prod{text-align:center;font-size:7px;font-weight:700;background:#fff;border-color:#9a978f;line-height:1.15}
-.cadTab td.prod .selo{display:block;font-size:5.5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;
-  color:#8c8980}
-.cadTab td.un{text-align:left;font-size:6.5px;font-weight:700;background:#f4f3f0}
-.cadTab td.novo{background:#fdfaf0}
-.cadTab td.neg{color:#b3261e}
-.cadTab tr.tot td{background:#2b2a27;color:#fff;font-weight:800}
-.cadTab tr.tot td.un{text-align:center}
-.cadTab tr.tot td.neg{color:#ffb3ad}
-.cadTab td.cadVazio{text-align:center;font-size:7px;color:#6b6a66;font-style:italic;padding:6px}
-.cadRod{margin-top:6px;font-size:6.5px;color:#6b6a66}
-/* ---- Caderno em PDF (Frente 2, PR 3): o botão, o palco fora da tela e a página A4 que o html2canvas fotografa ----
-   A folha é a MESMA da tela (mesmas classes .cad*): o que muda é só a moldura. O palco tem altura livre, porque a
-   1ª passada desenha a folha inteira para medir os blocos; quem corta em A4 é a .cadPag de cada página. */
+.cadTab th{background:#ececec;border:.5px solid #b4b1aa;font-size:5.5px;font-weight:700;letter-spacing:.02em;
+  text-transform:uppercase;text-align:center;padding:1px 2px;color:#2b2a27;white-space:nowrap;line-height:1.2}
+/* cabeçalhos centralizados, menos o da Unid., que fica à esquerda como a coluna */
+.cadTab thead th.un{text-align:left}
+.cadTab td{border:.5px solid #cfccc5;padding:.75px 2px;font-size:6px;text-align:right;color:#111;white-space:nowrap;
+  line-height:1.2}
+/* a coluna Unid. é um <th scope=row>: alarga com o rótulo (a largura sai do maior rótulo da folha) e fica à esquerda */
+.cadTab th.cadUn{background:#fff;border-color:#cfccc5;text-align:left;font-size:6px;font-weight:700;
+  text-transform:none;letter-spacing:0;color:#111;padding:.75px 2px;line-height:1.2}
+.cadTab tbody tr:nth-child(even) td,.cadTab tbody tr:nth-child(even) th.cadUn{background:#f1f1f1}
+.cadTab tr.tot td,.cadTab tr.tot th.cadUn{background:#d9d9d9;font-weight:800}
+.cadTab td.neg{color:#111}
+/* o % da unidade atrás: fundo preto, letra branca (a mesma marca da caixa ATRÁS do título) */
+.cadTab td.pct.atras{background:#111;color:#fff;font-weight:700}
+.cadTab td.cadSemMeta{text-align:center;color:#6b6a66;font-style:italic}
+
+/* ---- rodapé: legenda das tags, legenda da situação e as definições com a página e a data ---- */
+.cadRod{align-self:end;margin-top:6px;border-top:.5px solid #cfccc5;padding-top:4px;font-size:6.5px;line-height:1.3;
+  color:#333}
+.cadRod p{margin:0}
+.cadLeg{display:block}
+.cadLeg .cadTag,.cadLeg .cadSit{margin-right:1px}
+.cadDef{display:flex;align-items:baseline;gap:10px}
+.cadDef .cadPg{margin-left:auto;white-space:nowrap;font-weight:700}
+
+/* ---- Caderno em PDF: o botão, o palco fora da tela e a página A4 que o html2canvas fotografa ----
+   A folha é a MESMA da tela (mesmas classes .cad*): o que muda é só a moldura. */
 .cadAcoes{display:flex;align-items:center;gap:8px;margin-left:auto}
 .cad-palco{position:fixed;left:-20000px;top:0;width:794px;pointer-events:none;z-index:-1;background:#fff}
-/* a altura é a da A4; um bloco de Grupo Produto que não coubesse nela ganha uma página mais alta, por style inline */
+/* a altura é a da A4; um cartão que não coubesse nela ganha uma página mais alta, por style inline */
 .cadPag{position:relative;box-sizing:border-box;width:794px;height:1123px;overflow:hidden;background:#fff}
 /* no papel a folha não tem moldura nem sombra, e preenche a página inteira */
-.cadPag .cadFolha{border:0;border-radius:0;box-shadow:none;min-height:100%}
-.cadFolio{position:absolute;right:26px;bottom:5px;font-size:6.5px;color:#6b6a66}
+.cadPag .cadFolha{border:0;border-radius:0;box-shadow:none;height:100%}
+.cadFolio{position:absolute;right:24px;bottom:3px;font-size:6.5px;color:#6b6a66}
 @media (max-width:640px){
   .cadAcoes{margin-left:0}
 }
