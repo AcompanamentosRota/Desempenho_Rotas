@@ -125,7 +125,7 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   hoje tem 19 falhas antigas herdadas da main, que deixariam todo PR vermelho sem motivo (consertá-las é outro trabalho).
   **Clone completo e 3 testes fora do CI** (PR #62, 17-18/11/2026): o checkout usa `fetch-depth: 0` (com o clone raso os
   "antes x depois" servidos por `git show <commit>` PULAM, `# SKIP sem o commit ...`, em vez de falhar). No CI a suíte roda
-  416 e pula 3 (419 na máquina, 24/11/2026; eram 386 em 18/11), declarados por `MEDE_TEXTO_FORA_DO_CI` (topo do front.test.js; só com a variável `CI`, que o Actions
+  422 e pula 3 (425 na máquina, 27/11/2026; eram 419 em 24/11), declarados por `MEDE_TEXTO_FORA_DO_CI` (topo do front.test.js; só com a variável `CI`, que o Actions
   define sozinho): Parte W "360 px: KPIs, quadros, medidores..." e Parte AN "(i) grande 360 px" (painel aberto e
   recolhido). Eles medem largura de texto renderizado: com a Inter carregada (`document.fonts.status` 'loaded',
   `check('700 12px Inter')` true), "58.620.000" em Inter 700 a 7 px (o `data-fit-min` do quadro) mede 39,97 px numa caixa
@@ -540,130 +540,146 @@ Visão geral, variáveis de ambiente e passo a passo para humanos: `README.md`.
   `conferencia_real.test.js`. `senha_teste.js` ganhou `SENHA_BO`/`HASH_BO`/`trocaHashBo` (senha fictícia) e o
   teste-guarda da Parte AO passou a ler os DOIS campos de hash do config.js (`CHAVES_HASH`).
   Fora desta etapa: Venda Zero, Del Valle Frut, fechamento de M-1 a M-3 e Caderno em PDF (Frentes 2 e 3).
-- **Caderno de Vendas (tela) (Frente 2, PR 2, 23/11/2026; `frontend/js/caderno.js`, global `CAD`; README, "Caderno de
-  Vendas")**: aba NOVA dentro da página do Back Office, ao lado da tabela da R-BO-03, que **não é tocada**. Duas folhas
-  A4 retrato (Volume e depois Cobertura, 794 px, `padding:22px 26px 16px`, dentro de `.cadRola{overflow-x:auto}`: a
-  página nunca ganha rolagem lateral), nas visões Gerência aberta por supervisão e Supervisão aberta por rota. O PDF é
-  o PR 3. **Nenhum número do painel muda.**
+- **Caderno de Vendas (tela), layout em CARTÕES (Frente 2; R-BO-07, decisões da Karen de 26 e 27/11/2026;
+  `frontend/js/caderno.js`, global `CAD`; README, "Caderno de Vendas")**: aba dentro da página do Back Office, ao
+  lado da tabela da R-BO-03, que **não é tocada**. Folhas A4 retrato (794x1123 px, `padding:20px 24px 12px`, dentro
+  de `.cadRola{overflow-x:auto}`: a página nunca ganha rolagem lateral), nas visões Gerência aberta por supervisão e
+  Supervisão aberta por rota. **Nenhum número do painel muda, e nenhum número do Caderno mudou com o layout novo**:
+  a Parte AR compara célula a célula contra a main `a153450` (14.640 células no sintético, 15.044 na conferência com
+  dado real) — a única diferença é a coluna **Plan. Dia, que SAIU**.
   **`montaCaderno(P, escopo)` é PURA** (R-RIT-01, como o `montaRitmo`): só payload e escopo, sem DOM, sem `ONLINE`/
   `puxaOnline`/`REVERTIDO_HOJE`/`OPORTUNIDADE_HOJE`/`SEM_COMPRA_HOJE`/`revertidoHoje`/`oportunidadeHoje`/`semDadoHoje`
   e **sem `Date`** (o exercício e a data da pré-venda vêm do payload). `escopo` = `{nivel:'gc', gc}` ou
-  `{nivel:'sv', gc, sv}`. `CAD` expõe `{entra, sai, render, ativo, estado, escopoCaderno, monta}` (`monta` só para os
-  testes). `index.html`: `<script src="js/caderno.js" defer>` entre o `backoffice.js` e o `main.js`.
-  **Seletores próprios** (decisão da Karen, 23/11/2026): o Caderno é sempre de UMA gerência, então o filtro "Agrupada"
-  da R-BO-03 não vale e ele não lê o `ST.escopo` da tabela. `#cadGc` = as 16 SEPARADAS (`todasGcs`, `rotuloGc`, sem
-  grupos e sem MATRIZ; `CONFIG.GC_LIBERADAS` não vale no Back Office, como `gcBackOffice`; sem dados = desabilitada;
-  padrão = a 1ª com dados, mesmo que a entrada tenha sido por outra), `#cadNivel` (Gerência | Supervisão) e `#cadSv`
-  (só no nível Supervisão; trocar de gerência mantém o nível e pega a 1ª supervisão da nova).
+  `{nivel:'sv', gc, sv}`. `CAD` expõe `{entra, sai, render, ativo, estado, escopoCaderno, monta, exporta, htmlPagina,
+  paginas}`. `index.html`: `<script src="js/caderno.js" defer>` entre o `backoffice.js` e o `main.js`.
+  **Seletores próprios** (decisão da Karen, 23/11/2026): o Caderno é sempre de UMA gerência, então o filtro
+  "Agrupada" da R-BO-03 não vale e ele não lê o `ST.escopo` da tabela. `#cadGc` = as 16 SEPARADAS (`todasGcs`,
+  `rotuloGc`, sem grupos e sem MATRIZ; `CONFIG.GC_LIBERADAS` não vale no Back Office, como `gcBackOffice`; sem dados
+  = desabilitada; padrão = a 1ª com dados), `#cadNivel` (Gerência | Supervisão) e `#cadSv` (só no nível Supervisão;
+  trocar de gerência mantém o nível e pega a 1ª supervisão da nova).
+  **Cabeçalho** (`.cadCab`, `cabecalho()`): logos `.cadLogos` (Coca-Cola Bandeirantes em PRETO,
+  `assets/coca-bandeirantes-preto.png`, e a do IM, `assets/logo-im.png`, as duas com 32 px de altura e 7 px entre
+  elas; `useCORS` já cobre, são do mesmo domínio); `.cadTit` = `CADERNO DE VENDAS · GC/GV · EXERCÍCIO AAAAMM` (7 px,
+  600, .08em, #444 — **sem** o tipo, que virou caixa); `.cadEsc` = o nome da unidade em 20 px/800 (`GC. G2`, ou
+  `SV.G2.1 · <primeiro nome>` no nível Supervisão) + `.cadTipo` = caixa preta **VOLUME**/**COBERTURA** (11 px/800,
+  .06em, `padding:3px 8px`, raio 4); `.cadPace` = o ritmo esperado do dia (`PACE_ONTEM_PCT`, 15 px/800, borda 1 px,
+  raio 6), UMA vez só; `.cadApoio` = Dias úteis · Corridos · Restantes · Pré-venda (no fechamento,
+  `Fechamento <MES_LABEL>` no lugar de Corridos/Restantes). O **segmento MISTA/SEGMENTADA NÃO entra** nesta etapa
+  (PN-72, depende do gerador): nada de marcador vazio.
+  **Um cartão por item** (`cartao()`, `.cadCart`), **dois por linha**, até **16 por folha**. Título: `.cadTag`
+  (segmento, abaixo), `.cadNome` (8 px/800) e `.cadSelo` (os selos de `CAD_ROTULOS`); à direita `.cadSit`
+  (**ATRÁS** = `.cadAtras`, fundo preto; **NO RITMO** = `.cadNoRitmo`, borda) e `.cadCartPct` (o % do TOTAL).
+  ATRÁS = `Tend. % < 100` no volume e `Ritmo < 100` na cobertura, pelos valores **CRUS** (`atrasDe`); sem meta,
+  indicador indisponível ou fechamento = sem caixa e `—`. **As classes dos modificadores levam o prefixo cad**:
+  `ritmo` e `ok` soltos são classes do painel (a `.ritmo` é a caixa preta do dia).
+  **Tag de segmento = `CAD_TAG_SEGMENTO`** (tabela no topo do arquivo, ao lado de `CAD_ROTULOS`; a legenda do rodapé
+  sai dela): **`FOCO`** no **KS TT** (Boteco, Padarias, Restaurante e Lanchonete, R-COB-04/R-COB-11) e **`FOCO 600`**
+  na **CERVEJAS 600ML RETORNAVEL** (Bar/Boteco, Lanchonete, Restaurante, Adegas e Outros canais). Nenhum outro item
+  tem tag.
+  **Tabela do cartão**, 9 colunas (`CAD_COLS`): **Unid. · R. M.A · Meta · Real · Dif · % · Tend. % (volume) ou Ritmo
+  (cobertura) · Pré-v. · Dia**. A **Plan. Dia SAIU**. Cabeçalhos centralizados (Unid. à esquerda), números à direita.
+  A **1ª linha é o TOTAL** (`tr.tot`, fundo `#d9d9d9`), depois as unidades em zebra `#f1f1f1`/branco. O **% da
+  unidade atrás** vai em `td.pct.atras` (fundo preto, letra branca) — em todas as linhas, TOTAL incluído. Unidade sem
+  o indicador = `td.cadSemMeta` com `colspan=5` ("sem meta") no lugar de Meta…Tend.; R. M.A e Pré-v. continuam com o
+  valor que tinham e a Dia fica vazia. Larguras por `table-layout:fixed` + `<col>` em %, calculadas em `colunas()`
+  pelo **maior texto da folha** em cada coluna (a Unid. alarga com o rótulo; nada é cortado, nada vira reticências).
   **De onde vem cada coluna**: tudo de `NUCLEO.agrega(P, rotas, nodo).ind[k]` (o `b`), de `NUCLEO.metaDiaCobertura` e
   das duas chaves do PR 1 — **nunca** de `metricas()`, `realOnline()`, `onlineVol()`, `volCliOnline()` nem de `ONLINE`
-  (R-BO-06: o Caderno é MATINAL). Volume: Real M.A = `MES_ANT_CHEIO.ROTAS[r].v[i]`, Meta `b.meta`, Real `b.real`,
-  Real x Meta `b.real − b.meta`, % `b.real/b.meta`, Tend. % `b.pctTendencia`, Pré-Venda `PRE_VENDA.ROTAS[r].v[i]`,
-  Meta Dia `b.metaDia`, **Plan. Dia SEMPRE vazia** (em todas as linhas, TOTAL incluído). Cobertura: o mesmo com `.c[i]`,
-  Dif no lugar de Real x Meta, `Ritmo = (b.real/b.meta)/(PACE_ONTEM_PCT/100)×100` (dos valores CRUS, nunca `b.pct` nem
-  `b.onPace`) e Meta Dia por `metaDiaCobertura(b, TOTAL_DIAS_UTEIS)`. `i` = posição do indicador **pelo NOME** em
-  `IND_VOL`/`IND_COB` (tabelas de índice que só crescem no fim): indicador fora da tabela, chave ausente ou todas as
-  rotas com `null` = célula VAZIA, sem erro e sem esconder a coluna; `null` na rota não soma e não vira 0.
+  (R-BO-06: o Caderno é MATINAL). Volume: R. M.A = `MES_ANT_CHEIO.ROTAS[r].v[i]`, Meta `b.meta`, Real `b.real`,
+  Dif `b.real − b.meta`, % `b.real/b.meta`, Tend. % `b.pctTendencia`, Pré-v. `PRE_VENDA.ROTAS[r].v[i]`,
+  Dia `b.metaDia`. Cobertura: o mesmo com `.c[i]`, `Ritmo = (b.real/b.meta)/(PACE_ONTEM_PCT/100)×100` (dos valores
+  CRUS, nunca `b.pct` nem `b.onPace`) e Dia por `metaDiaCobertura(b, TOTAL_DIAS_UTEIS)`. `i` = posição do indicador
+  **pelo NOME** em `IND_VOL`/`IND_COB` (tabelas de índice que só crescem no fim): indicador fora da tabela, chave
+  ausente ou todas as rotas com `null` = célula VAZIA, sem erro e sem esconder a coluna; `null` na rota não soma e
+  não vira 0.
   **Formato** (decisão da Karen, 23/11/2026): volume com UMA casa decimal (sempre, `1.234,5`), cobertura INTEIRA,
-  `%` com uma casa e `Tend. %`/`Ritmo` inteiros; `Math.round` (.5 sobe). **R-QLD-15**: toda conta com os valores crus e
-  o arredondamento só no fim (`arredonda(real − meta)`, nunca `arredonda(real) − arredonda(meta)`). Meta 0 ou ausente =
-  `—` em `%`, `Tend. %` e `Ritmo`; `.neg` no valor negativo da Dif. Fechamento (R-MES-08): `Tend. %`, `Ritmo` e
-  `Meta Dia` = `—` e o cabeçalho troca Corridos/Restantes por `Fechamento <MES_LABEL>`.
-  **Linhas** (item 8 do pedido; DIVERGE do painel de propósito): nível Gerência = TODAS as supervisões de `P.DATA[gc]`
-  em `ordemNatural`, com o código real — **inclusive a só de rotas Neutraliza** (SV.G2.5, SV.AN.4, SV.G1.5...; no
-  painel elas viram a linha "Neutraliza", R-NEU-10) e a oculta SV.G3.3 (R-ESC-14). **Nunca `rotasNormais` nem
-  `svsVisiveis`.** Fora das linhas fica só a supervisão das rotas ocultas das EV* (a que só tem rotas de
-  `EVENTUAIS_ROTAS`), que continua DENTRO do TOTAL. Nível Supervisão = as rotas dela em `ordemNatural`, sem as
-  virtuais, que também ficam no TOTAL. Medido em 19 e 23/11: nenhuma supervisão mistura Neutraliza com rota normal, então
-  nenhum número muda — só o rótulo.
-  **TOTAL** = `agrega` de TODAS as rotas do escopo (R-ESC-11/12), o número do card do painel. Como a oculta das EV* e as
-  virtuais não viram linha, a soma das linhas pode ficar abaixo do TOTAL; o resíduo vai no rodapé da folha, **por
-  indicador** (é por indicador que ele existe), com o rótulo curto na frente e o texto da `notaVirtuais`:
-  `REFRI · Inclui clientes de rotas eventuais (EV*): Real 14,8` e `REFRI · Inclui rotas virtuais: Meta X · Real Y`.
-  Sem resíduo, sem nota. (Resíduo da G2 em Refrigerantes, 19 e 23/11: 14,8 cx.)
-  **Itens**: Volume = os 5 macros + Del Valle Frut só na gerência que tem o indicador (R-VOL-14). Cobertura = os 13 do
-  ICS GC e dos Novos Negócios + as 3 chaves INC, cada um UMA vez, na ordem dos `GROUPS` do payload, com o selo dizendo
-  os dois grupos quando for o caso (ARTD KO, CERVEJAS e CERVEJAS 600ML RETORNAVEL); **IMPERDOAVEIS e VENDAZERO fora**
-  (R-ESC-08). Os itens INC seguem o ICS (R-INC-01): o Real é o do `agrega`, sem `rotasInc` — o Caderno não tem a
-  mensagem "Sem meta"/"Exclusivo portfólio Full" dos cards, e uma gerência sem meta do item mostra Meta 0 com o Real e
-  `%` = `—`. Rótulos curtos e selos ficam em `CAD_ROTULOS`, no topo do arquivo.
-  **`backoffice.js`: só a troca de abas.** Barra `.boAbas` (criada em JS, `role=tablist`, setas e Home/End), `ST.aba`
-  ('tabela' | 'caderno', padrão 'tabela'); `render()` desenha a tabela de hoje byte a byte quando a aba é 'tabela' e
-  chama `CAD.render()` quando é 'caderno'; `.boFiltros` (filtros `#boGc`/`#boNivel` e os botões Excel e Painel de ritmo),
-  `.boNota` e `#boCorpo` ganham a classe `.cadOff` na aba Caderno e voltam intactos (o `[hidden]` não bastaria: as duas
-  definem `display:flex`). `#boEsc` mostra o escopo do Caderno enquanto ela está aberta. `BO.sai()` chama `CAD.sai()`.
-  **Os três `onchange` do Caderno (`#cadGc`/`#cadNivel`/`#cadSv`) pedem o redesenho ao `BO.render()`** (`repinta()` no
-  caderno.js, com fallback para o `render()` local se o `backoffice.js` em cache não tiver a aba), **nunca ao `render()`
-  do próprio arquivo**: só o `BO.render()` escreve o `#boEsc`, e ele o monta a partir do `CAD.escopoCaderno()` ANTES de
-  chamar o `CAD.render()` — os dois saem do mesmo estado numa passada só. Com o `render()` local as folhas trocavam de
-  gerência e o alto da página ficava na gerência da entrada (defeito de 23/11/2026; teste (16) da Parte AR). Não há
-  laço: o `caderno.js` não cita `BO` em nenhum outro ponto.
-  `linhas`, `linhasDaGerencia`, `gruposDoNivel`, `celulas`, `colunasNum`, `tabela`, `dadosExcel`, `montaPlanilha`,
-  `nomeArquivo` e `escopoRitmo` **não mudaram**.
-  **A etapa NÃO toca** `app.js`, `nucleo.js`, `resumo.js`, `ritmo.js`, `main.js`, `config.js`, `backend/**`,
-  `.github/**`, `frontend/data/**` nem `docs/**`; o `index.html` só ganhou a linha do `<script>`. CSS: bloco próprio no
-  fim do `app.css`, entre `/* Caderno de Vendas */` e `/* fim do Caderno de Vendas */` (não tirar esses comentários:
-  os testes os usam), só com seletores `.boAbas*`, `.cad*` e `.cadOff`; as classes de dentro da tabela do mockup
-  (`seg`, `prod`, `un`, `tot`, `novo`, `neg`, `selo`) ficam SEMPRE no escopo `.cadTab`, e as colunas de número levam o
-  prefixo `cad` (`cadRitmo`, `cadMeta`, `cadPct`...) porque `.ritmo` solto é a caixa preta do dia no painel.
-  Testes: Parte AR do `front.test.js` (vm com getters que lançam, incluindo `Date`; variantes novas `semcad` = payload
-  sem as duas chaves e `cadtrap` = números escolhidos para quebrar a R-QLD-15 e `IND_VOL` com um nome a menos),
-  `frontend/tests/caderno_invariantes.js` (recontagem INDEPENDENTE, sem `montaCaderno` e sem `agrega`) e o bloco
-  "Caderno de Vendas com dado real" do `conferencia_real.test.js` (G2 + três portes, as duas visões, com e sem o
-  online.json, 360/390/1000/1440 px nos dois fundos e o antes x depois contra `9067e44`, servindo da main os três
-  arquivos que a etapa toca).
-- **Caderno de Vendas em PDF (Frente 2, PR 3, 24/11/2026; `frontend/js/caderno.js`, botão `#cadPdf` na barra de
-  filtros da aba Caderno)**: o caderno **inteiro da gerência** em A4 retrato, da MESMA fonte da tela (R-BO-06).
-  **Nenhum número muda**, a tela do PR 2 fica byte a byte e `montaCaderno` continua pura.
-  **Composição** (decisão da Karen, 24/11/2026): o PDF é sempre o da gerência do `#cadGc` e **ignora** o `#cadNivel` e
-  o `#cadSv` (eles governam só a tela). `cadernoCompleto(P, gc)` (pura, no topo do arquivo) devolve 2 + 2N folhas na
-  ordem: Gerência (Volume, Cobertura) e, depois, CADA supervisão de `svsCad(gc)` na ordem da tela (Volume, Cobertura),
-  cada folha de um `montaCaderno(P, {nivel, gc, sv})` — uma chamada por escopo, nada reimplementado. Na G2 de 24/11
-  são 4 supervisões = 10 folhas.
-  **Paginação, nunca encolhimento**: a folha tem 794 px de largura e altura livre, e uma folha de cobertura de
-  supervisão passa de uma A4. A divisão é a do Resumo — **`RS.paginas(atomos, H0, altTotal)`, usada SEM ALTERAÇÃO**
-  (o Resumo depende dela) — por `cadernoPaginas(atomos, altUtil, altTotal, paginador)` (pura; o paginador entra por
-  parâmetro, então o teste roda sem o DOM). Átomos: o cabeçalho da folha e, depois, **um por bloco de Grupo Produto**
-  (o `td.prod` com o `rowspan` cobre exatamente as linhas de unidade e o TOTAL do bloco, e é ele que é medido);
-  **bloco nunca é cortado ao meio**. As coordenadas são medidas a partir do topo do `<tbody>`, porque o cabeçalho da
-  folha e o `<thead>` são **repetidos em TODA página** (senão uma página solta fica ilegível) e por isso saem do
-  orçamento `altUtil` = 1123 − cromo − rodapé − 14 px da faixa do folio, em vez de consumi-lo só na 1ª; o átomo do
-  cabeçalho entra com altura zero e o `RS.paginas` o funde com o 1º bloco (a regra do `.rs-cab`). A **nota do resíduo**
-  (EV* e virtuais) sai só na ÚLTIMA página daquela folha, e toda página leva `Folha X de Y` do **caderno inteiro**
-  (6,5 px, `#6b6a66`, `.cadFolio`). **Caso-limite**: um bloco mais alto que a página útil fica sozinho numa página MAIS
-  ALTA (`paginasDoCaderno.altura`, o `addPage([LARG, alt])` e um `style="height"` na `.cadPag`; é o que o Resumo já
-  faz), nunca cortado; com o payload de 24/11 o maior bloco tem 121 px contra ~1.011 px de página útil (precisaria de
-  ~80 linhas num Grupo Produto só), e quem trava isso é a variante sintética `cadgrande` (SV.G2.1 com 90 rotas).
-  **Geração** (molde do `exporta()` do `ritmo.js`): guarda `ocupado`; `document.fonts.ready` antes de medir e
-  fotografar; palco `div.cad-palco` fora da tela (`aria-hidden`, altura livre, FORA do `#cadFolhas`: as invariantes
-  leem `#cadFolhas .cadFolha`) com a MESMA marcação `.cadFolha` da tela, sem o `.cadRola`; 1ª passada mede e pagina
-  tudo, **o `confirm("Exportar N páginas?")` só acima de 12 páginas** e só então as bibliotecas do `CONFIG.CDN` são
-  carregadas (`RS.carregaScript`; falha = "Sem conexão para gerar o PDF"); depois, uma página por vez —
-  `html2canvas` escala 1.5, JPEG 0.85, `addImage`, `canvas.width = canvas.height = 0` e um `await` que cede ao
-  navegador; entrega por `RS.salvaPdf`. `folhaHtml(f, op)` ganhou o 2º parâmetro (`pdf`, `blocos`, `ultima`); **sem
-  `op` o HTML é byte a byte o de antes**. Nada de `encaixa()` na folha (ela não entra na escala `--fs-*`).
+  `%` com uma casa e `Tend. %`/`Ritmo` inteiros; `Math.round` (.5 sobe). **R-QLD-15**: toda conta com os valores crus
+  e o arredondamento só no fim (`arredonda(real − meta)`, nunca `arredonda(real) − arredonda(meta)`). Meta 0 ou
+  ausente = `—` em `%`, `Tend. %` e `Ritmo`. Fechamento (R-MES-08): `Tend. %`, `Ritmo` e `Dia` = `—`, sem caixa de
+  situação, e o cabeçalho troca Corridos/Restantes por `Fechamento <MES_LABEL>`.
+  **Linhas** (DIVERGE do painel de propósito): nível Gerência = TODAS as supervisões de `P.DATA[gc]` em
+  `ordemNatural`, com `<código> · <primeiro nome do supervisor>` (`NOME_SUPERVISOR`, `cadPrimeiroNome` = a regra do
+  `primeiroNome` do ritmo.js, reimplementada porque ele não a exporta; "ROTA SEM VENDEDOR" ou vazio = "Sem vendedor",
+  R-ESC-14) — inclusive a oculta SV.G3.3. **A supervisão cujas rotas são TODAS Neutraliza** (SV.G2.5, SV.AN.4,
+  SV.G1.5...) vira a linha **`Neutraliza · <rotas>`** (ex.: `Neutraliza · 251`) e vai **SEMPRE por ÚLTIMO**, dentro do
+  TOTAL (R-NEU-10; decisão da Karen de 27/11/2026, que atualiza a de 23/11: o número é o mesmo, muda o rótulo e a
+  posição). **Nunca `rotasNormais` nem `svsVisiveis`.** Fora das linhas fica só a supervisão das rotas ocultas das
+  EV* (a que só tem rotas de `EVENTUAIS_ROTAS`), que continua DENTRO do TOTAL. Nível Supervisão = as rotas dela em
+  `ordemNatural`, sem as virtuais (também no TOTAL), com `<rota> · <primeiro nome do consultor>`.
+  **TOTAL** = `agrega` de TODAS as rotas do escopo (R-ESC-11/12), o número do card do painel. Como a oculta das EV* e
+  as virtuais não viram linha, a soma das linhas pode ficar abaixo do TOTAL; o resíduo vai no rodapé, **por
+  indicador**, com o rótulo curto na frente e o texto da `notaVirtuais`: `REFRI · Inclui clientes de rotas eventuais
+  (EV*): Real 14,8` e `REFRI · Inclui rotas virtuais: Meta X · Real Y` (cada um num `span.cadNota`, que é o que os
+  testes leem). Sem resíduo, sem nota. (Resíduo da G2 em Refrigerantes, 27/11: 14,8 cx.)
+  **Itens**: Volume = os 5 macros + Del Valle Frut só na gerência que tem o indicador (R-VOL-14). Cobertura = os 13
+  do ICS GC e dos Novos Negócios + as 3 chaves INC, cada um UMA vez, na ordem dos `GROUPS` do payload, com o selo
+  dizendo os dois grupos quando for o caso (ARTD KO, CERVEJAS e CERVEJAS 600ML RETORNAVEL); **IMPERDOAVEIS e
+  VENDAZERO fora** (R-ESC-08). Os itens INC seguem o ICS (R-INC-01): o Real é o do `agrega`, sem `rotasInc`. Os itens
+  da planilha de segmentação (Sabores TT, Sucos, Refri SS, Monster, Prêmia Band, Desafio Q4) **não entram** (R-BO-08,
+  R-BO-11, PN-77: dependem de agrupadores novos no gerador). Rótulos curtos e selos ficam em `CAD_ROTULOS`, no topo.
+  **Grade e quebra em folhas (a parte nova do layout)**: a `.cadFolha` é um grid de três faixas —
+  `grid-template-rows: auto var(--cad-grade) 1fr` — com a grade de **altura FIXA** (`--cad-grade` 920 px = o
+  `CAD_PAG.altGrade` do caderno.js; a Parte AR trava os dois juntos) e o rodapé colado no pé (`align-self:end`):
+  assim o nº de cartões por folha NUNCA depende de quantas linhas o rodapé ocupou. A `.cadGrade` tem
+  `grid-template-rows: repeat(var(--cad-linhas), 1fr)`, e o caderno.js só decide **quantas linhas** a folha tem:
+  `cadLinhasGrade(n)` = o maior L <= 8 em que `cadAlturaCartao(n)` (= `CAD_CARTAO.base 34 + n × 9.8`, constantes
+  medidas no navegador com dado real) cabe em `(920 − (L−1)×7)/L`. Com o payload de 27/11: até 7 linhas de tabela =
+  8 linhas de cartões (16 por folha), 8-9 = 7 (14), 10-11 = 6 (12); a maior supervisão real tem 9 rotas (SV.RI.2 e
+  SV.PO.1 = 10 linhas). **O cartão nunca encolhe, nunca corta linha, nunca esconde unidade e nenhuma letra desce
+  abaixo de 5,5 px**: quem cede é o nº de linhas de cartões. Folha com menos cartões deixa o pé em branco (o cartão
+  não estica). Caso-limite: se nem com L=1 o cartão couber (precisaria de ~90 unidades), a folha inteira cresce
+  (`folha.altura` > 1123, `style="height"`), nunca o cartão é cortado — variante sintética `cadgrande`.
+  **`backoffice.js`: só a troca de abas** (igual ao PR 2; a etapa dos cartões NÃO o toca). Barra `.boAbas`,
+  `ST.aba` ('tabela' | 'caderno'), `.cadOff` nos elementos da aba Tabela, `#boEsc` com o escopo do Caderno,
+  `BO.sai()` chama `CAD.sai()`. **Os três `onchange` do Caderno pedem o redesenho ao `BO.render()`** (`repinta()`),
+  nunca ao `render()` local: só o `BO.render()` escreve o `#boEsc`, e ele o monta a partir do `CAD.escopoCaderno()`
+  ANTES de chamar o `CAD.render()` (defeito de 23/11/2026; teste (23) da Parte AR). Não há laço: o `caderno.js` não
+  cita `BO` em nenhum outro ponto.
+  **A etapa dos cartões NÃO toca** `app.js`, `nucleo.js`, `resumo.js`, `ritmo.js`, `backoffice.js`, `main.js`,
+  `config.js`, `index.html`, `backend/**`, `.github/**`, `frontend/data/**` nem `docs/**`. CSS: bloco próprio no fim
+  do `app.css`, entre `/* Caderno de Vendas */` e `/* fim do Caderno de Vendas */` (não tirar esses comentários: os
+  testes os usam), só com seletores `.boAbas*`, `.cad*` e `.cadOff`; as classes de dentro da tabela do cartão
+  (`un`, `ma`, `meta`, `real`, `dif`, `pct`, `tend`, `pv`, `dia`, `tot`, `neu`, `neg`) ficam SEMPRE no escopo
+  `.cadTab`, e tudo o que é modificador do cartão leva o prefixo `cad` (`cadAtras`, `cadNoRitmo`, `cadSemMeta`,
+  `cadUn`, `cadNota`...) — `.ritmo` solto é a caixa preta do dia no painel.
+  Testes: Parte AR do `front.test.js` (vm com getters que lançam, incluindo `Date`; variantes `semcad`, `cadtrap`,
+  `cadgrande`, e as novas `cadrotas` = SV.G2.1 com 9 rotas e SV.G2.2 com 12, e `cad17` = 17 itens de cobertura),
+  `frontend/tests/caderno_invariantes.js` (recontagem INDEPENDENTE, sem `montaCaderno` e sem `agrega`, mais a
+  geometria: nada cortado, nada transbordando, rodapé sem sobrepor cartão, cartão com a mesma altura em todas as
+  folhas) e o bloco "Caderno de Vendas com dado real" do `conferencia_real.test.js` (G2, AT, GU, RI e PO, cada
+  supervisão, as duas visões, com e sem o online.json, 360/390/1000/1440 px nos dois fundos e o antes x depois contra
+  `a153450`, servindo da main o `caderno.js` e o `app.css`).
+- **Caderno de Vendas em PDF (Frente 2; `frontend/js/caderno.js`, botão `#cadPdf` na barra de filtros da aba
+  Caderno)**: o caderno **inteiro da gerência** em A4 retrato, da MESMA fonte da tela (R-BO-06). **Nenhum número
+  muda** e `montaCaderno` continua pura.
+  **Composição** (decisão da Karen, 24/11/2026): o PDF é sempre o da gerência do `#cadGc` e **ignora** o `#cadNivel`
+  e o `#cadSv` (eles governam só a tela). `cadernoCompleto(P, gc)` (pura, no topo do arquivo) devolve as folhas na
+  ordem: Gerência (Volume, Cobertura) e, depois, CADA supervisão na ordem da tela (Volume, Cobertura), cada folha
+  saindo de um `montaCaderno(P, {nivel, gc, sv})` — uma chamada por escopo, nada reimplementado.
+  **Com o layout em cartões, cada folha JÁ é uma página A4**: a quebra é a cada `porFolha` cartões (acima), então
+  **não há mais passada de medição nem paginação por bloco** — `cadernoPaginas` e o uso do `RS.paginas` SAÍRAM do
+  caderno.js (o `RS.paginas` em si não mudou: o Resumo continua com ele). Na G2 de 27/11 são 12 páginas.
+  **Geração** (molde do `exporta()` do `ritmo.js`): guarda `ocupado`; o `confirm("Exportar N páginas?")` só acima de
+  12 páginas, ANTES de carregar as bibliotecas; `document.fonts.ready` antes de fotografar; palco `div.cad-palco`
+  fora da tela (`aria-hidden`, FORA do `#cadFolhas`: as invariantes leem `#cadFolhas .cadFolha`) com a MESMA marcação
+  `.cadFolha` da tela, sem o `.cadRola`; bibliotecas do `CONFIG.CDN` por `RS.carregaScript` (falha = "Sem conexão
+  para gerar o PDF"); depois, uma página por vez — `html2canvas` escala 1.5, JPEG 0.85, `addImage`,
+  `canvas.width = canvas.height = 0` e um `await` que cede ao navegador; entrega por `RS.salvaPdf`. `folhaHtml(f, op)`
+  tem o 2º parâmetro só para o palco (`op.pdf` tira o `.cadRola`); `paginaHtml` acrescenta o `.cadFolio`
+  ("Folha X de Y" do caderno inteiro, 6,5 px, `#6b6a66`). Nada de `encaixa()` na folha (ela não entra na escala
+  `--fs-*`).
   **Nome e propriedades**: `Caderno_Vendas_<GC>_AAAAMMDD.pdf` com a data do **PAYLOAD** por `RT.diaArq()` (R-RIT-02:
   nunca o relógio; sem `DATA_ONTEM`, o `hojeArq()`), escopo sanitizado como no Ritmo; `title` = `Caderno de Vendas ·
   <GC> · dia útil D/T` + ` · dados até dd/mm` quando há `DATA_ONTEM`, `author` = Comercial Bandeirantes.
-  **No fechamento o botão CONTINUA LIGADO** (decisão da Karen, 24/11/2026; ao contrário do Painel de Ritmo, que fica
-  desabilitado): a folha já trata o fechamento (Tend. %, Ritmo e Meta Dia em "—", `Fechamento <MES_LABEL>` no
-  cabeçalho) e é justamente o caderno do mês fechado que interessa imprimir.
+  **No fechamento o botão CONTINUA LIGADO** (decisão da Karen, 24/11/2026; ao contrário do Painel de Ritmo): a folha
+  já trata o fechamento e é justamente o caderno do mês fechado que interessa imprimir.
   **Nada de online e nada de relógio** (R-BO-06, R-RIT-01): o código do PDF não lê `ONLINE`, `puxaOnline`,
   `REVERTIDO_HOJE`, `OPORTUNIDADE_HOJE`, `SEM_COMPRA_HOJE`, `revertidoHoje`, `oportunidadeHoje`, `semDadoHoje`,
   `Date.now()` nem `new Date()`; a única data vem do payload e do `RT.diaArq()`.
-  A etapa só toca `caderno.js`, o bloco do Caderno no `app.css` (classes `.cadAcoes`, `.cad-palco`, `.cadPag`,
-  `.cadFolio`) e os testes: `RS.paginas`, `resumo.js`, `ritmo.js`, `app.js`, `backoffice.js`, `nucleo.js`,
-  `config.js`, `index.html`, `backend/**`, `.github/**` e `frontend/data/**` ficam como estão.
-  `CAD` passou a expor também `exporta`, `htmlPagina`, `paginas` e `medidas` (só os testes leem os três últimos).
-  Medido com o payload real de 24/11 (dia útil 14/19): G2 e AN 14 páginas, GU e AT 8; folha mais alta 2.017 px
-  (SV.GU.1, cobertura, 2 páginas); PDF da G2 2,74 MB em 10,5 s (200 KB/página, contra ~165 KB do Painel de Ritmo —
-  a A4 a 1,5x é uma imagem de 1191x1684 px).
-  Testes: Partes AR (17)-(24) do `front.test.js` — composição e paginação puras (o `contextoCad` passou a carregar o
-  `resumo.js` pelo `RS.paginas`), paginação no navegador, nome/propriedades com um jsPDF e um html2canvas de mentira,
-  fechamento, o antes x depois da TELA contra `ea1bd38` (`REF_PRE_PDF`, servindo da main o `caderno.js` e o
-  `app.css`) e o caso-limite da página alta (`cadgrande`) —, a Parte AR do **PDF real** (só com os pacotes npm nas versões do `CONFIG.CDN`) e o bloco (j) do
-  `conferencia_real.test.js` (composição, paginação e **cada célula das páginas = a da tela**, folha por folha, em
-  quatro gerências, com a tabela de medição).
+  Medido com o payload real de 27/11 (dia útil 17/19): G2 12 páginas, RI 9, AT 8, GU e PO 7; PDF da G2 2,8 MB
+  (241 KB/página). Testes: Partes AR (13) e (24)-(28) do `front.test.js`, a Parte AR do **PDF real** (só com os
+  pacotes npm nas versões do `CONFIG.CDN`) e o bloco (j) do `conferencia_real.test.js` (composição, uma página por
+  folha e **cada célula das páginas = a da tela**, folha por folha, em cinco gerências, com a tabela de medição).
 - **Aba Todos a Bordo ("Todos a Bordo 3.0", cobertura de cervejas; chave interna INCENTIVO, era "Incentivo" até
   21/10/2026)**: `M.GROUPS['INCENTIVO']` = CERVEJAS, INC HEINEKEN,
   INC EISENBAHN 600ML, INC HEINEKEN 600ML, CERVEJAS 600ML RETORNAVEL (CERVEJAS e CERVEJAS 600ML RETORNAVEL são os do ICS,
